@@ -11,24 +11,24 @@ namespace UVE::Utilities {
 
 /// FNV-1a 64-bit offset basis (Fowler/Noll/Vo). The starting state every hasher below uses
 /// unless a legacy format says otherwise.
-inline constexpr std::uint64_t kFnv1a64OffsetBasisUVE = 14695981039346656037ULL;
+inline constexpr std::uint64_t kFnv1a64OffsetBasis = 14695981039346656037ULL;
 /// FNV-1a 64-bit prime.
-inline constexpr std::uint64_t kFnv1a64PrimeUVE = 1099511628211ULL;
+inline constexpr std::uint64_t kFnv1a64Prime = 1099511628211ULL;
 
 /// The offset basis two older call sites actually shipped with: the trailing 7 of the true basis
 /// was dropped when the constants were copied (`...5603` instead of `...56037`). One of those
 /// sites is a persisted save-file checksum, so its values are a format and cannot change — both
 /// sites pass this seed explicitly rather than the true basis. New code must use the default.
-inline constexpr std::uint64_t kFnv1a64LegacyOffsetBasisUVE = 1469598103934665603ULL;
+inline constexpr std::uint64_t kFnv1a64LegacyOffsetBasis = 1469598103934665603ULL;
 
 /// Mixes `value` into `seed`, in place. This is the boost `hash_combine` formula
 /// (`seed ^= value + 0x9e3779b9 + (seed << 6) + (seed >> 2)`), matching the two hand-rolled
-/// copies it replaced in `ArchetypeSignatureUVE` and the pose-graph cache key.
+/// copies it replaced in `ArchetypeSignature` and the pose-graph cache key.
 ///
 /// For in-memory hash tables only: `std::size_t` is platform-width, so combined values differ
 /// between 32- and 64-bit builds. Anything persisted, sent across processes, or embedded in a
-/// file format wants `Fnv1a64UVE` below, whose output is a fixed-width `std::uint64_t`.
-constexpr void HashCombineUVE(std::size_t& seed, const std::size_t value) noexcept {
+/// file format wants `Fnv1a64` below, whose output is a fixed-width `std::uint64_t`.
+constexpr void HashCombine(std::size_t& seed, const std::size_t value) noexcept {
     seed ^= value + static_cast<std::size_t>(0x9e3779b9U) + (seed << 6U) + (seed >> 2U);
 }
 
@@ -43,11 +43,11 @@ constexpr void HashCombineUVE(std::size_t& seed, const std::size_t value) noexce
 ///
 /// Byte order is the caller's business too: hashing a `std::uint64_t` directly feeds native
 /// endian bytes. Fine for same-machine caches; a portable format must serialize first (Tier 1.8).
-class Fnv1a64UVE final {
+class Fnv1a64 final {
   public:
     /// Starts from the true FNV-1a basis. Pass an explicit seed only to reproduce a legacy
-    /// format's values (see `kFnv1a64LegacyOffsetBasisUVE`).
-    constexpr explicit Fnv1a64UVE(const std::uint64_t seed = kFnv1a64OffsetBasisUVE) noexcept
+    /// format's values (see `kFnv1a64LegacyOffsetBasis`).
+    constexpr explicit Fnv1a64(const std::uint64_t seed = kFnv1a64OffsetBasis) noexcept
         : m_state(seed) {}
 
     /// Feeds `size` bytes starting at `data`. A null `data` with a zero `size` is a no-op;
@@ -77,27 +77,27 @@ class Fnv1a64UVE final {
     /// xor-then-multiply order in the engine.
     static constexpr void MixByte(std::uint64_t& state, const unsigned char byte) noexcept {
         state ^= byte;
-        state *= kFnv1a64PrimeUVE;
+        state *= kFnv1a64Prime;
     }
 
     std::uint64_t m_state;
 };
 
-/// One-shot FNV-1a over `size` bytes. Same contract as `Fnv1a64UVE::AppendBytes`;
+/// One-shot FNV-1a over `size` bytes. Same contract as `Fnv1a64::AppendBytes`;
 /// runtime-only for the same `void*` reason (`inline` because, unlike its `constexpr` sibling
 /// below, it has no implicit inline).
-[[nodiscard]] inline std::uint64_t HashBytesUVE(const void* const data, const std::size_t size,
-                                                const std::uint64_t seed = kFnv1a64OffsetBasisUVE) noexcept {
-    Fnv1a64UVE hasher{seed};
+[[nodiscard]] inline std::uint64_t HashBytes(const void* const data, const std::size_t size,
+                                                const std::uint64_t seed = kFnv1a64OffsetBasis) noexcept {
+    Fnv1a64 hasher{seed};
     hasher.AppendBytes(data, size);
     return hasher.Digest();
 }
 
 /// One-shot FNV-1a over `text`'s bytes, without any terminator. `constexpr` via the
-/// `AppendString` path (not `HashBytesUVE`, which cannot be).
-[[nodiscard]] constexpr std::uint64_t HashStringUVE(const std::string_view text,
-                                                    const std::uint64_t seed = kFnv1a64OffsetBasisUVE) noexcept {
-    Fnv1a64UVE hasher{seed};
+/// `AppendString` path (not `HashBytes`, which cannot be).
+[[nodiscard]] constexpr std::uint64_t HashString(const std::string_view text,
+                                                    const std::uint64_t seed = kFnv1a64OffsetBasis) noexcept {
+    Fnv1a64 hasher{seed};
     hasher.AppendString(text);
     return hasher.Digest();
 }

@@ -11,29 +11,29 @@
 
 namespace UVE::Asset {
 
-struct ResourceDependencyHandleUVE final {
-    AssetGuidUVE guid;
+struct ResourceDependencyHandle final {
+    AssetGuid guid;
     std::uint64_t generation = 0U;
 
-    [[nodiscard]] bool operator==(const ResourceDependencyHandleUVE&) const noexcept = default;
+    [[nodiscard]] bool operator==(const ResourceDependencyHandle&) const noexcept = default;
 };
 
-struct ResourceDependencyEntryUVE final {
-    ResourceDependencyHandleUVE handle;
-    std::vector<ResourceDependencyHandleUVE> dependencies;
+struct ResourceDependencyEntry final {
+    ResourceDependencyHandle handle;
+    std::vector<ResourceDependencyHandle> dependencies;
 
-    [[nodiscard]] bool operator==(const ResourceDependencyEntryUVE&) const = default;
+    [[nodiscard]] bool operator==(const ResourceDependencyEntry&) const = default;
 };
 
-struct ResourceDependencySnapshotUVE final {
+struct ResourceDependencySnapshot final {
     std::uint64_t graphGeneration = 0U;
     bool entriesTruncated = false;
-    std::vector<ResourceDependencyEntryUVE> entries;
+    std::vector<ResourceDependencyEntry> entries;
 
-    [[nodiscard]] bool operator==(const ResourceDependencySnapshotUVE&) const = default;
+    [[nodiscard]] bool operator==(const ResourceDependencySnapshot&) const = default;
 };
 
-enum class ResourceDependencyCodeUVE : std::uint8_t {
+enum class ResourceDependencyCode : std::uint8_t {
     Registered = 0,
     Updated,
     Removed,
@@ -47,14 +47,14 @@ enum class ResourceDependencyCodeUVE : std::uint8_t {
     DependentClosureReady,
 };
 
-struct ResourceDependencyResultUVE final {
-    ResourceDependencyCodeUVE code = ResourceDependencyCodeUVE::InvalidHandle;
+struct ResourceDependencyResult final {
+    ResourceDependencyCode code = ResourceDependencyCode::InvalidHandle;
     std::string message;
 
-    [[nodiscard]] bool IsAppliedUVE() const noexcept {
-        return code == ResourceDependencyCodeUVE::Registered ||
-               code == ResourceDependencyCodeUVE::Updated ||
-               code == ResourceDependencyCodeUVE::Removed;
+    [[nodiscard]] bool IsApplied() const noexcept {
+        return code == ResourceDependencyCode::Registered ||
+               code == ResourceDependencyCode::Updated ||
+               code == ResourceDependencyCode::Removed;
     }
 };
 
@@ -62,54 +62,54 @@ struct ResourceDependencyResultUVE final {
 /// depends on `root`. The root is excluded from `dependents`; consumers invalidate the returned
 /// dependents before reprocessing the changed root. The graph generation identifies the snapshot
 /// revision and callers must discard the plan if their graph has moved since capture.
-struct ResourceDependencyInvalidationPlanUVE final {
-    ResourceDependencyCodeUVE code = ResourceDependencyCodeUVE::InvalidHandle;
+struct ResourceDependencyInvalidationPlan final {
+    ResourceDependencyCode code = ResourceDependencyCode::InvalidHandle;
     std::string message;
     std::uint64_t graphGeneration = 0U;
-    ResourceDependencyHandleUVE root{};
+    ResourceDependencyHandle root{};
     bool dependentsTruncated = false;
-    std::vector<ResourceDependencyHandleUVE> dependents;
+    std::vector<ResourceDependencyHandle> dependents;
 
-    [[nodiscard]] bool IsReadyUVE() const noexcept {
-        return code == ResourceDependencyCodeUVE::DependentClosureReady;
+    [[nodiscard]] bool IsReady() const noexcept {
+        return code == ResourceDependencyCode::DependentClosureReady;
     }
 };
 
-class ResourceDependencyGraphUVE final {
+class ResourceDependencyGraph final {
 public:
-    static constexpr std::size_t kMaximumResourcesUVE = 4096U;
-    static constexpr std::size_t kMaximumDependenciesPerResourceUVE = 128U;
+    static constexpr std::size_t kMaximumResources = 4096U;
+    static constexpr std::size_t kMaximumDependenciesPerResource = 128U;
 
-    ResourceDependencyGraphUVE() = default;
-    ResourceDependencyGraphUVE(const ResourceDependencyGraphUVE&) = delete;
-    ResourceDependencyGraphUVE& operator=(const ResourceDependencyGraphUVE&) = delete;
+    ResourceDependencyGraph() = default;
+    ResourceDependencyGraph(const ResourceDependencyGraph&) = delete;
+    ResourceDependencyGraph& operator=(const ResourceDependencyGraph&) = delete;
 
-    [[nodiscard]] ResourceDependencyResultUVE RegisterResourceUVE(ResourceDependencyHandleUVE handle);
-    [[nodiscard]] ResourceDependencyResultUVE SetDependenciesUVE(
-        ResourceDependencyHandleUVE handle, std::vector<ResourceDependencyHandleUVE> dependencies);
-    [[nodiscard]] ResourceDependencyResultUVE RemoveResourceUVE(ResourceDependencyHandleUVE handle);
+    [[nodiscard]] ResourceDependencyResult RegisterResource(ResourceDependencyHandle handle);
+    [[nodiscard]] ResourceDependencyResult SetDependencies(
+        ResourceDependencyHandle handle, std::vector<ResourceDependencyHandle> dependencies);
+    [[nodiscard]] ResourceDependencyResult RemoveResource(ResourceDependencyHandle handle);
     /// Returns a copied breadth-first reverse-dependent closure. `maximumDependents` bounds the
     /// result; a true `dependentsTruncated` flag means additional dependents exist beyond the copy.
-    [[nodiscard]] ResourceDependencyInvalidationPlanUVE GetDependentClosureUVE(
-        ResourceDependencyHandleUVE root, std::size_t maximumDependents = kMaximumResourcesUVE) const;
-    [[nodiscard]] bool HasResourceUVE(ResourceDependencyHandleUVE handle) const noexcept;
-    [[nodiscard]] ResourceDependencySnapshotUVE GetSnapshotUVE() const;
+    [[nodiscard]] ResourceDependencyInvalidationPlan GetDependentClosure(
+        ResourceDependencyHandle root, std::size_t maximumDependents = kMaximumResources) const;
+    [[nodiscard]] bool HasResource(ResourceDependencyHandle handle) const noexcept;
+    [[nodiscard]] ResourceDependencySnapshot GetSnapshot() const;
 
 private:
-    struct EntryUVE final {
-        ResourceDependencyHandleUVE handle;
-        std::vector<ResourceDependencyHandleUVE> dependencies;
+    struct Entry final {
+        ResourceDependencyHandle handle;
+        std::vector<ResourceDependencyHandle> dependencies;
     };
 
-    [[nodiscard]] EntryUVE* FindExactUVE(ResourceDependencyHandleUVE handle) noexcept;
-    [[nodiscard]] const EntryUVE* FindExactUVE(ResourceDependencyHandleUVE handle) const noexcept;
-    [[nodiscard]] const EntryUVE* FindGuidUVE(AssetGuidUVE guid) const noexcept;
-    [[nodiscard]] bool ReachesUVE(ResourceDependencyHandleUVE start, ResourceDependencyHandleUVE target,
-                                  std::vector<ResourceDependencyHandleUVE>& visited) const noexcept;
-    [[nodiscard]] ResourceDependencyResultUVE ValidateHandleUVE(ResourceDependencyHandleUVE handle) const noexcept;
-    void BumpGenerationUVE() noexcept;
+    [[nodiscard]] Entry* FindExact(ResourceDependencyHandle handle) noexcept;
+    [[nodiscard]] const Entry* FindExact(ResourceDependencyHandle handle) const noexcept;
+    [[nodiscard]] const Entry* FindGuid(AssetGuid guid) const noexcept;
+    [[nodiscard]] bool Reaches(ResourceDependencyHandle start, ResourceDependencyHandle target,
+                                  std::vector<ResourceDependencyHandle>& visited) const noexcept;
+    [[nodiscard]] ResourceDependencyResult ValidateHandle(ResourceDependencyHandle handle) const noexcept;
+    void BumpGeneration() noexcept;
 
-    std::vector<EntryUVE> m_entries;
+    std::vector<Entry> m_entries;
     std::uint64_t m_graphGeneration = 0U;
 };
 

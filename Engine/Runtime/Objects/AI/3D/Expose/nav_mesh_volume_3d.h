@@ -13,10 +13,10 @@
 
 namespace UVE::Scene {
 
-class IEntityManagerUVE;
+class IEntityManager;
 
-struct NavMeshVolume3DComponentUVE final {
-    Math::Vector3UVE boundsHalfExtents{10.0F, 2.0F, 10.0F};
+struct NavMeshVolume3DComponent final {
+    Math::Vector3 boundsHalfExtents{10.0F, 2.0F, 10.0F};
     std::string navigationMeshAssetPath;
     std::uint32_t navigationLayers = 1U;
 
@@ -38,63 +38,63 @@ struct NavMeshVolume3DComponentUVE final {
     /// region moving is what it is for.
     bool rebuildRequested = false;
 
-    [[nodiscard]] bool operator==(const NavMeshVolume3DComponentUVE&) const = default;
+    [[nodiscard]] bool operator==(const NavMeshVolume3DComponent&) const = default;
 };
 
-[[nodiscard]] bool IsNavMeshVolume3DObjectComponentValidUVE(const NavMeshVolume3DComponentUVE& value) noexcept;
+[[nodiscard]] bool IsNavMeshVolume3DObjectComponentValid(const NavMeshVolume3DComponent& value) noexcept;
 
 /// NavMeshVolume3D's creation recipe — the Object3D baseline plus a default
-/// `NavMeshVolume3DComponentUVE`.
-struct NavMeshVolume3DObjectDefinitionUVE final {
+/// `NavMeshVolume3DComponent`.
+struct NavMeshVolume3DObjectDefinition final {
     static constexpr std::string_view typeName = "NavMeshVolume3D";
     static constexpr std::string_view defaultName = "NavMeshVolume3D";
 
-    NavMeshVolume3DComponentUVE volume{};
+    NavMeshVolume3DComponent volume{};
 
-    [[nodiscard]] bool operator==(const NavMeshVolume3DObjectDefinitionUVE&) const = default;
+    [[nodiscard]] bool operator==(const NavMeshVolume3DObjectDefinition&) const = default;
 };
 
-[[nodiscard]] bool IsNavMeshVolume3DObjectDefinitionValidUVE(
-    const NavMeshVolume3DObjectDefinitionUVE& value) noexcept;
+[[nodiscard]] bool IsNavMeshVolume3DObjectDefinitionValid(
+    const NavMeshVolume3DObjectDefinition& value) noexcept;
 
-void ApplyNavMeshVolume3DObjectDefinitionUVE(IEntityManagerUVE& entityManager, EntityUVE entity,
-                                             const NavMeshVolume3DObjectDefinitionUVE& value);
+void ApplyNavMeshVolume3DObjectDefinition(IEntityManager& entityManager, Entity entity,
+                                             const NavMeshVolume3DObjectDefinition& value);
 
 /// Node policy for a `NavMeshVolume3D` navigation region object.
 ///
 /// Owns world-space AABB construction, point-to-volume distance queries, navigation-layer bitmask
-/// matching, and rebuild-request latching shared by `NavigationRuntimeUVE` and scene tools.
-class NavMeshVolume3DUVE final {
+/// matching, and rebuild-request latching shared by `NavigationRuntime` and scene tools.
+class NavMeshVolume3D final {
 public:
-    NavMeshVolume3DUVE() = delete;
+    NavMeshVolume3D() = delete;
 
-    /// True when `volume` is enabled and passes `IsNavMeshVolume3DObjectComponentValidUVE`.
-    [[nodiscard]] static bool IsBakingEnabledUVE(const NavMeshVolume3DComponentUVE& volume) noexcept;
+    /// True when `volume` is enabled and passes `IsNavMeshVolume3DObjectComponentValid`.
+    [[nodiscard]] static bool IsBakingEnabled(const NavMeshVolume3DComponent& volume) noexcept;
 
     /// Builds the axis-aligned world-space volume around `worldPosition` using
     /// `volume.boundsHalfExtents`.
-    [[nodiscard]] static Math::AabbUVE ResolveWorldBoundsUVE(
-        const NavMeshVolume3DComponentUVE& volume, const Math::Vector3UVE& worldPosition) noexcept;
+    [[nodiscard]] static Math::Aabb ResolveWorldBounds(
+        const NavMeshVolume3DComponent& volume, const Math::Vector3& worldPosition) noexcept;
 
     /// Euclidean distance in metres from `point` to `bounds` (`0.0F` when `point` lies on or
     /// inside `bounds`).
-    [[nodiscard]] static float DistanceToVolumeBoundsUVE(
-        const Math::AabbUVE& bounds, const Math::Vector3UVE& point) noexcept;
+    [[nodiscard]] static float DistanceToVolumeBounds(
+        const Math::Aabb& bounds, const Math::Vector3& point) noexcept;
 
     /// True when `point` lies on or inside `volume`'s world-space AABB around `worldPosition`.
-    [[nodiscard]] static bool ContainsWorldPointUVE(
-        const NavMeshVolume3DComponentUVE& volume, const Math::Vector3UVE& worldPosition,
-        const Math::Vector3UVE& point) noexcept;
+    [[nodiscard]] static bool ContainsWorldPoint(
+        const NavMeshVolume3DComponent& volume, const Math::Vector3& worldPosition,
+        const Math::Vector3& point) noexcept;
 
     /// True when `volume.navigationLayers` shares at least one bit with `layerMask`.
-    [[nodiscard]] static bool SharesNavigationLayerUVE(
-        const NavMeshVolume3DComponentUVE& volume, std::uint32_t layerMask) noexcept;
+    [[nodiscard]] static bool SharesNavigationLayer(
+        const NavMeshVolume3DComponent& volume, std::uint32_t layerMask) noexcept;
 
     /// Flags `volume.rebuildRequested = true`.
-    static void RequestRebuildUVE(NavMeshVolume3DComponentUVE& volume) noexcept;
+    static void RequestRebuild(NavMeshVolume3DComponent& volume) noexcept;
 
     /// Reads and clears `volume.rebuildRequested`.
-    static bool ConsumeRebuildRequestUVE(NavMeshVolume3DComponentUVE& volume) noexcept;
+    static bool ConsumeRebuildRequest(NavMeshVolume3DComponent& volume) noexcept;
 };
 
 } // namespace UVE::Scene

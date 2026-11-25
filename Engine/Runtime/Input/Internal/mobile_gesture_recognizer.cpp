@@ -8,23 +8,23 @@
 namespace UVE::Input {
 namespace {
 
-constexpr MobileGestureRecognizerConfigUVE kDefaultGestureConfig{};
+constexpr MobileGestureRecognizerConfig kDefaultGestureConfig{};
 
 } // namespace
 
-bool EvaluateTouchChordLifecycleTransitionUVE(
-    const MobileInputSnapshotUVE& previous, const MobileInputSnapshotUVE& current,
+bool EvaluateTouchChordLifecycleTransition(
+    const MobileInputSnapshot& previous, const MobileInputSnapshot& current,
     const std::size_t requiredTouchCount,
-    TouchChordLifecycleTransitionUVE& outTransition) noexcept {
-    if (requiredTouchCount < 2U || requiredTouchCount > kMaximumTouchCountUVE) {
+    TouchChordLifecycleTransition& outTransition) noexcept {
+    if (requiredTouchCount < 2U || requiredTouchCount > kMaximumTouchCount) {
         return false;
     }
 
-    const auto validateSnapshot = [](const MobileInputSnapshotUVE& snapshot,
+    const auto validateSnapshot = [](const MobileInputSnapshot& snapshot,
                                      std::size_t& outActiveCount) noexcept {
         std::size_t activeCount = 0U;
-        for (std::size_t slot = 0U; slot < kMaximumTouchCountUVE; ++slot) {
-            const TouchPointStateUVE& touch = snapshot.touches[slot];
+        for (std::size_t slot = 0U; slot < kMaximumTouchCount; ++slot) {
+            const TouchPointState& touch = snapshot.touches[slot];
             if (!touch.active) {
                 continue;
             }
@@ -55,22 +55,22 @@ bool EvaluateTouchChordLifecycleTransitionUVE(
 
     const bool previousMatches = previousCount == requiredTouchCount;
     const bool currentMatches = currentCount == requiredTouchCount;
-    TouchChordLifecycleTransitionUVE transition = TouchChordLifecycleTransitionUVE::None;
+    TouchChordLifecycleTransition transition = TouchChordLifecycleTransition::None;
     if (!previousMatches && currentMatches) {
-        transition = TouchChordLifecycleTransitionUVE::Began;
+        transition = TouchChordLifecycleTransition::Began;
     } else if (previousMatches && !currentMatches) {
-        transition = TouchChordLifecycleTransitionUVE::Ended;
+        transition = TouchChordLifecycleTransition::Ended;
     } else if (previousMatches && currentMatches) {
         bool sameIdentifiers = true;
         bool moved = false;
-        for (std::size_t currentSlot = 0U; currentSlot < kMaximumTouchCountUVE; ++currentSlot) {
-            const TouchPointStateUVE& currentTouch = current.touches[currentSlot];
+        for (std::size_t currentSlot = 0U; currentSlot < kMaximumTouchCount; ++currentSlot) {
+            const TouchPointState& currentTouch = current.touches[currentSlot];
             if (!currentTouch.active) {
                 continue;
             }
-            const TouchPointStateUVE* previousTouch = nullptr;
-            for (std::size_t previousSlot = 0U; previousSlot < kMaximumTouchCountUVE; ++previousSlot) {
-                const TouchPointStateUVE& candidate = previous.touches[previousSlot];
+            const TouchPointState* previousTouch = nullptr;
+            for (std::size_t previousSlot = 0U; previousSlot < kMaximumTouchCount; ++previousSlot) {
+                const TouchPointState& candidate = previous.touches[previousSlot];
                 if (candidate.active && candidate.identifier == currentTouch.identifier) {
                     previousTouch = &candidate;
                     break;
@@ -84,24 +84,24 @@ bool EvaluateTouchChordLifecycleTransitionUVE(
                     previousTouch->pressure != currentTouch.pressure;
         }
         transition = !sameIdentifiers
-                         ? TouchChordLifecycleTransitionUVE::Replaced
-                         : (moved ? TouchChordLifecycleTransitionUVE::Moved
-                                  : TouchChordLifecycleTransitionUVE::None);
+                         ? TouchChordLifecycleTransition::Replaced
+                         : (moved ? TouchChordLifecycleTransition::Moved
+                                  : TouchChordLifecycleTransition::None);
     }
     outTransition = transition;
     return true;
 }
 
-bool EvaluateTouchChordUVE(const MobileInputSnapshotUVE& snapshot,
+bool EvaluateTouchChord(const MobileInputSnapshot& snapshot,
                            const std::size_t requiredTouchCount,
-                           Math::Vector2UVE& outCentroid) noexcept {
-    if (requiredTouchCount < 2U || requiredTouchCount > kMaximumTouchCountUVE) {
+                           Math::Vector2& outCentroid) noexcept {
+    if (requiredTouchCount < 2U || requiredTouchCount > kMaximumTouchCount) {
         return false;
     }
-    Math::Vector2UVE sum{};
+    Math::Vector2 sum{};
     std::size_t activeCount = 0U;
-    for (std::size_t slot = 0U; slot < kMaximumTouchCountUVE; ++slot) {
-        const TouchPointStateUVE& touch = snapshot.touches[slot];
+    for (std::size_t slot = 0U; slot < kMaximumTouchCount; ++slot) {
+        const TouchPointState& touch = snapshot.touches[slot];
         if (!touch.active) {
             continue;
         }
@@ -128,7 +128,7 @@ bool EvaluateTouchChordUVE(const MobileInputSnapshotUVE& snapshot,
         return false;
     }
     const float inverseCount = 1.0F / static_cast<float>(activeCount);
-    const Math::Vector2UVE centroid{sum.x * inverseCount, sum.y * inverseCount};
+    const Math::Vector2 centroid{sum.x * inverseCount, sum.y * inverseCount};
     if (!std::isfinite(centroid.x) || !std::isfinite(centroid.y)) {
         return false;
     }
@@ -136,8 +136,8 @@ bool EvaluateTouchChordUVE(const MobileInputSnapshotUVE& snapshot,
     return true;
 }
 
-MobileGestureRecognizerConfigUVE MobileGestureRecognizerUVE::SanitizeConfigUVE(
-    MobileGestureRecognizerConfigUVE config) noexcept {
+MobileGestureRecognizerConfig MobileGestureRecognizer::SanitizeConfig(
+    MobileGestureRecognizerConfig config) noexcept {
     if (!std::isfinite(config.maximumTapDurationSeconds) || config.maximumTapDurationSeconds <= 0.0F) {
         config.maximumTapDurationSeconds = kDefaultGestureConfig.maximumTapDurationSeconds;
     }
@@ -156,19 +156,19 @@ MobileGestureRecognizerConfigUVE MobileGestureRecognizerUVE::SanitizeConfigUVE(
     return config;
 }
 
-MobileGestureRecognizerUVE::MobileGestureRecognizerUVE(
-    const MobileGestureRecognizerConfigUVE config) noexcept
-    : m_config(SanitizeConfigUVE(config)) {}
+MobileGestureRecognizer::MobileGestureRecognizer(
+    const MobileGestureRecognizerConfig config) noexcept
+    : m_config(SanitizeConfig(config)) {}
 
-bool MobileGestureRecognizerUVE::IsFiniteVectorUVE(const Math::Vector2UVE value) noexcept {
+bool MobileGestureRecognizer::IsFiniteVector(const Math::Vector2 value) noexcept {
     return std::isfinite(value.x) && std::isfinite(value.y);
 }
 
 namespace {
 
-[[nodiscard]] bool IsValidGestureSnapshotUVE(const MobileInputSnapshotUVE& snapshot) noexcept {
-    for (std::size_t slot = 0U; slot < kMaximumTouchCountUVE; ++slot) {
-        const TouchPointStateUVE& touch = snapshot.touches[slot];
+[[nodiscard]] bool IsValidGestureSnapshot(const MobileInputSnapshot& snapshot) noexcept {
+    for (std::size_t slot = 0U; slot < kMaximumTouchCount; ++slot) {
+        const TouchPointState& touch = snapshot.touches[slot];
         if (!touch.active) {
             continue;
         }
@@ -190,18 +190,18 @@ namespace {
 
 } // namespace
 
-MobileSwipeDirectionUVE MobileGestureRecognizerUVE::GetSwipeDirectionUVE(
-    const Math::Vector2UVE delta) noexcept {
+MobileSwipeDirection MobileGestureRecognizer::GetSwipeDirection(
+    const Math::Vector2 delta) noexcept {
     if (std::fabs(delta.x) >= std::fabs(delta.y)) {
-        return delta.x >= 0.0F ? MobileSwipeDirectionUVE::PositiveX : MobileSwipeDirectionUVE::NegativeX;
+        return delta.x >= 0.0F ? MobileSwipeDirection::PositiveX : MobileSwipeDirection::NegativeX;
     }
-    return delta.y >= 0.0F ? MobileSwipeDirectionUVE::PositiveY : MobileSwipeDirectionUVE::NegativeY;
+    return delta.y >= 0.0F ? MobileSwipeDirection::PositiveY : MobileSwipeDirection::NegativeY;
 }
 
-MobileGestureEventUVE MobileGestureRecognizerUVE::BuildGestureEventUVE(
-    const TouchTrackUVE& track, const MobileGestureTypeUVE type,
-    const MobileSwipeDirectionUVE direction) noexcept {
-    return MobileGestureEventUVE{type,
+MobileGestureEvent MobileGestureRecognizer::BuildGestureEvent(
+    const TouchTrack& track, const MobileGestureType type,
+    const MobileSwipeDirection direction) noexcept {
+    return MobileGestureEvent{type,
                                  direction,
                                  track.identifier,
                                  track.startPosition,
@@ -210,14 +210,14 @@ MobileGestureEventUVE MobileGestureRecognizerUVE::BuildGestureEventUVE(
                                  track.durationSeconds};
 }
 
-void MobileGestureRecognizerUVE::AppendReleaseGestureUVE(const TouchTrackUVE& track,
-                                                          MobileGestureReportUVE& report) const noexcept {
+void MobileGestureRecognizer::AppendReleaseGesture(const TouchTrack& track,
+                                                          MobileGestureReport& report) const noexcept {
     if (report.count >= report.events.size()) {
         report.truncated = true;
         return;
     }
-    const Math::Vector2UVE delta = track.lastPosition - track.startPosition;
-    if (!IsFiniteVectorUVE(delta)) {
+    const Math::Vector2 delta = track.lastPosition - track.startPosition;
+    if (!IsFiniteVector(delta)) {
         return;
     }
     const double deltaX = static_cast<double>(delta.x);
@@ -227,53 +227,53 @@ void MobileGestureRecognizerUVE::AppendReleaseGestureUVE(const TouchTrackUVE& tr
                                       static_cast<double>(m_config.maximumTapDistance);
     const double swipeDistanceSquared = static_cast<double>(m_config.minimumSwipeDistance) *
                                         static_cast<double>(m_config.minimumSwipeDistance);
-    MobileGestureTypeUVE type = MobileGestureTypeUVE::Tap;
-    MobileSwipeDirectionUVE direction = MobileSwipeDirectionUVE::PositiveX;
+    MobileGestureType type = MobileGestureType::Tap;
+    MobileSwipeDirection direction = MobileSwipeDirection::PositiveX;
     if (track.durationSeconds <= m_config.maximumTapDurationSeconds && distanceSquared <= tapDistanceSquared) {
-        type = MobileGestureTypeUVE::Tap;
+        type = MobileGestureType::Tap;
     } else if (track.durationSeconds <= m_config.maximumSwipeDurationSeconds &&
                distanceSquared >= swipeDistanceSquared) {
-        type = MobileGestureTypeUVE::Swipe;
-        direction = GetSwipeDirectionUVE(delta);
+        type = MobileGestureType::Swipe;
+        direction = GetSwipeDirection(delta);
     } else {
         return;
     }
-    report.events[report.count++] = BuildGestureEventUVE(track, type, direction);
+    report.events[report.count++] = BuildGestureEvent(track, type, direction);
 }
 
-MobileGestureReportUVE MobileGestureRecognizerUVE::ConsumeSnapshotUVE(
-    const MobileInputSnapshotUVE& snapshot, const float frameDeltaSeconds) noexcept {
-    MobileGestureReportUVE report{};
+MobileGestureReport MobileGestureRecognizer::ConsumeSnapshot(
+    const MobileInputSnapshot& snapshot, const float frameDeltaSeconds) noexcept {
+    MobileGestureReport report{};
     if (snapshot.frameNumber == 0U || snapshot.frameNumber <= m_lastFrameNumber ||
         !std::isfinite(frameDeltaSeconds) || frameDeltaSeconds < 0.0F ||
-        !IsValidGestureSnapshotUVE(snapshot)) {
+        !IsValidGestureSnapshot(snapshot)) {
         return report;
     }
     m_lastFrameNumber = snapshot.frameNumber;
     const float deltaSeconds = std::clamp(frameDeltaSeconds, 0.0F, 10.0F);
 
-    for (std::size_t touchSlot = 0U; touchSlot < kMaximumTouchCountUVE; ++touchSlot) {
-        const TouchPointStateUVE& touch = snapshot.touches[touchSlot];
-        TouchTrackUVE& track = m_tracks[touchSlot];
-        if (touch.active && IsFiniteVectorUVE(touch.position)) {
+    for (std::size_t touchSlot = 0U; touchSlot < kMaximumTouchCount; ++touchSlot) {
+        const TouchPointState& touch = snapshot.touches[touchSlot];
+        TouchTrack& track = m_tracks[touchSlot];
+        if (touch.active && IsFiniteVector(touch.position)) {
             if (!track.active || track.identifier != touch.identifier) {
                 if (track.active) {
-                    AppendReleaseGestureUVE(track, report);
+                    AppendReleaseGesture(track, report);
                 }
-                track = TouchTrackUVE{true, touch.identifier, touch.position, touch.position, 0.0F};
+                track = TouchTrack{true, touch.identifier, touch.position, touch.position, 0.0F};
             } else {
                 track.lastPosition = touch.position;
                 track.durationSeconds += deltaSeconds;
             }
         } else if (track.active) {
-            AppendReleaseGestureUVE(track, report);
+            AppendReleaseGesture(track, report);
             track = {};
         }
     }
     return report;
 }
 
-void MobileGestureRecognizerUVE::ResetUVE() noexcept {
+void MobileGestureRecognizer::Reset() noexcept {
     m_tracks.fill({});
     m_lastFrameNumber = 0U;
 }

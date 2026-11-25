@@ -10,57 +10,57 @@
 namespace UVE::Utilities::Tests {
 namespace {
 
-enum class NarrowFlagsUVE : std::uint8_t {
+enum class NarrowFlags : std::uint8_t {
     None = 0,
     Read = 1U << 0U,
     Write = 1U << 1U,
     Execute = 1U << 2U,
 };
 
-enum class WideFlagsUVE : std::uint32_t {
+enum class WideFlags : std::uint32_t {
     None = 0,
     Alpha = 1U << 0U,
     Beta = 1U << 31U,
 };
 
-static_assert(FlagsUVE<NarrowFlagsUVE>{NarrowFlagsUVE::Read}.HasUVE(NarrowFlagsUVE::Read));
-static_assert(!(FlagsUVE<NarrowFlagsUVE>{NarrowFlagsUVE::Read}.HasUVE(NarrowFlagsUVE::Write)));
-static_assert(FlagsUVE<NarrowFlagsUVE>{}.NoneUVE());
+static_assert(Flags<NarrowFlags>{NarrowFlags::Read}.Has(NarrowFlags::Read));
+static_assert(!(Flags<NarrowFlags>{NarrowFlags::Read}.Has(NarrowFlags::Write)));
+static_assert(Flags<NarrowFlags>{}.None());
 
-TEST(FlagsUVETest, SingleBit_ConvertsImplicitlyAndQueries) {
-    FlagsUVE<NarrowFlagsUVE> flags = NarrowFlagsUVE::Read;
-    EXPECT_TRUE(flags.HasUVE(NarrowFlagsUVE::Read));
-    EXPECT_FALSE(flags.HasUVE(NarrowFlagsUVE::Write));
-    EXPECT_FALSE(flags.NoneUVE());
-    EXPECT_EQ(static_cast<unsigned>(flags.BitsUVE()), 0x01U);
+TEST(FlagsTest, SingleBit_ConvertsImplicitlyAndQueries) {
+    Flags<NarrowFlags> flags = NarrowFlags::Read;
+    EXPECT_TRUE(flags.Has(NarrowFlags::Read));
+    EXPECT_FALSE(flags.Has(NarrowFlags::Write));
+    EXPECT_FALSE(flags.None());
+    EXPECT_EQ(static_cast<unsigned>(flags.Bits()), 0x01U);
 }
 
-TEST(FlagsUVETest, Combinations_StayTypedThroughEveryOperator) {
-    constexpr FlagsUVE<NarrowFlagsUVE> both = NarrowFlagsUVE::Read | NarrowFlagsUVE::Write;
-    EXPECT_TRUE(both.HasUVE(NarrowFlagsUVE::Read));
-    EXPECT_TRUE(both.HasUVE(NarrowFlagsUVE::Write));
-    EXPECT_TRUE(both.HasAnyUVE(NarrowFlagsUVE::Execute | NarrowFlagsUVE::Write));
-    EXPECT_FALSE(both.HasAnyUVE(NarrowFlagsUVE::Execute));
-    EXPECT_EQ(static_cast<unsigned>((both & NarrowFlagsUVE::Read).BitsUVE()), 0x01U);
-    EXPECT_EQ(static_cast<unsigned>((both ^ NarrowFlagsUVE::Read).BitsUVE()), 0x02U);
-    EXPECT_TRUE((~both).HasUVE(NarrowFlagsUVE::Execute));
-    FlagsUVE<NarrowFlagsUVE> mutableFlags;
-    mutableFlags |= NarrowFlagsUVE::Read;
-    mutableFlags |= NarrowFlagsUVE::Write;
+TEST(FlagsTest, Combinations_StayTypedThroughEveryOperator) {
+    constexpr Flags<NarrowFlags> both = NarrowFlags::Read | NarrowFlags::Write;
+    EXPECT_TRUE(both.Has(NarrowFlags::Read));
+    EXPECT_TRUE(both.Has(NarrowFlags::Write));
+    EXPECT_TRUE(both.HasAny(NarrowFlags::Execute | NarrowFlags::Write));
+    EXPECT_FALSE(both.HasAny(NarrowFlags::Execute));
+    EXPECT_EQ(static_cast<unsigned>((both & NarrowFlags::Read).Bits()), 0x01U);
+    EXPECT_EQ(static_cast<unsigned>((both ^ NarrowFlags::Read).Bits()), 0x02U);
+    EXPECT_TRUE((~both).Has(NarrowFlags::Execute));
+    Flags<NarrowFlags> mutableFlags;
+    mutableFlags |= NarrowFlags::Read;
+    mutableFlags |= NarrowFlags::Write;
     EXPECT_EQ(mutableFlags, both);
-    mutableFlags &= NarrowFlagsUVE::Read;
-    EXPECT_EQ(static_cast<unsigned>(mutableFlags.BitsUVE()), 0x01U);
+    mutableFlags &= NarrowFlags::Read;
+    EXPECT_EQ(static_cast<unsigned>(mutableFlags.Bits()), 0x01U);
 }
 
-TEST(FlagsUVETest, SetClear_SingleBitsInPlace) {
-    FlagsUVE<WideFlagsUVE> flags;
-    flags.SetUVE(WideFlagsUVE::Beta);
-    EXPECT_TRUE(flags.HasUVE(WideFlagsUVE::Beta));
-    flags.ClearUVE(WideFlagsUVE::Beta);
-    EXPECT_TRUE(flags.NoneUVE());
-    flags.SetUVE(WideFlagsUVE::Alpha);
-    flags.ClearAllUVE();
-    EXPECT_TRUE(flags.NoneUVE());
+TEST(FlagsTest, SetClear_SingleBitsInPlace) {
+    Flags<WideFlags> flags;
+    flags.Set(WideFlags::Beta);
+    EXPECT_TRUE(flags.Has(WideFlags::Beta));
+    flags.Clear(WideFlags::Beta);
+    EXPECT_TRUE(flags.None());
+    flags.Set(WideFlags::Alpha);
+    flags.ClearAll();
+    EXPECT_TRUE(flags.None());
 }
 
 } // namespace

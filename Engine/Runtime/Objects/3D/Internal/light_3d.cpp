@@ -12,26 +12,26 @@
 namespace UVE::Scene {
 namespace {
 
-constexpr float kDegreesToRadiansUVE = 0.01745329251994329577F;
+constexpr float kDegreesToRadians = 0.01745329251994329577F;
 
 } // namespace
 
-bool IsLight3DObjectDefinitionValidUVE(const Light3DObjectDefinitionUVE& value) noexcept {
-    return IsLightComponentValidUVE(value.light);
+bool IsLight3DObjectDefinitionValid(const Light3DObjectDefinition& value) noexcept {
+    return IsLightComponentValid(value.light);
 }
 
-void ApplyLight3DObjectDefinitionUVE(IEntityManagerUVE& entityManager, const EntityUVE entity,
-                                     const Light3DObjectDefinitionUVE& value) {
-    ApplyLightEmitter3DBaseUVE(entityManager, entity, Light3DObjectDefinitionUVE::defaultName);
-    entityManager.AddComponentUVE<LightComponentUVE>(entity, value.light);
+void ApplyLight3DObjectDefinition(IEntityManager& entityManager, const Entity entity,
+                                     const Light3DObjectDefinition& value) {
+    ApplyLightEmitter3DBase(entityManager, entity, Light3DObjectDefinition::defaultName);
+    entityManager.AddComponent<LightComponent>(entity, value.light);
 }
 
-bool Light3DUVE::IsEmittingUVE(const LightComponentUVE& light) noexcept {
-    return IsLightComponentValidUVE(light) && light.intensity > 0.0F &&
-           ComputeRec709LuminanceUVE(light.color) > 0.0F;
+bool Light3D::IsEmitting(const LightComponent& light) noexcept {
+    return IsLightComponentValid(light) && light.intensity > 0.0F &&
+           ComputeRec709Luminance(light.color) > 0.0F;
 }
 
-float Light3DUVE::ComputeRec709LuminanceUVE(const Math::ColorUVE& color) noexcept {
+float Light3D::ComputeRec709Luminance(const Math::Color& color) noexcept {
     if (!std::isfinite(color.r) || !std::isfinite(color.g) || !std::isfinite(color.b)) {
         return 0.0F;
     }
@@ -39,28 +39,28 @@ float Light3DUVE::ComputeRec709LuminanceUVE(const Math::ColorUVE& color) noexcep
     return std::max(luminance, 0.0F);
 }
 
-Math::Vector3UVE Light3DUVE::ResolveWorldDirectionUVE(
-    const Math::QuaternionUVE& normalizedWorldRotation) noexcept {
-    return Math::RotateVectorUVE(normalizedWorldRotation, kLocalForwardDirectionUVE);
+Math::Vector3 Light3D::ResolveWorldDirection(
+    const Math::Quaternion& normalizedWorldRotation) noexcept {
+    return Math::RotateVector(normalizedWorldRotation, kLocalForwardDirection);
 }
 
-float Light3DUVE::EstimateViewContributionUVE(
-    const LightTypeUVE type, const Math::ColorUVE& color, const float intensity, const float range,
-    const Math::Vector3UVE& lightPosition, const Math::Vector3UVE& viewPosition) noexcept {
+float Light3D::EstimateViewContribution(
+    const LightType type, const Math::Color& color, const float intensity, const float range,
+    const Math::Vector3& lightPosition, const Math::Vector3& viewPosition) noexcept {
     if (!std::isfinite(intensity) || intensity <= 0.0F) {
         return 0.0F;
     }
-    const float emitted = intensity * ComputeRec709LuminanceUVE(color);
+    const float emitted = intensity * ComputeRec709Luminance(color);
     if (emitted <= 0.0F) {
         return 0.0F;
     }
-    if (type == LightTypeUVE::Directional) {
+    if (type == LightType::Directional) {
         return std::numeric_limits<float>::infinity();
     }
-    if (!Math::IsFiniteUVE(lightPosition) || !Math::IsFiniteUVE(viewPosition)) {
+    if (!Math::IsFinite(lightPosition) || !Math::IsFinite(viewPosition)) {
         return 0.0F;
     }
-    const Math::Vector3UVE toLight{lightPosition.x - viewPosition.x,
+    const Math::Vector3 toLight{lightPosition.x - viewPosition.x,
                                    lightPosition.y - viewPosition.y,
                                    lightPosition.z - viewPosition.z};
     const float distanceSquared =
@@ -71,16 +71,16 @@ float Light3DUVE::EstimateViewContributionUVE(
     return emitted / std::max(distanceSquared, 1.0F);
 }
 
-float Light3DUVE::EvaluateSpotConeWeightUVE(
-    const float spotAngleDegrees, const Math::Vector3UVE& lightWorldDirection,
-    const Math::Vector3UVE& lightToTargetDirection) noexcept {
+float Light3D::EvaluateSpotConeWeight(
+    const float spotAngleDegrees, const Math::Vector3& lightWorldDirection,
+    const Math::Vector3& lightToTargetDirection) noexcept {
     if (!std::isfinite(spotAngleDegrees) || spotAngleDegrees <= 0.0F || spotAngleDegrees > 179.0F ||
-        !Math::IsFiniteUVE(lightWorldDirection) || !Math::IsFiniteUVE(lightToTargetDirection)) {
+        !Math::IsFinite(lightWorldDirection) || !Math::IsFinite(lightToTargetDirection)) {
         return 0.0F;
     }
-    const float halfAngleRadians = 0.5F * spotAngleDegrees * kDegreesToRadiansUVE;
+    const float halfAngleRadians = 0.5F * spotAngleDegrees * kDegreesToRadians;
     const float cosOuter = std::cos(halfAngleRadians);
-    const float cosTheta = Math::DotUVE(lightWorldDirection, lightToTargetDirection);
+    const float cosTheta = Math::Dot(lightWorldDirection, lightToTargetDirection);
     if (cosTheta <= cosOuter) {
         return 0.0F;
     }

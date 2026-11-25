@@ -12,19 +12,19 @@ namespace UVE::Navigation {
 namespace {
 
 /// The XZ cross product's y-sign of (b - a) x (p - a), the half-plane test every convex polygon
-/// query is built from. Its sign convention is SignedAreaXZUVE()'s, by construction: the same
+/// query is built from. Its sign convention is SignedAreaXZ()'s, by construction: the same
 /// expression, summed over a polygon's edges, IS its signed area.
-[[nodiscard]] float EdgeSideUVE(const Math::Vector3UVE& a, const Math::Vector3UVE& b,
-                                const Math::Vector3UVE& point) noexcept {
+[[nodiscard]] float EdgeSide(const Math::Vector3& a, const Math::Vector3& b,
+                                const Math::Vector3& point) noexcept {
     return (b.x - a.x) * (point.z - a.z) - (b.z - a.z) * (point.x - a.x);
 }
 
-[[nodiscard]] bool IsInsidePolygonXZUVE(const NavmeshPolygonUVE& polygon, const Math::Vector3UVE& point,
+[[nodiscard]] bool IsInsidePolygonXZ(const NavmeshPolygon& polygon, const Math::Vector3& point,
                                         const float windingSign) noexcept {
     for (std::uint32_t vertexIndex = 0U; vertexIndex < polygon.vertexCount; ++vertexIndex) {
-        const Math::Vector3UVE& a = polygon.vertices[vertexIndex];
-        const Math::Vector3UVE& b = polygon.vertices[(vertexIndex + 1U) % polygon.vertexCount];
-        if (EdgeSideUVE(a, b, point) * windingSign < 0.0F) {
+        const Math::Vector3& a = polygon.vertices[vertexIndex];
+        const Math::Vector3& b = polygon.vertices[(vertexIndex + 1U) % polygon.vertexCount];
+        if (EdgeSide(a, b, point) * windingSign < 0.0F) {
             return false;
         }
     }
@@ -37,7 +37,7 @@ namespace {
 /// around each corner, so the surface between them is bilinear. Interpolating is what makes a
 /// polygon that spans a gentle slope follow it: a flat average would leave every waypoint on such a
 /// polygon floating above the uphill half and buried in the downhill half.
-[[nodiscard]] float SurfaceHeightUVE(const NavmeshPolygonUVE& polygon, const float x, const float z) noexcept {
+[[nodiscard]] float SurfaceHeight(const NavmeshPolygon& polygon, const float x, const float z) noexcept {
     float minimumX = polygon.vertices[0].x;
     float maximumX = polygon.vertices[0].x;
     float minimumZ = polygon.vertices[0].z;
@@ -63,7 +63,7 @@ namespace {
     float highHigh = 0.0F;
     std::size_t cornerCount = 0U;
     for (std::uint32_t vertexIndex = 0U; vertexIndex < polygon.vertexCount; ++vertexIndex) {
-        const Math::Vector3UVE& vertex = polygon.vertices[vertexIndex];
+        const Math::Vector3& vertex = polygon.vertices[vertexIndex];
         const bool atMinimumX = std::fabs(vertex.x - minimumX) <= std::fabs(vertex.x - maximumX);
         const bool atMinimumZ = std::fabs(vertex.z - minimumZ) <= std::fabs(vertex.z - maximumZ);
         if (atMinimumX && atMinimumZ) {
@@ -89,16 +89,16 @@ namespace {
 }
 
 /// The point of `polygon` closest to `point`, in the XZ plane, lifted onto the polygon's surface.
-[[nodiscard]] Math::Vector3UVE ClosestPointUVE(const NavmeshPolygonUVE& polygon, const Math::Vector3UVE& point,
+[[nodiscard]] Math::Vector3 ClosestPoint(const NavmeshPolygon& polygon, const Math::Vector3& point,
                                                const float windingSign) noexcept {
-    if (IsInsidePolygonXZUVE(polygon, point, windingSign)) {
-        return Math::Vector3UVE{point.x, SurfaceHeightUVE(polygon, point.x, point.z), point.z};
+    if (IsInsidePolygonXZ(polygon, point, windingSign)) {
+        return Math::Vector3{point.x, SurfaceHeight(polygon, point.x, point.z), point.z};
     }
-    Math::Vector3UVE closest{};
+    Math::Vector3 closest{};
     float closestSquaredDistance = std::numeric_limits<float>::max();
     for (std::uint32_t vertexIndex = 0U; vertexIndex < polygon.vertexCount; ++vertexIndex) {
-        const Math::Vector3UVE& a = polygon.vertices[vertexIndex];
-        const Math::Vector3UVE& b = polygon.vertices[(vertexIndex + 1U) % polygon.vertexCount];
+        const Math::Vector3& a = polygon.vertices[vertexIndex];
+        const Math::Vector3& b = polygon.vertices[(vertexIndex + 1U) % polygon.vertexCount];
         const float edgeX = b.x - a.x;
         const float edgeZ = b.z - a.z;
         const float edgeLengthSquared = edgeX * edgeX + edgeZ * edgeZ;
@@ -113,7 +113,7 @@ namespace {
         const float squaredDistance = deltaX * deltaX + deltaZ * deltaZ;
         if (squaredDistance < closestSquaredDistance) {
             closestSquaredDistance = squaredDistance;
-            closest = Math::Vector3UVE{candidateX, a.y + (b.y - a.y) * t, candidateZ};
+            closest = Math::Vector3{candidateX, a.y + (b.y - a.y) * t, candidateZ};
         }
     }
     return closest;
@@ -122,31 +122,31 @@ namespace {
 /// Whether `point` sits within a traversable band of `polygon`'s surface. The band is the bake's own
 /// step height, so a point that can be walked to from a neighbouring polygon is also a point this
 /// polygon accepts as "here" - one tolerance, not two that disagree at a ledge.
-[[nodiscard]] bool IsWithinSurfaceBandUVE(const NavmeshUVE& mesh, const NavmeshPolygonUVE& polygon,
-                                          const Math::Vector3UVE& point) noexcept {
-    const float surface = SurfaceHeightUVE(polygon, point.x, point.z);
+[[nodiscard]] bool IsWithinSurfaceBand(const Navmesh& mesh, const NavmeshPolygon& polygon,
+                                          const Math::Vector3& point) noexcept {
+    const float surface = SurfaceHeight(polygon, point.x, point.z);
     return std::fabs(point.y - surface) <= std::max(mesh.maximumStepHeight, 0.0F);
 }
 
 } // namespace
 
-float SignedAreaXZUVE(const Math::Vector3UVE* vertices, const std::size_t vertexCount) noexcept {
+float SignedAreaXZ(const Math::Vector3* vertices, const std::size_t vertexCount) noexcept {
     if (vertices == nullptr || vertexCount < 3U) {
         return 0.0F;
     }
     float twiceArea = 0.0F;
     for (std::size_t vertexIndex = 0U; vertexIndex < vertexCount; ++vertexIndex) {
-        const Math::Vector3UVE& a = vertices[vertexIndex];
-        const Math::Vector3UVE& b = vertices[(vertexIndex + 1U) % vertexCount];
+        const Math::Vector3& a = vertices[vertexIndex];
+        const Math::Vector3& b = vertices[(vertexIndex + 1U) % vertexCount];
         twiceArea += a.x * b.z - b.x * a.z;
     }
     return twiceArea * 0.5F;
 }
 
-void NavmeshUVE::ClearUVE() noexcept {
+void Navmesh::Clear() noexcept {
     polygons.clear();
     portals.clear();
-    bounds = Math::AabbUVE{};
+    bounds = Math::Aabb{};
     navigationLayers = 1U;
     cellSize = 0.0F;
     agentRadius = 0.0F;
@@ -155,42 +155,42 @@ void NavmeshUVE::ClearUVE() noexcept {
     maximumStepHeight = 0.0F;
 }
 
-bool NavmeshUVE::IsEmptyUVE() const noexcept {
+bool Navmesh::IsEmpty() const noexcept {
     return polygons.empty();
 }
 
-std::size_t NavmeshUVE::GetPolygonCountUVE() const noexcept {
+std::size_t Navmesh::GetPolygonCount() const noexcept {
     return polygons.size();
 }
 
-std::size_t NavmeshUVE::GetPortalCountUVE() const noexcept {
+std::size_t Navmesh::GetPortalCount() const noexcept {
     return portals.size();
 }
 
-float NavmeshUVE::GetWalkableAreaSquareMetresUVE() const noexcept {
+float Navmesh::GetWalkableAreaSquareMetres() const noexcept {
     float area = 0.0F;
-    for (const NavmeshPolygonUVE& polygon : polygons) {
+    for (const NavmeshPolygon& polygon : polygons) {
         area += polygon.areaSquareMetres;
     }
     return area;
 }
 
-std::optional<std::size_t> NavmeshUVE::FindPolygonUVE(const Math::Vector3UVE& worldPoint) const noexcept {
+std::optional<std::size_t> Navmesh::FindPolygon(const Math::Vector3& worldPoint) const noexcept {
     for (std::size_t polygonIndex = 0U; polygonIndex < polygons.size(); ++polygonIndex) {
-        const NavmeshPolygonUVE& polygon = polygons[polygonIndex];
+        const NavmeshPolygon& polygon = polygons[polygonIndex];
         if (polygon.vertexCount < 3U) {
             continue;
         }
-        const float windingSign = SignedAreaXZUVE(polygon.vertices.data(), polygon.vertexCount) >= 0.0F ? 1.0F : -1.0F;
-        if (IsInsidePolygonXZUVE(polygon, worldPoint, windingSign) &&
-            IsWithinSurfaceBandUVE(*this, polygon, worldPoint)) {
+        const float windingSign = SignedAreaXZ(polygon.vertices.data(), polygon.vertexCount) >= 0.0F ? 1.0F : -1.0F;
+        if (IsInsidePolygonXZ(polygon, worldPoint, windingSign) &&
+            IsWithinSurfaceBand(*this, polygon, worldPoint)) {
             return polygonIndex;
         }
     }
     return std::nullopt;
 }
 
-std::optional<std::size_t> NavmeshUVE::FindNearestPolygonUVE(const Math::Vector3UVE& worldPoint,
+std::optional<std::size_t> Navmesh::FindNearestPolygon(const Math::Vector3& worldPoint,
                                                             const float maximumDistanceMetres,
                                                             const std::uint32_t layerMask) const noexcept {
     if (!(maximumDistanceMetres >= 0.0F)) {
@@ -199,20 +199,20 @@ std::optional<std::size_t> NavmeshUVE::FindNearestPolygonUVE(const Math::Vector3
     std::optional<std::size_t> nearest;
     float nearestDistance = maximumDistanceMetres;
     for (std::size_t polygonIndex = 0U; polygonIndex < polygons.size(); ++polygonIndex) {
-        const NavmeshPolygonUVE& polygon = polygons[polygonIndex];
+        const NavmeshPolygon& polygon = polygons[polygonIndex];
         if (polygon.vertexCount < 3U || (polygon.navigationLayers & layerMask) == 0U) {
             continue;
         }
         // A cheap rejection first: a polygon whose centre is further away than its own radius plus
         // the budget cannot be the nearest one, and this keeps the search off the edge-clamping
         // arithmetic for most of a large mesh.
-        const float centerDistance = Math::LengthUVE(polygon.center - worldPoint);
+        const float centerDistance = Math::Length(polygon.center - worldPoint);
         if (centerDistance - std::sqrt(polygon.areaSquareMetres) > nearestDistance) {
             continue;
         }
-        const float windingSign = SignedAreaXZUVE(polygon.vertices.data(), polygon.vertexCount) >= 0.0F ? 1.0F : -1.0F;
-        const Math::Vector3UVE closest = ClosestPointUVE(polygon, worldPoint, windingSign);
-        const float distance = Math::LengthUVE(closest - worldPoint);
+        const float windingSign = SignedAreaXZ(polygon.vertices.data(), polygon.vertexCount) >= 0.0F ? 1.0F : -1.0F;
+        const Math::Vector3 closest = ClosestPoint(polygon, worldPoint, windingSign);
+        const float distance = Math::Length(closest - worldPoint);
         if (distance <= nearestDistance) {
             nearestDistance = distance;
             nearest = polygonIndex;
@@ -221,19 +221,19 @@ std::optional<std::size_t> NavmeshUVE::FindNearestPolygonUVE(const Math::Vector3
     return nearest;
 }
 
-std::optional<Math::Vector3UVE> NavmeshUVE::ProjectPointUVE(const Math::Vector3UVE& worldPoint,
+std::optional<Math::Vector3> Navmesh::ProjectPoint(const Math::Vector3& worldPoint,
                                                             const std::size_t polygon) const noexcept {
     if (polygon >= polygons.size() || polygons[polygon].vertexCount < 3U) {
         return std::nullopt;
     }
-    const NavmeshPolygonUVE& target = polygons[polygon];
-    const float windingSign = SignedAreaXZUVE(target.vertices.data(), target.vertexCount) >= 0.0F ? 1.0F : -1.0F;
-    return ClosestPointUVE(target, worldPoint, windingSign);
+    const NavmeshPolygon& target = polygons[polygon];
+    const float windingSign = SignedAreaXZ(target.vertices.data(), target.vertexCount) >= 0.0F ? 1.0F : -1.0F;
+    return ClosestPoint(target, worldPoint, windingSign);
 }
 
-Math::Vector3UVE NavmeshUVE::PolygonCenterUVE(const std::size_t polygon) const noexcept {
+Math::Vector3 Navmesh::PolygonCenter(const std::size_t polygon) const noexcept {
     if (polygon >= polygons.size()) {
-        return Math::Vector3UVE{};
+        return Math::Vector3{};
     }
     return polygons[polygon].center;
 }

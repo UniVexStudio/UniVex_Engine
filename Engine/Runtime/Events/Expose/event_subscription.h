@@ -8,10 +8,10 @@
 
 namespace UVE::Events {
 
-/// Opaque handle returned by IEventSystemUVE::Subscribe(), used to later
+/// Opaque handle returned by IEventSystem::Subscribe(), used to later
 /// call Unsubscribe(). A default-constructed handle is always invalid.
 /// Thread-safety: value type, safe to copy/move/compare freely.
-struct EventSubscriptionUVE {
+struct EventSubscription {
     std::uint64_t id = 0;
     std::type_index eventType = std::type_index(typeid(void));
 
@@ -19,7 +19,7 @@ struct EventSubscriptionUVE {
     /// handle. Does not indicate whether the subscription is still active
     /// (it may have already been unsubscribed) — only whether it was ever
     /// a real handle.
-    [[nodiscard]] bool IsValidUVE() const noexcept { return id != 0; }
+    [[nodiscard]] bool IsValid() const noexcept { return id != 0; }
 };
 
 } // namespace UVE::Events

@@ -38,40 +38,40 @@ namespace UVE::Network {
 
 /// Call identity: nonzero, assigned by the caller, matched by the response. Zero is never
 /// assigned - it means "this call never went out".
-using RpcCallIdUVE = std::uint32_t;
-inline constexpr RpcCallIdUVE kInvalidRpcCallIdUVE = 0U;
+using RpcCallId = std::uint32_t;
+inline constexpr RpcCallId kInvalidRpcCallId = 0U;
 /// Wire frame version. A foreign version is malformed, full stop - RPC negotiates nothing.
-inline constexpr std::uint8_t kRpcFrameVersionUVE = 1U;
+inline constexpr std::uint8_t kRpcFrameVersion = 1U;
 /// Default per-call deadline. Zero disables expiry (the call waits until the session dies) -
 /// a sharp edge over lossy links, where a dropped response then waits forever.
-inline constexpr std::uint64_t kDefaultRpcTimeoutMsUVE = 5000U;
+inline constexpr std::uint64_t kDefaultRpcTimeoutMs = 5000U;
 /// Deepest value nesting the codec carries each way. Deprecated alias kept for the packet
-/// inspector's independent mirror - new code uses kWireValueMaxDepthUVE.
-inline constexpr std::size_t kRpcMaximumValueDepthUVE = kWireValueMaxDepthUVE;
+/// inspector's independent mirror - new code uses kWireValueMaxDepth.
+inline constexpr std::size_t kRpcMaximumValueDepth = kWireValueMaxDepth;
 /// Completed outcomes kept readable past their callback. Past this many, the oldest goes -
 /// release promptly, and watch the evicted counter if results ever vanish.
-inline constexpr std::size_t kRpcMaximumRetainedResultsUVE = 64U;
+inline constexpr std::size_t kRpcMaximumRetainedResults = 64U;
 
 /// How a call ended. Exactly one side is set: a result on ok, a message otherwise.
-struct RpcOutcomeUVE final {
+struct RpcOutcome final {
     bool ok = false;
-    Blueprint::ValueUVE value;
+    Blueprint::Value value;
     std::string error;
 
-    [[nodiscard]] bool operator==(const RpcOutcomeUVE&) const noexcept = default;
+    [[nodiscard]] bool operator==(const RpcOutcome&) const noexcept = default;
 };
 
 /// A result to hand a caller.
-[[nodiscard]] inline RpcOutcomeUVE RpcOkUVE(Blueprint::ValueUVE value) {
-    RpcOutcomeUVE outcome;
+[[nodiscard]] inline RpcOutcome RpcOk(Blueprint::Value value) {
+    RpcOutcome outcome;
     outcome.ok = true;
     outcome.value = std::move(value);
     return outcome;
 }
 
 /// A failure to hand a caller: unknown method, timeout, dead session, handler refusal.
-[[nodiscard]] inline RpcOutcomeUVE RpcErrorUVE(std::string message) {
-    RpcOutcomeUVE outcome;
+[[nodiscard]] inline RpcOutcome RpcError(std::string message) {
+    RpcOutcome outcome;
     outcome.ok = false;
     outcome.error = std::move(message);
     return outcome;
@@ -79,15 +79,15 @@ struct RpcOutcomeUVE final {
 
 /// Fired exactly once per call that went out: with the response, the timeout, or the
 /// session-down failure - unless cancelled first, in which case never.
-using RpcResponseCallbackUVE = std::function<void(RpcCallIdUVE, const RpcOutcomeUVE&)>;
+using RpcResponseCallback = std::function<void(RpcCallId, const RpcOutcome&)>;
 /// Serves one method: takes the call's arguments, returns its outcome. Handlers must not
 /// throw, but the peer catches everything anyway - a throwing handler answers an error
 /// response instead of killing the pump.
-using RpcMethodHandlerUVE = std::function<RpcOutcomeUVE(std::span<const Blueprint::ValueUVE>)>;
+using RpcMethodHandler = std::function<RpcOutcome(std::span<const Blueprint::Value>)>;
 
 /// The peer's own ledger: calls and responses each way, completions by cause, and every
 /// way a frame or outcome dies (malformed, stale, dropped, handler-refused, evicted).
-struct RpcStatsUVE final {
+struct RpcStats final {
     std::uint64_t callsSent = 0U;
     std::uint64_t callsReceived = 0U;
     std::uint64_t responsesSent = 0U;
@@ -102,7 +102,7 @@ struct RpcStatsUVE final {
     // Appended, never inserted: positional initializers elsewhere bind by order.
     std::uint64_t resultsEvicted = 0U;
 
-    [[nodiscard]] bool operator==(const RpcStatsUVE&) const noexcept = default;
+    [[nodiscard]] bool operator==(const RpcStats&) const noexcept = default;
 };
 
 /// At-most-once RPC over one session. Drives the session's pump (Update drives the session
@@ -111,95 +111,95 @@ struct RpcStatsUVE final {
 /// borrowing a shared one);
 /// single-threaded like everything below it. Shared mode borrows a multiplexed session and
 /// rides one channel; the app owns the session and both ends agree channels out of band.
-class NetworkRpcUVE final {
+class NetworkRpc final {
 public:
     /// Owning mode: moves the session in. The sink is an rvalue reference, not by value: a
     /// by-value sink would tie with the shared overload below for lvalue sessions, since the
     /// deleted copy still participates in overload resolution.
-    explicit NetworkRpcUVE(NetworkSessionUVE&& session) noexcept;
+    explicit NetworkRpc(NetworkSession&& session) noexcept;
 
     /// Shares a multiplexed session: calls and responses ride `channel` while other features
     /// ride theirs. The session must be multiplexed (both ends agree out of band) and must
-    /// outlive the peer; UpdateUVE pumps it like an owned one, so any feature's Update
+    /// outlive the peer; Update pumps it like an owned one, so any feature's Update
     /// drives the handshake for all.
-    explicit NetworkRpcUVE(NetworkSessionUVE& sharedSession, NetworkChannelIdUVE channel) noexcept;
+    explicit NetworkRpc(NetworkSession& sharedSession, NetworkChannelId channel) noexcept;
 
     /// Serves `method` with `handler`. Returns false (registering nothing) on an empty
     /// method name, an empty handler, or a duplicate - unregister first to rebind.
-    [[nodiscard]] bool RegisterMethodUVE(std::string method, RpcMethodHandlerUVE handler);
+    [[nodiscard]] bool RegisterMethod(std::string method, RpcMethodHandler handler);
     /// Stops serving `method`. Looked up at dispatch time: a call queued before the
     /// unregister still answers unknown-method. Returns false when never registered.
-    [[nodiscard]] bool UnregisterMethodUVE(const std::string& method) noexcept;
+    [[nodiscard]] bool UnregisterMethod(const std::string& method) noexcept;
     /// Calls the far side's `method` with `args`, completing `callback` exactly once -
     /// unless cancelled. Returns the call id, or zero when the call never went out:
     /// session not established, empty method or callback, or unencodable arguments
     /// (object refs, over-deep nesting, or a frame past the session payload budget).
-    [[nodiscard]] RpcCallIdUVE CallUVE(const std::string& method,
-                                       const std::vector<Blueprint::ValueUVE>& args,
-                                       RpcResponseCallbackUVE callback,
-                                       std::uint64_t timeoutMs = kDefaultRpcTimeoutMsUVE);
+    [[nodiscard]] RpcCallId Call(const std::string& method,
+                                       const std::vector<Blueprint::Value>& args,
+                                       RpcResponseCallback callback,
+                                       std::uint64_t timeoutMs = kDefaultRpcTimeoutMs);
     /// Gives up on a pending call: the callback never fires, nothing is retained, and a
     /// late response counts as stale. Returns false when the id is unknown or already
     /// completed.
-    [[nodiscard]] bool CancelUVE(RpcCallIdUVE callId) noexcept;
+    [[nodiscard]] bool Cancel(RpcCallId callId) noexcept;
     /// Reads back a completed outcome without consuming it: poll-style completion for
     /// readers that cannot take callbacks. Empty when the call is still pending, was
     /// cancelled, was forgotten, was evicted, or never existed.
-    [[nodiscard]] std::optional<RpcOutcomeUVE> ResultUVE(RpcCallIdUVE callId) const;
+    [[nodiscard]] std::optional<RpcOutcome> Result(RpcCallId callId) const;
     /// Forgets a retained outcome. Returns false when nothing was retained (still
     /// pending calls must cancel first - forgetting only releases the completed).
-    [[nodiscard]] bool ForgetResultUVE(RpcCallIdUVE callId);
+    [[nodiscard]] bool ForgetResult(RpcCallId callId);
     /// Pumps the session, dispatches every queued call and matches every queued response,
     /// then fails what remains when the session is down and expires what is overdue. A
     /// response queued behind the drop still completes - salvage before failure, always.
-    void UpdateUVE(std::uint64_t nowMs);
+    void Update(std::uint64_t nowMs);
 
     /// The session, owned or shared: handshake, disconnect, and state live here, not duplicated.
-    [[nodiscard]] NetworkSessionUVE& SessionUVE() noexcept {
-        if (std::holds_alternative<NetworkSessionUVE>(m_session)) {
-            return std::get<NetworkSessionUVE>(m_session);
+    [[nodiscard]] NetworkSession& Session() noexcept {
+        if (std::holds_alternative<NetworkSession>(m_session)) {
+            return std::get<NetworkSession>(m_session);
         }
-        return *std::get<NetworkSessionUVE*>(m_session);
+        return *std::get<NetworkSession*>(m_session);
     }
-    [[nodiscard]] const NetworkSessionUVE& SessionUVE() const noexcept {
-        if (std::holds_alternative<NetworkSessionUVE>(m_session)) {
-            return std::get<NetworkSessionUVE>(m_session);
+    [[nodiscard]] const NetworkSession& Session() const noexcept {
+        if (std::holds_alternative<NetworkSession>(m_session)) {
+            return std::get<NetworkSession>(m_session);
         }
-        return *std::get<NetworkSessionUVE*>(m_session);
+        return *std::get<NetworkSession*>(m_session);
     }
-    [[nodiscard]] RpcStatsUVE StatsUVE() const noexcept { return m_stats; }
+    [[nodiscard]] RpcStats Stats() const noexcept { return m_stats; }
 
 private:
-    struct PendingCallUVE final {
-        RpcResponseCallbackUVE callback;
+    struct PendingCall final {
+        RpcResponseCallback callback;
         std::string method;
-        std::uint64_t timeoutMs = kDefaultRpcTimeoutMsUVE;
+        std::uint64_t timeoutMs = kDefaultRpcTimeoutMs;
         std::uint64_t deadlineMs = 0U;
         // Deadlines arm on the first Update after the call: the call itself takes no clock.
         bool armed = false;
     };
 
-    void HandleFrameUVE(const std::vector<std::uint8_t>& payload);
-    void FailDownCallsUVE();
-    void ExpireCallsUVE(std::uint64_t nowMs);
+    void HandleFrame(const std::vector<std::uint8_t>& payload);
+    void FailDownCalls();
+    void ExpireCalls(std::uint64_t nowMs);
     /// Files a completion for later polling, evicting the oldest past the cap.
-    void RetainResultUVE(RpcCallIdUVE callId, RpcOutcomeUVE outcome);
-    [[nodiscard]] RpcCallIdUVE NextCallIdUVE() noexcept;
-    [[nodiscard]] bool SendFrameUVE(const std::vector<std::byte>& frame);
-    [[nodiscard]] std::optional<std::vector<std::uint8_t>> ReceivePayloadUVE();
+    void RetainResult(RpcCallId callId, RpcOutcome outcome);
+    [[nodiscard]] RpcCallId NextCallId() noexcept;
+    [[nodiscard]] bool SendFrame(const std::vector<std::byte>& frame);
+    [[nodiscard]] std::optional<std::vector<std::uint8_t>> ReceivePayload();
 
     // Owned or borrowed: owning mode moves the session in, shared mode borrows a multiplexed
     // one (which must outlive the feature). Moves stay correct either way - a moved borrow
     // still points at the same shared session.
-    std::variant<NetworkSessionUVE, NetworkSessionUVE*> m_session;
+    std::variant<NetworkSession, NetworkSession*> m_session;
     // The multiplexed channel, meaningful only when shared; owned mode sends untagged.
-    NetworkChannelIdUVE m_channel = 0U;
-    std::map<std::string, RpcMethodHandlerUVE> m_methods;
-    std::map<RpcCallIdUVE, PendingCallUVE> m_pending;
-    std::map<RpcCallIdUVE, RpcOutcomeUVE> m_results;
-    std::deque<RpcCallIdUVE> m_resultOrder;
-    RpcCallIdUVE m_nextCallId = 1U;
-    RpcStatsUVE m_stats;
+    NetworkChannelId m_channel = 0U;
+    std::map<std::string, RpcMethodHandler> m_methods;
+    std::map<RpcCallId, PendingCall> m_pending;
+    std::map<RpcCallId, RpcOutcome> m_results;
+    std::deque<RpcCallId> m_resultOrder;
+    RpcCallId m_nextCallId = 1U;
+    RpcStats m_stats;
 };
 
 } // namespace UVE::Network

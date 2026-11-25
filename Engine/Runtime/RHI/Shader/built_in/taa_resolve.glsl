@@ -30,7 +30,7 @@ uniform float uHistoryWeight;
 uniform int uHistoryValid;
 uniform vec2 uTexelSize;
 
-vec3 RgbToYCoCgUVE(vec3 rgb) {
+vec3 RgbToYCoCg(vec3 rgb) {
     float co = rgb.r - rgb.b;
     float t = rgb.b + co * 0.5;
     float cg = rgb.g - t;
@@ -38,7 +38,7 @@ vec3 RgbToYCoCgUVE(vec3 rgb) {
     return vec3(y, co, cg);
 }
 
-vec3 YCoCgToRgbUVE(vec3 ycocg) {
+vec3 YCoCgToRgb(vec3 ycocg) {
     float t = ycocg.x - ycocg.z * 0.5;
     float g = ycocg.z + t;
     float b = t - ycocg.y * 0.5;
@@ -46,17 +46,17 @@ vec3 YCoCgToRgbUVE(vec3 ycocg) {
     return max(vec3(r, g, b), vec3(0.0));
 }
 
-vec3 ReinhardCompressUVE(vec3 c) {
+vec3 ReinhardCompress(vec3 c) {
     float luma = dot(c, vec3(0.2126, 0.7152, 0.0722));
     return c / (1.0 + max(luma, 0.0));
 }
 
-vec3 ReinhardDecompressUVE(vec3 c) {
+vec3 ReinhardDecompress(vec3 c) {
     float luma = dot(c, vec3(0.2126, 0.7152, 0.0722));
     return c / max(1.0 - luma, 1.0e-4);
 }
 
-float DecodeNdcDepthUVE(float depthSample) {
+float DecodeNdcDepth(float depthSample) {
     float scale = uDepthNdcScale != 0.0 ? uDepthNdcScale : 2.0;
     float bias = uDepthNdcScale != 0.0 ? uDepthNdcBias : -1.0;
     return depthSample * scale + bias;
@@ -85,7 +85,7 @@ void main() {
     }
 
     vec2 reprojectUv = vTexCoord + bestOffset;
-    float ndcZ = DecodeNdcDepthUVE(bestDepth);
+    float ndcZ = DecodeNdcDepth(bestDepth);
     vec4 worldPos = uInverseViewProjection * vec4(reprojectUv * 2.0 - 1.0, ndcZ, 1.0);
     vec2 prevUv = vTexCoord;
     bool validReprojection = false;
@@ -110,7 +110,7 @@ void main() {
     for (int dy = -1; dy <= 1; ++dy) {
         for (int dx = -1; dx <= 1; ++dx) {
             vec2 sampleUv = clamp(vTexCoord + vec2(float(dx), float(dy)) * uTexelSize, vec2(0.0), vec2(1.0));
-            vec3 c = RgbToYCoCgUVE(ReinhardCompressUVE(max(texture(uCurrentColorTexture, sampleUv).rgb, vec3(0.0))));
+            vec3 c = RgbToYCoCg(ReinhardCompress(max(texture(uCurrentColorTexture, sampleUv).rgb, vec3(0.0))));
             m1 += c;
             m2 += c * c;
         }
@@ -122,12 +122,12 @@ void main() {
     vec3 boxMax = mean + kGamma * sigma;
 
     vec3 historyRgb = max(texture(uHistoryColorTexture, prevUv).rgb, vec3(0.0));
-    vec3 historyYcc = clamp(RgbToYCoCgUVE(ReinhardCompressUVE(historyRgb)), boxMin, boxMax);
-    vec3 currentYcc = RgbToYCoCgUVE(ReinhardCompressUVE(currentRgb));
+    vec3 historyYcc = clamp(RgbToYCoCg(ReinhardCompress(historyRgb)), boxMin, boxMax);
+    vec3 currentYcc = RgbToYCoCg(ReinhardCompress(currentRgb));
 
     float blendWeight = clamp(uHistoryWeight, 0.0, 0.96);
     vec3 resolvedYcc = mix(currentYcc, historyYcc, blendWeight);
-    vec3 resolvedRgb = ReinhardDecompressUVE(YCoCgToRgbUVE(resolvedYcc));
+    vec3 resolvedRgb = ReinhardDecompress(YCoCgToRgb(resolvedYcc));
     if (any(isnan(resolvedRgb)) || any(isinf(resolvedRgb))) {
         resolvedRgb = currentRgb;
     }

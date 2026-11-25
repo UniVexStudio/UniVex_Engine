@@ -12,17 +12,17 @@
 
 namespace UVE::Containers {
 
-/// `FixedArrayUVE<T, Capacity>` is a fixed-capacity, stack-allocated sequence container: the
+/// `FixedArray<T, Capacity>` is a fixed-capacity, stack-allocated sequence container: the
 /// engine's replacement for `std::array<T, N>` indexing-with-a-separate-count and for small
 /// `std::vector<T>`s that must never allocate (per-frame scheduler storage, the extracted light
-/// list). Only the first `SizeUVE()` slots hold live objects; capacity is fixed at compile time
+/// list). Only the first `Size()` slots hold live objects; capacity is fixed at compile time
 /// and the container never grows, shrinks, or touches the heap.
 ///
 /// Bounds contract: element access asserts in debug (`UVE_ASSERT`) and is unchecked in release,
 /// matching the engine's assert-for-programming-errors convention — never an exception, never a
-/// runtime error code. `PushBackUVE` on a full container is a programming error and asserts;
-/// callers facing possibly-overflowing input MUST check `FullUVE()` first and take their own
-/// fallible path (see `FrameTaskGraphUVE::AddTaskUVE`, which returns `CapacityExceeded`).
+/// runtime error code. `PushBack` on a full container is a programming error and asserts;
+/// callers facing possibly-overflowing input MUST check `Full()` first and take their own
+/// fallible path (see `FrameTaskGraph::AddTask`, which returns `CapacityExceeded`).
 ///
 /// Lifetime: elements are constructed in place on push and destroyed on pop/clear/destruction.
 /// Copy/move copy/move the live elements; a moved-from container is left empty. `T` needs no
@@ -32,55 +32,55 @@ namespace UVE::Containers {
 ///
 /// Naming: `begin`/`end` stay lowercase for range-based-for STL interop; every other member
 /// carries the `UVE` suffix per engine convention.
-template <typename T, std::size_t Capacity>
-class FixedArrayUVE final {
+template <typename T, std::size_t N>
+class FixedArray final {
 public:
-    static_assert(Capacity > 0U,
-                  "FixedArrayUVE with zero capacity holds nothing and asserts on every push; "
+    static_assert(N > 0U,
+                  "FixedArray with zero capacity holds nothing and asserts on every push; "
                   "that is never what a caller wants.");
 
-    FixedArrayUVE() noexcept = default;
+    FixedArray() noexcept = default;
 
-    FixedArrayUVE(const FixedArrayUVE& other) {
-        for (std::size_t index = 0U; index < other.SizeUVE(); ++index) {
-            PushBackUVE(other[index]);
+    FixedArray(const FixedArray& other) {
+        for (std::size_t index = 0U; index < other.Size(); ++index) {
+            PushBack(other[index]);
         }
     }
 
-    FixedArrayUVE(FixedArrayUVE&& other) noexcept(std::is_nothrow_move_constructible_v<T>) {
-        for (std::size_t index = 0U; index < other.SizeUVE(); ++index) {
-            PushBackUVE(std::move(other[index]));
+    FixedArray(FixedArray&& other) noexcept(std::is_nothrow_move_constructible_v<T>) {
+        for (std::size_t index = 0U; index < other.Size(); ++index) {
+            PushBack(std::move(other[index]));
         }
-        other.ClearUVE();
+        other.Clear();
     }
 
-    ~FixedArrayUVE() { ClearUVE(); }
+    ~FixedArray() { Clear(); }
 
-    FixedArrayUVE& operator=(const FixedArrayUVE& other) {
+    FixedArray& operator=(const FixedArray& other) {
         if (this != &other) {
-            ClearUVE();
-            for (std::size_t index = 0U; index < other.SizeUVE(); ++index) {
-                PushBackUVE(other[index]);
+            Clear();
+            for (std::size_t index = 0U; index < other.Size(); ++index) {
+                PushBack(other[index]);
             }
         }
         return *this;
     }
 
-    FixedArrayUVE& operator=(FixedArrayUVE&& other) noexcept(std::is_nothrow_move_constructible_v<T>) {
+    FixedArray& operator=(FixedArray&& other) noexcept(std::is_nothrow_move_constructible_v<T>) {
         if (this != &other) {
-            ClearUVE();
-            for (std::size_t index = 0U; index < other.SizeUVE(); ++index) {
-                PushBackUVE(std::move(other[index]));
+            Clear();
+            for (std::size_t index = 0U; index < other.Size(); ++index) {
+                PushBack(std::move(other[index]));
             }
-            other.ClearUVE();
+            other.Clear();
         }
         return *this;
     }
 
-    [[nodiscard]] constexpr std::size_t SizeUVE() const noexcept { return m_size; }
-    [[nodiscard]] static constexpr std::size_t CapacityUVE() noexcept { return Capacity; }
-    [[nodiscard]] constexpr bool EmptyUVE() const noexcept { return m_size == 0U; }
-    [[nodiscard]] constexpr bool FullUVE() const noexcept { return m_size >= Capacity; }
+    [[nodiscard]] constexpr std::size_t Size() const noexcept { return m_size; }
+    [[nodiscard]] static constexpr std::size_t Capacity() noexcept { return N; }
+    [[nodiscard]] constexpr bool Empty() const noexcept { return m_size == 0U; }
+    [[nodiscard]] constexpr bool Full() const noexcept { return m_size >= N; }
 
     [[nodiscard]] T& operator[](std::size_t index) noexcept {
         UVE_ASSERT(index < m_size);
@@ -92,81 +92,81 @@ public:
         return m_slots[index].element;
     }
 
-    [[nodiscard]] T& FrontUVE() noexcept {
-        UVE_ASSERT(!EmptyUVE());
+    [[nodiscard]] T& Front() noexcept {
+        UVE_ASSERT(!Empty());
         return m_slots[0U].element;
     }
 
-    [[nodiscard]] const T& FrontUVE() const noexcept {
-        UVE_ASSERT(!EmptyUVE());
+    [[nodiscard]] const T& Front() const noexcept {
+        UVE_ASSERT(!Empty());
         return m_slots[0U].element;
     }
 
-    [[nodiscard]] T& BackUVE() noexcept {
-        UVE_ASSERT(!EmptyUVE());
+    [[nodiscard]] T& Back() noexcept {
+        UVE_ASSERT(!Empty());
         return m_slots[m_size - 1U].element;
     }
 
-    [[nodiscard]] const T& BackUVE() const noexcept {
-        UVE_ASSERT(!EmptyUVE());
+    [[nodiscard]] const T& Back() const noexcept {
+        UVE_ASSERT(!Empty());
         return m_slots[m_size - 1U].element;
     }
 
-    [[nodiscard]] T* DataUVE() noexcept { return &m_slots[0U].element; }
-    [[nodiscard]] const T* DataUVE() const noexcept { return &m_slots[0U].element; }
+    [[nodiscard]] T* Data() noexcept { return &m_slots[0U].element; }
+    [[nodiscard]] const T* Data() const noexcept { return &m_slots[0U].element; }
 
-    void PushBackUVE(const T& value) {
-        UVE_ASSERT(!FullUVE());
+    void PushBack(const T& value) {
+        UVE_ASSERT(!Full());
         new (&m_slots[m_size].element) T(value);
         ++m_size;
     }
 
-    void PushBackUVE(T&& value) {
-        UVE_ASSERT(!FullUVE());
+    void PushBack(T&& value) {
+        UVE_ASSERT(!Full());
         new (&m_slots[m_size].element) T(std::move(value));
         ++m_size;
     }
 
-    void PopBackUVE() noexcept {
-        UVE_ASSERT(!EmptyUVE());
+    void PopBack() noexcept {
+        UVE_ASSERT(!Empty());
         m_slots[m_size - 1U].element.~T();
         --m_size;
     }
 
-    void ClearUVE() noexcept {
-        while (!EmptyUVE()) {
-            PopBackUVE();
+    void Clear() noexcept {
+        while (!Empty()) {
+            PopBack();
         }
     }
 
-    [[nodiscard]] std::span<T> AsSpanUVE() noexcept { return std::span<T>(DataUVE(), m_size); }
+    [[nodiscard]] std::span<T> AsSpan() noexcept { return std::span<T>(Data(), m_size); }
 
-    [[nodiscard]] std::span<const T> AsSpanUVE() const noexcept {
-        return std::span<const T>(DataUVE(), m_size);
+    [[nodiscard]] std::span<const T> AsSpan() const noexcept {
+        return std::span<const T>(Data(), m_size);
     }
 
-    [[nodiscard]] T* begin() noexcept { return DataUVE(); }
-    [[nodiscard]] const T* begin() const noexcept { return DataUVE(); }
-    [[nodiscard]] T* end() noexcept { return DataUVE() + m_size; }
-    [[nodiscard]] const T* end() const noexcept { return DataUVE() + m_size; }
+    [[nodiscard]] T* begin() noexcept { return Data(); }
+    [[nodiscard]] const T* begin() const noexcept { return Data(); }
+    [[nodiscard]] T* end() noexcept { return Data() + m_size; }
+    [[nodiscard]] const T* end() const noexcept { return Data() + m_size; }
 
 private:
     // Inactive-until-pushed storage: a union with a user-provided no-op constructor leaves the
     // element lifetime fully manual (so `T` need not be default-constructible), and member
     // access through the union needs no reinterpret_cast, keeping -Wcast-align quiet.
-    union SlotUVE {
+    union Slot {
         T element;
 
-        SlotUVE() noexcept {}
-        ~SlotUVE() noexcept {}
+        Slot() noexcept {}
+        ~Slot() noexcept {}
 
-        SlotUVE(const SlotUVE&) = delete;
-        SlotUVE(SlotUVE&&) = delete;
-        SlotUVE& operator=(const SlotUVE&) = delete;
-        SlotUVE& operator=(SlotUVE&&) = delete;
+        Slot(const Slot&) = delete;
+        Slot(Slot&&) = delete;
+        Slot& operator=(const Slot&) = delete;
+        Slot& operator=(Slot&&) = delete;
     };
 
-    SlotUVE m_slots[Capacity];
+    Slot m_slots[N];
     std::size_t m_size = 0U;
 };
 

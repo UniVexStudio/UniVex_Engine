@@ -9,47 +9,47 @@
 
 namespace UVE::Scene {
 
-bool IsPlaneMesh3DObjectDefinitionValidUVE(const PlaneMesh3DObjectDefinitionUVE& value) noexcept {
-    return IsPrimitiveMeshComponentValidUVE(value.mesh) && IsColliderComponentValidUVE(value.collider);
+bool IsPlaneMesh3DObjectDefinitionValid(const PlaneMesh3DObjectDefinition& value) noexcept {
+    return IsPrimitiveMeshComponentValid(value.mesh) && IsColliderComponentValid(value.collider);
 }
 
-void ApplyPlaneMesh3DObjectDefinitionUVE(IEntityManagerUVE& entityManager, const EntityUVE entity,
-                                         const PlaneMesh3DObjectDefinitionUVE& value) {
-    ApplySurfaceInstance3DBaseUVE(entityManager, entity, PlaneMesh3DObjectDefinitionUVE::defaultName);
-    entityManager.AddComponentUVE<PrimitiveMeshComponentUVE>(entity, value.mesh);
-    entityManager.AddComponentUVE<ColliderComponentUVE>(entity, value.collider);
+void ApplyPlaneMesh3DObjectDefinition(IEntityManager& entityManager, const Entity entity,
+                                         const PlaneMesh3DObjectDefinition& value) {
+    ApplySurfaceInstance3DBase(entityManager, entity, PlaneMesh3DObjectDefinition::defaultName);
+    entityManager.AddComponent<PrimitiveMeshComponent>(entity, value.mesh);
+    entityManager.AddComponent<ColliderComponent>(entity, value.collider);
 }
 
-bool PlaneMesh3DUVE::IsPlaneMeshUVE(const PrimitiveMeshComponentUVE& mesh) noexcept {
-    return IsPrimitiveMeshComponentValidUVE(mesh) && mesh.kind == PrimitiveMeshKindUVE::Plane;
+bool PlaneMesh3D::IsPlaneMesh(const PrimitiveMeshComponent& mesh) noexcept {
+    return IsPrimitiveMeshComponentValid(mesh) && mesh.kind == PrimitiveMeshKind::Plane;
 }
 
-Math::Vector3UVE PlaneMesh3DUVE::DefaultColliderHalfExtentsUVE() noexcept {
-    return kDefaultColliderHalfExtentsUVE;
+Math::Vector3 PlaneMesh3D::DefaultColliderHalfExtents() noexcept {
+    return kDefaultColliderHalfExtents;
 }
 
-Math::AabbUVE PlaneMesh3DUVE::LocalBoundsUVE() noexcept {
-    return Math::AabbUVE::FromCenterExtentsUVE(Math::Vector3UVE{}, kDefaultColliderHalfExtentsUVE);
+Math::Aabb PlaneMesh3D::LocalBounds() noexcept {
+    return Math::Aabb::FromCenterExtents(Math::Vector3{}, kDefaultColliderHalfExtents);
 }
 
-Math::Vector3UVE PlaneMesh3DUVE::WorldNormalUVE(const Math::QuaternionUVE& worldRotation) noexcept {
-    Math::QuaternionUVE normalized{};
-    if (!Math::TryNormalizeUVE(worldRotation, normalized)) {
-        return kLocalNormalUVE;
+Math::Vector3 PlaneMesh3D::WorldNormal(const Math::Quaternion& worldRotation) noexcept {
+    Math::Quaternion normalized{};
+    if (!Math::TryNormalize(worldRotation, normalized)) {
+        return kLocalNormal;
     }
-    return Math::RotateVectorUVE(normalized, kLocalNormalUVE);
+    return Math::RotateVector(normalized, kLocalNormal);
 }
 
-float PlaneMesh3DUVE::SurfaceAreaFromScaleUVE(const Math::Vector3UVE& worldScale) noexcept {
-    if (!Math::IsFiniteUVE(worldScale) || worldScale.x <= 0.0F || worldScale.z <= 0.0F) {
+float PlaneMesh3D::SurfaceAreaFromScale(const Math::Vector3& worldScale) noexcept {
+    if (!Math::IsFinite(worldScale) || worldScale.x <= 0.0F || worldScale.z <= 0.0F) {
         return 0.0F;
     }
     const float area = worldScale.x * worldScale.z;
     return std::isfinite(area) ? area : 0.0F;
 }
 
-void PlaneMesh3DUVE::SyncColliderHalfExtentsUVE(ColliderComponentUVE& collider) noexcept {
-    collider.halfExtents = kDefaultColliderHalfExtentsUVE;
+void PlaneMesh3D::SyncColliderHalfExtents(ColliderComponent& collider) noexcept {
+    collider.halfExtents = kDefaultColliderHalfExtents;
 }
 
 } // namespace UVE::Scene

@@ -7,49 +7,49 @@
 
 namespace UVE::Scene {
 
-[[nodiscard]] bool IsUICheckboxComponentValidUVE(const UICheckboxComponentUVE& component) noexcept {
-    return Math::IsFiniteUVE(component.rect) &&
-           component.rect.size.x >= kMinimumUICheckboxSizePixelsUVE &&
-           component.rect.size.x <= kMaximumUICheckboxSizePixelsUVE &&
-           component.rect.size.y >= kMinimumUICheckboxSizePixelsUVE &&
-           component.rect.size.y <= kMaximumUICheckboxSizePixelsUVE && std::isfinite(component.boxColor.x) &&
+[[nodiscard]] bool IsUICheckboxComponentValid(const UICheckboxComponent& component) noexcept {
+    return Math::IsFinite(component.rect) &&
+           component.rect.size.x >= kMinimumUICheckboxSizePixels &&
+           component.rect.size.x <= kMaximumUICheckboxSizePixels &&
+           component.rect.size.y >= kMinimumUICheckboxSizePixels &&
+           component.rect.size.y <= kMaximumUICheckboxSizePixels && std::isfinite(component.boxColor.x) &&
            std::isfinite(component.boxColor.y) && std::isfinite(component.boxColor.z) &&
            std::isfinite(component.hoverColor.x) && std::isfinite(component.hoverColor.y) &&
            std::isfinite(component.hoverColor.z) && std::isfinite(component.checkColor.x) &&
            std::isfinite(component.checkColor.y) && std::isfinite(component.checkColor.z);
 }
 
-Math::Vector3UVE ResolveUICheckboxBoxColorUVE(const UICheckboxComponentUVE& component) noexcept {
+Math::Vector3 ResolveUICheckboxBoxColor(const UICheckboxComponent& component) noexcept {
     return component.isHovered ? component.hoverColor : component.boxColor;
 }
 
-Math::RectUVE ResolveUICheckboxMarkRectUVE(const UICheckboxComponentUVE& component,
+Math::Rect ResolveUICheckboxMarkRect(const UICheckboxComponent& component,
                                            const float insetRatio) noexcept {
-    if (!IsUICheckboxComponentValidUVE(component)) {
-        return Math::RectUVE{};
+    if (!IsUICheckboxComponentValid(component)) {
+        return Math::Rect{};
     }
     const float clampedInset =
         std::isfinite(insetRatio) ? std::clamp(insetRatio, 0.0F, 0.45F) : 0.25F;
-    const Math::Vector2UVE insetPixels{
+    const Math::Vector2 insetPixels{
         component.rect.size.x * clampedInset,
         component.rect.size.y * clampedInset,
     };
-    return Math::RectUVE{
+    return Math::Rect{
         .position = component.rect.position + insetPixels,
-        .size = Math::Vector2UVE{
+        .size = Math::Vector2{
             std::max(0.0F, component.rect.size.x - insetPixels.x * 2.0F),
             std::max(0.0F, component.rect.size.y - insetPixels.y * 2.0F),
         },
     };
 }
 
-bool ToggleUICheckboxUVE(UICheckboxComponentUVE& component) noexcept {
+bool ToggleUICheckbox(UICheckboxComponent& component) noexcept {
     component.checked = !component.checked;
     component.wasToggledThisFrame = true;
     return component.checked;
 }
 
-void ResetUICheckboxRuntimeStateUVE(UICheckboxComponentUVE& component) noexcept {
+void ResetUICheckboxRuntimeState(UICheckboxComponent& component) noexcept {
     component.isHovered = false;
     component.wasToggledThisFrame = false;
 }

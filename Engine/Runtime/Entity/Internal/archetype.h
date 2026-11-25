@@ -17,71 +17,71 @@
 
 namespace UVE::Scene::Detail {
 
-/// ArchetypeUVE owns every ArchetypeChunkUVE storing entities with exactly its ArchetypeSignatureUVE. It
+/// Archetype owns every ArchetypeChunk storing entities with exactly its ArchetypeSignature. It
 /// orchestrates row reservation (creating a new chunk once the last one is full) and the
-/// destroy/vacate contract ArchetypeChunkUVE documents. Private implementation detail — never appears in
+/// destroy/vacate contract ArchetypeChunk documents. Private implementation detail — never appears in
 /// any public header under engine/scene/include/.
-/// Thread-safety: not thread-safe — owned by IEntityManagerUVE, which documents the same
+/// Thread-safety: not thread-safe — owned by IEntityManager, which documents the same
 /// main/scene-thread-only contract.
-class ArchetypeUVE final {
+class Archetype final {
 public:
     /// A row's location within this archetype's chunk storage.
-    struct LocationUVE {
+    struct Location {
         std::size_t chunkIndex = 0;
         std::size_t row = 0;
     };
 
-    ArchetypeUVE(ArchetypeSignatureUVE signature, Memory::IAllocatorUVE& allocator,
-                 const std::unordered_map<std::type_index, ComponentTypeInfoUVE>& typeInfos);
+    Archetype(ArchetypeSignature signature, Memory::IAllocator& allocator,
+                 const std::unordered_map<std::type_index, ComponentTypeInfo>& typeInfos);
 
-    [[nodiscard]] const ArchetypeSignatureUVE& GetSignatureUVE() const noexcept;
-    [[nodiscard]] std::size_t GetEntityCountUVE() const noexcept;
+    [[nodiscard]] const ArchetypeSignature& GetSignature() const noexcept;
+    [[nodiscard]] std::size_t GetEntityCount() const noexcept;
 
     /// Reserves a row for `entity` in the last non-full chunk, creating a new chunk if none
     /// exists or the last one is full. Every column's memory at the returned location is raw
-    /// and uninitialized — the caller must construct every column (see ArchetypeChunkUVE's contract)
+    /// and uninitialized — the caller must construct every column (see ArchetypeChunk's contract)
     /// before the row is valid.
-    [[nodiscard]] LocationUVE ReserveEntityUVE(EntityUVE entity);
+    [[nodiscard]] Location ReserveEntity(Entity entity);
 
     /// Destroys every column's data at `location`, then compacts (swap-remove). Returns the
-    /// entity that moved into `location` (kInvalidEntityUVE if none) — the caller must patch
+    /// entity that moved into `location` (kInvalidEntity if none) — the caller must patch
     /// that entity's record to point at `location`. UVE_ASSERTs `location.chunkIndex` is in
-    /// range; also returns kInvalidEntityUVE and logs an error in Release on an out-of-range
+    /// range; also returns kInvalidEntity and logs an error in Release on an out-of-range
     /// index, rather than indexing past m_chunks.
-    [[nodiscard]] EntityUVE DestroyEntityAtUVE(LocationUVE location);
+    [[nodiscard]] Entity DestroyEntityAt(Location location);
 
     /// Compacts (swap-remove) at `location` WITHOUT destroying anything first — used by
     /// archetype-migration callers that have already moved/destroyed every column themselves.
-    /// Same return-value contract as DestroyEntityAtUVE(), including the out-of-range behavior.
-    [[nodiscard]] EntityUVE VacateWithoutDestroyUVE(LocationUVE location);
+    /// Same return-value contract as DestroyEntityAt(), including the out-of-range behavior.
+    [[nodiscard]] Entity VacateWithoutDestroy(Location location);
 
     /// UVE_ASSERTs `chunkIndex` is in range; also throws std::out_of_range in Release on an
     /// out-of-range index (via std::vector::at()), rather than indexing past m_chunks.
-    [[nodiscard]] ArchetypeChunkUVE& GetChunkUVE(std::size_t chunkIndex);
-    [[nodiscard]] const ArchetypeChunkUVE& GetChunkUVE(std::size_t chunkIndex) const;
+    [[nodiscard]] ArchetypeChunk& GetChunk(std::size_t chunkIndex);
+    [[nodiscard]] const ArchetypeChunk& GetChunk(std::size_t chunkIndex) const;
 
-    /// Invokes `visitor(EntityUVE, ArchetypeChunkUVE&, std::size_t row)` once per occupied row across
+    /// Invokes `visitor(Entity, ArchetypeChunk&, std::size_t row)` once per occupied row across
     /// every chunk.
     template <typename TVisitor>
-    void ForEachEntityUVE(TVisitor&& visitor) {
-        ForEachChunkUVE([&visitor](ArchetypeChunkUVE& chunk, std::size_t count) {
+    void ForEachEntity(TVisitor&& visitor) {
+        ForEachChunk([&visitor](ArchetypeChunk& chunk, std::size_t count) {
             for (std::size_t row = 0; row < count; ++row) {
-                visitor(chunk.GetEntityAtRowUVE(row), chunk, row);
+                visitor(chunk.GetEntityAtRow(row), chunk, row);
             }
         });
     }
 
-    /// Invokes `visitor(ArchetypeChunkUVE&, std::size_t occupiedRowCount)` once per chunk.
+    /// Invokes `visitor(ArchetypeChunk&, std::size_t occupiedRowCount)` once per chunk.
     ///
-    /// The chunk-granular counterpart to ForEachEntityUVE, for callers that need to resolve
+    /// The chunk-granular counterpart to ForEachEntity, for callers that need to resolve
     /// something once per chunk rather than once per row - a chunk's column layout is fixed for
     /// its entire lifetime, so per-row column lookups repeat work that cannot have changed.
-    /// ForEachEntityUVE is defined in terms of this, so the two cannot disagree about which rows
+    /// ForEachEntity is defined in terms of this, so the two cannot disagree about which rows
     /// exist or in what order they are visited.
     template <typename TVisitor>
-    void ForEachChunkUVE(TVisitor&& visitor) {
-        for (const std::unique_ptr<ArchetypeChunkUVE>& chunk : m_chunks) {
-            const std::size_t count = chunk->GetCountUVE();
+    void ForEachChunk(TVisitor&& visitor) {
+        for (const std::unique_ptr<ArchetypeChunk>& chunk : m_chunks) {
+            const std::size_t count = chunk->GetCount();
             if (count == 0U) {
                 continue;
             }
@@ -90,10 +90,10 @@ public:
     }
 
 private:
-    ArchetypeSignatureUVE m_signature;
-    Memory::IAllocatorUVE& m_allocator;
-    const std::unordered_map<std::type_index, ComponentTypeInfoUVE>& m_typeInfos;
-    std::vector<std::unique_ptr<ArchetypeChunkUVE>> m_chunks;
+    ArchetypeSignature m_signature;
+    Memory::IAllocator& m_allocator;
+    const std::unordered_map<std::type_index, ComponentTypeInfo>& m_typeInfos;
+    std::vector<std::unique_ptr<ArchetypeChunk>> m_chunks;
 };
 
 } // namespace UVE::Scene::Detail

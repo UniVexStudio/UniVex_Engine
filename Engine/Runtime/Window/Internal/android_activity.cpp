@@ -10,16 +10,16 @@ namespace UVE::Window {
 namespace {
 
 /// The fields UniVexActivity keeps the safe area in.
-inline constexpr const char* kSafeInsetLeftFieldUVE = "safeInsetLeft";
-inline constexpr const char* kSafeInsetTopFieldUVE = "safeInsetTop";
-inline constexpr const char* kSafeInsetRightFieldUVE = "safeInsetRight";
-inline constexpr const char* kSafeInsetBottomFieldUVE = "safeInsetBottom";
-inline constexpr const char* kIntFieldSignatureUVE = "I";
+inline constexpr const char* kSafeInsetLeftField = "safeInsetLeft";
+inline constexpr const char* kSafeInsetTopField = "safeInsetTop";
+inline constexpr const char* kSafeInsetRightField = "safeInsetRight";
+inline constexpr const char* kSafeInsetBottomField = "safeInsetBottom";
+inline constexpr const char* kIntFieldSignature = "I";
 
 /// Attaches the calling thread to Java for its lifetime when it was not attached already.
-class ScopedJniEnvUVE final {
+class ScopedJniEnv final {
 public:
-    explicit ScopedJniEnvUVE(JavaVM* const vm) : m_vm(vm) {
+    explicit ScopedJniEnv(JavaVM* const vm) : m_vm(vm) {
         if (m_vm == nullptr) {
             return;
         }
@@ -30,15 +30,15 @@ public:
             }
         }
     }
-    ~ScopedJniEnvUVE() {
+    ~ScopedJniEnv() {
         if (m_attached) {
             m_vm->DetachCurrentThread();
         }
     }
-    ScopedJniEnvUVE(const ScopedJniEnvUVE&) = delete;
-    ScopedJniEnvUVE& operator=(const ScopedJniEnvUVE&) = delete;
+    ScopedJniEnv(const ScopedJniEnv&) = delete;
+    ScopedJniEnv& operator=(const ScopedJniEnv&) = delete;
 
-    [[nodiscard]] JNIEnv* EnvUVE() const noexcept { return m_env; }
+    [[nodiscard]] JNIEnv* Env() const noexcept { return m_env; }
 
 private:
     JavaVM* m_vm = nullptr;
@@ -47,8 +47,8 @@ private:
 };
 
 /// Reads one int field of `object`, or 0 when its class has no such field.
-[[nodiscard]] int ReadIntFieldUVE(JNIEnv* const env, jobject const object, jclass const type, const char* const name) {
-    const jfieldID field = env->GetFieldID(type, name, kIntFieldSignatureUVE);
+[[nodiscard]] int ReadIntField(JNIEnv* const env, jobject const object, jclass const type, const char* const name) {
+    const jfieldID field = env->GetFieldID(type, name, kIntFieldSignature);
     if (field == nullptr) {
         env->ExceptionClear();  // NoSuchFieldError: a plain NativeActivity
         return 0;
@@ -56,33 +56,33 @@ private:
     return env->GetIntField(object, field);
 }
 
-inline constexpr const char* kPickFileMethodUVE = "pickFile";
-inline constexpr const char* kPickFileSignatureUVE = "()V";
-inline constexpr const char* kTakePickedFileMethodUVE = "takePickedFile";
-inline constexpr const char* kTakePickedFileSignatureUVE = "()Ljava/lang/String;";
-inline constexpr const char* kPickFilesMethodUVE = "pickFiles";
-inline constexpr const char* kPickFolderMethodUVE = "pickFolder";
-inline constexpr const char* kTakePickedPathsMethodUVE = "takePickedPaths";
-inline constexpr const char* kGetClipboardMethodUVE = "getClipboardText";
-inline constexpr const char* kGetClipboardSignatureUVE = "()Ljava/lang/String;";
-inline constexpr const char* kSetClipboardMethodUVE = "setClipboardText";
-inline constexpr const char* kSetClipboardSignatureUVE = "(Ljava/lang/String;)V";
-inline constexpr const char* kKeyEventClassUVE = "android/view/KeyEvent";
-inline constexpr const char* kKeyEventConstructorUVE = "(II)V";
-inline constexpr const char* kUnicodeCharMethodUVE = "getUnicodeChar";
-inline constexpr const char* kUnicodeCharSignatureUVE = "(I)I";
+inline constexpr const char* kPickFileMethod = "pickFile";
+inline constexpr const char* kPickFileSignature = "()V";
+inline constexpr const char* kTakePickedFileMethod = "takePickedFile";
+inline constexpr const char* kTakePickedFileSignature = "()Ljava/lang/String;";
+inline constexpr const char* kPickFilesMethod = "pickFiles";
+inline constexpr const char* kPickFolderMethod = "pickFolder";
+inline constexpr const char* kTakePickedPathsMethod = "takePickedPaths";
+inline constexpr const char* kGetClipboardMethod = "getClipboardText";
+inline constexpr const char* kGetClipboardSignature = "()Ljava/lang/String;";
+inline constexpr const char* kSetClipboardMethod = "setClipboardText";
+inline constexpr const char* kSetClipboardSignature = "(Ljava/lang/String;)V";
+inline constexpr const char* kKeyEventClass = "android/view/KeyEvent";
+inline constexpr const char* kKeyEventConstructor = "(II)V";
+inline constexpr const char* kUnicodeCharMethod = "getUnicodeChar";
+inline constexpr const char* kUnicodeCharSignature = "(I)I";
 
-[[nodiscard]] bool CallVoidActivityMethodUVE(ANativeActivity* const activity, const char* const methodName) {
+[[nodiscard]] bool CallVoidActivityMethod(ANativeActivity* const activity, const char* const methodName) {
     if (activity == nullptr) {
         return false;
     }
-    const ScopedJniEnvUVE scope(activity->vm);
-    JNIEnv* const env = scope.EnvUVE();
+    const ScopedJniEnv scope(activity->vm);
+    JNIEnv* const env = scope.Env();
     if (env == nullptr) {
         return false;
     }
     const jclass type = env->GetObjectClass(activity->clazz);
-    const jmethodID method = type != nullptr ? env->GetMethodID(type, methodName, kPickFileSignatureUVE) : nullptr;
+    const jmethodID method = type != nullptr ? env->GetMethodID(type, methodName, kPickFileSignature) : nullptr;
     bool started = false;
     if (method != nullptr) {
         env->CallVoidMethod(activity->clazz, method);
@@ -95,19 +95,19 @@ inline constexpr const char* kUnicodeCharSignatureUVE = "(I)I";
     return started;
 }
 
-[[nodiscard]] std::optional<std::string> TakeOptionalStringActivityMethodUVE(ANativeActivity* const activity,
+[[nodiscard]] std::optional<std::string> TakeOptionalStringActivityMethod(ANativeActivity* const activity,
                                                                              const char* const methodName) {
     if (activity == nullptr) {
         return std::string{};
     }
-    const ScopedJniEnvUVE scope(activity->vm);
-    JNIEnv* const env = scope.EnvUVE();
+    const ScopedJniEnv scope(activity->vm);
+    JNIEnv* const env = scope.Env();
     if (env == nullptr) {
         return std::string{};
     }
     const jclass type = env->GetObjectClass(activity->clazz);
     const jmethodID take =
-        type != nullptr ? env->GetMethodID(type, methodName, kTakePickedFileSignatureUVE) : nullptr;
+        type != nullptr ? env->GetMethodID(type, methodName, kTakePickedFileSignature) : nullptr;
     std::optional<std::string> result = std::string{}; // no picker: nothing will ever arrive
     if (take != nullptr) {
         const auto picked = static_cast<jstring>(env->CallObjectMethod(activity->clazz, take));
@@ -133,23 +133,23 @@ inline constexpr const char* kUnicodeCharSignatureUVE = "(I)I";
 
 } // namespace
 
-unsigned int AndroidKeyCharacterUVE(ANativeActivity* const activity, const int action, const int keyCode,
+unsigned int AndroidKeyCharacter(ANativeActivity* const activity, const int action, const int keyCode,
                                     const int metaState) {
     if (activity == nullptr) {
         return 0U;
     }
-    const ScopedJniEnvUVE scope(activity->vm);
-    JNIEnv* const env = scope.EnvUVE();
+    const ScopedJniEnv scope(activity->vm);
+    JNIEnv* const env = scope.Env();
     if (env == nullptr) {
         return 0U;
     }
-    const jclass type = env->FindClass(kKeyEventClassUVE);
+    const jclass type = env->FindClass(kKeyEventClass);
     if (type == nullptr) {
         env->ExceptionClear();
         return 0U;
     }
-    const jmethodID constructor = env->GetMethodID(type, "<init>", kKeyEventConstructorUVE);
-    const jmethodID unicode = env->GetMethodID(type, kUnicodeCharMethodUVE, kUnicodeCharSignatureUVE);
+    const jmethodID constructor = env->GetMethodID(type, "<init>", kKeyEventConstructor);
+    const jmethodID unicode = env->GetMethodID(type, kUnicodeCharMethod, kUnicodeCharSignature);
     if (constructor == nullptr || unicode == nullptr) {
         env->ExceptionClear();
         env->DeleteLocalRef(type);
@@ -169,38 +169,38 @@ unsigned int AndroidKeyCharacterUVE(ANativeActivity* const activity, const int a
     return character > 0 ? static_cast<unsigned int>(character) : 0U;
 }
 
-bool StartAndroidFilePickUVE(ANativeActivity* const activity) {
-    return CallVoidActivityMethodUVE(activity, kPickFileMethodUVE);
+bool StartAndroidFilePick(ANativeActivity* const activity) {
+    return CallVoidActivityMethod(activity, kPickFileMethod);
 }
 
-std::optional<std::string> TakeAndroidPickedFileUVE(ANativeActivity* const activity) {
-    return TakeOptionalStringActivityMethodUVE(activity, kTakePickedFileMethodUVE);
+std::optional<std::string> TakeAndroidPickedFile(ANativeActivity* const activity) {
+    return TakeOptionalStringActivityMethod(activity, kTakePickedFileMethod);
 }
 
-bool StartAndroidMultiFilePickUVE(ANativeActivity* const activity) {
-    return CallVoidActivityMethodUVE(activity, kPickFilesMethodUVE);
+bool StartAndroidMultiFilePick(ANativeActivity* const activity) {
+    return CallVoidActivityMethod(activity, kPickFilesMethod);
 }
 
-bool StartAndroidFolderPickUVE(ANativeActivity* const activity) {
-    return CallVoidActivityMethodUVE(activity, kPickFolderMethodUVE);
+bool StartAndroidFolderPick(ANativeActivity* const activity) {
+    return CallVoidActivityMethod(activity, kPickFolderMethod);
 }
 
-std::optional<std::string> TakeAndroidPickedPathsUVE(ANativeActivity* const activity) {
-    return TakeOptionalStringActivityMethodUVE(activity, kTakePickedPathsMethodUVE);
+std::optional<std::string> TakeAndroidPickedPaths(ANativeActivity* const activity) {
+    return TakeOptionalStringActivityMethod(activity, kTakePickedPathsMethod);
 }
 
-std::optional<std::string> ReadAndroidClipboardUVE(ANativeActivity* const activity) {
+std::optional<std::string> ReadAndroidClipboard(ANativeActivity* const activity) {
     if (activity == nullptr) {
         return std::nullopt;
     }
-    const ScopedJniEnvUVE scope(activity->vm);
-    JNIEnv* const env = scope.EnvUVE();
+    const ScopedJniEnv scope(activity->vm);
+    JNIEnv* const env = scope.Env();
     if (env == nullptr) {
         return std::nullopt;
     }
     const jclass type = env->GetObjectClass(activity->clazz);
     const jmethodID getClipboard =
-        type != nullptr ? env->GetMethodID(type, kGetClipboardMethodUVE, kGetClipboardSignatureUVE) : nullptr;
+        type != nullptr ? env->GetMethodID(type, kGetClipboardMethod, kGetClipboardSignature) : nullptr;
     std::optional<std::string> result;
     if (getClipboard != nullptr) {
         const auto value = static_cast<jstring>(env->CallObjectMethod(activity->clazz, getClipboard));
@@ -222,18 +222,18 @@ std::optional<std::string> ReadAndroidClipboardUVE(ANativeActivity* const activi
     return result;
 }
 
-void WriteAndroidClipboardUVE(ANativeActivity* const activity, const char* const text) {
+void WriteAndroidClipboard(ANativeActivity* const activity, const char* const text) {
     if (activity == nullptr) {
         return;
     }
-    const ScopedJniEnvUVE scope(activity->vm);
-    JNIEnv* const env = scope.EnvUVE();
+    const ScopedJniEnv scope(activity->vm);
+    JNIEnv* const env = scope.Env();
     if (env == nullptr) {
         return;
     }
     const jclass type = env->GetObjectClass(activity->clazz);
     const jmethodID setClipboard =
-        type != nullptr ? env->GetMethodID(type, kSetClipboardMethodUVE, kSetClipboardSignatureUVE) : nullptr;
+        type != nullptr ? env->GetMethodID(type, kSetClipboardMethod, kSetClipboardSignature) : nullptr;
     if (setClipboard != nullptr) {
         const jstring value = env->NewStringUTF(text != nullptr ? text : "");
         if (value != nullptr) {
@@ -247,12 +247,12 @@ void WriteAndroidClipboardUVE(ANativeActivity* const activity, const char* const
     }
 }
 
-std::string TakeAndroidLaunchProjectUVE(ANativeActivity* const activity) {
+std::string TakeAndroidLaunchProject(ANativeActivity* const activity) {
     if (activity == nullptr) {
         return {};
     }
-    const ScopedJniEnvUVE scope(activity->vm);
-    JNIEnv* const env = scope.EnvUVE();
+    const ScopedJniEnv scope(activity->vm);
+    JNIEnv* const env = scope.Env();
     if (env == nullptr) {
         return {};
     }
@@ -282,7 +282,7 @@ std::string TakeAndroidLaunchProjectUVE(ANativeActivity* const activity) {
 
 namespace {
 
-[[nodiscard]] bool ReadBoolFieldUVE(JNIEnv* const env, jobject const object, jclass const type, const char* const name) {
+[[nodiscard]] bool ReadBoolField(JNIEnv* const env, jobject const object, jclass const type, const char* const name) {
     const jfieldID field = env->GetFieldID(type, name, "Z");
     if (field == nullptr) {
         env->ExceptionClear();
@@ -291,7 +291,7 @@ namespace {
     return env->GetBooleanField(object, field) != JNI_FALSE;
 }
 
-[[nodiscard]] std::string CallStringMethodUVE(JNIEnv* const env, jobject const object, jclass const type,
+[[nodiscard]] std::string CallStringMethod(JNIEnv* const env, jobject const object, jclass const type,
                                               const char* const name) {
     const jmethodID method = env->GetMethodID(type, name, "()Ljava/lang/String;");
     if (method == nullptr) {
@@ -315,12 +315,12 @@ namespace {
 
 } // namespace
 
-AndroidSafeAreaUVE ReadAndroidSafeAreaUVE(ANativeActivity* const activity) {
+AndroidSafeArea ReadAndroidSafeArea(ANativeActivity* const activity) {
     if (activity == nullptr) {
         return {};
     }
-    const ScopedJniEnvUVE scope(activity->vm);
-    JNIEnv* const env = scope.EnvUVE();
+    const ScopedJniEnv scope(activity->vm);
+    JNIEnv* const env = scope.Env();
     if (env == nullptr) {
         return {};
     }
@@ -329,22 +329,22 @@ AndroidSafeAreaUVE ReadAndroidSafeAreaUVE(ANativeActivity* const activity) {
         env->ExceptionClear();
         return {};
     }
-    AndroidSafeAreaUVE area;
-    area.left = ReadIntFieldUVE(env, activity->clazz, type, kSafeInsetLeftFieldUVE);
-    area.top = ReadIntFieldUVE(env, activity->clazz, type, kSafeInsetTopFieldUVE);
-    area.right = ReadIntFieldUVE(env, activity->clazz, type, kSafeInsetRightFieldUVE);
-    area.bottom = ReadIntFieldUVE(env, activity->clazz, type, kSafeInsetBottomFieldUVE);
-    area.imeBottom = ReadIntFieldUVE(env, activity->clazz, type, "imeInsetBottom");
+    AndroidSafeArea area;
+    area.left = ReadIntField(env, activity->clazz, type, kSafeInsetLeftField);
+    area.top = ReadIntField(env, activity->clazz, type, kSafeInsetTopField);
+    area.right = ReadIntField(env, activity->clazz, type, kSafeInsetRightField);
+    area.bottom = ReadIntField(env, activity->clazz, type, kSafeInsetBottomField);
+    area.imeBottom = ReadIntField(env, activity->clazz, type, "imeInsetBottom");
     env->DeleteLocalRef(type);
     return area;
 }
 
-bool HasAndroidHardwareInputUVE(ANativeActivity* const activity) {
+bool HasAndroidHardwareInput(ANativeActivity* const activity) {
     if (activity == nullptr) {
         return false;
     }
-    const ScopedJniEnvUVE scope(activity->vm);
-    JNIEnv* const env = scope.EnvUVE();
+    const ScopedJniEnv scope(activity->vm);
+    JNIEnv* const env = scope.Env();
     if (env == nullptr) {
         return false;
     }
@@ -353,17 +353,17 @@ bool HasAndroidHardwareInputUVE(ANativeActivity* const activity) {
         env->ExceptionClear();
         return false;
     }
-    const bool connected = ReadBoolFieldUVE(env, activity->clazz, type, "hardwareInputConnected");
+    const bool connected = ReadBoolField(env, activity->clazz, type, "hardwareInputConnected");
     env->DeleteLocalRef(type);
     return connected;
 }
 
-bool HasAndroidAllFilesAccessUVE(ANativeActivity* const activity) {
+bool HasAndroidAllFilesAccess(ANativeActivity* const activity) {
     if (activity == nullptr) {
         return false;
     }
-    const ScopedJniEnvUVE scope(activity->vm);
-    JNIEnv* const env = scope.EnvUVE();
+    const ScopedJniEnv scope(activity->vm);
+    JNIEnv* const env = scope.Env();
     if (env == nullptr) {
         return false;
     }
@@ -384,12 +384,12 @@ bool HasAndroidAllFilesAccessUVE(ANativeActivity* const activity) {
     return granted;
 }
 
-void RequestAndroidAllFilesAccessUVE(ANativeActivity* const activity) {
+void RequestAndroidAllFilesAccess(ANativeActivity* const activity) {
     if (activity == nullptr) {
         return;
     }
-    const ScopedJniEnvUVE scope(activity->vm);
-    JNIEnv* const env = scope.EnvUVE();
+    const ScopedJniEnv scope(activity->vm);
+    JNIEnv* const env = scope.Env();
     if (env == nullptr) {
         return;
     }
@@ -404,13 +404,13 @@ void RequestAndroidAllFilesAccessUVE(ANativeActivity* const activity) {
     }
 }
 
-AndroidStoragePathsUVE ReadAndroidStoragePathsUVE(ANativeActivity* const activity) {
-    AndroidStoragePathsUVE paths;
+AndroidStoragePaths ReadAndroidStoragePaths(ANativeActivity* const activity) {
+    AndroidStoragePaths paths;
     if (activity == nullptr) {
         return paths;
     }
-    const ScopedJniEnvUVE scope(activity->vm);
-    JNIEnv* const env = scope.EnvUVE();
+    const ScopedJniEnv scope(activity->vm);
+    JNIEnv* const env = scope.Env();
     if (env == nullptr) {
         return paths;
     }
@@ -419,20 +419,20 @@ AndroidStoragePathsUVE ReadAndroidStoragePathsUVE(ANativeActivity* const activit
         env->ExceptionClear();
         return paths;
     }
-    paths.publicStorageRoot = CallStringMethodUVE(env, activity->clazz, type, "getPublicStorageRoot");
-    paths.publicDocuments = CallStringMethodUVE(env, activity->clazz, type, "getPublicDocumentsDir");
-    paths.publicDownloads = CallStringMethodUVE(env, activity->clazz, type, "getPublicDownloadsDir");
-    paths.appExternalDocuments = CallStringMethodUVE(env, activity->clazz, type, "getAppExternalDocumentsDir");
+    paths.publicStorageRoot = CallStringMethod(env, activity->clazz, type, "getPublicStorageRoot");
+    paths.publicDocuments = CallStringMethod(env, activity->clazz, type, "getPublicDocumentsDir");
+    paths.publicDownloads = CallStringMethod(env, activity->clazz, type, "getPublicDownloadsDir");
+    paths.appExternalDocuments = CallStringMethod(env, activity->clazz, type, "getAppExternalDocumentsDir");
     env->DeleteLocalRef(type);
     return paths;
 }
 
-bool SetAndroidSoftKeyboardUVE(ANativeActivity* const activity, const bool visible) {
+bool SetAndroidSoftKeyboard(ANativeActivity* const activity, const bool visible) {
     if (activity == nullptr) {
         return false;
     }
-    const ScopedJniEnvUVE scope(activity->vm);
-    JNIEnv* const env = scope.EnvUVE();
+    const ScopedJniEnv scope(activity->vm);
+    JNIEnv* const env = scope.Env();
     if (env == nullptr) {
         return false;
     }
@@ -451,13 +451,13 @@ bool SetAndroidSoftKeyboardUVE(ANativeActivity* const activity, const bool visib
     return handled;
 }
 
-std::vector<std::string> DrainAndroidImeEventsUVE(ANativeActivity* const activity) {
+std::vector<std::string> DrainAndroidImeEvents(ANativeActivity* const activity) {
     std::vector<std::string> events;
     if (activity == nullptr) {
         return events;
     }
-    const ScopedJniEnvUVE scope(activity->vm);
-    JNIEnv* const env = scope.EnvUVE();
+    const ScopedJniEnv scope(activity->vm);
+    JNIEnv* const env = scope.Env();
     if (env == nullptr) {
         return events;
     }

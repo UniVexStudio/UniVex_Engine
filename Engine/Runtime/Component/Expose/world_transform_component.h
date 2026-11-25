@@ -12,70 +12,70 @@
 namespace UVE::Scene {
 
 /// The cached, derived world-space position/rotation/scale of a scene-graph entity — internal
-/// infrastructure SceneGraphUVE owns, not one of the master spec's named built-in components.
-/// Kept as a component separate from TransformComponentUVE so setting the authored local
+/// infrastructure SceneGraph owns, not one of the master spec's named built-in components.
+/// Kept as a component separate from TransformComponent so setting the authored local
 /// transform never has to touch this cached data (and vice versa). `dirty` is set whenever the
-/// authored local transform or the parent link changes (see SceneGraphUVE::
-/// SetLocalTransformUVE()/SetParentUVE()); SceneGraphUVE::UpdateUVE() clears it after
+/// authored local transform or the parent link changes (see SceneGraph::
+/// SetLocalTransform()/SetParent()); SceneGraph::Update() clears it after
 /// recomputing worldPosition/worldRotation/worldScale from the parent chain. Ordinary ECS
-/// Get/ForEach/View access exposes a const live component; SceneGraphUVE alone can obtain the
+/// Get/ForEach/View access exposes a const live component; SceneGraph alone can obtain the
 /// mutable derived-cache access key. The mutable dirty bit is an invalidation request, not a
 /// second world-pose writer. Initial value construction stays compatible; no serialized layout
 /// changes (this derived cache is never serialized).
-struct WorldTransformComponentUVE final {
-    Math::Vector3UVE worldPosition{};
-    Math::QuaternionUVE worldRotation{};
-    Math::Vector3UVE worldScale{1.0F, 1.0F, 1.0F};
+struct WorldTransformComponent final {
+    Math::Vector3 worldPosition{};
+    Math::Quaternion worldRotation{};
+    Math::Vector3 worldScale{1.0F, 1.0F, 1.0F};
     mutable bool dirty = true;
 };
 
 /// True when `worldPosition`, `worldRotation`, and `worldScale` are all finite.
-[[nodiscard]] bool IsWorldTransformComponentValidUVE(
-    const WorldTransformComponentUVE& transform) noexcept;
+[[nodiscard]] bool IsWorldTransformComponentValid(
+    const WorldTransformComponent& transform) noexcept;
 
 /// Compares the cached world pose (position, rotation, scale) while ignoring the `dirty` flag.
-[[nodiscard]] bool HasSameWorldPoseUVE(const WorldTransformComponentUVE& lhs,
-                                       const WorldTransformComponentUVE& rhs) noexcept;
+[[nodiscard]] bool HasSameWorldPose(const WorldTransformComponent& lhs,
+                                       const WorldTransformComponent& rhs) noexcept;
 
-/// Converts the cached world pose into a `Math::TrsUVE` value.
-[[nodiscard]] Math::TrsUVE ToWorldTrsUVE(const WorldTransformComponentUVE& transform) noexcept;
+/// Converts the cached world pose into a `Math::Trs` value.
+[[nodiscard]] Math::Trs ToWorldTrs(const WorldTransformComponent& transform) noexcept;
 
-/// Builds a `WorldTransformComponentUVE` from a `Math::TrsUVE` value.
-[[nodiscard]] WorldTransformComponentUVE FromWorldTrsUVE(const Math::TrsUVE& trs,
+/// Builds a `WorldTransformComponent` from a `Math::Trs` value.
+[[nodiscard]] WorldTransformComponent FromWorldTrs(const Math::Trs& trs,
                                                          bool dirty = false) noexcept;
 
 /// Copies a local transform directly as a root/top-level world transform candidate.
-[[nodiscard]] WorldTransformComponentUVE MakeWorldTransformFromLocalUVE(
-    const TransformComponentUVE& local, bool dirty = false) noexcept;
+[[nodiscard]] WorldTransformComponent MakeWorldTransformFromLocal(
+    const TransformComponent& local, bool dirty = false) noexcept;
 
 /// Composes `local` under `parentWorld` using the scene graph's TRS composition rule.
-[[nodiscard]] WorldTransformComponentUVE ComposeWorldTransformUVE(
-    const WorldTransformComponentUVE& parentWorld, const TransformComponentUVE& local,
+[[nodiscard]] WorldTransformComponent ComposeWorldTransform(
+    const WorldTransformComponent& parentWorld, const TransformComponent& local,
     bool dirty = false) noexcept;
 
-/// Builds the 4x4 world matrix (`ComposeTrsUVE`) for `transform`.
-[[nodiscard]] Math::Matrix4x4UVE BuildWorldTransformMatrixUVE(
-    const WorldTransformComponentUVE& transform) noexcept;
+/// Builds the 4x4 world matrix (`ComposeTrs`) for `transform`.
+[[nodiscard]] Math::Matrix4x4 BuildWorldTransformMatrix(
+    const WorldTransformComponent& transform) noexcept;
 
 /// Transforms a local-space point into world space using `transform`.
-[[nodiscard]] Math::Vector3UVE TransformWorldPointUVE(
-    const WorldTransformComponentUVE& transform, const Math::Vector3UVE& localPoint) noexcept;
+[[nodiscard]] Math::Vector3 TransformWorldPoint(
+    const WorldTransformComponent& transform, const Math::Vector3& localPoint) noexcept;
 
 /// Transforms a world-space point into `transform`'s local space when invertible.
-[[nodiscard]] bool TryInverseTransformWorldPointUVE(
-    const WorldTransformComponentUVE& transform, const Math::Vector3UVE& worldPoint,
-    Math::Vector3UVE& outLocalPoint) noexcept;
+[[nodiscard]] bool TryInverseTransformWorldPoint(
+    const WorldTransformComponent& transform, const Math::Vector3& worldPoint,
+    Math::Vector3& outLocalPoint) noexcept;
 
 /// Resolves the unit world-space forward direction (`-Z` rotated by `worldRotation`).
-[[nodiscard]] Math::Vector3UVE ResolveWorldForwardUVE(
-    const WorldTransformComponentUVE& transform) noexcept;
+[[nodiscard]] Math::Vector3 ResolveWorldForward(
+    const WorldTransformComponent& transform) noexcept;
 
 /// Resolves the unit world-space right direction (`+X` rotated by `worldRotation`).
-[[nodiscard]] Math::Vector3UVE ResolveWorldRightUVE(
-    const WorldTransformComponentUVE& transform) noexcept;
+[[nodiscard]] Math::Vector3 ResolveWorldRight(
+    const WorldTransformComponent& transform) noexcept;
 
 /// Resolves the unit world-space up direction (`+Y` rotated by `worldRotation`).
-[[nodiscard]] Math::Vector3UVE ResolveWorldUpUVE(
-    const WorldTransformComponentUVE& transform) noexcept;
+[[nodiscard]] Math::Vector3 ResolveWorldUp(
+    const WorldTransformComponent& transform) noexcept;
 
 } // namespace UVE::Scene

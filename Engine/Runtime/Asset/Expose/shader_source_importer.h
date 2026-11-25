@@ -11,6 +11,6 @@ namespace UVE::Asset {
 /// stage inferred from its extension; combined `.glsl` files remain outside this bridge because the
 /// project convention uses them for dual-stage built-in programs. The importer owns no shader
 /// compilation, include resolution, GPU resource, or asset-database state.
-void RegisterShaderSourceImporterUVE(IAssetImporterUVE& importer);
+void RegisterShaderSourceImporter(IAssetImporter& importer);
 
 } // namespace UVE::Asset

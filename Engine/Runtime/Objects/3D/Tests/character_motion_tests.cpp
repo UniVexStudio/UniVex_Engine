@@ -17,36 +17,36 @@
 namespace UVE::Scene::Tests {
 namespace {
 
-class CharacterMotionUVETest : public ::testing::Test {
+class CharacterMotionTest : public ::testing::Test {
 protected:
-    Memory::MemoryManagerUVE memoryManager;
-    Events::EventSystemUVE eventSystem;
-    EntityManagerUVE entityManager{memoryManager.GetDefaultAllocatorUVE(), eventSystem};
+    Memory::MemoryManager memoryManager;
+    Events::EventSystem eventSystem;
+    EntityManager entityManager{memoryManager.GetDefaultAllocator(), eventSystem};
 
-    EntityUVE MakeCharacterUVE() {
+    Entity MakeCharacter() {
         // The definition brings the transform, the pawn and the controller by itself.
-        const EntityUVE entity = entityManager.CreateEntityUVE();
+        const Entity entity = entityManager.CreateEntity();
         // A moving body needs the shape its controller sweeps; the definition no longer carries
         // one by default, because the editor leaves that choice to the author.
-        ApplyCharacter3DObjectDefinitionUVE(entityManager, entity,
-                                            Character3DObjectDefinitionUVE::WithDefaultColliderUVE());
+        ApplyCharacter3DObjectDefinition(entityManager, entity,
+                                            Character3DObjectDefinition::WithDefaultCollider());
         return entity;
     }
 
-    EntityUVE MakeControllerUVE(const ControllerKindUVE kind) {
-        const EntityUVE entity = entityManager.CreateEntityUVE();
-        ControllerComponentUVE controller;
+    Entity MakeController(const ControllerKind kind) {
+        const Entity entity = entityManager.CreateEntity();
+        ControllerComponent controller;
         controller.kind = kind;
-        entityManager.AddComponentUVE<ControllerComponentUVE>(entity, controller);
+        entityManager.AddComponent<ControllerComponent>(entity, controller);
         return entity;
     }
 
-    void DrivePawnUVE(const EntityUVE pawn, const Gameplay::GameplayInputUVE& input) {
-        entityManager.GetComponentUVE<PawnComponentUVE>(pawn).input = input;
+    void DrivePawn(const Entity pawn, const Gameplay::GameplayInput& input) {
+        entityManager.GetComponent<PawnComponent>(pawn).input = input;
     }
 
-    Gameplay::GameplayInputUVE InputUVE() {
-        Gameplay::GameplayInputUVE input;
+    Gameplay::GameplayInput Input() {
+        Gameplay::GameplayInput input;
         input.move = {1.0F, 0.0F, -1.0F};
         input.rise = 0.5F;
         input.jumpPressed = true;
@@ -54,107 +54,107 @@ protected:
     }
 };
 
-TEST_F(CharacterMotionUVETest, PlayerPossessionSteersFacedByOwnYaw) {
-    const EntityUVE body = MakeCharacterUVE();
+TEST_F(CharacterMotionTest, PlayerPossessionSteersFacedByOwnYaw) {
+    const Entity body = MakeCharacter();
     ASSERT_TRUE(
-        PossessControllerUVE(entityManager, MakeControllerUVE(ControllerKindUVE::Player), body));
-    DrivePawnUVE(body, InputUVE());
+        PossessController(entityManager, MakeController(ControllerKind::Player), body));
+    DrivePawn(body, Input());
 
     // Identity yaw passes the intent through untouched.
-    Physics::CharacterMotionInputUVE straight = ResolveCharacterMotionUVE(entityManager, body);
-    EXPECT_EQ(straight.move, InputUVE().move);
+    Physics::CharacterMotionInput straight = ResolveCharacterMotion(entityManager, body);
+    EXPECT_EQ(straight.move, Input().move);
     EXPECT_FLOAT_EQ(straight.rise, 0.5F);
     EXPECT_TRUE(straight.jumpPressed);
 
     // A yawed body steers look-relative, exactly like the player facing says.
-    Math::QuaternionUVE yaw{};
+    Math::Quaternion yaw{};
     ASSERT_TRUE(
-        Math::TryMakeAxisAngleUVE(Math::Vector3UVE{0.0F, 1.0F, 0.0F}, 1.57079632679F, yaw));
-    entityManager.GetComponentUVE<TransformComponentUVE>(body).localRotation = yaw;
-    const Physics::CharacterMotionInputUVE faced = ResolveCharacterMotionUVE(entityManager, body);
-    EXPECT_EQ(faced.move, FaceMoveFromLookUVE(yaw, InputUVE().move));
-    EXPECT_NE(faced.move, InputUVE().move);
+        Math::TryMakeAxisAngle(Math::Vector3{0.0F, 1.0F, 0.0F}, 1.57079632679F, yaw));
+    entityManager.GetComponent<TransformComponent>(body).localRotation = yaw;
+    const Physics::CharacterMotionInput faced = ResolveCharacterMotion(entityManager, body);
+    EXPECT_EQ(faced.move, FaceMoveFromLook(yaw, Input().move));
+    EXPECT_NE(faced.move, Input().move);
 }
 
-TEST_F(CharacterMotionUVETest, AiPossessionPassesWorldSpaceIntentThroughUnrotated) {
-    const EntityUVE body = MakeCharacterUVE();
+TEST_F(CharacterMotionTest, AiPossessionPassesWorldSpaceIntentThroughUnrotated) {
+    const Entity body = MakeCharacter();
     ASSERT_TRUE(
-        PossessControllerUVE(entityManager, MakeControllerUVE(ControllerKindUVE::AI), body));
-    DrivePawnUVE(body, InputUVE());
-    Math::QuaternionUVE yaw{};
+        PossessController(entityManager, MakeController(ControllerKind::AI), body));
+    DrivePawn(body, Input());
+    Math::Quaternion yaw{};
     ASSERT_TRUE(
-        Math::TryMakeAxisAngleUVE(Math::Vector3UVE{0.0F, 1.0F, 0.0F}, 1.57079632679F, yaw));
-    entityManager.GetComponentUVE<TransformComponentUVE>(body).localRotation = yaw;
+        Math::TryMakeAxisAngle(Math::Vector3{0.0F, 1.0F, 0.0F}, 1.57079632679F, yaw));
+    entityManager.GetComponent<TransformComponent>(body).localRotation = yaw;
 
-    const Physics::CharacterMotionInputUVE motion = ResolveCharacterMotionUVE(entityManager, body);
-    EXPECT_EQ(motion.move, InputUVE().move);
+    const Physics::CharacterMotionInput motion = ResolveCharacterMotion(entityManager, body);
+    EXPECT_EQ(motion.move, Input().move);
     EXPECT_FLOAT_EQ(motion.rise, 0.5F);
     EXPECT_TRUE(motion.jumpPressed);
 }
 
-TEST_F(CharacterMotionUVETest, UnpossessedBodiesStandStill) {
-    const Physics::CharacterMotionInputUVE zero{};
-    EXPECT_EQ(ResolveCharacterMotionUVE(entityManager, entityManager.CreateEntityUVE()), zero);
+TEST_F(CharacterMotionTest, UnpossessedBodiesStandStill) {
+    const Physics::CharacterMotionInput zero{};
+    EXPECT_EQ(ResolveCharacterMotion(entityManager, entityManager.CreateEntity()), zero);
 
-    const EntityUVE loner = MakeCharacterUVE();
-    DrivePawnUVE(loner, InputUVE());
-    EXPECT_EQ(ResolveCharacterMotionUVE(entityManager, loner), zero);
+    const Entity loner = MakeCharacter();
+    DrivePawn(loner, Input());
+    EXPECT_EQ(ResolveCharacterMotion(entityManager, loner), zero);
 
     // A one-sided link is no link.
-    const EntityUVE stray = MakeCharacterUVE();
-    const EntityUVE holder = MakeControllerUVE(ControllerKindUVE::Player);
-    entityManager.GetComponentUVE<PawnComponentUVE>(stray).controller = holder;
-    DrivePawnUVE(stray, InputUVE());
-    EXPECT_EQ(ResolveCharacterMotionUVE(entityManager, stray), zero);
+    const Entity stray = MakeCharacter();
+    const Entity holder = MakeController(ControllerKind::Player);
+    entityManager.GetComponent<PawnComponent>(stray).controller = holder;
+    DrivePawn(stray, Input());
+    EXPECT_EQ(ResolveCharacterMotion(entityManager, stray), zero);
 
     // A destroyed driver orphans the body the same way.
-    const EntityUVE orphan = MakeCharacterUVE();
-    const EntityUVE driver = MakeControllerUVE(ControllerKindUVE::Player);
-    ASSERT_TRUE(PossessControllerUVE(entityManager, driver, orphan));
-    DrivePawnUVE(orphan, InputUVE());
-    ASSERT_NE(ResolveCharacterMotionUVE(entityManager, orphan), zero);
-    entityManager.DestroyEntityUVE(driver);
-    EXPECT_EQ(ResolveCharacterMotionUVE(entityManager, orphan), zero);
+    const Entity orphan = MakeCharacter();
+    const Entity driver = MakeController(ControllerKind::Player);
+    ASSERT_TRUE(PossessController(entityManager, driver, orphan));
+    DrivePawn(orphan, Input());
+    ASSERT_NE(ResolveCharacterMotion(entityManager, orphan), zero);
+    entityManager.DestroyEntity(driver);
+    EXPECT_EQ(ResolveCharacterMotion(entityManager, orphan), zero);
 }
 
-TEST_F(CharacterMotionUVETest, NonFiniteInputStandsStill) {
-    const EntityUVE body = MakeCharacterUVE();
+TEST_F(CharacterMotionTest, NonFiniteInputStandsStill) {
+    const Entity body = MakeCharacter();
     ASSERT_TRUE(
-        PossessControllerUVE(entityManager, MakeControllerUVE(ControllerKindUVE::Player), body));
-    Gameplay::GameplayInputUVE broken = InputUVE();
+        PossessController(entityManager, MakeController(ControllerKind::Player), body));
+    Gameplay::GameplayInput broken = Input();
     broken.move.x = std::numeric_limits<float>::quiet_NaN();
-    DrivePawnUVE(body, broken);
-    EXPECT_EQ(ResolveCharacterMotionUVE(entityManager, body), Physics::CharacterMotionInputUVE{});
+    DrivePawn(body, broken);
+    EXPECT_EQ(ResolveCharacterMotion(entityManager, body), Physics::CharacterMotionInput{});
 
-    broken = InputUVE();
+    broken = Input();
     broken.rise = std::numeric_limits<float>::infinity();
-    DrivePawnUVE(body, broken);
-    EXPECT_EQ(ResolveCharacterMotionUVE(entityManager, body), Physics::CharacterMotionInputUVE{});
+    DrivePawn(body, broken);
+    EXPECT_EQ(ResolveCharacterMotion(entityManager, body), Physics::CharacterMotionInput{});
 }
 
-TEST_F(CharacterMotionUVETest, MissingTransformFallsBackToRawMove) {
-    const EntityUVE body = entityManager.CreateEntityUVE();
-    entityManager.AddComponentUVE<PawnComponentUVE>(body, PawnComponentUVE{});
+TEST_F(CharacterMotionTest, MissingTransformFallsBackToRawMove) {
+    const Entity body = entityManager.CreateEntity();
+    entityManager.AddComponent<PawnComponent>(body, PawnComponent{});
     ASSERT_TRUE(
-        PossessControllerUVE(entityManager, MakeControllerUVE(ControllerKindUVE::Player), body));
-    DrivePawnUVE(body, InputUVE());
+        PossessController(entityManager, MakeController(ControllerKind::Player), body));
+    DrivePawn(body, Input());
 
-    const Physics::CharacterMotionInputUVE motion = ResolveCharacterMotionUVE(entityManager, body);
-    EXPECT_EQ(motion.move, InputUVE().move);
+    const Physics::CharacterMotionInput motion = ResolveCharacterMotion(entityManager, body);
+    EXPECT_EQ(motion.move, Input().move);
     EXPECT_TRUE(motion.jumpPressed);
 }
 
-TEST_F(CharacterMotionUVETest, DefinitionMakesBodiesPossessableWithAiKindByDefault) {
-    EXPECT_TRUE(IsCharacter3DObjectDefinitionValidUVE(Character3DObjectDefinitionUVE{}));
-    Character3DObjectDefinitionUVE bad{};
-    bad.controllerKind = static_cast<ControllerKindUVE>(7U);
-    EXPECT_FALSE(IsCharacter3DObjectDefinitionValidUVE(bad));
+TEST_F(CharacterMotionTest, DefinitionMakesBodiesPossessableWithAiKindByDefault) {
+    EXPECT_TRUE(IsCharacter3DObjectDefinitionValid(Character3DObjectDefinition{}));
+    Character3DObjectDefinition bad{};
+    bad.controllerKind = static_cast<ControllerKind>(7U);
+    EXPECT_FALSE(IsCharacter3DObjectDefinitionValid(bad));
 
-    const EntityUVE body = MakeCharacterUVE();
-    ASSERT_TRUE(entityManager.HasComponentUVE<PawnComponentUVE>(body));
-    ASSERT_TRUE(entityManager.HasComponentUVE<ControllerComponentUVE>(body));
-    EXPECT_EQ(entityManager.GetComponentUVE<ControllerComponentUVE>(body).kind,
-              ControllerKindUVE::AI);
+    const Entity body = MakeCharacter();
+    ASSERT_TRUE(entityManager.HasComponent<PawnComponent>(body));
+    ASSERT_TRUE(entityManager.HasComponent<ControllerComponent>(body));
+    EXPECT_EQ(entityManager.GetComponent<ControllerComponent>(body).kind,
+              ControllerKind::AI);
 }
 
 } // namespace

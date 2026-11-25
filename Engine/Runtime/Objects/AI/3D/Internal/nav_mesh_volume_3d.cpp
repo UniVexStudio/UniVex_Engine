@@ -9,10 +9,10 @@
 
 namespace UVE::Scene {
 
-bool IsNavMeshVolume3DObjectComponentValidUVE(const NavMeshVolume3DComponentUVE& value) noexcept {
-    return IsFinite3DObjectVectorUVE(value.boundsHalfExtents) && value.boundsHalfExtents.x > 0.0F &&
+bool IsNavMeshVolume3DObjectComponentValid(const NavMeshVolume3DComponent& value) noexcept {
+    return IsFinite3DObjectVector(value.boundsHalfExtents) && value.boundsHalfExtents.x > 0.0F &&
            value.boundsHalfExtents.y > 0.0F && value.boundsHalfExtents.z > 0.0F &&
-           value.navigationLayers != 0U && IsBounded3DObjectStringUVE(value.navigationMeshAssetPath) &&
+           value.navigationLayers != 0U && IsBounded3DObjectString(value.navigationMeshAssetPath) &&
            std::isfinite(value.cellSize) && value.cellSize > 0.0F && std::isfinite(value.agentRadius) &&
            value.agentRadius > 0.0F && std::isfinite(value.agentHeight) &&
            value.agentHeight >= value.agentRadius * 2.0F && std::isfinite(value.maximumSlopeDegrees) &&
@@ -20,64 +20,64 @@ bool IsNavMeshVolume3DObjectComponentValidUVE(const NavMeshVolume3DComponentUVE&
            std::isfinite(value.maximumStepHeight) && value.maximumStepHeight >= 0.0F;
 }
 
-bool IsNavMeshVolume3DObjectDefinitionValidUVE(
-    const NavMeshVolume3DObjectDefinitionUVE& value) noexcept {
-    return IsNavMeshVolume3DObjectComponentValidUVE(value.volume);
+bool IsNavMeshVolume3DObjectDefinitionValid(
+    const NavMeshVolume3DObjectDefinition& value) noexcept {
+    return IsNavMeshVolume3DObjectComponentValid(value.volume);
 }
 
-void ApplyNavMeshVolume3DObjectDefinitionUVE(IEntityManagerUVE& entityManager,
-                                             const EntityUVE entity,
-                                             const NavMeshVolume3DObjectDefinitionUVE& value) {
-    if (!entityManager.IsAliveUVE(entity)) {
+void ApplyNavMeshVolume3DObjectDefinition(IEntityManager& entityManager,
+                                             const Entity entity,
+                                             const NavMeshVolume3DObjectDefinition& value) {
+    if (!entityManager.IsAlive(entity)) {
         return;
     }
-    EnsureObject3DBaselineUVE(entityManager, entity,
-                              NavMeshVolume3DObjectDefinitionUVE::defaultName);
-    if (entityManager.HasComponentUVE<NavMeshVolume3DComponentUVE>(entity)) {
-        entityManager.GetComponentUVE<NavMeshVolume3DComponentUVE>(entity) = value.volume;
+    EnsureObject3DBaseline(entityManager, entity,
+                              NavMeshVolume3DObjectDefinition::defaultName);
+    if (entityManager.HasComponent<NavMeshVolume3DComponent>(entity)) {
+        entityManager.GetComponent<NavMeshVolume3DComponent>(entity) = value.volume;
     } else {
-        entityManager.AddComponentUVE<NavMeshVolume3DComponentUVE>(entity, value.volume);
+        entityManager.AddComponent<NavMeshVolume3DComponent>(entity, value.volume);
     }
 }
 
-bool NavMeshVolume3DUVE::IsBakingEnabledUVE(const NavMeshVolume3DComponentUVE& volume) noexcept {
-    return volume.enabled && IsNavMeshVolume3DObjectComponentValidUVE(volume);
+bool NavMeshVolume3D::IsBakingEnabled(const NavMeshVolume3DComponent& volume) noexcept {
+    return volume.enabled && IsNavMeshVolume3DObjectComponentValid(volume);
 }
 
-Math::AabbUVE NavMeshVolume3DUVE::ResolveWorldBoundsUVE(
-    const NavMeshVolume3DComponentUVE& volume, const Math::Vector3UVE& worldPosition) noexcept {
-    return Math::AabbUVE::FromCenterExtentsUVE(worldPosition, volume.boundsHalfExtents);
+Math::Aabb NavMeshVolume3D::ResolveWorldBounds(
+    const NavMeshVolume3DComponent& volume, const Math::Vector3& worldPosition) noexcept {
+    return Math::Aabb::FromCenterExtents(worldPosition, volume.boundsHalfExtents);
 }
 
-float NavMeshVolume3DUVE::DistanceToVolumeBoundsUVE(
-    const Math::AabbUVE& bounds, const Math::Vector3UVE& point) noexcept {
+float NavMeshVolume3D::DistanceToVolumeBounds(
+    const Math::Aabb& bounds, const Math::Vector3& point) noexcept {
     const float deltaX = std::max(std::max(bounds.min.x - point.x, point.x - bounds.max.x), 0.0F);
     const float deltaY = std::max(std::max(bounds.min.y - point.y, point.y - bounds.max.y), 0.0F);
     const float deltaZ = std::max(std::max(bounds.min.z - point.z, point.z - bounds.max.z), 0.0F);
     return std::sqrt(deltaX * deltaX + deltaY * deltaY + deltaZ * deltaZ);
 }
 
-bool NavMeshVolume3DUVE::ContainsWorldPointUVE(
-    const NavMeshVolume3DComponentUVE& volume, const Math::Vector3UVE& worldPosition,
-    const Math::Vector3UVE& point) noexcept {
-    if (!IsFinite3DObjectVectorUVE(worldPosition) || !IsFinite3DObjectVectorUVE(point) ||
-        !IsNavMeshVolume3DObjectComponentValidUVE(volume)) {
+bool NavMeshVolume3D::ContainsWorldPoint(
+    const NavMeshVolume3DComponent& volume, const Math::Vector3& worldPosition,
+    const Math::Vector3& point) noexcept {
+    if (!IsFinite3DObjectVector(worldPosition) || !IsFinite3DObjectVector(point) ||
+        !IsNavMeshVolume3DObjectComponentValid(volume)) {
         return false;
     }
-    const Math::AabbUVE bounds = ResolveWorldBoundsUVE(volume, worldPosition);
-    return DistanceToVolumeBoundsUVE(bounds, point) <= 0.0F;
+    const Math::Aabb bounds = ResolveWorldBounds(volume, worldPosition);
+    return DistanceToVolumeBounds(bounds, point) <= 0.0F;
 }
 
-bool NavMeshVolume3DUVE::SharesNavigationLayerUVE(
-    const NavMeshVolume3DComponentUVE& volume, const std::uint32_t layerMask) noexcept {
+bool NavMeshVolume3D::SharesNavigationLayer(
+    const NavMeshVolume3DComponent& volume, const std::uint32_t layerMask) noexcept {
     return (volume.navigationLayers & layerMask) != 0U;
 }
 
-void NavMeshVolume3DUVE::RequestRebuildUVE(NavMeshVolume3DComponentUVE& volume) noexcept {
+void NavMeshVolume3D::RequestRebuild(NavMeshVolume3DComponent& volume) noexcept {
     volume.rebuildRequested = true;
 }
 
-bool NavMeshVolume3DUVE::ConsumeRebuildRequestUVE(NavMeshVolume3DComponentUVE& volume) noexcept {
+bool NavMeshVolume3D::ConsumeRebuildRequest(NavMeshVolume3DComponent& volume) noexcept {
     const bool requested = volume.rebuildRequested;
     volume.rebuildRequested = false;
     return requested;

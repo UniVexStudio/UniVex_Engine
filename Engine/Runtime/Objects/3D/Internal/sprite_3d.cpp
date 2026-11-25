@@ -11,9 +11,9 @@
 
 namespace UVE::Scene {
 
-bool IsSprite3DComponentValidUVE(const Sprite3DComponentUVE& value) noexcept {
+bool IsSprite3DComponentValid(const Sprite3DComponent& value) noexcept {
     if (static_cast<std::uint8_t>(value.billboardMode) >
-        static_cast<std::uint8_t>(BillboardMode3DUVE::FixedY)) {
+        static_cast<std::uint8_t>(BillboardMode3D::FixedY)) {
         return false;
     }
     const std::uint32_t totalFrames = value.hframes * value.vframes;
@@ -21,21 +21,21 @@ bool IsSprite3DComponentValidUVE(const Sprite3DComponentUVE& value) noexcept {
            std::isfinite(value.modulate.b) && std::isfinite(value.opacity) &&
            value.opacity >= 0.0F && value.opacity <= 1.0F &&
            std::isfinite(value.pixelSizeMetres) && value.pixelSizeMetres > 0.0F &&
-           Math::IsFiniteUVE(value.quadSizePixels) && value.quadSizePixels.x > 0.0F &&
+           Math::IsFinite(value.quadSizePixels) && value.quadSizePixels.x > 0.0F &&
            value.quadSizePixels.y > 0.0F && value.hframes >= 1U && value.vframes >= 1U &&
            value.frame < totalFrames && std::isfinite(value.framesPerSecond) &&
            value.framesPerSecond >= 0.0F;
 }
 
-Sprite3DComponentUVE SanitizeSprite3DComponentUVE(const Sprite3DComponentUVE& value) noexcept {
-    Sprite3DComponentUVE out = value;
+Sprite3DComponent SanitizeSprite3DComponent(const Sprite3DComponent& value) noexcept {
+    Sprite3DComponent out = value;
     if (static_cast<std::uint8_t>(out.billboardMode) >
-        static_cast<std::uint8_t>(BillboardMode3DUVE::FixedY)) {
-        out.billboardMode = BillboardMode3DUVE::Disabled;
+        static_cast<std::uint8_t>(BillboardMode3D::FixedY)) {
+        out.billboardMode = BillboardMode3D::Disabled;
     }
     if (!std::isfinite(out.modulate.r) || !std::isfinite(out.modulate.g) ||
         !std::isfinite(out.modulate.b)) {
-        out.modulate = Math::ColorUVE{1.0F, 1.0F, 1.0F};
+        out.modulate = Math::Color{1.0F, 1.0F, 1.0F};
     }
     if (!std::isfinite(out.opacity)) {
         out.opacity = 1.0F;
@@ -45,9 +45,9 @@ Sprite3DComponentUVE SanitizeSprite3DComponentUVE(const Sprite3DComponentUVE& va
     if (!std::isfinite(out.pixelSizeMetres) || out.pixelSizeMetres <= 0.0F) {
         out.pixelSizeMetres = 0.01F;
     }
-    if (!Math::IsFiniteUVE(out.quadSizePixels) || out.quadSizePixels.x <= 0.0F ||
+    if (!Math::IsFinite(out.quadSizePixels) || out.quadSizePixels.x <= 0.0F ||
         out.quadSizePixels.y <= 0.0F) {
-        out.quadSizePixels = Math::Vector2UVE{64.0F, 64.0F};
+        out.quadSizePixels = Math::Vector2{64.0F, 64.0F};
     }
     if (out.hframes == 0U) {
         out.hframes = 1U;
@@ -68,51 +68,51 @@ Sprite3DComponentUVE SanitizeSprite3DComponentUVE(const Sprite3DComponentUVE& va
     return out;
 }
 
-bool IsSprite3DObjectDefinitionValidUVE(const Sprite3DObjectDefinitionUVE& value) noexcept {
-    return IsSprite3DComponentValidUVE(value.sprite);
+bool IsSprite3DObjectDefinitionValid(const Sprite3DObjectDefinition& value) noexcept {
+    return IsSprite3DComponentValid(value.sprite);
 }
 
-bool IsAnimatedSprite3DObjectDefinitionValidUVE(
-    const AnimatedSprite3DObjectDefinitionUVE& value) noexcept {
-    return IsSprite3DComponentValidUVE(value.sprite);
+bool IsAnimatedSprite3DObjectDefinitionValid(
+    const AnimatedSprite3DObjectDefinition& value) noexcept {
+    return IsSprite3DComponentValid(value.sprite);
 }
 
-void ApplySprite3DObjectDefinitionUVE(IEntityManagerUVE& entityManager, const EntityUVE entity,
-                                      const Sprite3DObjectDefinitionUVE& value) {
-    ApplySurfaceInstance3DBaseUVE(entityManager, entity, Sprite3DObjectDefinitionUVE::defaultName);
-    entityManager.AddComponentUVE<Sprite3DComponentUVE>(
-        entity, SanitizeSprite3DComponentUVE(value.sprite));
+void ApplySprite3DObjectDefinition(IEntityManager& entityManager, const Entity entity,
+                                      const Sprite3DObjectDefinition& value) {
+    ApplySurfaceInstance3DBase(entityManager, entity, Sprite3DObjectDefinition::defaultName);
+    entityManager.AddComponent<Sprite3DComponent>(
+        entity, SanitizeSprite3DComponent(value.sprite));
 }
 
-void ApplyAnimatedSprite3DObjectDefinitionUVE(IEntityManagerUVE& entityManager,
-                                              const EntityUVE entity,
-                                              const AnimatedSprite3DObjectDefinitionUVE& value) {
-    ApplySurfaceInstance3DBaseUVE(entityManager, entity,
-                                  AnimatedSprite3DObjectDefinitionUVE::defaultName);
-    entityManager.AddComponentUVE<Sprite3DComponentUVE>(
-        entity, SanitizeSprite3DComponentUVE(value.sprite));
+void ApplyAnimatedSprite3DObjectDefinition(IEntityManager& entityManager,
+                                              const Entity entity,
+                                              const AnimatedSprite3DObjectDefinition& value) {
+    ApplySurfaceInstance3DBase(entityManager, entity,
+                                  AnimatedSprite3DObjectDefinition::defaultName);
+    entityManager.AddComponent<Sprite3DComponent>(
+        entity, SanitizeSprite3DComponent(value.sprite));
 }
 
-Math::QuaternionUVE Sprite3DUVE::ResolveBillboardWorldRotationUVE(
-    const BillboardMode3DUVE mode, const Math::QuaternionUVE& entityWorldRotation,
-    const Math::QuaternionUVE& cameraWorldRotation) noexcept {
-    if (mode == BillboardMode3DUVE::Disabled) {
+Math::Quaternion Sprite3D::ResolveBillboardWorldRotation(
+    const BillboardMode3D mode, const Math::Quaternion& entityWorldRotation,
+    const Math::Quaternion& cameraWorldRotation) noexcept {
+    if (mode == BillboardMode3D::Disabled) {
         return entityWorldRotation;
     }
-    if (mode == BillboardMode3DUVE::Enabled) {
+    if (mode == BillboardMode3D::Enabled) {
         return cameraWorldRotation;
     }
     // FixedY: keep only the camera's yaw rotation around world +Y.
-    Math::QuaternionUVE yawOnly{0.0F, cameraWorldRotation.y, 0.0F, cameraWorldRotation.w};
-    Math::QuaternionUVE normalized{};
-    if (Math::TryNormalizeUVE(yawOnly, normalized)) {
+    Math::Quaternion yawOnly{0.0F, cameraWorldRotation.y, 0.0F, cameraWorldRotation.w};
+    Math::Quaternion normalized{};
+    if (Math::TryNormalize(yawOnly, normalized)) {
         return normalized;
     }
     return entityWorldRotation;
 }
 
-Math::RectUVE Sprite3DUVE::ResolveFrameUVRectUVE(const Sprite3DComponentUVE& sprite) noexcept {
-    const Sprite3DComponentUVE safe = SanitizeSprite3DComponentUVE(sprite);
+Math::Rect Sprite3D::ResolveFrameUVRect(const Sprite3DComponent& sprite) noexcept {
+    const Sprite3DComponent safe = SanitizeSprite3DComponent(sprite);
     const std::uint32_t col = safe.frame % safe.hframes;
     const std::uint32_t row = safe.frame / safe.hframes;
     const float cellW = 1.0F / static_cast<float>(safe.hframes);
@@ -129,13 +129,13 @@ Math::RectUVE Sprite3DUVE::ResolveFrameUVRectUVE(const Sprite3DComponentUVE& spr
         v0 += cellH;
         h = -cellH;
     }
-    return Math::RectUVE{Math::Vector2UVE{u0, v0}, Math::Vector2UVE{w, h}};
+    return Math::Rect{Math::Vector2{u0, v0}, Math::Vector2{w, h}};
 }
 
-void Sprite3DUVE::StepAnimationUVE(Sprite3DComponentUVE& sprite,
+void Sprite3D::StepAnimation(Sprite3DComponent& sprite,
                                    const float deltaTimeSeconds) noexcept {
-    if (!IsSprite3DComponentValidUVE(sprite)) {
-        sprite = SanitizeSprite3DComponentUVE(sprite);
+    if (!IsSprite3DComponentValid(sprite)) {
+        sprite = SanitizeSprite3DComponent(sprite);
     }
     const std::uint32_t totalFrames = sprite.hframes * sprite.vframes;
     if (!sprite.playing || totalFrames <= 1U || sprite.framesPerSecond <= 0.0F ||
@@ -159,15 +159,15 @@ void Sprite3DUVE::StepAnimationUVE(Sprite3DComponentUVE& sprite,
     }
 }
 
-std::size_t UpdateSprite3DObjectsUVE(IEntityManagerUVE& entityManager,
+std::size_t UpdateSprite3DObjects(IEntityManager& entityManager,
                                      const float deltaTimeSeconds) {
     std::size_t stepped = 0U;
-    entityManager.ForEachUVE<Sprite3DComponentUVE>(
-        [&](const EntityUVE entity, Sprite3DComponentUVE& sprite) {
-            if (entityManager.HasComponentUVE<DisabledComponentUVE>(entity) || !sprite.playing) {
+    entityManager.ForEach<Sprite3DComponent>(
+        [&](const Entity entity, Sprite3DComponent& sprite) {
+            if (entityManager.HasComponent<DisabledComponent>(entity) || !sprite.playing) {
                 return;
             }
-            Sprite3DUVE::StepAnimationUVE(sprite, deltaTimeSeconds);
+            Sprite3D::StepAnimation(sprite, deltaTimeSeconds);
             ++stepped;
         });
     return stepped;

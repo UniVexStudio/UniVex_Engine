@@ -20,8 +20,8 @@ class TreeView;
 
 namespace UVE::Editor {
 
-class EditorUVE;
-class EditorHostUVE;
+class Editor;
+class EditorHost;
 
 /// The Input Map, drawn with PRISM in a window of its own: the project's actions on the left (add,
 /// duplicate, delete), the picked one on the right - its name, Button or Axis, and its bindings
@@ -29,33 +29,33 @@ class EditorHostUVE;
 /// window, a gamepad button or stick anywhere) or picked from a list of every input; one another
 /// action also uses is drawn in the warning colour. Changes reach Play at once; Save (and closing
 /// the window) writes the project's input file.
-class EditorInputMapWindowUVE final {
+class EditorInputMapWindow final {
 public:
-    EditorInputMapWindowUVE(EditorUVE& editor, EditorHostUVE& host);
-    ~EditorInputMapWindowUVE();
-    EditorInputMapWindowUVE(const EditorInputMapWindowUVE&) = delete;
-    EditorInputMapWindowUVE& operator=(const EditorInputMapWindowUVE&) = delete;
+    EditorInputMapWindow(Editor& editor, EditorHost& host);
+    ~EditorInputMapWindow();
+    EditorInputMapWindow(const EditorInputMapWindow&) = delete;
+    EditorInputMapWindow& operator=(const EditorInputMapWindow&) = delete;
 
-    void FrameUVE();
-    [[nodiscard]] int WindowIdUVE() const noexcept { return m_window; }
+    void Frame();
+    [[nodiscard]] int WindowId() const noexcept { return m_window; }
 
     /// The binding a key pressed while listening makes (the capture widget calls it).
-    void CapturedUVE(const Input::InputBindingUVE& binding);
-    void CancelListeningUVE();
-    [[nodiscard]] bool ListeningUVE() const noexcept;
+    void Captured(const Input::InputBinding& binding);
+    void CancelListening();
+    [[nodiscard]] bool Listening() const noexcept;
 
 private:
-    [[nodiscard]] prism::Ref<prism::Widget> BuildUVE();
-    void RebuildListUVE();
-    void RebuildDetailUVE();
-    void CommitUVE(std::vector<Input::InputActionUVE> actions);
-    void ListenUVE(bool negative, std::optional<std::size_t> replace);
-    void ShowChooseMenuUVE(bool negative, prism::Rect anchor);
-    [[nodiscard]] prism::Ref<prism::Widget> BindingSectionUVE(const std::vector<Input::InputActionUVE>& actions, std::size_t index,
+    [[nodiscard]] prism::Ref<prism::Widget> Build();
+    void RebuildList();
+    void RebuildDetail();
+    void Commit(std::vector<Input::InputAction> actions);
+    void Listen(bool negative, std::optional<std::size_t> replace);
+    void ShowChooseMenu(bool negative, prism::Rect anchor);
+    [[nodiscard]] prism::Ref<prism::Widget> BindingSection(const std::vector<Input::InputAction>& actions, std::size_t index,
                                                               bool negative, const char* title);
 
-    EditorUVE& m_editor;
-    EditorHostUVE& m_host;
+    Editor& m_editor;
+    EditorHost& m_host;
     int m_window = 0;
     bool m_closePending = false;
     bool m_listDirty = false;

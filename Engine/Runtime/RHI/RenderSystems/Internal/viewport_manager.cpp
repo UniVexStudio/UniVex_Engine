@@ -13,57 +13,57 @@ namespace UVE::Render {
 
 namespace {
 
-[[nodiscard]] bool IsPaneRectValidUVE(const ViewportPaneUVE& pane) noexcept {
+[[nodiscard]] bool IsPaneRectValid(const ViewportPane& pane) noexcept {
     return std::isfinite(pane.originX01) && std::isfinite(pane.originY01) && std::isfinite(pane.sizeX01) &&
            std::isfinite(pane.sizeY01) && pane.sizeX01 > 0.0F && pane.sizeY01 > 0.0F &&
            pane.originX01 >= 0.0F && pane.originY01 >= 0.0F && pane.originX01 + pane.sizeX01 <= 1.0F &&
            pane.originY01 + pane.sizeY01 <= 1.0F;
 }
 
-[[nodiscard]] bool HasLiveCameraUVE(Scene::IEntityManagerUVE& entityManager,
-                                    const Scene::EntityUVE cameraEntity) {
-    if (cameraEntity == Scene::kInvalidEntityUVE || !entityManager.IsAliveUVE(cameraEntity)) {
+[[nodiscard]] bool HasLiveCamera(Scene::IEntityManager& entityManager,
+                                    const Scene::Entity cameraEntity) {
+    if (cameraEntity == Scene::kInvalidEntity || !entityManager.IsAlive(cameraEntity)) {
         return false;
     }
-    if (!entityManager.HasComponentUVE<Scene::CameraComponentUVE>(cameraEntity)) {
+    if (!entityManager.HasComponent<Scene::CameraComponent>(cameraEntity)) {
         return false;
     }
-    return Scene::IsCameraComponentValidUVE(entityManager.GetComponentUVE<Scene::CameraComponentUVE>(cameraEntity));
+    return Scene::IsCameraComponentValid(entityManager.GetComponent<Scene::CameraComponent>(cameraEntity));
 }
 
 } // namespace
 
-void ViewportManagerUVE::AddPaneUVE(ViewportPaneUVE pane) {
+void ViewportManager::AddPane(ViewportPane pane) {
     m_panes.push_back(pane);
 }
 
-void ViewportManagerUVE::RemovePaneUVE(const std::size_t index) {
+void ViewportManager::RemovePane(const std::size_t index) {
     if (index >= m_panes.size()) {
-        UVE_ERROR("ViewportManagerUVE: RemovePaneUVE index {} is out of range ({} panes)", index, m_panes.size());
+        UVE_ERROR("ViewportManager: RemovePane index {} is out of range ({} panes)", index, m_panes.size());
         return;
     }
     m_panes.erase(m_panes.begin() + static_cast<std::ptrdiff_t>(index));
 }
 
-std::size_t ViewportManagerUVE::GetPaneCountUVE() const noexcept {
+std::size_t ViewportManager::GetPaneCount() const noexcept {
     return m_panes.size();
 }
 
-const ViewportPaneUVE* ViewportManagerUVE::GetPaneUVE(const std::size_t index) const noexcept {
+const ViewportPane* ViewportManager::GetPane(const std::size_t index) const noexcept {
     if (index >= m_panes.size()) {
         return nullptr;
     }
     return &m_panes[index];
 }
 
-std::optional<std::size_t> ViewportManagerUVE::FindPaneAtNormalizedPositionUVE(const float x01,
+std::optional<std::size_t> ViewportManager::FindPaneAtNormalizedPosition(const float x01,
                                                                                 const float y01) const noexcept {
     if (!std::isfinite(x01) || !std::isfinite(y01)) {
         return std::nullopt;
     }
     for (std::size_t reverseIndex = m_panes.size(); reverseIndex > 0U; --reverseIndex) {
         const std::size_t index = reverseIndex - 1U;
-        const ViewportPaneUVE& pane = m_panes[index];
+        const ViewportPane& pane = m_panes[index];
         if (x01 >= pane.originX01 && x01 <= pane.originX01 + pane.sizeX01 && y01 >= pane.originY01 &&
             y01 <= pane.originY01 + pane.sizeY01) {
             return index;
@@ -72,23 +72,23 @@ std::optional<std::size_t> ViewportManagerUVE::FindPaneAtNormalizedPositionUVE(c
     return std::nullopt;
 }
 
-void ViewportManagerUVE::RenderAllPanesUVE(IRenderer3DUVE& renderer, Scene::IEntityManagerUVE& entityManager,
+void ViewportManager::RenderAllPanes(IRenderer3D& renderer, Scene::IEntityManager& entityManager,
                                             const std::uint32_t windowWidth, const std::uint32_t windowHeight) const {
     if (windowWidth == 0U || windowHeight == 0U) {
         return;
     }
-    for (const ViewportPaneUVE& pane : m_panes) {
+    for (const ViewportPane& pane : m_panes) {
         if (pane.uiOnly) {
             continue;
         }
-        if (!IsPaneRectValidUVE(pane)) {
-            UVE_WARNING("ViewportManagerUVE: RenderAllPanesUVE skipping a pane with an invalid normalized rect "
+        if (!IsPaneRectValid(pane)) {
+            UVE_WARNING("ViewportManager: RenderAllPanes skipping a pane with an invalid normalized rect "
                         "({}, {}, {}x{})",
                         pane.originX01, pane.originY01, pane.sizeX01, pane.sizeY01);
             continue;
         }
-        if (!HasLiveCameraUVE(entityManager, pane.cameraEntity)) {
-            UVE_WARNING("ViewportManagerUVE: RenderAllPanesUVE skipping a pane with no live camera entity");
+        if (!HasLiveCamera(entityManager, pane.cameraEntity)) {
+            UVE_WARNING("ViewportManager: RenderAllPanes skipping a pane with no live camera entity");
             continue;
         }
 
@@ -107,22 +107,22 @@ void ViewportManagerUVE::RenderAllPanesUVE(IRenderer3DUVE& renderer, Scene::IEnt
             continue;
         }
 
-        if (!renderer.ResizeTargetsUVE(clampedWidth, clampedHeight)) {
-            UVE_WARNING("ViewportManagerUVE: RenderAllPanesUVE could not resize the shared renderer target to "
+        if (!renderer.ResizeTargets(clampedWidth, clampedHeight)) {
+            UVE_WARNING("ViewportManager: RenderAllPanes could not resize the shared renderer target to "
                         "{}x{}; skipping this pane",
                         clampedWidth, clampedHeight);
             continue;
         }
 
-        // ViewportRectUVE/glViewport use OpenGL's bottom-left origin; ViewportPaneUVE's
+        // ViewportRect/glViewport use OpenGL's bottom-left origin; ViewportPane's
         // originY01 is top-left (this engine's other screen-space UI convention) - flip here,
         // at the one boundary between the two conventions, rather than asking every pane author
         // to think in GL's coordinate space.
         const std::uint32_t pixelYFromBottom = windowHeight - pixelYFromTop - clampedHeight;
-        renderer.RenderFrameToRegionUVE(entityManager, pane.cameraEntity,
-                                        ViewportRectUVE{Math::Vector2iUVE{static_cast<std::int32_t>(pixelX),
+        renderer.RenderFrameToRegion(entityManager, pane.cameraEntity,
+                                        ViewportRect{Math::Vector2i{static_cast<std::int32_t>(pixelX),
                                                                           static_cast<std::int32_t>(pixelYFromBottom)},
-                                                        Math::Vector2iUVE{static_cast<std::int32_t>(clampedWidth),
+                                                        Math::Vector2i{static_cast<std::int32_t>(clampedWidth),
                                                                           static_cast<std::int32_t>(clampedHeight)}});
     }
 }

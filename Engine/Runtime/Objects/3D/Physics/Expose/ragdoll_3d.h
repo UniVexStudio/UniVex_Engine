@@ -18,12 +18,12 @@
 
 namespace UVE::Scene {
 
-class IEntityManagerUVE;
+class IEntityManager;
 
-inline constexpr std::uint32_t kMaximumRagdollBonesUVE = static_cast<std::uint32_t>(Physics::kMaximumRagdollBodiesUVE);
+inline constexpr std::uint32_t kMaximumRagdollBones = static_cast<std::uint32_t>(Physics::kMaximumRagdollBodies);
 
-/// High-level simulation mode for a `Ragdoll3DComponentUVE` (UE5 Physics Control / Godot 4.3+ model).
-enum class RagdollModeUVE : std::uint8_t {
+/// High-level simulation mode for a `Ragdoll3DComponent` (UE5 Physics Control / Godot 4.3+ model).
+enum class RagdollMode : std::uint8_t {
     /// Animation drives the bodies; per-bone linear & angular velocities are tracked for seamless activation.
     Kinematic = 0,
     /// Active Ragdoll / Physical Animation: PD joint & root motors track the live animated pose while
@@ -37,7 +37,7 @@ enum class RagdollModeUVE : std::uint8_t {
 
 /// Performance / fidelity preset so games can run full AAA ragdolls on desktop and smoothly scale
 /// down substeps / self-collision on low-end Android phones.
-enum class RagdollQualityPresetUVE : std::uint8_t {
+enum class RagdollQualityPreset : std::uint8_t {
     DesktopAAA = 0,
     MobileBalanced = 1,
     MobileFast = 2,
@@ -45,7 +45,7 @@ enum class RagdollQualityPresetUVE : std::uint8_t {
 };
 
 /// Result of inspecting a fallen ragdoll's pelvis/chest orientation for choosing a Get-Up animation.
-enum class RagdollLyingOrientationUVE : std::uint8_t {
+enum class RagdollLyingOrientation : std::uint8_t {
     Unknown = 0,
     FaceDown = 1,
     FaceUp = 2,
@@ -53,18 +53,18 @@ enum class RagdollLyingOrientationUVE : std::uint8_t {
 };
 
 /// Captured bone pose snapshot used for pop-free ragdoll-to-animation (Get-Up) blending.
-struct RagdollPoseSnapshotUVE final {
-    std::vector<SkeletonBonePoseUVE> bonePoses;
-    Math::Vector3UVE rootWorldPosition{};
-    Math::QuaternionUVE rootWorldRotation{};
+struct RagdollPoseSnapshot final {
+    std::vector<SkeletonBonePose> bonePoses;
+    Math::Vector3 rootWorldPosition{};
+    Math::Quaternion rootWorldRotation{};
     bool valid = false;
 };
 
 /// Computed grounding & orientation data to align a character entity before playing a Get-Up clip.
-struct RagdollGetUpStateUVE final {
-    RagdollLyingOrientationUVE orientation = RagdollLyingOrientationUVE::Unknown;
-    Math::Vector3UVE groundedRootPosition{};
-    Math::QuaternionUVE alignedRootRotation{};
+struct RagdollGetUpState final {
+    RagdollLyingOrientation orientation = RagdollLyingOrientation::Unknown;
+    Math::Vector3 groundedRootPosition{};
+    Math::Quaternion alignedRootRotation{};
     bool valid = false;
 };
 
@@ -73,7 +73,7 @@ struct RagdollGetUpStateUVE final {
 /// The shape is a capsule along the bone's own axis, and its LENGTH is taken from the rig at build
 /// time rather than from this struct. `radius` is authored because a capsule's thickness is a
 /// modelling choice; `halfHeight` is used for leaf bones that have no child to measure toward.
-struct RagdollBoneSetupUVE final {
+struct RagdollBoneSetup final {
     /// Exact, case-sensitive bone name. Resolution failure drops the bone rather than guessing.
     std::string boneName;
     /// The bone this one is jointed to. Empty means "nearest simulated ancestor in the skeleton",
@@ -88,9 +88,9 @@ struct RagdollBoneSetupUVE final {
     float angularDamping = 0.5F;
     float friction = 0.8F;
 
-    Physics::RagdollMotionUVE swing1Motion = Physics::RagdollMotionUVE::Limited;
-    Physics::RagdollMotionUVE swing2Motion = Physics::RagdollMotionUVE::Limited;
-    Physics::RagdollMotionUVE twistMotion = Physics::RagdollMotionUVE::Limited;
+    Physics::RagdollMotion swing1Motion = Physics::RagdollMotion::Limited;
+    Physics::RagdollMotion swing2Motion = Physics::RagdollMotion::Limited;
+    Physics::RagdollMotion twistMotion = Physics::RagdollMotion::Limited;
     float swing1LimitDegrees = 40.0F;
     float swing2LimitDegrees = 40.0F;
     float twistLimitDegrees = 25.0F;
@@ -101,7 +101,7 @@ struct RagdollBoneSetupUVE final {
 
     /// The joint frame's X axis, in the PARENT body's local space. Left zero, the builder derives it:
     /// along the bone for a cone joint, lateral for knees, and `Cross(armDir, forward)` for T/A-pose elbows.
-    Math::Vector3UVE jointAxisLocal{0.0F, 0.0F, 0.0F};
+    Math::Vector3 jointAxisLocal{0.0F, 0.0F, 0.0F};
 
     /// Per-bone Active Ragdoll motor strength scale in [0, 1].
     float motorStrengthScale = 1.0F;
@@ -112,57 +112,57 @@ struct RagdollBoneSetupUVE final {
 };
 
 /// The runtime half of one simulated bone. Never persisted.
-struct RagdollBoneBindingUVE final {
+struct RagdollBoneBinding final {
     std::uint32_t bodyIndex = 0U;
-    std::uint32_t parentBodyIndex = Physics::kInvalidRagdollBodyUVE;
-    std::uint32_t boneIndex = kInvalidSkeletonBoneIndexUVE;
-    std::uint32_t parentBoneIndex = kInvalidSkeletonBoneIndexUVE;
+    std::uint32_t parentBodyIndex = Physics::kInvalidRagdollBody;
+    std::uint32_t boneIndex = kInvalidSkeletonBoneIndex;
+    std::uint32_t parentBoneIndex = kInvalidSkeletonBoneIndex;
     std::size_t setupIndex = 0U;
     bool isRootBody = false;
     /// `conjugate(bodyBindRotation) * boneBindWorldRotation` - capsule's fixed orientation relative
     /// to the bone it represents.
-    Math::QuaternionUVE boneOffset{};
+    Math::Quaternion boneOffset{};
     /// Offset from body center of mass back to the bone's joint head in body-local space.
     /// Used on the root/pelvis body to write back exact world position without floating!
-    Math::Vector3UVE rootAnchorLocal{};
+    Math::Vector3 rootAnchorLocal{};
     /// Distance from the root along the skeleton hierarchy.
     std::uint32_t depth = 0U;
     /// Cached previous-frame animated world pose for 2-frame linear & angular velocity inheritance.
-    Math::Vector3UVE prevWorldPosition{};
-    Math::QuaternionUVE prevWorldRotation{};
+    Math::Vector3 prevWorldPosition{};
+    Math::Quaternion prevWorldRotation{};
     bool hasPreviousWorldPose = false;
 };
 
 /// First-class AAA ragdoll & physical animation component (passive, active PD motors, partial
 /// subtree hit reactions, smooth pose-snapshot get-up blending, self-collision, dynamic Rigid3D
 /// pushback, and Editor live Simulate Preview).
-struct Ragdoll3DComponentUVE final {
-    EntityUVE skeleton = kInvalidEntityUVE;
+struct Ragdoll3DComponent final {
+    Entity skeleton = kInvalidEntity;
     /// Empty means "generate the standard humanoid profile from the skeleton's bone names".
-    std::vector<RagdollBoneSetupUVE> bones;
-    Math::Vector3UVE gravity{0.0F, -9.81F, 0.0F};
+    std::vector<RagdollBoneSetup> bones;
+    Math::Vector3 gravity{0.0F, -9.81F, 0.0F};
     /// Which collider layers the ragdoll body may hit, and what it must ignore.
-    Physics::RagdollCollisionFilterUVE filter{};
-    Physics::RagdollStepSettingsUVE stepSettings{};
-    Physics::RagdollSolverUVE solver{};
+    Physics::RagdollCollisionFilter filter{};
+    Physics::RagdollStepSettings stepSettings{};
+    Physics::RagdollSolver solver{};
     /// Extra initial velocity inherited when starting simulation (combined with animated bone velocities).
-    Math::Vector3UVE initialVelocity{};
+    Math::Vector3 initialVelocity{};
 
     // ---- AAA Simulation & Authoring Settings ----
-    RagdollModeUVE mode = RagdollModeUVE::Simulating;
-    RagdollQualityPresetUVE qualityPreset = RagdollQualityPresetUVE::DesktopAAA;
+    RagdollMode mode = RagdollMode::Simulating;
+    RagdollQualityPreset qualityPreset = RagdollQualityPreset::DesktopAAA;
     /// Overall blend between live animated pose (0) and simulated ragdoll pose (1).
     float physicsBlendWeight = 1.0F;
     /// Enables Jolt-style non-adjacent limb self-collision.
     bool enableSelfCollision = true;
-    /// Applies equal-and-opposite contact impulses back onto dynamic `Rigid3DComponentUVE` entities.
+    /// Applies equal-and-opposite contact impulses back onto dynamic `Rigid3DComponent` entities.
     bool enableDynamicPushback = true;
-    /// When true, also moves the skeleton entity's own `TransformComponentUVE` to follow the fallen pelvis.
+    /// When true, also moves the skeleton entity's own `TransformComponent` to follow the fallen pelvis.
     bool driveEntityTransform = false;
     /// Samples per-bone linear & angular velocity from animated pose before transitioning to ragdoll.
     bool inheritAnimatedVelocity = true;
     /// Maximum fixed substeps executed per frame (scaled down by `MobileFast` preset for low-end phones).
-    std::uint32_t maxSubstepsPerFrame = Physics::kMaximumRagdollSubstepsUVE;
+    std::uint32_t maxSubstepsPerFrame = Physics::kMaximumRagdollSubsteps;
     /// Active Ragdoll joint PD motor parameters (UE5 Physics Control / Jolt DriveToPoseUsingMotors).
     float motorStiffness = 160.0F;
     float motorDamping = 20.0F;
@@ -180,20 +180,20 @@ struct Ragdoll3DComponentUVE final {
 
     // ---- Runtime, never persisted ----
     bool initialized = false;
-    std::vector<RagdollBoneBindingUVE> bindings;
+    std::vector<RagdollBoneBinding> bindings;
     /// Fixed-step accumulator: the fraction of a frame that did not fill a whole step stays here.
     float pendingSeconds = 0.0F;
-    Physics::RagdollStepReportUVE lastReport{};
-    RagdollPoseSnapshotUVE blendOutSnapshot{};
+    Physics::RagdollStepReport lastReport{};
+    RagdollPoseSnapshot blendOutSnapshot{};
     float blendOutElapsedSeconds = 0.0F;
     float blendOutDurationSeconds = 0.35F;
     bool hadFloorSupport = false;
     bool editorPreviewSimulating = false;
-    std::vector<SkeletonBonePoseUVE> editorPreviewBackupPose;
-    RagdollModeUVE editorPreviewBackupMode = RagdollModeUVE::Simulating;
+    std::vector<SkeletonBonePose> editorPreviewBackupPose;
+    RagdollMode editorPreviewBackupMode = RagdollMode::Simulating;
 
     /// Compares authored fields only: a running ragdoll is not a different ragdoll.
-    [[nodiscard]] bool operator==(const Ragdoll3DComponentUVE& other) const noexcept {
+    [[nodiscard]] bool operator==(const Ragdoll3DComponent& other) const noexcept {
         if (skeleton != other.skeleton || gravity != other.gravity || enabled != other.enabled ||
             initialVelocity != other.initialVelocity || mode != other.mode ||
             qualityPreset != other.qualityPreset || physicsBlendWeight != other.physicsBlendWeight ||
@@ -215,8 +215,8 @@ struct Ragdoll3DComponentUVE final {
             return false;
         }
         for (std::size_t index = 0U; index < bones.size(); ++index) {
-            const RagdollBoneSetupUVE& lhs = bones[index];
-            const RagdollBoneSetupUVE& rhs = other.bones[index];
+            const RagdollBoneSetup& lhs = bones[index];
+            const RagdollBoneSetup& rhs = other.bones[index];
             if (lhs.boneName != rhs.boneName || lhs.parentBoneName != rhs.parentBoneName ||
                 lhs.mass != rhs.mass || lhs.radius != rhs.radius || lhs.halfHeight != rhs.halfHeight ||
                 lhs.linearDamping != rhs.linearDamping || lhs.angularDamping != rhs.angularDamping ||
@@ -237,30 +237,30 @@ struct Ragdoll3DComponentUVE final {
     }
 };
 
-/// Validates an authored `Ragdoll3DComponentUVE`, allowing `skeleton == kInvalidEntityUVE` for
+/// Validates an authored `Ragdoll3DComponent`, allowing `skeleton == kInvalidEntity` for
 /// freshly created scene objects before a skeleton is linked in the Editor or during serialization.
-[[nodiscard]] bool IsRagdoll3DComponentAuthoredValidUVE(const Ragdoll3DComponentUVE& value) noexcept;
+[[nodiscard]] bool IsRagdoll3DComponentAuthoredValid(const Ragdoll3DComponent& value) noexcept;
 
 /// Validates that `value` is both well-authored AND linked to a skeleton entity ready for simulation.
-[[nodiscard]] bool IsRagdoll3DComponentValidUVE(const Ragdoll3DComponentUVE& value) noexcept;
+[[nodiscard]] bool IsRagdoll3DComponentValid(const Ragdoll3DComponent& value) noexcept;
 
-struct Ragdoll3DObjectDefinitionUVE final {
+struct Ragdoll3DObjectDefinition final {
     static constexpr std::string_view defaultName = "Ragdoll3D";
-    Ragdoll3DComponentUVE ragdoll{};
+    Ragdoll3DComponent ragdoll{};
 };
 
-[[nodiscard]] bool IsRagdoll3DObjectDefinitionValidUVE(const Ragdoll3DObjectDefinitionUVE& value) noexcept;
+[[nodiscard]] bool IsRagdoll3DObjectDefinitionValid(const Ragdoll3DObjectDefinition& value) noexcept;
 
-void ApplyRagdoll3DObjectDefinitionUVE(IEntityManagerUVE& entityManager, EntityUVE entity,
-                                       const Ragdoll3DObjectDefinitionUVE& value);
+void ApplyRagdoll3DObjectDefinition(IEntityManager& entityManager, Entity entity,
+                                       const Ragdoll3DObjectDefinition& value);
 
 /// Applies a performance / fidelity preset (`DesktopAAA`, `MobileBalanced`, `MobileFast`) onto
 /// `ragdoll`'s substep cap, solver iteration counts, self-collision, and dynamic pushback flags.
-void ApplyRagdollQualityPresetUVE(Ragdoll3DComponentUVE& ragdoll, RagdollQualityPresetUVE preset) noexcept;
+void ApplyRagdollQualityPreset(Ragdoll3DComponent& ragdoll, RagdollQualityPreset preset) noexcept;
 
 /// Standard humanoid profile entry matched against lowercased bone names (Mixamo, UE5, VRM/Unity,
 /// Blender, and generic DCC conventions).
-struct HumanoidRagdollProfileEntryUVE final {
+struct HumanoidRagdollProfileEntry final {
     std::string_view pattern;
     float mass = 1.0F;
     float radius = 0.05F;
@@ -276,54 +276,54 @@ struct HumanoidRagdollProfileEntryUVE final {
     float twistUpperLimitDegrees = 45.0F;
 };
 
-[[nodiscard]] std::span<const HumanoidRagdollProfileEntryUVE> GetHumanoidRagdollProfileUVE() noexcept;
+[[nodiscard]] std::span<const HumanoidRagdollProfileEntry> GetHumanoidRagdollProfile() noexcept;
 
 /// Resolves the humanoid profile against `skeleton`'s bone names, producing one setup per matched
 /// bone in hierarchy order. Supports Mixamo, UE5 Mannequin, VRM/Unity Humanoid, and Blender naming.
-[[nodiscard]] std::vector<RagdollBoneSetupUVE> BuildHumanoidRagdollBonesUVE(
-    const std::vector<SkeletonBoneUVE>& skeletonBones);
+[[nodiscard]] std::vector<RagdollBoneSetup> BuildHumanoidRagdollBones(
+    const std::vector<SkeletonBone>& skeletonBones);
 
 /// Builds the solver from the skeleton's current pose, applies Jolt-style inertia stabilization
 /// and non-adjacent self-collision pair filtering, and computes exact T/A-pose hinge axes.
-[[nodiscard]] bool InitializeRagdoll3DUVE(IEntityManagerUVE& entityManager, EntityUVE entity);
+[[nodiscard]] bool InitializeRagdoll3D(IEntityManager& entityManager, Entity entity);
 
 /// Seamlessly activates `mode` (`Simulating` or `Active`), initializing if needed, waking the
 /// solver, and inheriting per-bone linear + angular velocities from the last animated frames plus
 /// any optional `extraVelocity`.
-[[nodiscard]] bool ActivateRagdollUVE(IEntityManagerUVE& entityManager, EntityUVE entity,
-                                      RagdollModeUVE mode = RagdollModeUVE::Simulating,
-                                      const Math::Vector3UVE& extraVelocity = {});
+[[nodiscard]] bool ActivateRagdoll(IEntityManager& entityManager, Entity entity,
+                                      RagdollMode mode = RagdollMode::Simulating,
+                                      const Math::Vector3& extraVelocity = {});
 
 /// Captures the ragdoll's current skeleton pose and root world transform for smooth Get-Up blending.
-[[nodiscard]] bool CaptureRagdollPoseSnapshotUVE(IEntityManagerUVE& entityManager, EntityUVE entity,
-                                                 RagdollPoseSnapshotUVE& outSnapshot);
+[[nodiscard]] bool CaptureRagdollPoseSnapshot(IEntityManager& entityManager, Entity entity,
+                                                 RagdollPoseSnapshot& outSnapshot);
 
 /// Classifies whether the fallen ragdoll is lying FaceDown (prone), FaceUp (supine), or Upright,
 /// and computes a grounded root position and yaw-aligned upright facing rotation for Get-Up clips.
-[[nodiscard]] bool EvaluateRagdollGetUpStateUVE(IEntityManagerUVE& entityManager, EntityUVE entity,
-                                                RagdollGetUpStateUVE& outState, float floorYOffset = 0.0F);
+[[nodiscard]] bool EvaluateRagdollGetUpState(IEntityManager& entityManager, Entity entity,
+                                                RagdollGetUpState& outState, float floorYOffset = 0.0F);
 
-/// Captures a pose snapshot and enters `RagdollModeUVE::BlendingOut`, smoothly blending from the
+/// Captures a pose snapshot and enters `RagdollMode::BlendingOut`, smoothly blending from the
 /// simulated ragdoll pose back into the live animated / Get-Up pose over `blendDurationSeconds`.
-[[nodiscard]] bool BeginBlendOutFromRagdollUVE(IEntityManagerUVE& entityManager, EntityUVE entity,
+[[nodiscard]] bool BeginBlendOutFromRagdoll(IEntityManager& entityManager, Entity entity,
                                                float blendDurationSeconds = 0.35F);
 
 /// Editor-safe live preview: backs up the skeleton's current pose and starts simulating in Edit Mode.
-[[nodiscard]] bool StartRagdollEditorPreviewUVE(IEntityManagerUVE& entityManager, EntityUVE entity);
+[[nodiscard]] bool StartRagdollEditorPreview(IEntityManager& entityManager, Entity entity);
 
 /// Stops Editor live preview and restores the exact skeleton pose and ragdoll mode saved on start.
-[[nodiscard]] bool StopRagdollEditorPreviewUVE(IEntityManagerUVE& entityManager, EntityUVE entity);
+[[nodiscard]] bool StopRagdollEditorPreview(IEntityManager& entityManager, Entity entity);
 
 /// Applies one world-space hit to the ragdoll's body nearest `worldPoint`, waking the ragdoll first.
-[[nodiscard]] bool ApplyRagdollImpactUVE(IEntityManagerUVE& entityManager, EntityUVE entity,
-                                         const Math::Vector3UVE& worldPoint,
-                                         const Math::Vector3UVE& impulse, float searchRadius = 0.5F);
+[[nodiscard]] bool ApplyRagdollImpact(IEntityManager& entityManager, Entity entity,
+                                         const Math::Vector3& worldPoint,
+                                         const Math::Vector3& impulse, float searchRadius = 0.5F);
 
 /// Steps enabled ragdolls against world colliders (with AABB broadphase, per-substep contact refresh,
 /// self-collision, dynamic Rigid3D pushback, PD Active Ragdoll motors, smart sleep, root position +
 /// rotation write-back, and smooth pose blending).
 /// When `editorPreviewOnly` is true, only ragdolls with `editorPreviewSimulating == true` advance.
-std::size_t UpdateRagdoll3DObjectsUVE(IEntityManagerUVE& entityManager, float deltaTimeSeconds,
+std::size_t UpdateRagdoll3DObjects(IEntityManager& entityManager, float deltaTimeSeconds,
                                       bool editorPreviewOnly = false);
 
 } // namespace UVE::Scene

@@ -10,53 +10,53 @@
 namespace UVE::Window {
 namespace {
 
-TEST(AdaptiveRenderResolutionUVETest, InvalidInputsReturnZeroSize) {
-    const AdaptiveRenderResolutionLimitsUVE limits{2048U, 1280ULL * 720ULL};
-    EXPECT_EQ(ComputeAdaptiveRenderResolutionUVE(0U, 720U, limits).width, 0U);
-    EXPECT_EQ(ComputeAdaptiveRenderResolutionUVE(1280U, 0U, limits).height, 0U);
-    EXPECT_EQ(ComputeAdaptiveRenderResolutionUVE(1280U, 720U, AdaptiveRenderResolutionLimitsUVE{0U, 1ULL}).width, 0U);
-    EXPECT_EQ(ComputeAdaptiveRenderResolutionUVE(1280U, 720U, AdaptiveRenderResolutionLimitsUVE{2048U, 0ULL}).height, 0U);
-    EXPECT_EQ(ComputeAdaptiveRenderResolutionUVE(1280U, 720U, limits, 0.0).width, 0U);
-    EXPECT_EQ(ComputeAdaptiveRenderResolutionUVE(1280U, 720U, limits, -0.5).height, 0U);
-    EXPECT_EQ(ComputeAdaptiveRenderResolutionUVE(1280U, 720U, limits,
+TEST(AdaptiveRenderResolutionTest, InvalidInputsReturnZeroSize) {
+    const AdaptiveRenderResolutionLimits limits{2048U, 1280ULL * 720ULL};
+    EXPECT_EQ(ComputeAdaptiveRenderResolution(0U, 720U, limits).width, 0U);
+    EXPECT_EQ(ComputeAdaptiveRenderResolution(1280U, 0U, limits).height, 0U);
+    EXPECT_EQ(ComputeAdaptiveRenderResolution(1280U, 720U, AdaptiveRenderResolutionLimits{0U, 1ULL}).width, 0U);
+    EXPECT_EQ(ComputeAdaptiveRenderResolution(1280U, 720U, AdaptiveRenderResolutionLimits{2048U, 0ULL}).height, 0U);
+    EXPECT_EQ(ComputeAdaptiveRenderResolution(1280U, 720U, limits, 0.0).width, 0U);
+    EXPECT_EQ(ComputeAdaptiveRenderResolution(1280U, 720U, limits, -0.5).height, 0U);
+    EXPECT_EQ(ComputeAdaptiveRenderResolution(1280U, 720U, limits,
                                                  std::numeric_limits<double>::infinity()).width,
               0U);
-    EXPECT_EQ(ComputeAdaptiveRenderResolutionUVE(1280U, 720U, limits,
+    EXPECT_EQ(ComputeAdaptiveRenderResolution(1280U, 720U, limits,
                                                  std::numeric_limits<double>::quiet_NaN()).height,
               0U);
 }
 
-TEST(AdaptiveRenderResolutionUVETest, AppliesFixedRenderScaleBeforePresentationSafetyCaps) {
-    constexpr AdaptiveRenderResolutionLimitsUVE desktopLimits{8192U, 3840ULL * 2160ULL};
-    const AdaptiveRenderResolutionUVE halfScale =
-        ComputeAdaptiveRenderResolutionUVE(1280U, 720U, desktopLimits, 0.5);
+TEST(AdaptiveRenderResolutionTest, AppliesFixedRenderScaleBeforePresentationSafetyCaps) {
+    constexpr AdaptiveRenderResolutionLimits desktopLimits{8192U, 3840ULL * 2160ULL};
+    const AdaptiveRenderResolution halfScale =
+        ComputeAdaptiveRenderResolution(1280U, 720U, desktopLimits, 0.5);
     EXPECT_EQ(halfScale.width, 640U);
     EXPECT_EQ(halfScale.height, 360U);
 
-    const AdaptiveRenderResolutionUVE threeQuarterScale =
-        ComputeAdaptiveRenderResolutionUVE(1280U, 720U, desktopLimits, 0.75);
+    const AdaptiveRenderResolution threeQuarterScale =
+        ComputeAdaptiveRenderResolution(1280U, 720U, desktopLimits, 0.75);
     EXPECT_EQ(threeQuarterScale.width, 960U);
     EXPECT_EQ(threeQuarterScale.height, 540U);
 
     // The configured scale is applied first, then the Android-style budget clamps oversized output.
-    const AdaptiveRenderResolutionUVE scaledAndCapped = ComputeAdaptiveRenderResolutionUVE(
-        2400U, 1080U, AdaptiveRenderResolutionLimitsUVE{2048U, 1280ULL * 720ULL}, 0.5);
+    const AdaptiveRenderResolution scaledAndCapped = ComputeAdaptiveRenderResolution(
+        2400U, 1080U, AdaptiveRenderResolutionLimits{2048U, 1280ULL * 720ULL}, 0.5);
     EXPECT_EQ(scaledAndCapped.width, 1200U);
     EXPECT_EQ(scaledAndCapped.height, 540U);
 }
 
-TEST(AdaptiveRenderResolutionUVETest, SmallPortraitSurfaceScalesToAndroidBudgetAndPreservesAspect) {
-    const AdaptiveRenderResolutionUVE result = ComputeAdaptiveRenderResolutionUVE(
-        720U, 1600U, AdaptiveRenderResolutionLimitsUVE{2048U, 1280ULL * 720ULL});
+TEST(AdaptiveRenderResolutionTest, SmallPortraitSurfaceScalesToAndroidBudgetAndPreservesAspect) {
+    const AdaptiveRenderResolution result = ComputeAdaptiveRenderResolution(
+        720U, 1600U, AdaptiveRenderResolutionLimits{2048U, 1280ULL * 720ULL});
     // The portrait surface exceeds the Android pixel budget, so it scales down uniformly.
     EXPECT_EQ(result.width, 643U);
     EXPECT_EQ(result.height, 1431U);
     EXPECT_NEAR(static_cast<double>(result.width) / static_cast<double>(result.height), 0.45, 0.001);
 }
 
-TEST(AdaptiveRenderResolutionUVETest, AndroidPolicyCapsOversizedLandscapeSurface) {
-    const AdaptiveRenderResolutionUVE result = ComputeAdaptiveRenderResolutionUVE(
-        2400U, 1080U, AdaptiveRenderResolutionLimitsUVE{2048U, 1280ULL * 720ULL});
+TEST(AdaptiveRenderResolutionTest, AndroidPolicyCapsOversizedLandscapeSurface) {
+    const AdaptiveRenderResolution result = ComputeAdaptiveRenderResolution(
+        2400U, 1080U, AdaptiveRenderResolutionLimits{2048U, 1280ULL * 720ULL});
     EXPECT_EQ(result.width, 1431U);
     EXPECT_EQ(result.height, 643U);
     EXPECT_LE(static_cast<std::uint64_t>(result.width) * result.height, 1280ULL * 720ULL);
@@ -64,16 +64,16 @@ TEST(AdaptiveRenderResolutionUVETest, AndroidPolicyCapsOversizedLandscapeSurface
     EXPECT_LE(result.height, 2048U);
 }
 
-TEST(AdaptiveRenderResolutionUVETest, DesktopFourKSurfaceRemainsNativeResolution) {
-    const AdaptiveRenderResolutionUVE result = ComputeAdaptiveRenderResolutionUVE(
-        3840U, 2160U, AdaptiveRenderResolutionLimitsUVE{8192U, 3840ULL * 2160ULL});
+TEST(AdaptiveRenderResolutionTest, DesktopFourKSurfaceRemainsNativeResolution) {
+    const AdaptiveRenderResolution result = ComputeAdaptiveRenderResolution(
+        3840U, 2160U, AdaptiveRenderResolutionLimits{8192U, 3840ULL * 2160ULL});
     EXPECT_EQ(result.width, 3840U);
     EXPECT_EQ(result.height, 2160U);
 }
 
-TEST(AdaptiveRenderResolutionUVETest, DesktopOversizedSurfaceScalesToPixelBudget) {
-    const AdaptiveRenderResolutionUVE result = ComputeAdaptiveRenderResolutionUVE(
-        5120U, 2880U, AdaptiveRenderResolutionLimitsUVE{8192U, 3840ULL * 2160ULL});
+TEST(AdaptiveRenderResolutionTest, DesktopOversizedSurfaceScalesToPixelBudget) {
+    const AdaptiveRenderResolution result = ComputeAdaptiveRenderResolution(
+        5120U, 2880U, AdaptiveRenderResolutionLimits{8192U, 3840ULL * 2160ULL});
     EXPECT_EQ(result.width, 3840U);
     EXPECT_EQ(result.height, 2160U);
 }

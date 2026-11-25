@@ -12,18 +12,18 @@ namespace UVE::Render::Shader::Detail {
 
 namespace {
 
-[[nodiscard]] std::string ToLowerUVE(std::string_view text) {
+[[nodiscard]] std::string ToLower(std::string_view text) {
     std::string result(text);
     std::transform(result.begin(), result.end(), result.begin(),
                     [](unsigned char character) { return static_cast<char>(std::tolower(character)); });
     return result;
 }
 
-[[nodiscard]] bool ContainsWarningUVE(std::string_view text) {
-    return ToLowerUVE(text).find("warning") != std::string::npos;
+[[nodiscard]] bool ContainsWarning(std::string_view text) {
+    return ToLower(text).find("warning") != std::string::npos;
 }
 
-[[nodiscard]] std::vector<std::string> SplitLinesUVE(std::string_view text) {
+[[nodiscard]] std::vector<std::string> SplitLines(std::string_view text) {
     std::vector<std::string> lines;
     std::size_t start = 0;
     while (start <= text.size()) {
@@ -40,9 +40,9 @@ namespace {
 
 } // namespace
 
-std::vector<ShaderCompileErrorUVE> ParseGlInfoLogUVE(std::string_view rawLog,
+std::vector<ShaderCompileError> ParseGlInfoLog(std::string_view rawLog,
                                                       const std::vector<std::string>& fileIndexTable) {
-    std::vector<ShaderCompileErrorUVE> diagnostics;
+    std::vector<ShaderCompileError> diagnostics;
     if (rawLog.empty()) {
         return diagnostics;
     }
@@ -51,13 +51,13 @@ std::vector<ShaderCompileErrorUVE> ParseGlInfoLogUVE(std::string_view rawLog,
     // parens (Mesa-style). Group 4: the rest of the message.
     static const std::regex kLinePattern(R"(^(?:ERROR:\s*)?(\d+):(\d+)(?:\((\d+)\))?:\s*(.*)$)");
 
-    for (const std::string& rawLine : SplitLinesUVE(rawLog)) {
+    for (const std::string& rawLine : SplitLines(rawLog)) {
         if (rawLine.empty()) {
             continue;
         }
 
         std::smatch match;
-        ShaderCompileErrorUVE error;
+        ShaderCompileError error;
         error.rawLogLine = rawLine;
 
         if (std::regex_match(rawLine, match, kLinePattern)) {
@@ -67,10 +67,10 @@ std::vector<ShaderCompileErrorUVE> ParseGlInfoLogUVE(std::string_view rawLog,
             error.columnNumber =
                 match[3].matched ? static_cast<std::uint32_t>(std::strtoul(match[3].str().c_str(), nullptr, 10)) : 0;
             error.message = match[4].str();
-            error.isWarning = ContainsWarningUVE(error.message);
+            error.isWarning = ContainsWarning(error.message);
         } else {
             error.message = rawLine;
-            error.isWarning = ContainsWarningUVE(rawLine);
+            error.isWarning = ContainsWarning(rawLine);
         }
 
         diagnostics.push_back(std::move(error));

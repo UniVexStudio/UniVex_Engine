@@ -14,8 +14,8 @@ duplicated byte-for-byte inside the editor module, and both modules separately c
 hand-generated `ui_font_ttf_bytes.inc` arrays of it.
 
 Compiled into `Internal/ui_font_ttf_bytes.inc` (a plain `std::uint8_t` byte array),
-which `UIFontAtlasUVE` bakes into a runtime glyph atlas via `stb_truetype.h`
-(see below) - this is the font `UITextComponentUVE` entities render with.
+which `UIFontAtlas` bakes into a runtime glyph atlas via `stb_truetype.h`
+(see below) - this is the font `UITextComponent` entities render with.
 
 ### License
 
@@ -117,7 +117,7 @@ Tools (public domain / MIT dual-licensed), unmodified in API from the upstream
 file (only compiler-warning fixes). Upstream project:
 <https://github.com/nothings/stb>.
 
-Used by `UIFontAtlasUVE` (`Internal/ui_font_atlas_uve.cpp`) to bake the embedded
+Used by `UIFontAtlas` (`Internal/ui_font_atlas_uve.cpp`) to bake the embedded
 Liberation Sans subset above into a fixed-size ASCII glyph bitmap once at
 startup via `stbtt_BakeFontBitmap()`/`stbtt_GetBakedQuad()` - the standard,
 documented usage pattern this header's own sample code demonstrates.

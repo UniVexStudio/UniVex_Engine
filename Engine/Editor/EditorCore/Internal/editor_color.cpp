@@ -11,7 +11,7 @@ namespace UVE::Editor {
 
 namespace {
 
-[[nodiscard]] int HexDigitValueUVE(const char digit) noexcept {
+[[nodiscard]] int HexDigitValue(const char digit) noexcept {
     if (digit >= '0' && digit <= '9') {
         return digit - '0';
     }
@@ -24,7 +24,7 @@ namespace {
     return -1;
 }
 
-[[nodiscard]] int ToByteUVE(const float channel) noexcept {
+[[nodiscard]] int ToByte(const float channel) noexcept {
     // NaN compares false both ways and would survive a clamp, so it is mapped to 0 explicitly.
     const float clamped = std::isnan(channel) ? 0.0F : std::clamp(channel, 0.0F, 1.0F);
     return static_cast<int>(std::lround(clamped * 255.0F));
@@ -32,7 +32,7 @@ namespace {
 
 } // namespace
 
-std::optional<EditorColorUVE> ParseColorHexUVE(std::string_view text) {
+std::optional<EditorColor> ParseColorHex(std::string_view text) {
     const auto isSpace = [](const char c) { return c == ' ' || c == '\t' || c == '\n' || c == '\r'; };
     while (!text.empty() && isSpace(text.front())) {
         text.remove_prefix(1);
@@ -49,7 +49,7 @@ std::optional<EditorColorUVE> ParseColorHexUVE(std::string_view text) {
 
     std::array<int, 8> digits{};
     for (std::size_t index = 0; index < text.size(); ++index) {
-        digits[index] = HexDigitValueUVE(text[index]);
+        digits[index] = HexDigitValue(text[index]);
         if (digits[index] < 0) {
             return std::nullopt;
         }
@@ -66,49 +66,49 @@ std::optional<EditorColorUVE> ParseColorHexUVE(std::string_view text) {
             bytes[channel] = (digits[channel * 2U] * 16) + digits[(channel * 2U) + 1U];
         }
     }
-    return EditorColorUVE{static_cast<float>(bytes[0]) / 255.0F, static_cast<float>(bytes[1]) / 255.0F,
+    return EditorColor{static_cast<float>(bytes[0]) / 255.0F, static_cast<float>(bytes[1]) / 255.0F,
                           static_cast<float>(bytes[2]) / 255.0F, static_cast<float>(bytes[3]) / 255.0F};
 }
 
-std::string FormatColorHexUVE(const EditorColorUVE& color, const bool includeAlpha) {
+std::string FormatColorHex(const EditorColor& color, const bool includeAlpha) {
     std::array<char, 16> text{};
     if (includeAlpha) {
-        std::snprintf(text.data(), text.size(), "#%02X%02X%02X%02X", ToByteUVE(color.r), ToByteUVE(color.g),
-                      ToByteUVE(color.b), ToByteUVE(color.a));
+        std::snprintf(text.data(), text.size(), "#%02X%02X%02X%02X", ToByte(color.r), ToByte(color.g),
+                      ToByte(color.b), ToByte(color.a));
     } else {
-        std::snprintf(text.data(), text.size(), "#%02X%02X%02X", ToByteUVE(color.r), ToByteUVE(color.g),
-                      ToByteUVE(color.b));
+        std::snprintf(text.data(), text.size(), "#%02X%02X%02X", ToByte(color.r), ToByte(color.g),
+                      ToByte(color.b));
     }
     return std::string(text.data());
 }
 
-void PushRecentColorUVE(std::vector<EditorColorUVE>& recents, const EditorColorUVE& color) {
-    const std::string key = FormatColorHexUVE(color, true);
-    std::erase_if(recents, [&key](const EditorColorUVE& recent) { return FormatColorHexUVE(recent, true) == key; });
+void PushRecentColor(std::vector<EditorColor>& recents, const EditorColor& color) {
+    const std::string key = FormatColorHex(color, true);
+    std::erase_if(recents, [&key](const EditorColor& recent) { return FormatColorHex(recent, true) == key; });
     recents.insert(recents.begin(), color);
-    if (recents.size() > kMaxRecentColorsUVE) {
-        recents.resize(kMaxRecentColorsUVE);
+    if (recents.size() > kMaxRecentColors) {
+        recents.resize(kMaxRecentColors);
     }
 }
 
-bool AddSavedColorUVE(std::vector<EditorColorUVE>& saved, const EditorColorUVE& color) {
-    if (saved.size() >= kMaxSavedColorsUVE) {
+bool AddSavedColor(std::vector<EditorColor>& saved, const EditorColor& color) {
+    if (saved.size() >= kMaxSavedColors) {
         return false;
     }
-    const std::string key = FormatColorHexUVE(color, true);
+    const std::string key = FormatColorHex(color, true);
     if (std::any_of(saved.begin(), saved.end(),
-                    [&key](const EditorColorUVE& entry) { return FormatColorHexUVE(entry, true) == key; })) {
+                    [&key](const EditorColor& entry) { return FormatColorHex(entry, true) == key; })) {
         return false;
     }
     saved.push_back(color);
     return true;
 }
 
-EditorHsvUVE RgbToHsvUVE(const EditorColorUVE& color, const EditorHsvUVE& previous) {
+EditorHsv RgbToHsv(const EditorColor& color, const EditorHsv& previous) {
     const float maximum = std::max({color.r, color.g, color.b});
     const float minimum = std::min({color.r, color.g, color.b});
     const float chroma = maximum - minimum;
-    EditorHsvUVE hsv{previous.h, previous.s, maximum};
+    EditorHsv hsv{previous.h, previous.s, maximum};
     if (maximum <= 0.0F) {
         return hsv; // black: hue and saturation are whatever they were
     }
@@ -132,7 +132,7 @@ EditorHsvUVE RgbToHsvUVE(const EditorColorUVE& color, const EditorHsvUVE& previo
     return hsv;
 }
 
-EditorColorUVE HsvToRgbUVE(const EditorHsvUVE& hsv, const float alpha) {
+EditorColor HsvToRgb(const EditorHsv& hsv, const float alpha) {
     const float hue = (hsv.h - std::floor(hsv.h)) * 6.0F;
     const float saturation = std::clamp(hsv.s, 0.0F, 1.0F);
     const float value = std::clamp(hsv.v, 0.0F, 1.0F);
@@ -142,16 +142,16 @@ EditorColorUVE HsvToRgbUVE(const EditorHsvUVE& hsv, const float alpha) {
     const float q = value * (1.0F - (saturation * fraction));
     const float t = value * (1.0F - (saturation * (1.0F - fraction)));
     switch (sector) {
-        case 0: return EditorColorUVE{value, t, p, alpha};
-        case 1: return EditorColorUVE{q, value, p, alpha};
-        case 2: return EditorColorUVE{p, value, t, alpha};
-        case 3: return EditorColorUVE{p, q, value, alpha};
-        case 4: return EditorColorUVE{t, p, value, alpha};
-        default: return EditorColorUVE{value, p, q, alpha};
+        case 0: return EditorColor{value, t, p, alpha};
+        case 1: return EditorColor{q, value, p, alpha};
+        case 2: return EditorColor{p, value, t, alpha};
+        case 3: return EditorColor{p, q, value, alpha};
+        case 4: return EditorColor{t, p, value, alpha};
+        default: return EditorColor{value, p, q, alpha};
     }
 }
 
-float LinearToSrgbChannelUVE(const float linear) noexcept {
+float LinearToSrgbChannel(const float linear) noexcept {
     if (!std::isfinite(linear) || linear <= 0.0F) {
         return 0.0F;
     }
@@ -161,7 +161,7 @@ float LinearToSrgbChannelUVE(const float linear) noexcept {
     return (linear <= 0.0031308F) ? (linear * 12.92F) : (1.055F * std::pow(linear, 1.0F / 2.4F) - 0.055F);
 }
 
-float SrgbToLinearChannelUVE(const float srgb) noexcept {
+float SrgbToLinearChannel(const float srgb) noexcept {
     if (!std::isfinite(srgb) || srgb <= 0.0F) {
         return 0.0F;
     }
@@ -171,20 +171,20 @@ float SrgbToLinearChannelUVE(const float srgb) noexcept {
     return (srgb <= 0.04045F) ? (srgb / 12.92F) : std::pow((srgb + 0.055F) / 1.055F, 2.4F);
 }
 
-EditorColorUVE LinearToSrgbColorUVE(const EditorColorUVE& linearColor) noexcept {
-    return EditorColorUVE{LinearToSrgbChannelUVE(linearColor.r), LinearToSrgbChannelUVE(linearColor.g),
-                          LinearToSrgbChannelUVE(linearColor.b), std::clamp(linearColor.a, 0.0F, 1.0F)};
+EditorColor LinearToSrgbColor(const EditorColor& linearColor) noexcept {
+    return EditorColor{LinearToSrgbChannel(linearColor.r), LinearToSrgbChannel(linearColor.g),
+                          LinearToSrgbChannel(linearColor.b), std::clamp(linearColor.a, 0.0F, 1.0F)};
 }
 
-EditorColorUVE SrgbToLinearColorUVE(const EditorColorUVE& srgbColor) noexcept {
-    return EditorColorUVE{SrgbToLinearChannelUVE(srgbColor.r), SrgbToLinearChannelUVE(srgbColor.g),
-                          SrgbToLinearChannelUVE(srgbColor.b), std::clamp(srgbColor.a, 0.0F, 1.0F)};
+EditorColor SrgbToLinearColor(const EditorColor& srgbColor) noexcept {
+    return EditorColor{SrgbToLinearChannel(srgbColor.r), SrgbToLinearChannel(srgbColor.g),
+                          SrgbToLinearChannel(srgbColor.b), std::clamp(srgbColor.a, 0.0F, 1.0F)};
 }
 
-EditorColorUVE ApplyHdrExposureToColorUVE(const EditorColorUVE& color, const float exposureStops,
+EditorColor ApplyHdrExposureToColor(const EditorColor& color, const float exposureStops,
                                           const bool clampToLdr) noexcept {
     const float scale = std::isfinite(exposureStops) ? std::exp2(exposureStops) : 1.0F;
-    EditorColorUVE out{
+    EditorColor out{
         std::max(0.0F, color.r * scale),
         std::max(0.0F, color.g * scale),
         std::max(0.0F, color.b * scale),
@@ -198,7 +198,7 @@ EditorColorUVE ApplyHdrExposureToColorUVE(const EditorColorUVE& color, const flo
     return out;
 }
 
-void NudgeColorChannelUVE(EditorColorUVE& color, const std::size_t channelIndex, const float delta,
+void NudgeColorChannel(EditorColor& color, const std::size_t channelIndex, const float delta,
                           const bool clampToLdr) noexcept {
     if (!std::isfinite(delta)) {
         return;

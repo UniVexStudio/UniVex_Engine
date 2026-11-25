@@ -22,7 +22,7 @@
 namespace UVE::Render::BuiltInSpirv {
 
 // Source: Engine/Runtime/RHI/Shader/built_in/particle_simulate.glsl
-inline const char kParticleSimulateSpirvBytesUVE[] =
+inline const char kParticleSimulateSpirvBytes[] =
     "\x03\x02\x23\x07\x00\x00\x01\x00\x0b\x00\x08\x00\x96\x00\x00\x00"
     "\x00\x00\x00\x00\x11\x00\x02\x00\x01\x00\x00\x00\x0b\x00\x06\x00"
     "\x01\x00\x00\x00\x47\x4c\x53\x4c\x2e\x73\x74\x64\x2e\x34\x35\x30"
@@ -318,13 +318,13 @@ inline const char kParticleSimulateSpirvBytesUVE[] =
     "\x41\x00\x07\x00\x47\x00\x00\x00\x92\x00\x00\x00\x27\x00\x00\x00"
     "\x28\x00\x00\x00\x90\x00\x00\x00\x3f\x00\x00\x00\x3e\x00\x03\x00"
     "\x92\x00\x00\x00\x91\x00\x00\x00\xfd\x00\x01\x00\x38\x00\x01\x00";
-inline constexpr std::size_t kParticleSimulateSpirvSizeUVE = sizeof(kParticleSimulateSpirvBytesUVE) - 1U;
-static_assert(kParticleSimulateSpirvSizeUVE == 4720U,
+inline constexpr std::size_t kParticleSimulateSpirvSize = sizeof(kParticleSimulateSpirvBytes) - 1U;
+static_assert(kParticleSimulateSpirvSize == 4720U,
               "the baked particle-simulate SPIR-V lost bytes - almost certainly NUL truncation");
-static_assert(kParticleSimulateSpirvSizeUVE % 4U == 0U, "SPIR-V must stay 4-byte word aligned");
+static_assert(kParticleSimulateSpirvSize % 4U == 0U, "SPIR-V must stay 4-byte word aligned");
 
 // Source: Engine/Runtime/RHI/Shader/built_in/frustum_cull.glsl
-inline const char kFrustumCullSpirvBytesUVE[] =
+inline const char kFrustumCullSpirvBytes[] =
     "\x03\x02\x23\x07\x00\x00\x01\x00\x0b\x00\x08\x00\xa2\x00\x00\x00"
     "\x00\x00\x00\x00\x11\x00\x02\x00\x01\x00\x00\x00\x0b\x00\x06\x00"
     "\x01\x00\x00\x00\x47\x4c\x53\x4c\x2e\x73\x74\x64\x2e\x34\x35\x30"
@@ -640,17 +640,17 @@ inline const char kFrustumCullSpirvBytesUVE[] =
     "\x44\x00\x00\x00\x41\x00\x06\x00\x9e\x00\x00\x00\x9f\x00\x00\x00"
     "\x9b\x00\x00\x00\x15\x00\x00\x00\x9c\x00\x00\x00\x3e\x00\x03\x00"
     "\x9f\x00\x00\x00\x9d\x00\x00\x00\xfd\x00\x01\x00\x38\x00\x01\x00";
-inline constexpr std::size_t kFrustumCullSpirvSizeUVE = sizeof(kFrustumCullSpirvBytesUVE) - 1U;
-static_assert(kFrustumCullSpirvSizeUVE == 5040U,
+inline constexpr std::size_t kFrustumCullSpirvSize = sizeof(kFrustumCullSpirvBytes) - 1U;
+static_assert(kFrustumCullSpirvSize == 5040U,
               "the baked frustum-cull SPIR-V lost bytes - almost certainly NUL truncation");
-static_assert(kFrustumCullSpirvSizeUVE % 4U == 0U, "SPIR-V must stay 4-byte word aligned");
+static_assert(kFrustumCullSpirvSize % 4U == 0U, "SPIR-V must stay 4-byte word aligned");
 
 
 // Source: Engine/Runtime/RHI/Shader/built_in/frustum_cull_indirect.glsl
 // CS8. Baked from the same glslang build as the two above, verified by recompiling
 // frustum_cull.glsl with it first and confirming the result was byte-identical to what was
 // already committed - a different compiler build could have silently changed all three.
-inline const char kFrustumCullIndirectSpirvBytesUVE[] =
+inline const char kFrustumCullIndirectSpirvBytes[] =
     "\x03\x02\x23\x07\x00\x00\x01\x00\x0b\x00\x08\x00\xae\x00\x00\x00"
     "\x00\x00\x00\x00\x11\x00\x02\x00\x01\x00\x00\x00\x0b\x00\x06\x00"
     "\x01\x00\x00\x00\x47\x4c\x53\x4c\x2e\x73\x74\x64\x2e\x34\x35\x30"
@@ -1005,18 +1005,18 @@ inline const char kFrustumCullIndirectSpirvBytesUVE[] =
     "\xaa\x00\x00\x00\xf9\x00\x02\x00\x9c\x00\x00\x00\xf8\x00\x02\x00"
     "\x9c\x00\x00\x00\xfd\x00\x01\x00\x38\x00\x01\x00";
 
-inline constexpr std::size_t kFrustumCullIndirectSpirvSizeUVE =
-    sizeof(kFrustumCullIndirectSpirvBytesUVE) - 1U;
-static_assert(kFrustumCullIndirectSpirvSizeUVE == 5644U,
+inline constexpr std::size_t kFrustumCullIndirectSpirvSize =
+    sizeof(kFrustumCullIndirectSpirvBytes) - 1U;
+static_assert(kFrustumCullIndirectSpirvSize == 5644U,
               "the baked indirect-cull SPIR-V changed size - re-check the bake");
-static_assert(kFrustumCullIndirectSpirvSizeUVE % 4U == 0U,
+static_assert(kFrustumCullIndirectSpirvSize % 4U == 0U,
               "SPIR-V must stay 4-byte word aligned");
 
 
 // Source: Engine/Runtime/RHI/Shader/built_in/mesh_skin.glsl
 // CS10. Baked from the same glslang build as the three above, verified by recompiling
 // frustum_cull_indirect.glsl with it first and confirming the bytes were unchanged.
-inline const char kMeshSkinSpirvBytesUVE[] =
+inline const char kMeshSkinSpirvBytes[] =
     "\x03\x02\x23\x07\x00\x00\x01\x00\x0b\x00\x08\x00\x87\x01\x00\x00"
     "\x00\x00\x00\x00\x11\x00\x02\x00\x01\x00\x00\x00\x0b\x00\x06\x00"
     "\x01\x00\x00\x00\x47\x4c\x53\x4c\x2e\x73\x74\x64\x2e\x34\x35\x30"
@@ -1693,9 +1693,9 @@ inline const char kMeshSkinSpirvBytesUVE[] =
     "\x84\x01\x00\x00\x6f\x01\x00\x00\x48\x00\x00\x00\x3e\x00\x03\x00"
     "\x84\x01\x00\x00\x83\x01\x00\x00\xfd\x00\x01\x00\x38\x00\x01\x00";
 
-inline constexpr std::size_t kMeshSkinSpirvSizeUVE = sizeof(kMeshSkinSpirvBytesUVE) - 1U;
-static_assert(kMeshSkinSpirvSizeUVE == 10800U,
+inline constexpr std::size_t kMeshSkinSpirvSize = sizeof(kMeshSkinSpirvBytes) - 1U;
+static_assert(kMeshSkinSpirvSize == 10800U,
               "the baked skinning SPIR-V changed size - re-check the bake");
-static_assert(kMeshSkinSpirvSizeUVE % 4U == 0U, "SPIR-V must stay 4-byte word aligned");
+static_assert(kMeshSkinSpirvSize % 4U == 0U, "SPIR-V must stay 4-byte word aligned");
 
 } // namespace UVE::Render::BuiltInSpirv

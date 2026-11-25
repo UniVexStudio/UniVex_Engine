@@ -16,11 +16,11 @@
 namespace UVE::Physics {
 namespace {
 
-struct HurtboxCandidateUVE final {
-    Scene::EntityUVE entity;
-    Math::Vector3UVE center;
-    Math::Vector3UVE halfExtents;
-    Math::QuaternionUVE rotation;
+struct HurtboxCandidate final {
+    Scene::Entity entity;
+    Math::Vector3 center;
+    Math::Vector3 halfExtents;
+    Math::Quaternion rotation;
     std::uint32_t collisionLayer = 1U;
     std::uint32_t collisionMask = 0xFFFFFFFFU;
     std::string damageChannel;
@@ -28,29 +28,29 @@ struct HurtboxCandidateUVE final {
 
 } // namespace
 
-Hitbox3DSyncReportUVE SyncHitboxes3DUVE(Scene::IEntityManagerUVE& entityManager) {
-    Hitbox3DSyncReportUVE report;
+Hitbox3DSyncReport SyncHitboxes3D(Scene::IEntityManager& entityManager) {
+    Hitbox3DSyncReport report;
 
-    entityManager.ForEachUVE<Scene::Hurtbox3DComponentUVE>(
-        [](const Scene::EntityUVE, Scene::Hurtbox3DComponentUVE& hurtbox) {
-            Scene::Hurtbox3DUVE::ClearHitsUVE(hurtbox);
+    entityManager.ForEach<Scene::Hurtbox3DComponent>(
+        [](const Scene::Entity, Scene::Hurtbox3DComponent& hurtbox) {
+            Scene::Hurtbox3D::ClearHits(hurtbox);
             if (!hurtbox.enabled) {
-                Scene::Hurtbox3DUVE::ResetReceivedUVE(hurtbox);
+                Scene::Hurtbox3D::ResetReceived(hurtbox);
             }
         });
 
-    std::vector<HurtboxCandidateUVE> candidates;
-    entityManager.ForEachUVE<Scene::WorldTransformComponentUVE, Scene::Hurtbox3DComponentUVE>(
-        [&candidates](const Scene::EntityUVE entity, const Scene::WorldTransformComponentUVE& worldTransform,
-                      const Scene::Hurtbox3DComponentUVE& hurtbox) {
-            if (!Scene::Hurtbox3DUVE::IsVulnerableUVE(hurtbox)) {
+    std::vector<HurtboxCandidate> candidates;
+    entityManager.ForEach<Scene::WorldTransformComponent, Scene::Hurtbox3DComponent>(
+        [&candidates](const Scene::Entity entity, const Scene::WorldTransformComponent& worldTransform,
+                      const Scene::Hurtbox3DComponent& hurtbox) {
+            if (!Scene::Hurtbox3D::IsVulnerable(hurtbox)) {
                 return;
             }
-            HurtboxCandidateUVE candidate;
+            HurtboxCandidate candidate;
             candidate.entity = entity;
             candidate.center = worldTransform.worldPosition;
             candidate.halfExtents = hurtbox.halfExtents;
-            if (!Math::TryNormalizeUVE(worldTransform.worldRotation, candidate.rotation)) {
+            if (!Math::TryNormalize(worldTransform.worldRotation, candidate.rotation)) {
                 candidate.rotation = {};
             }
             candidate.collisionLayer = hurtbox.collisionLayer;
@@ -60,77 +60,77 @@ Hitbox3DSyncReportUVE SyncHitboxes3DUVE(Scene::IEntityManagerUVE& entityManager)
         });
     report.hurtboxCount = candidates.size();
 
-    std::unordered_map<Scene::EntityUVE, std::vector<Scene::Hurtbox3DHitUVE>> incoming;
-    entityManager.ForEachUVE<Scene::Hitbox3DComponentUVE>(
-        [&entityManager, &candidates, &report, &incoming](const Scene::EntityUVE entity,
-                                                          Scene::Hitbox3DComponentUVE& hitbox) {
+    std::unordered_map<Scene::Entity, std::vector<Scene::Hurtbox3DHit>> incoming;
+    entityManager.ForEach<Scene::Hitbox3DComponent>(
+        [&entityManager, &candidates, &report, &incoming](const Scene::Entity entity,
+                                                          Scene::Hitbox3DComponent& hitbox) {
             ++report.hitboxCount;
-            Scene::Hitbox3DUVE::ClearStrikesUVE(hitbox);
+            Scene::Hitbox3D::ClearStrikes(hitbox);
             if (!hitbox.enabled) {
-                Scene::Hitbox3DUVE::ResetActivationUVE(hitbox);
+                Scene::Hitbox3D::ResetActivation(hitbox);
                 return;
             }
-            if (!Scene::Hitbox3DUVE::IsArmedUVE(hitbox) ||
-                !entityManager.HasComponentUVE<Scene::WorldTransformComponentUVE>(entity)) {
+            if (!Scene::Hitbox3D::IsArmed(hitbox) ||
+                !entityManager.HasComponent<Scene::WorldTransformComponent>(entity)) {
                 return;
             }
 
-            const Scene::WorldTransformComponentUVE& worldTransform =
-                entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(entity);
-            Math::QuaternionUVE hitboxRotation{};
-            if (!Math::TryNormalizeUVE(worldTransform.worldRotation, hitboxRotation)) {
+            const Scene::WorldTransformComponent& worldTransform =
+                entityManager.GetComponent<Scene::WorldTransformComponent>(entity);
+            Math::Quaternion hitboxRotation{};
+            if (!Math::TryNormalize(worldTransform.worldRotation, hitboxRotation)) {
                 hitboxRotation = {};
             }
 
-            std::vector<Scene::Hitbox3DStrikeUVE> overlaps;
-            for (const HurtboxCandidateUVE& candidate : candidates) {
-                if (!Scene::Hitbox3DUVE::AcceptsTargetUVE(entity, hitbox, candidate.entity, candidate.collisionLayer,
+            std::vector<Scene::Hitbox3DStrike> overlaps;
+            for (const HurtboxCandidate& candidate : candidates) {
+                if (!Scene::Hitbox3D::AcceptsTarget(entity, hitbox, candidate.entity, candidate.collisionLayer,
                                                           candidate.collisionMask, candidate.damageChannel)) {
                     continue;
                 }
-                if (!entityManager.HasComponentUVE<Scene::Hurtbox3DComponentUVE>(candidate.entity)) {
+                if (!entityManager.HasComponent<Scene::Hurtbox3DComponent>(candidate.entity)) {
                     continue;
                 }
-                const Scene::Hurtbox3DComponentUVE& hurtbox =
-                    entityManager.GetComponentUVE<Scene::Hurtbox3DComponentUVE>(candidate.entity);
-                if (!Scene::Hurtbox3DUVE::AcceptsAttackerUVE(candidate.entity, hurtbox, entity, hitbox.collisionLayer,
+                const Scene::Hurtbox3DComponent& hurtbox =
+                    entityManager.GetComponent<Scene::Hurtbox3DComponent>(candidate.entity);
+                if (!Scene::Hurtbox3D::AcceptsAttacker(candidate.entity, hurtbox, entity, hitbox.collisionLayer,
                                                              hitbox.collisionMask, hitbox.damageChannel)) {
                     continue;
                 }
-                const std::optional<Math::PenetrationUVE> penetration =
-                    Detail::ComputeOrientedBoxOrientedBoxPenetrationUVE(
+                const std::optional<Math::Penetration> penetration =
+                    Detail::ComputeOrientedBoxOrientedBoxPenetration(
                         worldTransform.worldPosition, hitbox.halfExtents, hitboxRotation, candidate.center,
                         candidate.halfExtents, candidate.rotation);
                 if (!penetration.has_value()) {
                     continue;
                 }
                 overlaps.push_back(
-                    Scene::Hitbox3DStrikeUVE{candidate.entity, penetration->depth, penetration->axis});
+                    Scene::Hitbox3DStrike{candidate.entity, penetration->depth, penetration->axis});
                 incoming[candidate.entity].push_back(
-                    Scene::Hurtbox3DHitUVE{entity, penetration->depth, penetration->axis});
+                    Scene::Hurtbox3DHit{entity, penetration->depth, penetration->axis});
             }
 
-            Scene::Hitbox3DUVE::CommitStrikesUVE(hitbox, overlaps.data(), overlaps.size());
+            Scene::Hitbox3D::CommitStrikes(hitbox, overlaps.data(), overlaps.size());
             if (hitbox.strikesTruncated) {
                 report.strikesTruncated = true;
             }
-            for (const Scene::Hitbox3DStrikeUVE& overlap : overlaps) {
-                if (report.strikes.size() >= kMaximumHitbox3DStrikeResultsUVE) {
+            for (const Scene::Hitbox3DStrike& overlap : overlaps) {
+                if (report.strikes.size() >= kMaximumHitbox3DStrikeResults) {
                     report.strikesTruncated = true;
                     break;
                 }
-                report.strikes.push_back(Hitbox3DStrikePairUVE{entity, overlap.hurtboxEntity, overlap.penetrationDepth,
+                report.strikes.push_back(Hitbox3DStrikePair{entity, overlap.hurtboxEntity, overlap.penetrationDepth,
                                                                overlap.axis, hitbox.damageChannel});
             }
         });
 
     for (auto& [hurtboxEntity, hits] : incoming) {
-        if (!entityManager.HasComponentUVE<Scene::Hurtbox3DComponentUVE>(hurtboxEntity)) {
+        if (!entityManager.HasComponent<Scene::Hurtbox3DComponent>(hurtboxEntity)) {
             continue;
         }
-        Scene::Hurtbox3DComponentUVE& hurtbox =
-            entityManager.GetComponentUVE<Scene::Hurtbox3DComponentUVE>(hurtboxEntity);
-        Scene::Hurtbox3DUVE::CommitHitsUVE(hurtbox, hits.data(), hits.size());
+        Scene::Hurtbox3DComponent& hurtbox =
+            entityManager.GetComponent<Scene::Hurtbox3DComponent>(hurtboxEntity);
+        Scene::Hurtbox3D::CommitHits(hurtbox, hits.data(), hits.size());
     }
 
     return report;

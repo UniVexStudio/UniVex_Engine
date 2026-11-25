@@ -8,15 +8,15 @@
 namespace UVE::Physics {
 
 /// One fixed step's player intent for a Character3D's built-in movement.
-struct CharacterMotionInputUVE final {
+struct CharacterMotionInput final {
     /// Horizontal steering on X and Z, each in [-1, 1], at most unit length.
-    Math::Vector3UVE move{};
+    Math::Vector3 move{};
     /// Floating only: +1 rises, -1 sinks.
     float rise = 0.0F;
     /// Jump was pressed this step.
     bool jumpPressed = false;
 
-    [[nodiscard]] bool operator==(const CharacterMotionInputUVE&) const = default;
+    [[nodiscard]] bool operator==(const CharacterMotionInput&) const = default;
 };
 
 /// The part of a Character3D's step that decides where it wants to go, before any collision:
@@ -29,20 +29,20 @@ struct CharacterMotionInputUVE final {
 ///
 /// Kept apart from the move itself so the feel of the controls can be tested exactly, step by
 /// step, with no world and no clock.
-bool StepCharacterIntentUVE(Scene::CharacterControllerComponentUVE& c, const CharacterMotionInputUVE& input,
+bool StepCharacterIntent(Scene::CharacterControllerComponent& c, const CharacterMotionInput& input,
                             float gravityY, float deltaTimeSeconds) noexcept;
 
 /// What one move found.
-struct CharacterMoveOutcomeUVE final {
+struct CharacterMoveOutcome final {
     bool onFloor = false;
-    Math::Vector3UVE floorNormal{0.0F, 1.0F, 0.0F};
+    Math::Vector3 floorNormal{0.0F, 1.0F, 0.0F};
     bool hitCeiling = false;
 };
 
 /// The part of a step after the move: records the floor and ceiling, stops the along-up velocity at
 /// a ceiling (and all of it when Slide On Ceiling is off), stops the fall on the floor, and runs
 /// the coyote clock while off the floor.
-void FinishCharacterStepUVE(Scene::CharacterControllerComponentUVE& c, const CharacterMoveOutcomeUVE& outcome,
+void FinishCharacterStep(Scene::CharacterControllerComponent& c, const CharacterMoveOutcome& outcome,
                             bool jumped, float deltaTimeSeconds) noexcept;
 
 } // namespace UVE::Physics

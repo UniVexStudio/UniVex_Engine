@@ -9,45 +9,45 @@
 
 namespace UVE::Render::Tests {
 
-TEST(ParticleRenderBridgeUVETest, ValidateParticleRenderSnapshotUVE_AcceptsValidAndTruncatedBatches) {
-    ParticleRenderSnapshotUVE valid;
+TEST(ParticleRenderBridgeTest, ValidateParticleRenderSnapshot_AcceptsValidAndTruncatedBatches) {
+    ParticleRenderSnapshot valid;
     valid.sourceParticleCount = 1U;
-    valid.items.push_back({Scene::EntityUVE{2U, 1U}, Math::Vector3UVE{1.0F, 2.0F, 3.0F}, 1.0F, 3.0F, 7U});
-    EXPECT_TRUE(ValidateParticleRenderSnapshotUVE(valid));
+    valid.items.push_back({Scene::Entity{2U, 1U}, Math::Vector3{1.0F, 2.0F, 3.0F}, 1.0F, 3.0F, 7U});
+    EXPECT_TRUE(ValidateParticleRenderSnapshot(valid));
     valid.truncated = true;
     valid.sourceParticleCount = 3U;
-    EXPECT_TRUE(ValidateParticleRenderSnapshotUVE(valid, 1U));
+    EXPECT_TRUE(ValidateParticleRenderSnapshot(valid, 1U));
 }
 
-TEST(ParticleRenderBridgeUVETest, ValidateParticleRenderSnapshotUVE_RejectsInconsistentOrUnsafeBatches) {
-    ParticleRenderSnapshotUVE snapshot;
+TEST(ParticleRenderBridgeTest, ValidateParticleRenderSnapshot_RejectsInconsistentOrUnsafeBatches) {
+    ParticleRenderSnapshot snapshot;
     snapshot.sourceParticleCount = 1U;
-    snapshot.items.push_back({Scene::EntityUVE{2U, 1U}, {}, 1.0F, 0.0F, 1U});
-    EXPECT_FALSE(ValidateParticleRenderSnapshotUVE(snapshot, 0U));
+    snapshot.items.push_back({Scene::Entity{2U, 1U}, {}, 1.0F, 0.0F, 1U});
+    EXPECT_FALSE(ValidateParticleRenderSnapshot(snapshot, 0U));
     snapshot.items[0].sequence = 0U;
-    EXPECT_FALSE(ValidateParticleRenderSnapshotUVE(snapshot));
+    EXPECT_FALSE(ValidateParticleRenderSnapshot(snapshot));
     snapshot.items[0].sequence = 1U;
-    snapshot.items[0].entity = Scene::kInvalidEntityUVE;
-    EXPECT_FALSE(ValidateParticleRenderSnapshotUVE(snapshot));
-    snapshot.items[0].entity = Scene::EntityUVE{2U, 1U};
+    snapshot.items[0].entity = Scene::kInvalidEntity;
+    EXPECT_FALSE(ValidateParticleRenderSnapshot(snapshot));
+    snapshot.items[0].entity = Scene::Entity{2U, 1U};
     snapshot.sourceParticleCount = 0U;
-    EXPECT_FALSE(ValidateParticleRenderSnapshotUVE(snapshot));
+    EXPECT_FALSE(ValidateParticleRenderSnapshot(snapshot));
 }
 
-TEST(ParticleRenderBridgeUVETest, ExtractUVE_CopiesEnabledParticlesWithStableOrdering) {
-    Scene::ParticleRuntimeUVE runtime;
-    const Scene::EntityUVE first{2U, 1U};
-    const Scene::EntityUVE second{1U, 1U};
-    ASSERT_TRUE(runtime.AttachUVE(first, Scene::ParticleEmitterComponentUVE{4U}));
-    ASSERT_TRUE(runtime.AttachUVE(second, Scene::ParticleEmitterComponentUVE{4U}));
-    ASSERT_TRUE(runtime.EmitDetailedUVE(
-                       first, Scene::ParticleEmissionUVE{1U, Math::Vector3UVE{0.0F, 0.0F, 3.0F}, {}, 2.0F})
-                    .IsAcceptedUVE());
-    ASSERT_TRUE(runtime.EmitDetailedUVE(
-                       second, Scene::ParticleEmissionUVE{1U, Math::Vector3UVE{0.0F, 0.0F, 5.0F}, {}, 2.0F})
-                    .IsAcceptedUVE());
+TEST(ParticleRenderBridgeTest, Extract_CopiesEnabledParticlesWithStableOrdering) {
+    Scene::ParticleRuntime runtime;
+    const Scene::Entity first{2U, 1U};
+    const Scene::Entity second{1U, 1U};
+    ASSERT_TRUE(runtime.Attach(first, Scene::ParticleEmitterComponent{4U}));
+    ASSERT_TRUE(runtime.Attach(second, Scene::ParticleEmitterComponent{4U}));
+    ASSERT_TRUE(runtime.EmitDetailed(
+                       first, Scene::ParticleEmission{1U, Math::Vector3{0.0F, 0.0F, 3.0F}, {}, 2.0F})
+                    .IsAccepted());
+    ASSERT_TRUE(runtime.EmitDetailed(
+                       second, Scene::ParticleEmission{1U, Math::Vector3{0.0F, 0.0F, 5.0F}, {}, 2.0F})
+                    .IsAccepted());
 
-    const ParticleRenderSnapshotUVE snapshot = ParticleRenderBridgeUVE::ExtractUVE(runtime);
+    const ParticleRenderSnapshot snapshot = ParticleRenderBridge::Extract(runtime);
     ASSERT_EQ(snapshot.sourceParticleCount, 2U);
     ASSERT_EQ(snapshot.items.size(), 2U);
     EXPECT_FALSE(snapshot.truncated);
@@ -57,55 +57,55 @@ TEST(ParticleRenderBridgeUVETest, ExtractUVE_CopiesEnabledParticlesWithStableOrd
     EXPECT_EQ(snapshot.items[1].sortDepth, 3.0F);
 }
 
-TEST(ParticleRenderBridgeUVETest, ExtractUVE_FiltersDisabledAndHonorsHardCap) {
-    Scene::ParticleRuntimeUVE runtime;
-    const Scene::EntityUVE enabled{3U, 1U};
-    const Scene::EntityUVE disabled{4U, 1U};
-    ASSERT_TRUE(runtime.AttachUVE(enabled, Scene::ParticleEmitterComponentUVE{4U}));
-    ASSERT_TRUE(runtime.AttachUVE(disabled, Scene::ParticleEmitterComponentUVE{4U}));
-    ASSERT_TRUE(runtime.EmitDetailedUVE(enabled, Scene::ParticleEmissionUVE{3U, {}, {}, 2.0F}).IsAcceptedUVE());
-    ASSERT_TRUE(runtime.EmitDetailedUVE(disabled, Scene::ParticleEmissionUVE{2U, {}, {}, 2.0F}).IsAcceptedUVE());
-    ASSERT_EQ(runtime.SetEnabledDetailedUVE(disabled, false).code, Scene::ParticleRuntimeCodeUVE::Applied);
+TEST(ParticleRenderBridgeTest, Extract_FiltersDisabledAndHonorsHardCap) {
+    Scene::ParticleRuntime runtime;
+    const Scene::Entity enabled{3U, 1U};
+    const Scene::Entity disabled{4U, 1U};
+    ASSERT_TRUE(runtime.Attach(enabled, Scene::ParticleEmitterComponent{4U}));
+    ASSERT_TRUE(runtime.Attach(disabled, Scene::ParticleEmitterComponent{4U}));
+    ASSERT_TRUE(runtime.EmitDetailed(enabled, Scene::ParticleEmission{3U, {}, {}, 2.0F}).IsAccepted());
+    ASSERT_TRUE(runtime.EmitDetailed(disabled, Scene::ParticleEmission{2U, {}, {}, 2.0F}).IsAccepted());
+    ASSERT_EQ(runtime.SetEnabledDetailed(disabled, false).code, Scene::ParticleRuntimeCode::Applied);
 
-    const ParticleRenderSnapshotUVE snapshot = ParticleRenderBridgeUVE::ExtractUVE(runtime, 2U);
+    const ParticleRenderSnapshot snapshot = ParticleRenderBridge::Extract(runtime, 2U);
     EXPECT_EQ(snapshot.sourceParticleCount, 3U);
     EXPECT_EQ(snapshot.items.size(), 2U);
     EXPECT_TRUE(snapshot.truncated);
-    for (const ParticleRenderItemUVE& item : snapshot.items) {
+    for (const ParticleRenderItem& item : snapshot.items) {
         EXPECT_EQ(item.entity, enabled);
     }
 }
 
-TEST(ParticleRenderBridgeUVETest, ExtractUVE_ZeroCapDoesNotCopyState) {
-    Scene::ParticleRuntimeUVE runtime;
-    ASSERT_TRUE(runtime.AttachUVE({5U, 1U}, Scene::ParticleEmitterComponentUVE{2U}));
-    ASSERT_TRUE(runtime.EmitDetailedUVE({5U, 1U}, Scene::ParticleEmissionUVE{1U, {}, {}, 2.0F}).IsAcceptedUVE());
+TEST(ParticleRenderBridgeTest, Extract_ZeroCapDoesNotCopyState) {
+    Scene::ParticleRuntime runtime;
+    ASSERT_TRUE(runtime.Attach({5U, 1U}, Scene::ParticleEmitterComponent{2U}));
+    ASSERT_TRUE(runtime.EmitDetailed({5U, 1U}, Scene::ParticleEmission{1U, {}, {}, 2.0F}).IsAccepted());
 
-    const ParticleRenderSnapshotUVE snapshot = ParticleRenderBridgeUVE::ExtractUVE(runtime, 0U);
+    const ParticleRenderSnapshot snapshot = ParticleRenderBridge::Extract(runtime, 0U);
     EXPECT_TRUE(snapshot.items.empty());
     EXPECT_EQ(snapshot.sourceParticleCount, 0U);
     EXPECT_TRUE(snapshot.truncated);
 }
 
-TEST(ParticleRenderBridgeUVETest, RenderQueueUVE_RejectsInvalidSnapshotWithoutMutatingExistingItems) {
-    RenderQueueUVE queue;
+TEST(ParticleRenderBridgeTest, RenderQueue_RejectsInvalidSnapshotWithoutMutatingExistingItems) {
+    RenderQueue queue;
     queue.particleItems = {{{8U, 1U}, {}, 1.0F, 2.0F, 1U}};
-    const RenderQueueUVE before = queue;
+    const RenderQueue before = queue;
 
-    ParticleRenderSnapshotUVE invalidSnapshot;
+    ParticleRenderSnapshot invalidSnapshot;
     invalidSnapshot.sourceParticleCount = 1U;
-    invalidSnapshot.items = {{{9U, 1U}, Math::Vector3UVE{std::numeric_limits<float>::infinity(), 0.0F, 0.0F},
+    invalidSnapshot.items = {{{9U, 1U}, Math::Vector3{std::numeric_limits<float>::infinity(), 0.0F, 0.0F},
                                1.0F, 2.0F, 2U}};
 
-    queue.AppendParticleSnapshotUVE(invalidSnapshot);
+    queue.AppendParticleSnapshot(invalidSnapshot);
 
     EXPECT_EQ(queue.particleItems, before.particleItems);
     EXPECT_TRUE(queue.particleItemsTruncated);
 }
 
-TEST(ParticleRenderBridgeUVETest, RenderQueueUVE_AppendsCopiesAndSortsParticleItemsDeterministically) {
-    RenderQueueUVE queue;
-    ParticleRenderSnapshotUVE snapshot;
+TEST(ParticleRenderBridgeTest, RenderQueue_AppendsCopiesAndSortsParticleItemsDeterministically) {
+    RenderQueue queue;
+    ParticleRenderSnapshot snapshot;
     snapshot.sourceParticleCount = 3U;
     snapshot.items = {
         {{9U, 1U}, {}, 1.0F, 1.0F, 2U},
@@ -114,13 +114,13 @@ TEST(ParticleRenderBridgeUVETest, RenderQueueUVE_AppendsCopiesAndSortsParticleIt
     };
     snapshot.truncated = true;
 
-    queue.AppendParticleSnapshotUVE(snapshot);
-    queue.SortUVE();
+    queue.AppendParticleSnapshot(snapshot);
+    queue.Sort();
     ASSERT_EQ(queue.particleItems.size(), 3U);
     EXPECT_TRUE(queue.particleItemsTruncated);
     EXPECT_EQ(queue.particleItems[0].sequence, 1U);
     EXPECT_EQ(queue.particleItems[1].sequence, 2U);
-    EXPECT_EQ(queue.particleItems[2].entity, (Scene::EntityUVE{9U, 1U}));
+    EXPECT_EQ(queue.particleItems[2].entity, (Scene::Entity{9U, 1U}));
 }
 
 } // namespace UVE::Render::Tests

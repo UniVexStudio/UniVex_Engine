@@ -7,13 +7,13 @@
 
 namespace UVE::Render {
 
-/// Opaque handle to a shader resource created via IRenderDeviceUVE::CreateShaderUVE().
-/// Instantiation of the shared ResourceHandleUVE template - see resource_handle_uve.h for the
+/// Opaque handle to a shader resource created via IRenderDevice::CreateShader().
+/// Instantiation of the shared ResourceHandle template - see resource_handle_uve.h for the
 /// shared wrapper/equality/hash semantics.
-struct ShaderTagUVE {};
-using ShaderHandleUVE = ResourceHandleUVE<ShaderTagUVE>;
+struct ShaderTag {};
+using ShaderHandle = ResourceHandle<ShaderTag>;
 
-/// The sentinel "no shader" value. Never returned by a successful CreateShaderUVE() call.
-inline constexpr ShaderHandleUVE kInvalidShaderHandleUVE{};
+/// The sentinel "no shader" value. Never returned by a successful CreateShader() call.
+inline constexpr ShaderHandle kInvalidShaderHandle{};
 
 } // namespace UVE::Render

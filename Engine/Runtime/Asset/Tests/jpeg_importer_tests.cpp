@@ -18,7 +18,7 @@
 namespace UVE::Asset::Tests {
 namespace {
 
-[[nodiscard]] std::vector<std::byte> MakeOneByOneJpegUVE(const bool progressive = false) {
+[[nodiscard]] std::vector<std::byte> MakeOneByOneJpeg(const bool progressive = false) {
     jpeg_compress_struct compressor{};
     jpeg_error_mgr error{};
     jpeg_std_error(&error);
@@ -46,106 +46,106 @@ namespace {
     return result;
 }
 
-void WriteBytesUVE(const std::filesystem::path& path, const std::vector<std::byte>& bytes) {
+void WriteBytes(const std::filesystem::path& path, const std::vector<std::byte>& bytes) {
     std::ofstream output(path, std::ios::binary | std::ios::trunc);
     ASSERT_TRUE(output.is_open());
     output.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
     ASSERT_TRUE(output.good());
 }
 
-void RemoveFilesUVE(const std::initializer_list<std::filesystem::path>& paths) {
+void RemoveFiles(const std::initializer_list<std::filesystem::path>& paths) {
     for (const auto& path : paths) std::filesystem::remove(path);
 }
 
-TEST(JpegImporterUVETest, ImportUVE_ValidJpgPublishesUveTexAndRegistersGuid) {
+TEST(JpegImporterTest, Import_ValidJpgPublishesUveTexAndRegistersGuid) {
     const std::filesystem::path sourcePath = "uve_jpeg_importer_tests_red.jpg";
     const std::filesystem::path destinationPath = "uve_jpeg_importer_tests_red.uvtex";
-    RemoveFilesUVE({sourcePath, destinationPath});
-    WriteBytesUVE(sourcePath, MakeOneByOneJpegUVE());
+    RemoveFiles({sourcePath, destinationPath});
+    WriteBytes(sourcePath, MakeOneByOneJpeg());
 
-    AssetImporterUVE importer;
-    AssetDatabaseUVE database;
-    const auto classification = importer.ClassifySourceUVE(sourcePath);
-    EXPECT_EQ(classification.kind, AssetImportSourceKindUVE::RawTexture);
+    AssetImporter importer;
+    AssetDatabase database;
+    const auto classification = importer.ClassifySource(sourcePath);
+    EXPECT_EQ(classification.kind, AssetImportSourceKind::RawTexture);
     EXPECT_TRUE(classification.importerRegistered);
     EXPECT_TRUE(classification.requiresFormatSpecificParser);
     EXPECT_EQ(classification.diagnostic, "format-specific parser is registered");
-    const AssetGuidUVE guid = importer.ImportUVE(sourcePath, destinationPath, database);
+    const AssetGuid guid = importer.Import(sourcePath, destinationPath, database);
 
-    ASSERT_NE(guid, kInvalidAssetGuidUVE);
-    EXPECT_EQ(database.ResolveUVE(guid), destinationPath);
-    TextureAssetUVE texture;
-    ASSERT_TRUE(LoadTextureAssetUVE(destinationPath, texture));
+    ASSERT_NE(guid, kInvalidAssetGuid);
+    EXPECT_EQ(database.Resolve(guid), destinationPath);
+    TextureAsset texture;
+    ASSERT_TRUE(LoadTextureAsset(destinationPath, texture));
     EXPECT_EQ(texture.width, 1U);
     EXPECT_EQ(texture.height, 1U);
-    EXPECT_EQ(texture.format, TextureAssetFormatUVE::RGBA8Unorm);
-    EXPECT_EQ(texture.colorSpace, TextureAssetColorSpaceUVE::Srgb);
-    EXPECT_EQ(texture.usage, TextureUsageUVE::Color);
+    EXPECT_EQ(texture.format, TextureAssetFormat::RGBA8Unorm);
+    EXPECT_EQ(texture.colorSpace, TextureAssetColorSpace::Srgb);
+    EXPECT_EQ(texture.usage, TextureUsage::Color);
     ASSERT_EQ(texture.pixels.size(), 4U);
     EXPECT_GT(std::to_integer<unsigned int>(texture.pixels[0]), 200U);
     EXPECT_LT(std::to_integer<unsigned int>(texture.pixels[1]), 50U);
     EXPECT_EQ(texture.pixels[3], std::byte{0xFF});
-    RemoveFilesUVE({sourcePath, destinationPath});
+    RemoveFiles({sourcePath, destinationPath});
 }
 
-TEST(JpegImporterUVETest, ImportUVE_ValidProgressiveJpegPublishesThroughJpegExtension) {
+TEST(JpegImporterTest, Import_ValidProgressiveJpegPublishesThroughJpegExtension) {
     const std::filesystem::path sourcePath = "uve_jpeg_importer_tests_progressive.jpeg";
     const std::filesystem::path destinationPath = "uve_jpeg_importer_tests_progressive.uvtex";
-    RemoveFilesUVE({sourcePath, destinationPath});
-    WriteBytesUVE(sourcePath, MakeOneByOneJpegUVE(true));
+    RemoveFiles({sourcePath, destinationPath});
+    WriteBytes(sourcePath, MakeOneByOneJpeg(true));
 
-    AssetImporterUVE importer;
-    AssetDatabaseUVE database;
-    const auto classification = importer.ClassifySourceUVE(sourcePath);
+    AssetImporter importer;
+    AssetDatabase database;
+    const auto classification = importer.ClassifySource(sourcePath);
     EXPECT_TRUE(classification.importerRegistered);
-    const AssetGuidUVE guid = importer.ImportUVE(sourcePath, destinationPath, database);
+    const AssetGuid guid = importer.Import(sourcePath, destinationPath, database);
 
-    ASSERT_NE(guid, kInvalidAssetGuidUVE);
-    TextureAssetUVE texture;
-    ASSERT_TRUE(LoadTextureAssetUVE(destinationPath, texture));
+    ASSERT_NE(guid, kInvalidAssetGuid);
+    TextureAsset texture;
+    ASSERT_TRUE(LoadTextureAsset(destinationPath, texture));
     EXPECT_EQ(texture.width, 1U);
     EXPECT_EQ(texture.height, 1U);
     EXPECT_EQ(texture.pixels.size(), 4U);
-    RemoveFilesUVE({sourcePath, destinationPath});
+    RemoveFiles({sourcePath, destinationPath});
 }
 
-TEST(JpegImporterUVETest, ImportUVE_InvalidJpegPreservesExistingDestinationAndDoesNotRegister) {
+TEST(JpegImporterTest, Import_InvalidJpegPreservesExistingDestinationAndDoesNotRegister) {
     const std::filesystem::path sourcePath = "uve_jpeg_importer_tests_invalid.jpg";
     const std::filesystem::path destinationPath = "uve_jpeg_importer_tests_existing.uvtex";
-    RemoveFilesUVE({sourcePath, destinationPath});
-    WriteBytesUVE(sourcePath, {std::byte{0xFF}, std::byte{0xD8}, std::byte{0x00}});
-    TextureAssetUVE original;
+    RemoveFiles({sourcePath, destinationPath});
+    WriteBytes(sourcePath, {std::byte{0xFF}, std::byte{0xD8}, std::byte{0x00}});
+    TextureAsset original;
     original.width = 1U;
     original.height = 1U;
-    original.format = TextureAssetFormatUVE::RGBA8Unorm;
+    original.format = TextureAssetFormat::RGBA8Unorm;
     original.pixels = {std::byte{0x11}, std::byte{0x22}, std::byte{0x33}, std::byte{0xFF}};
-    ASSERT_TRUE(SaveTextureAssetUVE(original, destinationPath));
+    ASSERT_TRUE(SaveTextureAsset(original, destinationPath));
 
-    AssetImporterUVE importer;
-    AssetDatabaseUVE database;
-    const AssetGuidUVE guid = importer.ImportUVE(sourcePath, destinationPath, database);
+    AssetImporter importer;
+    AssetDatabase database;
+    const AssetGuid guid = importer.Import(sourcePath, destinationPath, database);
 
-    EXPECT_EQ(guid, kInvalidAssetGuidUVE);
-    EXPECT_TRUE(database.ResolveUVE(guid).empty());
-    TextureAssetUVE retained;
-    ASSERT_TRUE(LoadTextureAssetUVE(destinationPath, retained));
+    EXPECT_EQ(guid, kInvalidAssetGuid);
+    EXPECT_TRUE(database.Resolve(guid).empty());
+    TextureAsset retained;
+    ASSERT_TRUE(LoadTextureAsset(destinationPath, retained));
     EXPECT_EQ(retained.width, original.width);
     EXPECT_EQ(retained.height, original.height);
     EXPECT_EQ(retained.pixels, original.pixels);
-    RemoveFilesUVE({sourcePath, destinationPath});
+    RemoveFiles({sourcePath, destinationPath});
 }
 
-TEST(JpegImporterUVETest, ImportUVE_WrongDestinationExtensionFailsBeforePublish) {
+TEST(JpegImporterTest, Import_WrongDestinationExtensionFailsBeforePublish) {
     const std::filesystem::path sourcePath = "uve_jpeg_importer_tests_wrong_destination.jpg";
     const std::filesystem::path destinationPath = "uve_jpeg_importer_tests_wrong_destination.uvmodel";
-    RemoveFilesUVE({sourcePath, destinationPath});
-    WriteBytesUVE(sourcePath, MakeOneByOneJpegUVE());
+    RemoveFiles({sourcePath, destinationPath});
+    WriteBytes(sourcePath, MakeOneByOneJpeg());
 
-    AssetImporterUVE importer;
-    AssetDatabaseUVE database;
-    EXPECT_EQ(importer.ImportUVE(sourcePath, destinationPath, database), kInvalidAssetGuidUVE);
+    AssetImporter importer;
+    AssetDatabase database;
+    EXPECT_EQ(importer.Import(sourcePath, destinationPath, database), kInvalidAssetGuid);
     EXPECT_FALSE(std::filesystem::exists(destinationPath));
-    RemoveFilesUVE({sourcePath, destinationPath});
+    RemoveFiles({sourcePath, destinationPath});
 }
 
 } // namespace

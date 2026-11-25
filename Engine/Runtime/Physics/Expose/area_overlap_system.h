@@ -11,37 +11,37 @@
 
 namespace UVE::Physics {
 
-inline constexpr std::size_t kMaximumAreaOverlapResultsUVE = 4096U;
-inline constexpr std::size_t kMaximumAreaOverlapQueryAreasUVE = 4096U;
+inline constexpr std::size_t kMaximumAreaOverlapResults = 4096U;
+inline constexpr std::size_t kMaximumAreaOverlapQueryAreas = 4096U;
 
-enum class AreaOverlapParticipationUVE : std::uint8_t {
+enum class AreaOverlapParticipation : std::uint8_t {
     MonitoringAreas = 0,
     AllValidAreas = 1,
 };
 
-struct AreaOverlapPairUVE final {
-    Scene::EntityUVE area;
-    Scene::EntityUVE other;
+struct AreaOverlapPair final {
+    Scene::Entity area;
+    Scene::Entity other;
     float penetrationDepth = 0.0F;
 
-    [[nodiscard]] bool operator==(const AreaOverlapPairUVE&) const noexcept = default;
+    [[nodiscard]] bool operator==(const AreaOverlapPair&) const noexcept = default;
 };
 
-struct AreaOverlapQueryResultUVE final {
+struct AreaOverlapQueryResult final {
     std::size_t inspectedAreas = 0U;
     std::size_t inspectedColliders = 0U;
     bool truncated = false;
-    std::vector<AreaOverlapPairUVE> overlaps;
+    std::vector<AreaOverlapPair> overlaps;
 
-    [[nodiscard]] bool IsTruncatedUVE() const noexcept { return truncated; }
+    [[nodiscard]] bool IsTruncated() const noexcept { return truncated; }
 };
 
-class AreaOverlapSystemUVE final {
+class AreaOverlapSystem final {
 public:
-    [[nodiscard]] static AreaOverlapQueryResultUVE QueryUVE(
-        Scene::IEntityManagerUVE& entityManager,
-        std::size_t maximumResults = kMaximumAreaOverlapResultsUVE,
-        AreaOverlapParticipationUVE participation = AreaOverlapParticipationUVE::MonitoringAreas);
+    [[nodiscard]] static AreaOverlapQueryResult Query(
+        Scene::IEntityManager& entityManager,
+        std::size_t maximumResults = kMaximumAreaOverlapResults,
+        AreaOverlapParticipation participation = AreaOverlapParticipation::MonitoringAreas);
 };
 
 } // namespace UVE::Physics

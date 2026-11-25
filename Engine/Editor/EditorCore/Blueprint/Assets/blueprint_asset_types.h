@@ -14,7 +14,7 @@
 namespace UVE::Blueprint::Assets {
 
 /// High-level kind of Blueprint asset stored in a UniVex project.
-enum class BlueprintAssetKindUVE : std::uint8_t {
+enum class BlueprintAssetKind : std::uint8_t {
     BlueprintClass = 0,
     WidgetBlueprint,
     FunctionLibrary,
@@ -22,64 +22,64 @@ enum class BlueprintAssetKindUVE : std::uint8_t {
     Interface,
 };
 
-[[nodiscard]] std::string_view BlueprintAssetKindNameUVE(BlueprintAssetKindUVE kind) noexcept;
+[[nodiscard]] std::string_view BlueprintAssetKindName(BlueprintAssetKind kind) noexcept;
 
 /// A reusable Blueprint function hosted inside a FunctionLibrary asset.
-struct BlueprintFunctionDefinitionUVE final {
+struct BlueprintFunctionDefinition final {
     std::string name;
     std::string category = "Functions";
     std::string tooltip;
     bool isPure = false;
     bool isStatic = true;
-    std::vector<Asset::BlueprintPinSpecUVE> inputs;
-    std::vector<Asset::BlueprintPinSpecUVE> outputs;
-    Asset::BlueprintAssetUVE bodyGraph;
+    std::vector<Asset::BlueprintPinSpec> inputs;
+    std::vector<Asset::BlueprintPinSpec> outputs;
+    Asset::BlueprintAsset bodyGraph;
 };
 
 /// A collection of stateless Blueprint functions callable from any Blueprint graph.
-struct BlueprintFunctionLibraryAssetUVE final {
+struct BlueprintFunctionLibraryAsset final {
     std::string libraryName;
     std::string description;
-    std::vector<BlueprintFunctionDefinitionUVE> functions;
+    std::vector<BlueprintFunctionDefinition> functions;
 };
 
 /// A reusable Blueprint macro expanding inline at compile/translation time.
-struct BlueprintMacroDefinitionUVE final {
+struct BlueprintMacroDefinition final {
     std::string name;
     std::string category = "Macros";
     std::string tooltip;
-    std::vector<Asset::BlueprintPinSpecUVE> inputs;
-    std::vector<Asset::BlueprintPinSpecUVE> outputs;
-    Asset::BlueprintAssetUVE subgraph;
+    std::vector<Asset::BlueprintPinSpec> inputs;
+    std::vector<Asset::BlueprintPinSpec> outputs;
+    Asset::BlueprintAsset subgraph;
 };
 
 /// A collection of reusable Blueprint macros scoped to a target parent kind.
-struct BlueprintMacroLibraryAssetUVE final {
+struct BlueprintMacroLibraryAsset final {
     std::string libraryName;
     std::string targetParentKind = "Object3D";
     std::string description;
-    std::vector<BlueprintMacroDefinitionUVE> macros;
+    std::vector<BlueprintMacroDefinition> macros;
 };
 
 /// One method contract declared by a Blueprint Interface asset.
-struct BlueprintInterfaceMethodUVE final {
+struct BlueprintInterfaceMethod final {
     std::string name;
     std::string tooltip;
     bool isConst = false;
-    std::vector<Asset::BlueprintPinSpecUVE> inputs;
-    std::vector<Asset::BlueprintPinSpecUVE> outputs;
+    std::vector<Asset::BlueprintPinSpec> inputs;
+    std::vector<Asset::BlueprintPinSpec> outputs;
 };
 
 /// A Blueprint Interface declaring methods that multiple Blueprint classes may implement.
-struct BlueprintInterfaceAssetUVE final {
+struct BlueprintInterfaceAsset final {
     std::string interfaceName;
     std::string description;
-    std::vector<BlueprintInterfaceMethodUVE> methods;
+    std::vector<BlueprintInterfaceMethod> methods;
 };
 
-/// Fast structural validity checks matching IsBlueprintAssetValidUVE.
-[[nodiscard]] bool IsFunctionLibraryAssetValidUVE(const BlueprintFunctionLibraryAssetUVE& library) noexcept;
-[[nodiscard]] bool IsMacroLibraryAssetValidUVE(const BlueprintMacroLibraryAssetUVE& library) noexcept;
-[[nodiscard]] bool IsInterfaceAssetValidUVE(const BlueprintInterfaceAssetUVE& iface) noexcept;
+/// Fast structural validity checks matching IsBlueprintAssetValid.
+[[nodiscard]] bool IsFunctionLibraryAssetValid(const BlueprintFunctionLibraryAsset& library) noexcept;
+[[nodiscard]] bool IsMacroLibraryAssetValid(const BlueprintMacroLibraryAsset& library) noexcept;
+[[nodiscard]] bool IsInterfaceAssetValid(const BlueprintInterfaceAsset& iface) noexcept;
 
 } // namespace UVE::Blueprint::Assets

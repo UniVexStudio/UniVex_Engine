@@ -29,55 +29,55 @@ namespace UVE::Editor {
 /// The dock's Output Log, Console and Profiler pages drawn with PRISM widgets, over the engine's own
 /// data:
 ///
-///   * Output Log: every message the engine logs (Debug::ILoggerUVE), received by a log sink this
+///   * Output Log: every message the engine logs (Debug::ILogger), received by a log sink this
 ///     class installs, with level toggles, a text filter, copy and clear;
-///   * Console: the editor's DeveloperConsoleUVE (its output, command line, history and completion);
-///   * Profiler: the editor's ProfilerCaptureUVE sessions (spans, counters, breadcrumbs, runtime
-///     snapshot) and the renderer's last-frame diagnostics (BuildEditorRenderStatRowsUVE).
-class EditorDockPanelsUVE final {
+///   * Console: the editor's DeveloperConsole (its output, command line, history and completion);
+///   * Profiler: the editor's ProfilerCapture sessions (spans, counters, breadcrumbs, runtime
+///     snapshot) and the renderer's last-frame diagnostics (BuildEditorRenderStatRows).
+class EditorDockPanels final {
 public:
-    explicit EditorDockPanelsUVE(EditorUVE& editor);
-    ~EditorDockPanelsUVE();
-    EditorDockPanelsUVE(const EditorDockPanelsUVE&) = delete;
-    EditorDockPanelsUVE& operator=(const EditorDockPanelsUVE&) = delete;
+    explicit EditorDockPanels(Editor& editor);
+    ~EditorDockPanels();
+    EditorDockPanels(const EditorDockPanels&) = delete;
+    EditorDockPanels& operator=(const EditorDockPanels&) = delete;
 
     /// Installs the log sink (once); messages logged from then on reach the Output Log.
-    void AttachLogUVE();
+    void AttachLog();
 
-    [[nodiscard]] prism::Ref<prism::Widget> BuildOutputLogUVE();
-    [[nodiscard]] prism::Ref<prism::Widget> BuildConsoleUVE();
-    [[nodiscard]] prism::Ref<prism::Widget> BuildProfilerUVE();
-    [[nodiscard]] prism::Ref<prism::Widget> BuildSearchUVE();
+    [[nodiscard]] prism::Ref<prism::Widget> BuildOutputLog();
+    [[nodiscard]] prism::Ref<prism::Widget> BuildConsole();
+    [[nodiscard]] prism::Ref<prism::Widget> BuildProfiler();
+    [[nodiscard]] prism::Ref<prism::Widget> BuildSearch();
 
     /// Pulls new log lines (always, so nothing is missed while the page is hidden), and refreshes
     /// the console and profiler while their page is the one showing. `gpuMs`: the GPU time of the
     /// latest frame measured (0 when unknown), for the Timeline.
-    void RefreshUVE(bool consoleShown, bool profilerShown, float gpuMs = 0.0F);
+    void Refresh(bool consoleShown, bool profilerShown, float gpuMs = 0.0F);
 
     /// A message as the sink received it (any thread), waiting for the next refresh.
-    struct LogLineUVE final {
-        Debug::LogLevelUVE level = Debug::LogLevelUVE::Info;
+    struct LogLine final {
+        Debug::LogLevel level = Debug::LogLevel::Info;
         std::string category;
         std::string text;
     };
     /// Shared with the sink, which the logger owns and may outlive this panel.
-    struct LogBufferUVE final {
+    struct LogBuffer final {
         std::mutex mutex;
-        std::deque<LogLineUVE> pending;
+        std::deque<LogLine> pending;
         std::uint64_t dropped = 0U;
     };
 
 private:
-    void PullLogUVE();
-    void RefreshConsoleUVE();
-    void RefreshProfilerUVE();
-    void UpdateLogCountsUVE();
-    void ExecuteConsoleUVE();
-    void ShowConsoleHistoryUVE(int delta);
-    void CompleteConsoleUVE();
+    void PullLog();
+    void RefreshConsole();
+    void RefreshProfiler();
+    void UpdateLogCounts();
+    void ExecuteConsole();
+    void ShowConsoleHistory(int delta);
+    void CompleteConsole();
 
-    EditorUVE& m_editor;
-    std::shared_ptr<LogBufferUVE> m_logBuffer;
+    Editor& m_editor;
+    std::shared_ptr<LogBuffer> m_logBuffer;
     bool m_logAttached = false;
 
     // Output Log.
@@ -106,10 +106,10 @@ private:
     // The Timeline: PRISM's frame profiler, fed every frame with the engine's numbers.
     std::shared_ptr<prism::Profiler> m_timeline;
     std::chrono::steady_clock::time_point m_lastFrame{};
-    void FeedTimelineUVE(bool shown, float gpuMs);
-    std::vector<EditorRenderStatRowUVE> m_frameRows;
-    std::vector<Core::ProfilerSpanRowUVE> m_spanRows;
-    std::vector<Core::ProfilerCounterRowUVE> m_counterRows;
+    void FeedTimeline(bool shown, float gpuMs);
+    std::vector<EditorRenderStatRow> m_frameRows;
+    std::vector<Core::ProfilerSpanRow> m_spanRows;
+    std::vector<Core::ProfilerCounterRow> m_counterRows;
     std::size_t m_breadcrumbsShown = 0U;
     std::string m_breadcrumbSession;
     std::chrono::steady_clock::time_point m_lastProfilerRefresh{};

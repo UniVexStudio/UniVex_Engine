@@ -18,18 +18,18 @@
 
 namespace {
 using namespace UVE;
-struct CodecCaseUVE {
-    Audio::EncodedAudioFormatUVE format;
+struct CodecCase {
+    Audio::EncodedAudioFormat format;
     const char *extension;
 };
-void PrintTo(const CodecCaseUVE &value, std::ostream *output) { *output << value.extension; }
-constexpr std::array<CodecCaseUVE, 3> kCasesUVE{{{Audio::EncodedAudioFormatUVE::Flac, "flac"},
-                                                 {Audio::EncodedAudioFormatUVE::Mp3, "mp3"},
-                                                 {Audio::EncodedAudioFormatUVE::Vorbis, "ogg"}}};
-std::filesystem::path FixtureUVE(const char *extension) {
-    return Tests::RepositoryRootUVE() / "Engine/Runtime/Audio/Tests/Fixtures" / (std::string("tone.") + extension);
+void PrintTo(const CodecCase &value, std::ostream *output) { *output << value.extension; }
+constexpr std::array<CodecCase, 3> kCases{{{Audio::EncodedAudioFormat::Flac, "flac"},
+                                                 {Audio::EncodedAudioFormat::Mp3, "mp3"},
+                                                 {Audio::EncodedAudioFormat::Vorbis, "ogg"}}};
+std::filesystem::path Fixture(const char *extension) {
+    return Tests::RepositoryRoot() / "Engine/Runtime/Audio/Tests/Fixtures" / (std::string("tone.") + extension);
 }
-std::vector<std::byte> ReadUVE(const std::filesystem::path &path) {
+std::vector<std::byte> Read(const std::filesystem::path &path) {
     std::ifstream stream(path, std::ios::binary | std::ios::ate);
     if (!stream || stream.tellg() < 0)
         throw std::runtime_error("fixture could not be read");
@@ -40,20 +40,20 @@ std::vector<std::byte> ReadUVE(const std::filesystem::path &path) {
         throw std::runtime_error("fixture is truncated");
     return bytes;
 }
-void ExpectRetainedUVE(const Asset::AudioAssetUVE &audio) {
+void ExpectRetained(const Asset::AudioAsset &audio) {
     EXPECT_EQ(audio.channels, 2U);
     EXPECT_EQ(audio.sampleRate, 44100U);
     EXPECT_EQ(audio.samples, (std::vector<float>{0.25F, -0.25F}));
 }
-class CompressedAudioUVETest : public ::testing::TestWithParam<CodecCaseUVE> {};
-TEST_P(CompressedAudioUVETest, DecodesRealSignalWithoutOpeningADevice) {
+class CompressedAudioTest : public ::testing::TestWithParam<CodecCase> {};
+TEST_P(CompressedAudioTest, DecodesRealSignalWithoutOpeningADevice) {
     const auto [format, extension] = GetParam();
-    Asset::AudioAssetUVE audio;
-    ASSERT_TRUE(Audio::DecodeEncodedAudioUVE(ReadUVE(FixtureUVE(extension)), format, audio));
+    Asset::AudioAsset audio;
+    ASSERT_TRUE(Audio::DecodeEncodedAudio(Read(Fixture(extension)), format, audio));
     EXPECT_EQ(audio.channels, 1U);
     EXPECT_EQ(audio.sampleRate, 8000U);
     ASSERT_FALSE(audio.samples.empty());
-    EXPECT_LE(audio.samples.size(), Asset::kMaximumAudioAssetSamplesUVE);
+    EXPECT_LE(audio.samples.size(), Asset::kMaximumAudioAssetSamples);
     double energy = 0.0;
     for (float sample : audio.samples) {
         EXPECT_TRUE(std::isfinite(sample));
@@ -62,79 +62,79 @@ TEST_P(CompressedAudioUVETest, DecodesRealSignalWithoutOpeningADevice) {
         energy += static_cast<double>(sample) * sample;
     }
     EXPECT_GT(energy / static_cast<double>(audio.samples.size()), 0.00001);
-    if (format == Audio::EncodedAudioFormatUVE::Flac) {
+    if (format == Audio::EncodedAudioFormat::Flac) {
         ASSERT_EQ(audio.samples.size(), 512U);
         EXPECT_FLOAT_EQ(audio.samples[0], 0.0F);
         EXPECT_NEAR(audio.samples[1], 0.0423F, 0.0001F);
     }
 }
-TEST_P(CompressedAudioUVETest, ImportsExistingEnvelopeAndRegistersGuid) {
+TEST_P(CompressedAudioTest, ImportsExistingEnvelopeAndRegistersGuid) {
     const auto entry = GetParam();
-    const auto destination = Tests::MakeTestCaseDirectoryUVE() / "tone.uvaudio";
-    Asset::AssetImporterUVE importer;
-    Audio::RegisterCompressedAudioImportersUVE(importer);
-    Asset::AssetDatabaseUVE database;
-    const auto classification = importer.ClassifySourceUVE(FixtureUVE(entry.extension));
-    EXPECT_EQ(classification.kind, Asset::AssetImportSourceKindUVE::RawAudio);
+    const auto destination = Tests::MakeTestCaseDirectory() / "tone.uvaudio";
+    Asset::AssetImporter importer;
+    Audio::RegisterCompressedAudioImporters(importer);
+    Asset::AssetDatabase database;
+    const auto classification = importer.ClassifySource(Fixture(entry.extension));
+    EXPECT_EQ(classification.kind, Asset::AssetImportSourceKind::RawAudio);
     EXPECT_TRUE(classification.importerRegistered);
-    const auto guid = importer.ImportUVE(FixtureUVE(entry.extension), destination, database);
-    ASSERT_NE(guid, Asset::kInvalidAssetGuidUVE);
-    EXPECT_EQ(database.ResolveUVE(guid), destination);
-    Asset::AudioAssetUVE imported, decoded;
-    ASSERT_TRUE(Asset::LoadAudioAssetUVE(destination, imported));
-    ASSERT_TRUE(Audio::DecodeEncodedAudioUVE(ReadUVE(FixtureUVE(entry.extension)), entry.format, decoded));
+    const auto guid = importer.Import(Fixture(entry.extension), destination, database);
+    ASSERT_NE(guid, Asset::kInvalidAssetGuid);
+    EXPECT_EQ(database.Resolve(guid), destination);
+    Asset::AudioAsset imported, decoded;
+    ASSERT_TRUE(Asset::LoadAudioAsset(destination, imported));
+    ASSERT_TRUE(Audio::DecodeEncodedAudio(Read(Fixture(entry.extension)), entry.format, decoded));
     EXPECT_EQ(imported.channels, decoded.channels);
     EXPECT_EQ(imported.sampleRate, decoded.sampleRate);
     EXPECT_EQ(imported.samples, decoded.samples);
 }
-TEST_P(CompressedAudioUVETest, TruncatedHeaderPreservesOutput) {
-    auto bytes = ReadUVE(FixtureUVE(GetParam().extension));
+TEST_P(CompressedAudioTest, TruncatedHeaderPreservesOutput) {
+    auto bytes = Read(Fixture(GetParam().extension));
     bytes.resize(3U);
-    Asset::AudioAssetUVE output{2U, 44100U, {0.25F, -0.25F}};
-    EXPECT_FALSE(Audio::DecodeEncodedAudioUVE(bytes, GetParam().format, output));
-    ExpectRetainedUVE(output);
+    Asset::AudioAsset output{2U, 44100U, {0.25F, -0.25F}};
+    EXPECT_FALSE(Audio::DecodeEncodedAudio(bytes, GetParam().format, output));
+    ExpectRetained(output);
 }
-TEST_P(CompressedAudioUVETest, MalformedSourcePreservesDestinationAndDoesNotRegister) {
-    const auto directory = Tests::MakeTestCaseDirectoryUVE();
+TEST_P(CompressedAudioTest, MalformedSourcePreservesDestinationAndDoesNotRegister) {
+    const auto directory = Tests::MakeTestCaseDirectory();
     const auto source = directory / (std::string("invalid.") + GetParam().extension);
     {
         std::ofstream file(source, std::ios::binary);
         file << "not an encoded audio stream";
     }
     const auto destination = directory / "retained.uvaudio";
-    ASSERT_TRUE(Asset::SaveAudioAssetUVE({2U, 44100U, {0.25F, -0.25F}}, destination));
-    const auto originalBytes = ReadUVE(destination);
-    Asset::AssetImporterUVE importer;
-    Audio::RegisterCompressedAudioImportersUVE(importer);
-    Asset::AssetDatabaseUVE database;
-    EXPECT_EQ(importer.ImportUVE(source, destination, database), Asset::kInvalidAssetGuidUVE);
-    EXPECT_EQ(ReadUVE(destination), originalBytes);
-    EXPECT_TRUE(database.GetRegisteredAssetsUVE().empty());
+    ASSERT_TRUE(Asset::SaveAudioAsset({2U, 44100U, {0.25F, -0.25F}}, destination));
+    const auto originalBytes = Read(destination);
+    Asset::AssetImporter importer;
+    Audio::RegisterCompressedAudioImporters(importer);
+    Asset::AssetDatabase database;
+    EXPECT_EQ(importer.Import(source, destination, database), Asset::kInvalidAssetGuid);
+    EXPECT_EQ(Read(destination), originalBytes);
+    EXPECT_TRUE(database.GetRegisteredAssets().empty());
 }
-INSTANTIATE_TEST_SUITE_P(Formats, CompressedAudioUVETest, ::testing::ValuesIn(kCasesUVE),
+INSTANTIATE_TEST_SUITE_P(Formats, CompressedAudioTest, ::testing::ValuesIn(kCases),
                          [](const auto &codecParameter) {
                              return std::string(codecParameter.param.extension);
                          });
 
-TEST(CompressedAudioBoundaryUVETest, WrongFormatAndUnknownEnumNeverFallBackOrMutateOutput) {
-    Asset::AudioAssetUVE output{2U, 44100U, {0.25F, -0.25F}};
-    for (const auto source : kCasesUVE) {
-        const auto bytes = ReadUVE(FixtureUVE(source.extension));
-        for (const auto target : kCasesUVE) {
+TEST(CompressedAudioBoundaryTest, WrongFormatAndUnknownEnumNeverFallBackOrMutateOutput) {
+    Asset::AudioAsset output{2U, 44100U, {0.25F, -0.25F}};
+    for (const auto source : kCases) {
+        const auto bytes = Read(Fixture(source.extension));
+        for (const auto target : kCases) {
             if (source.format == target.format)
                 continue;
-            EXPECT_FALSE(Audio::DecodeEncodedAudioUVE(bytes, target.format, output));
-            ExpectRetainedUVE(output);
+            EXPECT_FALSE(Audio::DecodeEncodedAudio(bytes, target.format, output));
+            ExpectRetained(output);
         }
         EXPECT_FALSE(
-            Audio::DecodeEncodedAudioUVE(bytes, static_cast<Audio::EncodedAudioFormatUVE>(255), output));
-        ExpectRetainedUVE(output);
+            Audio::DecodeEncodedAudio(bytes, static_cast<Audio::EncodedAudioFormat>(255), output));
+        ExpectRetained(output);
     }
-    EXPECT_FALSE(Audio::DecodeEncodedAudioUVE({}, Audio::EncodedAudioFormatUVE::Flac, output));
-    ExpectRetainedUVE(output);
+    EXPECT_FALSE(Audio::DecodeEncodedAudio({}, Audio::EncodedAudioFormat::Flac, output));
+    ExpectRetained(output);
 }
-TEST(CompressedAudioBoundaryUVETest, DeclaredDecodedLengthOverAssetCapIsRejected) {
-    auto bytes = ReadUVE(FixtureUVE("flac"));
+TEST(CompressedAudioBoundaryTest, DeclaredDecodedLengthOverAssetCapIsRejected) {
+    auto bytes = Read(Fixture("flac"));
     ASSERT_GT(bytes.size(), 26U);
     // STREAMINFO's low 36 bits carry total samples. Advertise 2^25 frames without
     // inflating the fixture. The decoder must refuse before allocating that output.
@@ -143,55 +143,55 @@ TEST(CompressedAudioBoundaryUVETest, DeclaredDecodedLengthOverAssetCapIsRejected
     bytes[23] = std::byte{0};
     bytes[24] = std::byte{0};
     bytes[25] = std::byte{0};
-    Asset::AudioAssetUVE output{2U, 44100U, {0.25F, -0.25F}};
-    EXPECT_FALSE(Audio::DecodeEncodedAudioUVE(bytes, Audio::EncodedAudioFormatUVE::Flac, output));
-    ExpectRetainedUVE(output);
+    Asset::AudioAsset output{2U, 44100U, {0.25F, -0.25F}};
+    EXPECT_FALSE(Audio::DecodeEncodedAudio(bytes, Audio::EncodedAudioFormat::Flac, output));
+    ExpectRetained(output);
 }
-TEST(CompressedAudioBoundaryUVETest, SparseOversizeSourceIsRejectedBeforeReadingItsContents) {
-    const auto directory = Tests::MakeTestCaseDirectoryUVE();
+TEST(CompressedAudioBoundaryTest, SparseOversizeSourceIsRejectedBeforeReadingItsContents) {
+    const auto directory = Tests::MakeTestCaseDirectory();
     const auto source = directory / "oversize.flac";
     {
         std::ofstream file(source, std::ios::binary);
         ASSERT_TRUE(file.good());
-        file.seekp(static_cast<std::streamoff>(Audio::kMaximumEncodedAudioSourceBytesUVE));
+        file.seekp(static_cast<std::streamoff>(Audio::kMaximumEncodedAudioSourceBytes));
         file.put('x');
         ASSERT_TRUE(file.good());
     }
-    Asset::AssetImporterUVE importer;
-    Audio::RegisterCompressedAudioImportersUVE(importer);
-    Asset::AssetDatabaseUVE database;
-    EXPECT_EQ(importer.ImportUVE(source, directory / "output.uvaudio", database),
-              Asset::kInvalidAssetGuidUVE);
+    Asset::AssetImporter importer;
+    Audio::RegisterCompressedAudioImporters(importer);
+    Asset::AssetDatabase database;
+    EXPECT_EQ(importer.Import(source, directory / "output.uvaudio", database),
+              Asset::kInvalidAssetGuid);
     EXPECT_FALSE(std::filesystem::exists(directory / "output.uvaudio"));
 }
-TEST(CompressedAudioBoundaryUVETest, PublicationFailureCleansTemporaryAndDoesNotReplaceDirectory) {
-    const auto directory = Tests::MakeTestCaseDirectoryUVE();
+TEST(CompressedAudioBoundaryTest, PublicationFailureCleansTemporaryAndDoesNotReplaceDirectory) {
+    const auto directory = Tests::MakeTestCaseDirectory();
     const auto destination = directory / "blocked.uvaudio";
     ASSERT_TRUE(std::filesystem::create_directory(destination));
-    Asset::AssetImporterUVE importer;
-    Audio::RegisterCompressedAudioImportersUVE(importer);
-    Asset::AssetDatabaseUVE database;
-    EXPECT_EQ(importer.ImportUVE(FixtureUVE("flac"), destination, database), Asset::kInvalidAssetGuidUVE);
+    Asset::AssetImporter importer;
+    Audio::RegisterCompressedAudioImporters(importer);
+    Asset::AssetDatabase database;
+    EXPECT_EQ(importer.Import(Fixture("flac"), destination, database), Asset::kInvalidAssetGuid);
     EXPECT_TRUE(std::filesystem::is_directory(destination));
     for (const auto &entry : std::filesystem::directory_iterator(directory))
         EXPECT_EQ(entry.path(), destination);
 }
-TEST(CompressedAudioBoundaryUVETest, ReplacementAndWavRegistrationRemainCompatible) {
-    const auto directory = Tests::MakeTestCaseDirectoryUVE();
+TEST(CompressedAudioBoundaryTest, ReplacementAndWavRegistrationRemainCompatible) {
+    const auto directory = Tests::MakeTestCaseDirectory();
     const auto destination = directory / "replace.uvaudio";
-    ASSERT_TRUE(Asset::SaveAudioAssetUVE({1U, 44100U, {0.5F}}, destination));
-    Asset::AssetImporterUVE importer;
-    Audio::RegisterWavImporterUVE(importer);
-    Audio::RegisterCompressedAudioImportersUVE(importer);
-    Asset::AssetDatabaseUVE database;
-    ASSERT_NE(importer.ImportUVE(FixtureUVE("flac"), destination, database), Asset::kInvalidAssetGuidUVE);
-    Asset::AudioAssetUVE result;
-    ASSERT_TRUE(Asset::LoadAudioAssetUVE(destination, result));
+    ASSERT_TRUE(Asset::SaveAudioAsset({1U, 44100U, {0.5F}}, destination));
+    Asset::AssetImporter importer;
+    Audio::RegisterWavImporter(importer);
+    Audio::RegisterCompressedAudioImporters(importer);
+    Asset::AssetDatabase database;
+    ASSERT_NE(importer.Import(Fixture("flac"), destination, database), Asset::kInvalidAssetGuid);
+    Asset::AudioAsset result;
+    ASSERT_TRUE(Asset::LoadAudioAsset(destination, result));
     EXPECT_EQ(result.sampleRate, 8000U);
     EXPECT_EQ(result.samples.size(), 512U);
-    EXPECT_TRUE(importer.ClassifySourceUVE("existing.wav").importerRegistered);
-    EXPECT_EQ(importer.ImportUVE(FixtureUVE("mp3"), directory / "wrong.uvtex", database),
-              Asset::kInvalidAssetGuidUVE);
+    EXPECT_TRUE(importer.ClassifySource("existing.wav").importerRegistered);
+    EXPECT_EQ(importer.Import(Fixture("mp3"), directory / "wrong.uvtex", database),
+              Asset::kInvalidAssetGuid);
     EXPECT_FALSE(std::filesystem::exists(directory / "wrong.uvtex"));
 }
 } // namespace

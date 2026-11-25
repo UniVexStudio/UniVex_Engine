@@ -16,14 +16,14 @@
 namespace UVE::Core {
 
 /// Read-only snapshot of the current frame's timing/throughput statistics,
-/// updated by EngineCoreUVE once per frame. Deliberately a plain data
+/// updated by EngineCore once per frame. Deliberately a plain data
 /// struct so a future profiler system can consume/store it as-is.
-/// Thread-safety: value type. EngineCoreUVE::GetFrameStatsUVE() returns a
+/// Thread-safety: value type. EngineCore::GetFrameStats() returns a
 /// const reference reflecting whichever frame most recently completed; no
 /// synchronization is provided against a concurrently-running frame, since
 /// the frame pipeline itself is single-threaded this increment.
-struct FrameStatsUVE {
-    /// Count of frames completed since the current RunUVE() call started
+struct FrameStats {
+    /// Count of frames completed since the current Run() call started
     /// (0 before the first BeginFrame()).
     std::uint64_t frameNumber = 0;
 
@@ -31,11 +31,11 @@ struct FrameStatsUVE {
     /// BeginFrame..EndFrame pipeline took to execute.
     double frameTimeSeconds = 0.0;
 
-    /// UVE::Utilities::ITimerUVE::GetDeltaTimeUVE() as sampled during this
+    /// UVE::Utilities::ITimer::GetDeltaTime() as sampled during this
     /// frame's BeginFrame().
     double deltaTimeSeconds = 0.0;
 
-    /// UVE::Utilities::ITimerUVE::GetTotalTimeUVE() as sampled during this
+    /// UVE::Utilities::ITimer::GetTotalTime() as sampled during this
     /// frame's BeginFrame().
     double totalTimeSeconds = 0.0;
 

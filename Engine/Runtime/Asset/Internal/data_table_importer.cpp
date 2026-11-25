@@ -17,16 +17,16 @@
 namespace UVE::Asset {
 namespace {
 
-enum class DataTableSourceFormatUVE : std::uint8_t {
+enum class DataTableSourceFormat : std::uint8_t {
     Csv,
     Tsv,
     Json,
 };
 
-[[nodiscard]] bool ReadSourceDocumentUVE(const std::filesystem::path& sourcePath, std::string& document) {
+[[nodiscard]] bool ReadSourceDocument(const std::filesystem::path& sourcePath, std::string& document) {
     std::error_code sourceSizeError;
     const std::uintmax_t sourceSize = std::filesystem::file_size(sourcePath, sourceSizeError);
-    if (sourceSizeError || sourceSize > DataTableUVE::kMaximumDocumentBytesUVE) {
+    if (sourceSizeError || sourceSize > DataTable::kMaximumDocumentBytes) {
         return false;
     }
     std::ifstream input(sourcePath, std::ios::binary);
@@ -34,55 +34,55 @@ enum class DataTableSourceFormatUVE : std::uint8_t {
         return false;
     }
     document.assign(std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>());
-    return document.size() <= DataTableUVE::kMaximumDocumentBytesUVE;
+    return document.size() <= DataTable::kMaximumDocumentBytes;
 }
 
-[[nodiscard]] bool ImportDataTableSourceUVE(const std::filesystem::path& sourcePath,
+[[nodiscard]] bool ImportDataTableSource(const std::filesystem::path& sourcePath,
                                              const std::filesystem::path& destinationPath,
-                                             const AssetImportSettingsUVE& baseSettings,
-                                             const DataTableSourceFormatUVE format) {
-    const auto* const settings = dynamic_cast<const DataTableImportSettingsUVE*>(&baseSettings);
+                                             const AssetImportSettings& baseSettings,
+                                             const DataTableSourceFormat format) {
+    const auto* const settings = dynamic_cast<const DataTableImportSettings*>(&baseSettings);
     if (settings == nullptr || settings->tableName.empty() || settings->columns.empty() ||
         destinationPath.extension() != ".uvtable") {
-        UVE_ERROR("DataTableImporterUVE: missing schema settings or invalid .uvtable destination");
+        UVE_ERROR("DataTableImporter: missing schema settings or invalid .uvtable destination");
         return false;
     }
 
     std::string document;
-    if (!ReadSourceDocumentUVE(sourcePath, document)) {
-        UVE_ERROR("DataTableImporterUVE: failed to read bounded source document {}", sourcePath.string());
+    if (!ReadSourceDocument(sourcePath, document)) {
+        UVE_ERROR("DataTableImporter: failed to read bounded source document {}", sourcePath.string());
         return false;
     }
 
-    DataTableUVE table(settings->tableName);
-    for (const DataTableColumnUVE& column : settings->columns) {
-        if (!table.DefineColumnUVE(column.name, column.type)) {
-            UVE_ERROR("DataTableImporterUVE: invalid schema settings for {}", sourcePath.string());
+    DataTable table(settings->tableName);
+    for (const DataTableColumn& column : settings->columns) {
+        if (!table.DefineColumn(column.name, column.type)) {
+            UVE_ERROR("DataTableImporter: invalid schema settings for {}", sourcePath.string());
             return false;
         }
     }
 
     bool imported = false;
     switch (format) {
-        case DataTableSourceFormatUVE::Csv:
-            imported = table.ImportCsvUVE(document);
+        case DataTableSourceFormat::Csv:
+            imported = table.ImportCsv(document);
             break;
-        case DataTableSourceFormatUVE::Tsv:
-            imported = table.ImportTsvUVE(document);
+        case DataTableSourceFormat::Tsv:
+            imported = table.ImportTsv(document);
             break;
-        case DataTableSourceFormatUVE::Json:
-            imported = table.ImportJsonUVE(document);
+        case DataTableSourceFormat::Json:
+            imported = table.ImportJson(document);
             break;
     }
-    return imported && SaveDataTableAssetUVE(table, destinationPath);
+    return imported && SaveDataTableAsset(table, destinationPath);
 }
 
 } // namespace
 
-std::string DataTableImportSettingsUVE::GetCacheVersionUVE() const {
+std::string DataTableImportSettings::GetCacheVersion() const {
     // The version string feeds the import cache, so these values must never change: the hasher
     // consumes exactly the same bytes in exactly the same order as the loop it replaced.
-    Utilities::Fnv1a64UVE hasher;
+    Utilities::Fnv1a64 hasher;
     const auto appendBytes = [&hasher](const std::string_view value) {
         hasher.AppendString(value);
     };
@@ -94,7 +94,7 @@ std::string DataTableImportSettingsUVE::GetCacheVersionUVE() const {
 
     appendLengthDelimited(tableName);
     appendLengthDelimited(std::to_string(columns.size()));
-    for (const DataTableColumnUVE& column : columns) {
+    for (const DataTableColumn& column : columns) {
         appendLengthDelimited(column.name);
         appendLengthDelimited(std::to_string(static_cast<unsigned int>(column.type)));
     }
@@ -104,21 +104,21 @@ std::string DataTableImportSettingsUVE::GetCacheVersionUVE() const {
     return version.str();
 }
 
-void RegisterDataTableImportersUVE(IAssetImporterUVE& importer) {
-    importer.RegisterImporterUVE(".csv", [](const std::filesystem::path& sourcePath,
+void RegisterDataTableImporters(IAssetImporter& importer) {
+    importer.RegisterImporter(".csv", [](const std::filesystem::path& sourcePath,
                                             const std::filesystem::path& destinationPath,
-                                            const AssetImportSettingsUVE& settings) {
-        return ImportDataTableSourceUVE(sourcePath, destinationPath, settings, DataTableSourceFormatUVE::Csv);
+                                            const AssetImportSettings& settings) {
+        return ImportDataTableSource(sourcePath, destinationPath, settings, DataTableSourceFormat::Csv);
     });
-    importer.RegisterImporterUVE(".tsv", [](const std::filesystem::path& sourcePath,
+    importer.RegisterImporter(".tsv", [](const std::filesystem::path& sourcePath,
                                             const std::filesystem::path& destinationPath,
-                                            const AssetImportSettingsUVE& settings) {
-        return ImportDataTableSourceUVE(sourcePath, destinationPath, settings, DataTableSourceFormatUVE::Tsv);
+                                            const AssetImportSettings& settings) {
+        return ImportDataTableSource(sourcePath, destinationPath, settings, DataTableSourceFormat::Tsv);
     });
-    importer.RegisterImporterUVE(".json", [](const std::filesystem::path& sourcePath,
+    importer.RegisterImporter(".json", [](const std::filesystem::path& sourcePath,
                                              const std::filesystem::path& destinationPath,
-                                             const AssetImportSettingsUVE& settings) {
-        return ImportDataTableSourceUVE(sourcePath, destinationPath, settings, DataTableSourceFormatUVE::Json);
+                                             const AssetImportSettings& settings) {
+        return ImportDataTableSource(sourcePath, destinationPath, settings, DataTableSourceFormat::Json);
     });
 }
 

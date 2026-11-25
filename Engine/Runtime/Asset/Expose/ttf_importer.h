@@ -7,8 +7,8 @@
 namespace UVE::Asset {
 
 /// Registers the `.ttf`/`.otf` → `.uvfont` importer: bounded source read, sfnt-magic check, raw
-/// bytes wrapped in a `FontAssetUVE` with the source stem as the family name. Called once from
+/// bytes wrapped in a `FontAsset` with the source stem as the family name. Called once from
 /// engine startup next to the other format importers.
-void RegisterTtfImporterUVE(IAssetImporterUVE& importer);
+void RegisterTtfImporter(IAssetImporter& importer);
 
 } // namespace UVE::Asset

@@ -11,8 +11,8 @@
 namespace UVE::Scene {
 namespace {
 
-[[nodiscard]] bool ContainsEntityUVE(const EntityUVE* entities, const std::uint8_t count,
-                                     const EntityUVE entity) noexcept {
+[[nodiscard]] bool ContainsEntity(const Entity* entities, const std::uint8_t count,
+                                     const Entity entity) noexcept {
     for (std::uint8_t index = 0U; index < count; ++index) {
         if (entities[index] == entity) {
             return true;
@@ -21,11 +21,11 @@ namespace {
     return false;
 }
 
-void RememberReceivedUVE(Hurtbox3DComponentUVE& hurtbox, const EntityUVE hitbox) noexcept {
-    if (ContainsEntityUVE(hurtbox.receivedEntities.data(), hurtbox.receivedCount, hitbox)) {
+void RememberReceived(Hurtbox3DComponent& hurtbox, const Entity hitbox) noexcept {
+    if (ContainsEntity(hurtbox.receivedEntities.data(), hurtbox.receivedCount, hitbox)) {
         return;
     }
-    if (hurtbox.receivedCount >= kMaximumHurtbox3DReceivedUVE) {
+    if (hurtbox.receivedCount >= kMaximumHurtbox3DReceived) {
         hurtbox.receivedTruncated = true;
         return;
     }
@@ -33,7 +33,7 @@ void RememberReceivedUVE(Hurtbox3DComponentUVE& hurtbox, const EntityUVE hitbox)
     ++hurtbox.receivedCount;
 }
 
-[[nodiscard]] bool IsDeeperHitUVE(const Hurtbox3DHitUVE& left, const Hurtbox3DHitUVE& right) noexcept {
+[[nodiscard]] bool IsDeeperHit(const Hurtbox3DHit& left, const Hurtbox3DHit& right) noexcept {
     if (left.penetrationDepth != right.penetrationDepth) {
         return left.penetrationDepth > right.penetrationDepth;
     }
@@ -45,24 +45,24 @@ void RememberReceivedUVE(Hurtbox3DComponentUVE& hurtbox, const EntityUVE hitbox)
 
 } // namespace
 
-bool IsHurtbox3DObjectComponentValidUVE(const Hurtbox3DComponentUVE& value) noexcept {
-    const Hitbox3DComponentUVE equivalent{value.halfExtents, value.collisionLayer, value.collisionMask,
+bool IsHurtbox3DObjectComponentValid(const Hurtbox3DComponent& value) noexcept {
+    const Hitbox3DComponent equivalent{value.halfExtents, value.collisionLayer, value.collisionMask,
                                          value.damageChannel, value.enabled};
-    return IsHitbox3DObjectComponentValidUVE(equivalent);
+    return IsHitbox3DObjectComponentValid(equivalent);
 }
 
-bool Hurtbox3DUVE::IsVulnerableUVE(const Hurtbox3DComponentUVE& hurtbox) noexcept {
-    return hurtbox.enabled && IsHurtbox3DObjectComponentValidUVE(hurtbox);
+bool Hurtbox3D::IsVulnerable(const Hurtbox3DComponent& hurtbox) noexcept {
+    return hurtbox.enabled && IsHurtbox3DObjectComponentValid(hurtbox);
 }
 
-bool Hurtbox3DUVE::AcceptsAttackerUVE(const EntityUVE hurtboxEntity, const Hurtbox3DComponentUVE& hurtbox,
-                                      const EntityUVE hitboxEntity, const std::uint32_t hitboxLayer,
+bool Hurtbox3D::AcceptsAttacker(const Entity hurtboxEntity, const Hurtbox3DComponent& hurtbox,
+                                      const Entity hitboxEntity, const std::uint32_t hitboxLayer,
                                       const std::uint32_t hitboxMask,
                                       const std::string_view hitboxChannel) noexcept {
-    if (hitboxEntity == kInvalidEntityUVE || hitboxEntity == hurtboxEntity) {
+    if (hitboxEntity == kInvalidEntity || hitboxEntity == hurtboxEntity) {
         return false;
     }
-    if (hurtbox.ignoreEntity != kInvalidEntityUVE && hitboxEntity == hurtbox.ignoreEntity) {
+    if (hurtbox.ignoreEntity != kInvalidEntity && hitboxEntity == hurtbox.ignoreEntity) {
         return false;
     }
     if ((hitboxLayer & hurtbox.collisionMask) == 0U || (hurtbox.collisionLayer & hitboxMask) == 0U) {
@@ -71,17 +71,17 @@ bool Hurtbox3DUVE::AcceptsAttackerUVE(const EntityUVE hurtboxEntity, const Hurtb
     return hitboxChannel == hurtbox.damageChannel;
 }
 
-void Hurtbox3DUVE::ClearHitsUVE(Hurtbox3DComponentUVE& hurtbox) noexcept {
+void Hurtbox3D::ClearHits(Hurtbox3DComponent& hurtbox) noexcept {
     hurtbox.hitCount = 0U;
     hurtbox.hitsTruncated = false;
 }
 
-void Hurtbox3DUVE::ResetReceivedUVE(Hurtbox3DComponentUVE& hurtbox) noexcept {
+void Hurtbox3D::ResetReceived(Hurtbox3DComponent& hurtbox) noexcept {
     hurtbox.receivedCount = 0U;
     hurtbox.receivedTruncated = false;
 }
 
-const Hurtbox3DHitUVE* Hurtbox3DUVE::GetHitUVE(const Hurtbox3DComponentUVE& hurtbox,
+const Hurtbox3DHit* Hurtbox3D::GetHit(const Hurtbox3DComponent& hurtbox,
                                                const std::size_t index) noexcept {
     if (index >= hurtbox.hitCount) {
         return nullptr;
@@ -89,7 +89,7 @@ const Hurtbox3DHitUVE* Hurtbox3DUVE::GetHitUVE(const Hurtbox3DComponentUVE& hurt
     return &hurtbox.hits[index];
 }
 
-bool Hurtbox3DUVE::HasHitFromUVE(const Hurtbox3DComponentUVE& hurtbox, const EntityUVE hitbox) noexcept {
+bool Hurtbox3D::HasHitFrom(const Hurtbox3DComponent& hurtbox, const Entity hitbox) noexcept {
     for (std::uint8_t index = 0U; index < hurtbox.hitCount; ++index) {
         if (hurtbox.hits[index].hitboxEntity == hitbox) {
             return true;
@@ -98,27 +98,27 @@ bool Hurtbox3DUVE::HasHitFromUVE(const Hurtbox3DComponentUVE& hurtbox, const Ent
     return false;
 }
 
-bool Hurtbox3DUVE::HasReceivedUVE(const Hurtbox3DComponentUVE& hurtbox, const EntityUVE hitbox) noexcept {
-    return ContainsEntityUVE(hurtbox.receivedEntities.data(), hurtbox.receivedCount, hitbox);
+bool Hurtbox3D::HasReceived(const Hurtbox3DComponent& hurtbox, const Entity hitbox) noexcept {
+    return ContainsEntity(hurtbox.receivedEntities.data(), hurtbox.receivedCount, hitbox);
 }
 
-void Hurtbox3DUVE::CommitHitsUVE(Hurtbox3DComponentUVE& hurtbox, const Hurtbox3DHitUVE* incoming,
+void Hurtbox3D::CommitHits(Hurtbox3DComponent& hurtbox, const Hurtbox3DHit* incoming,
                                  const std::size_t incomingCount) {
-    ClearHitsUVE(hurtbox);
+    ClearHits(hurtbox);
     if (incoming == nullptr || incomingCount == 0U) {
         return;
     }
 
-    std::vector<Hurtbox3DHitUVE> unique;
+    std::vector<Hurtbox3DHit> unique;
     unique.reserve(incomingCount);
     for (std::size_t index = 0U; index < incomingCount; ++index) {
-        const Hurtbox3DHitUVE& hit = incoming[index];
-        if (hit.hitboxEntity == kInvalidEntityUVE || !std::isfinite(hit.penetrationDepth) ||
+        const Hurtbox3DHit& hit = incoming[index];
+        if (hit.hitboxEntity == kInvalidEntity || !std::isfinite(hit.penetrationDepth) ||
             hit.penetrationDepth <= 0.0F) {
             continue;
         }
         bool merged = false;
-        for (Hurtbox3DHitUVE& existing : unique) {
+        for (Hurtbox3DHit& existing : unique) {
             if (existing.hitboxEntity != hit.hitboxEntity) {
                 continue;
             }
@@ -133,15 +133,15 @@ void Hurtbox3DUVE::CommitHitsUVE(Hurtbox3DComponentUVE& hurtbox, const Hurtbox3D
         }
     }
 
-    std::sort(unique.begin(), unique.end(), IsDeeperHitUVE);
+    std::sort(unique.begin(), unique.end(), IsDeeperHit);
 
-    hurtbox.hitsTruncated = unique.size() > kMaximumHurtbox3DHitsUVE;
-    const std::size_t committed = std::min(unique.size(), kMaximumHurtbox3DHitsUVE);
+    hurtbox.hitsTruncated = unique.size() > kMaximumHurtbox3DHits;
+    const std::size_t committed = std::min(unique.size(), kMaximumHurtbox3DHits);
     for (std::size_t index = 0U; index < committed; ++index) {
-        Hurtbox3DHitUVE hit = unique[index];
-        hit.received = !HasReceivedUVE(hurtbox, hit.hitboxEntity);
+        Hurtbox3DHit hit = unique[index];
+        hit.received = !HasReceived(hurtbox, hit.hitboxEntity);
         if (hit.received) {
-            RememberReceivedUVE(hurtbox, hit.hitboxEntity);
+            RememberReceived(hurtbox, hit.hitboxEntity);
         }
         hurtbox.hits[index] = hit;
     }

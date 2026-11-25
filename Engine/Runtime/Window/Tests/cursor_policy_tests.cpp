@@ -7,24 +7,24 @@
 namespace UVE::Window {
 namespace {
 
-TEST(CursorInputPolicyUVETest, VisibleUnconfinedCursorUsesNormalModeAndCustomImage) {
-    EXPECT_EQ(ResolveCursorInputPolicyUVE(true, false),
-              (CursorInputResolutionUVE{CursorInputModeUVE::Normal, true, false}));
+TEST(CursorInputPolicyTest, VisibleUnconfinedCursorUsesNormalModeAndCustomImage) {
+    EXPECT_EQ(ResolveCursorInputPolicy(true, false),
+              (CursorInputResolution{CursorInputMode::Normal, true, false}));
 }
 
-TEST(CursorInputPolicyUVETest, HiddenUnconfinedCursorUsesHiddenModeWithoutCustomImage) {
-    EXPECT_EQ(ResolveCursorInputPolicyUVE(false, false),
-              (CursorInputResolutionUVE{CursorInputModeUVE::Hidden, false, false}));
+TEST(CursorInputPolicyTest, HiddenUnconfinedCursorUsesHiddenModeWithoutCustomImage) {
+    EXPECT_EQ(ResolveCursorInputPolicy(false, false),
+              (CursorInputResolution{CursorInputMode::Hidden, false, false}));
 }
 
-TEST(CursorInputPolicyUVETest, VisibleConfinedCursorReportsGlfwVisibilityCompromise) {
-    EXPECT_EQ(ResolveCursorInputPolicyUVE(true, true),
-              (CursorInputResolutionUVE{CursorInputModeUVE::Confined, false, true}));
+TEST(CursorInputPolicyTest, VisibleConfinedCursorReportsGlfwVisibilityCompromise) {
+    EXPECT_EQ(ResolveCursorInputPolicy(true, true),
+              (CursorInputResolution{CursorInputMode::Confined, false, true}));
 }
 
-TEST(CursorInputPolicyUVETest, HiddenConfinedCursorDoesNotReportVisibilityCompromise) {
-    EXPECT_EQ(ResolveCursorInputPolicyUVE(false, true),
-              (CursorInputResolutionUVE{CursorInputModeUVE::Confined, false, false}));
+TEST(CursorInputPolicyTest, HiddenConfinedCursorDoesNotReportVisibilityCompromise) {
+    EXPECT_EQ(ResolveCursorInputPolicy(false, true),
+              (CursorInputResolution{CursorInputMode::Confined, false, false}));
 }
 
 } // namespace

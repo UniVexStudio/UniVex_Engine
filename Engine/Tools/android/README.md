@@ -1,6 +1,6 @@
 # Android native runtime
 
-The NativeActivity entry point uses EngineCoreUVE, the EGL/GLES window backend and the
+The NativeActivity entry point uses EngineCore, the EGL/GLES window backend and the
 existing mobile input system. Its built-in validation scene contains a cube which changes
 colour while the screen is touched. It is a runtime validation app, not the desktop editor.
 
@@ -81,7 +81,7 @@ order it runs, because every step is a way an apk can come out wrong:
    directory produces an unsigned apk. The activity is `com.univex.app.UniVexActivity`
    (`Engine/App/Android/java`), a `NativeActivity` that runs full screen: the system bars are hidden
    until a swipe from the edge, and the surface reaches under display cutouts, whose safe insets it
-   keeps for native code (`ReadAndroidSafeAreaUVE`). `javac` and the build tools' `d8` turn it into
+   keeps for native code (`ReadAndroidSafeArea`). `javac` and the build tools' `d8` turn it into
    `classes.dex`.
 4. **Libraries.** The stripped `libunivex_android.so` (with the C++ runtime linked in statically) is
    written into `lib/<abi>/`, and every staged asset that `aapt2` skipped (it drops dotfiles such as `.uvassetdb`)
@@ -98,7 +98,7 @@ inside.
 ## A black screen
 
 "Installed the apk and the phone shows nothing" has exactly one debugging surface on Android: logcat.
-Every engine log line is written to logcat under the tag `UniVex` (`ConsoleSinkUVE` routes to
+Every engine log line is written to logcat under the tag `UniVex` (`ConsoleSink` routes to
 `__android_log_write` on Android; a process's stdout does not appear in logcat, so the desktop
 `std::cout` path is invisible there). Read it with:
 

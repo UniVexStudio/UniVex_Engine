@@ -12,7 +12,7 @@ namespace {
 
 // A Blender-style export: an Armature object that is not a bone, holding Hips > Spine > Head, with
 // the skin listing the joints child-first to prove the reader orders them parent-first.
-constexpr const char* kArmatureGltfUVE = R"({
+constexpr const char* kArmatureGltf = R"({
   "asset":{"version":"2.0"},
   "nodes":[
     {"name":"Armature","children":[1]},
@@ -23,8 +23,8 @@ constexpr const char* kArmatureGltfUVE = R"({
   "skins":[{"joints":[3,2,1]}]
 })";
 
-TEST(GltfSkeletonUVETest, ParseGltfSkeletonUVE_OrdersJointsParentFirstAndSkipsNonBoneAncestors) {
-    const std::optional<GltfSkeletonUVE> skeleton = ParseGltfSkeletonUVE(kArmatureGltfUVE, 256U);
+TEST(GltfSkeletonTest, ParseGltfSkeleton_OrdersJointsParentFirstAndSkipsNonBoneAncestors) {
+    const std::optional<GltfSkeleton> skeleton = ParseGltfSkeleton(kArmatureGltf, 256U);
     ASSERT_TRUE(skeleton.has_value());
     ASSERT_EQ(skeleton->joints.size(), 3U);
     EXPECT_EQ(skeleton->skinCount, 1U);
@@ -42,8 +42,8 @@ TEST(GltfSkeletonUVETest, ParseGltfSkeletonUVE_OrdersJointsParentFirstAndSkipsNo
     EXPECT_NEAR(skeleton->joints[2].rotation.w, 1.0F, 1.0e-6F);
 }
 
-TEST(GltfSkeletonUVETest, ParseGltfSkeletonUVE_MakesDuplicateBoneNamesUnique) {
-    const std::optional<GltfSkeletonUVE> skeleton = ParseGltfSkeletonUVE(
+TEST(GltfSkeletonTest, ParseGltfSkeleton_MakesDuplicateBoneNamesUnique) {
+    const std::optional<GltfSkeleton> skeleton = ParseGltfSkeleton(
         R"({"asset":{"version":"2.0"},"nodes":[{"name":"Bone","children":[1]},{"name":"Bone"}],"skins":[{"joints":[0,1]}]})",
         256U);
     ASSERT_TRUE(skeleton.has_value());
@@ -51,20 +51,20 @@ TEST(GltfSkeletonUVETest, ParseGltfSkeletonUVE_MakesDuplicateBoneNamesUnique) {
     EXPECT_EQ(skeleton->joints[1].name, "Bone_1");
 }
 
-TEST(GltfSkeletonUVETest, ParseGltfSkeletonUVE_RejectsWhatItCannotRepresent) {
+TEST(GltfSkeletonTest, ParseGltfSkeleton_RejectsWhatItCannotRepresent) {
     // No skin: a static mesh has no skeleton.
-    EXPECT_FALSE(ParseGltfSkeletonUVE(R"({"asset":{"version":"2.0"},"nodes":[{}]})", 256U).has_value());
+    EXPECT_FALSE(ParseGltfSkeleton(R"({"asset":{"version":"2.0"},"nodes":[{}]})", 256U).has_value());
     // A joint naming an object that does not exist.
-    EXPECT_FALSE(ParseGltfSkeletonUVE(R"({"asset":{"version":"2.0"},"nodes":[{}],"skins":[{"joints":[4]}]})", 256U)
+    EXPECT_FALSE(ParseGltfSkeleton(R"({"asset":{"version":"2.0"},"nodes":[{}],"skins":[{"joints":[4]}]})", 256U)
                      .has_value());
     // Over the bone budget.
-    EXPECT_FALSE(ParseGltfSkeletonUVE(kArmatureGltfUVE, 2U).has_value());
+    EXPECT_FALSE(ParseGltfSkeleton(kArmatureGltf, 2U).has_value());
     // A cycle in the hierarchy.
-    EXPECT_FALSE(ParseGltfSkeletonUVE(
+    EXPECT_FALSE(ParseGltfSkeleton(
                      R"({"asset":{"version":"2.0"},"nodes":[{"children":[1]},{"children":[0]}],"skins":[{"joints":[0,1]}]})",
                      256U)
                      .has_value());
-    EXPECT_FALSE(ParseGltfSkeletonUVE("not json", 256U).has_value());
+    EXPECT_FALSE(ParseGltfSkeleton("not json", 256U).has_value());
 }
 
 } // namespace

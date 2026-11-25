@@ -24,12 +24,12 @@ namespace UVE::Network {
 namespace {
 
 #if defined(_WIN32)
-using SocketHandleUVE = SOCKET;
-inline constexpr SocketHandleUVE kInvalidSocketUVE = INVALID_SOCKET;
+using SocketHandle = SOCKET;
+inline constexpr SocketHandle kInvalidSocket = INVALID_SOCKET;
 
 // Winsock starts on first use and never stops: the process owns one implicit WSAStartup,
 // and cleaning up under live sockets would break copies sharing them.
-bool EnsureSocketLibraryUVE() {
+bool EnsureSocketLibrary() {
     static const bool initialized = [] {
         WSADATA data{};
         return ::WSAStartup(MAKEWORD(2, 2), &data) == 0;
@@ -37,31 +37,31 @@ bool EnsureSocketLibraryUVE() {
     return initialized;
 }
 
-void CloseSocketUVE(const SocketHandleUVE handle) noexcept {
-    if (handle != kInvalidSocketUVE) {
+void CloseSocket(const SocketHandle handle) noexcept {
+    if (handle != kInvalidSocket) {
         ::closesocket(handle);
     }
 }
 
-bool SetNonBlockingUVE(const SocketHandleUVE handle) noexcept {
+bool SetNonBlocking(const SocketHandle handle) noexcept {
     u_long mode = 1UL;
     return ::ioctlsocket(handle, static_cast<long>(FIONBIO), &mode) == 0;
 }
 #else
-using SocketHandleUVE = int;
-inline constexpr SocketHandleUVE kInvalidSocketUVE = -1;
+using SocketHandle = int;
+inline constexpr SocketHandle kInvalidSocket = -1;
 
-bool EnsureSocketLibraryUVE() noexcept {
+bool EnsureSocketLibrary() noexcept {
     return true;
 }
 
-void CloseSocketUVE(const SocketHandleUVE handle) noexcept {
-    if (handle != kInvalidSocketUVE) {
+void CloseSocket(const SocketHandle handle) noexcept {
+    if (handle != kInvalidSocket) {
         ::close(handle);
     }
 }
 
-bool SetNonBlockingUVE(const SocketHandleUVE handle) noexcept {
+bool SetNonBlocking(const SocketHandle handle) noexcept {
     const int flags = ::fcntl(handle, F_GETFL, 0);
     if (flags == -1) {
         return false;
@@ -72,11 +72,11 @@ bool SetNonBlockingUVE(const SocketHandleUVE handle) noexcept {
 
 // Big enough to swallow any UDP payload whole (65507 max on the wire): oversize datagrams
 // arrive intact and count as dropped-oversize, never truncated into something deliverable.
-inline constexpr std::size_t kUdpReceiveBufferBytesUVE = 65535U;
+inline constexpr std::size_t kUdpReceiveBufferBytes = 65535U;
 
 // True when the socket visibly holds at least one datagram. A zero-length read means an
 // empty datagram waits (UDP has no EOF); any error means nothing provable, so false.
-bool SocketHasMailUVE(const SocketHandleUVE socket) noexcept {
+bool SocketHasMail(const SocketHandle socket) noexcept {
     char probe = 0;
 #if defined(_WIN32)
     const int probed = ::recv(socket, &probe, 1, MSG_PEEK);
@@ -90,41 +90,41 @@ bool SocketHasMailUVE(const SocketHandleUVE socket) noexcept {
 
 // Forward-declared in the header at UVE::Network scope and defined HERE, outside the
 // anonymous namespace above, so it is the same type the endpoint's shared_ptr names.
-struct UdpSocketStateUVE {
-    ~UdpSocketStateUVE() {
-        CloseSocketUVE(socket);
+struct UdpSocketState {
+    ~UdpSocketState() {
+        CloseSocket(socket);
     }
 
-    SocketHandleUVE socket = kInvalidSocketUVE;
+    SocketHandle socket = kInvalidSocket;
     std::uint16_t localPort = 0U;
     std::size_t maxPendingDatagrams = 256U;
     std::deque<std::vector<std::uint8_t>> inbound;
-    UdpTransportStatsUVE stats;
+    UdpTransportStats stats;
 };
 
 // Same rule: forward-declared in the header, defined here at UVE::Network scope.
-struct UdpListenerStateUVE {
-    struct PeerRecordUVE final {
+struct UdpListenerState {
+    struct PeerRecord final {
         std::deque<std::vector<std::uint8_t>> inbound;
         std::size_t maxPendingDatagrams = 256U;
-        UdpTransportStatsUVE stats;
+        UdpTransportStats stats;
     };
 
-    ~UdpListenerStateUVE() {
-        CloseSocketUVE(socket);
+    ~UdpListenerState() {
+        CloseSocket(socket);
     }
 
-    SocketHandleUVE socket = kInvalidSocketUVE;
+    SocketHandle socket = kInvalidSocket;
     std::uint16_t localPort = 0U;
     std::size_t maxStrangers = 64U;
     std::size_t maxStrangerDatagrams = 16U;
     std::size_t maxPumpDatagrams = 1024U;
-    std::map<UdpEndpointAddressUVE, PeerRecordUVE> peers;
-    std::map<UdpEndpointAddressUVE, std::deque<std::vector<std::uint8_t>>> strangers;
+    std::map<UdpEndpointAddress, PeerRecord> peers;
+    std::map<UdpEndpointAddress, std::deque<std::vector<std::uint8_t>>> strangers;
     // Arrival order for oldest-first accept; the map above cannot keep it. Entries are
     // unique and mirror the stranger map exactly - never an address without held mail.
-    std::deque<UdpEndpointAddressUVE> strangerOrder;
-    UdpListenerStatsUVE stats;
+    std::deque<UdpEndpointAddress> strangerOrder;
+    UdpListenerStats stats;
 };
 
 namespace {
@@ -134,12 +134,12 @@ namespace {
 // any socket error ends the drain, and the next pump retries. Only called when the queue
 // is empty, and peeked first, so an idle pump costs one syscall and no allocation. Lives
 // down here (same anonymous namespace, reopened) because it needs the state complete.
-void DrainSocketUVE(UdpSocketStateUVE& state) {
-    if (!SocketHasMailUVE(state.socket)) {
+void DrainSocket(UdpSocketState& state) {
+    if (!SocketHasMail(state.socket)) {
         return;
     }
     const std::size_t budget = std::min(state.maxPendingDatagrams, std::size_t{65536U}) + 1U;
-    std::vector<std::uint8_t> buffer(kUdpReceiveBufferBytesUVE);
+    std::vector<std::uint8_t> buffer(kUdpReceiveBufferBytes);
     for (std::size_t i = 0U; i < budget; ++i) {
 #if defined(_WIN32)
         const int length = static_cast<int>(buffer.size());
@@ -154,7 +154,7 @@ void DrainSocketUVE(UdpSocketStateUVE& state) {
         // Zero is an empty datagram, not an error: it queues like the loopback's empty
         // payload, and the layers above decide what emptiness means.
         const auto bytes = static_cast<std::size_t>(received);
-        if (bytes > kTransportMaximumDatagramBytesUVE) {
+        if (bytes > kTransportMaximumDatagramBytes) {
             ++state.stats.datagramsDroppedOversize;
             continue;
         }
@@ -169,17 +169,17 @@ void DrainSocketUVE(UdpSocketStateUVE& state) {
 
 } // namespace
 
-UdpTransportEndpointUVE::UdpTransportEndpointUVE(
-    std::shared_ptr<UdpSocketStateUVE> state) noexcept
+UdpTransportEndpoint::UdpTransportEndpoint(
+    std::shared_ptr<UdpSocketState> state) noexcept
     : m_state(std::move(state)) {}
 
-UdpTransportEndpointUVE::~UdpTransportEndpointUVE() = default;
+UdpTransportEndpoint::~UdpTransportEndpoint() = default;
 
-bool UdpTransportEndpointUVE::SendUVE(const std::vector<std::uint8_t>& payload) {
+bool UdpTransportEndpoint::Send(const std::vector<std::uint8_t>& payload) {
     if (m_state == nullptr) {
         return false;
     }
-    if (payload.size() > kTransportMaximumDatagramBytesUVE) {
+    if (payload.size() > kTransportMaximumDatagramBytes) {
         ++m_state->stats.datagramsDroppedOversize;
         return false;
     }
@@ -199,12 +199,12 @@ bool UdpTransportEndpointUVE::SendUVE(const std::vector<std::uint8_t>& payload) 
     return true;
 }
 
-std::optional<std::vector<std::uint8_t>> UdpTransportEndpointUVE::TryReceiveUVE() {
+std::optional<std::vector<std::uint8_t>> UdpTransportEndpoint::TryReceive() {
     if (m_state == nullptr) {
         return std::nullopt;
     }
     if (m_state->inbound.empty()) {
-        DrainSocketUVE(*m_state);
+        DrainSocket(*m_state);
     }
     if (m_state->inbound.empty()) {
         return std::nullopt;
@@ -215,38 +215,38 @@ std::optional<std::vector<std::uint8_t>> UdpTransportEndpointUVE::TryReceiveUVE(
     return datagram;
 }
 
-bool UdpTransportEndpointUVE::HasPendingUVE() const noexcept {
+bool UdpTransportEndpoint::HasPending() const noexcept {
     if (m_state == nullptr) {
         return false;
     }
     if (!m_state->inbound.empty()) {
         return true;
     }
-    return SocketHasMailUVE(m_state->socket);
+    return SocketHasMail(m_state->socket);
 }
 
-std::size_t UdpTransportEndpointUVE::PendingCountUVE() const noexcept {
+std::size_t UdpTransportEndpoint::PendingCount() const noexcept {
     if (m_state == nullptr) {
         return 0U;
     }
-    return m_state->inbound.size() + (SocketHasMailUVE(m_state->socket) ? 1U : 0U);
+    return m_state->inbound.size() + (SocketHasMail(m_state->socket) ? 1U : 0U);
 }
 
-UdpTransportStatsUVE UdpTransportEndpointUVE::StatsUVE() const noexcept {
+UdpTransportStats UdpTransportEndpoint::Stats() const noexcept {
     if (m_state == nullptr) {
-        return UdpTransportStatsUVE{};
+        return UdpTransportStats{};
     }
     return m_state->stats;
 }
 
-std::uint16_t UdpTransportEndpointUVE::LocalPortUVE() const noexcept {
+std::uint16_t UdpTransportEndpoint::LocalPort() const noexcept {
     if (m_state == nullptr) {
         return 0U;
     }
     return m_state->localPort;
 }
 
-std::optional<std::uint32_t> ResolveUdpHostUVE(const std::string& host) {
+std::optional<std::uint32_t> ResolveUdpHost(const std::string& host) {
     // DNS names top out at 253 characters; longer is garbage, not a lookup.
     if (host.empty() || host.size() > 253U) {
         return std::nullopt;
@@ -256,7 +256,7 @@ std::optional<std::uint32_t> ResolveUdpHostUVE(const std::string& host) {
     if (::inet_pton(AF_INET, host.c_str(), &parsed) == 1) {
         return ::ntohl(parsed.s_addr);
     }
-    if (!EnsureSocketLibraryUVE()) {
+    if (!EnsureSocketLibrary()) {
         return std::nullopt;
     }
     addrinfo hints{};
@@ -276,20 +276,20 @@ std::optional<std::uint32_t> ResolveUdpHostUVE(const std::string& host) {
     return hostOrder;
 }
 
-std::optional<UdpTransportEndpointUVE> CreateUdpTransportEndpointUVE(
-    const UdpTransportConfigUVE& config) {
-    if (!EnsureSocketLibraryUVE()) {
+std::optional<UdpTransportEndpoint> CreateUdpTransportEndpoint(
+    const UdpTransportConfig& config) {
+    if (!EnsureSocketLibrary()) {
         return std::nullopt;
     }
-    SocketHandleUVE socket = ::socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-    if (socket == kInvalidSocketUVE) {
+    SocketHandle socket = ::socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    if (socket == kInvalidSocket) {
         return std::nullopt;
     }
-    const auto fail = [&socket]() -> std::optional<UdpTransportEndpointUVE> {
-        CloseSocketUVE(socket);
+    const auto fail = [&socket]() -> std::optional<UdpTransportEndpoint> {
+        CloseSocket(socket);
         return std::nullopt;
     };
-    if (!SetNonBlockingUVE(socket)) {
+    if (!SetNonBlocking(socket)) {
         return fail();
     }
     sockaddr_in local{};
@@ -299,7 +299,7 @@ std::optional<UdpTransportEndpointUVE> CreateUdpTransportEndpointUVE(
     if (::bind(socket, reinterpret_cast<sockaddr*>(&local), sizeof(local)) != 0) {
         return fail();
     }
-    const std::optional<std::uint32_t> resolved = ResolveUdpHostUVE(config.remoteHost);
+    const std::optional<std::uint32_t> resolved = ResolveUdpHost(config.remoteHost);
     if (!resolved.has_value()) {
         return fail();
     }
@@ -320,21 +320,21 @@ std::optional<UdpTransportEndpointUVE> CreateUdpTransportEndpointUVE(
     if (::getsockname(socket, reinterpret_cast<sockaddr*>(&bound), &boundLength) == 0) {
         localPort = ::ntohs(bound.sin_port);
     }
-    auto state = std::make_shared<UdpSocketStateUVE>();
+    auto state = std::make_shared<UdpSocketState>();
     state->socket = socket;
     state->localPort = localPort;
     state->maxPendingDatagrams = config.maxPendingDatagrams;
-    return UdpTransportEndpointUVE(std::move(state));
+    return UdpTransportEndpoint(std::move(state));
 }
 
 namespace {
 
 // Addresses cross in host byte order; the wire speaks network order, converted here.
-[[nodiscard]] UdpEndpointAddressUVE AddressFromSockaddrUVE(const sockaddr_in& from) noexcept {
-    return UdpEndpointAddressUVE{::ntohl(from.sin_addr.s_addr), ::ntohs(from.sin_port)};
+[[nodiscard]] UdpEndpointAddress AddressFromSockaddr(const sockaddr_in& from) noexcept {
+    return UdpEndpointAddress{::ntohl(from.sin_addr.s_addr), ::ntohs(from.sin_port)};
 }
 
-[[nodiscard]] sockaddr_in SockaddrFromAddressUVE(const UdpEndpointAddressUVE& address) noexcept {
+[[nodiscard]] sockaddr_in SockaddrFromAddress(const UdpEndpointAddress& address) noexcept {
     sockaddr_in to{};
     to.sin_family = AF_INET;
     to.sin_addr.s_addr = ::htonl(address.host);
@@ -342,8 +342,8 @@ namespace {
     return to;
 }
 
-void ForgetStrangerOrderUVE(UdpListenerStateUVE& state,
-                             const UdpEndpointAddressUVE& stranger) {
+void ForgetStrangerOrder(UdpListenerState& state,
+                             const UdpEndpointAddress& stranger) {
     const auto order =
         std::find(state.strangerOrder.begin(), state.strangerOrder.end(), stranger);
     if (order != state.strangerOrder.end()) {
@@ -353,19 +353,19 @@ void ForgetStrangerOrderUVE(UdpListenerStateUVE& state,
 
 } // namespace
 
-std::string UdpEndpointAddressUVE::ToStringUVE() const {
+std::string UdpEndpointAddress::ToString() const {
     return std::to_string((host >> 24U) & 0xFFU) + "." + std::to_string((host >> 16U) & 0xFFU) +
            "." + std::to_string((host >> 8U) & 0xFFU) + "." + std::to_string(host & 0xFFU) + ":" +
            std::to_string(port);
 }
 
-UdpListenerPeerUVE::UdpListenerPeerUVE(std::shared_ptr<UdpListenerStateUVE> state,
-                                       const UdpEndpointAddressUVE remote) noexcept
+UdpListenerPeer::UdpListenerPeer(std::shared_ptr<UdpListenerState> state,
+                                       const UdpEndpointAddress remote) noexcept
     : m_state(std::move(state)), m_remote(remote) {}
 
-UdpListenerPeerUVE::~UdpListenerPeerUVE() = default;
+UdpListenerPeer::~UdpListenerPeer() = default;
 
-bool UdpListenerPeerUVE::SendUVE(const std::vector<std::uint8_t>& payload) {
+bool UdpListenerPeer::Send(const std::vector<std::uint8_t>& payload) {
     if (m_state == nullptr) {
         return false;
     }
@@ -373,11 +373,11 @@ bool UdpListenerPeerUVE::SendUVE(const std::vector<std::uint8_t>& payload) {
     if (peer == m_state->peers.end()) {
         return false;
     }
-    if (payload.size() > kTransportMaximumDatagramBytesUVE) {
+    if (payload.size() > kTransportMaximumDatagramBytes) {
         ++peer->second.stats.datagramsDroppedOversize;
         return false;
     }
-    const sockaddr_in to = SockaddrFromAddressUVE(m_remote);
+    const sockaddr_in to = SockaddrFromAddress(m_remote);
 #if defined(_WIN32)
     const int length = static_cast<int>(payload.size());
 #else
@@ -395,7 +395,7 @@ bool UdpListenerPeerUVE::SendUVE(const std::vector<std::uint8_t>& payload) {
     return true;
 }
 
-std::optional<std::vector<std::uint8_t>> UdpListenerPeerUVE::TryReceiveUVE() {
+std::optional<std::vector<std::uint8_t>> UdpListenerPeer::TryReceive() {
     if (m_state == nullptr) {
         return std::nullopt;
     }
@@ -409,7 +409,7 @@ std::optional<std::vector<std::uint8_t>> UdpListenerPeerUVE::TryReceiveUVE() {
     return datagram;
 }
 
-bool UdpListenerPeerUVE::HasPendingUVE() const noexcept {
+bool UdpListenerPeer::HasPending() const noexcept {
     if (m_state == nullptr) {
         return false;
     }
@@ -417,7 +417,7 @@ bool UdpListenerPeerUVE::HasPendingUVE() const noexcept {
     return peer != m_state->peers.end() && !peer->second.inbound.empty();
 }
 
-std::size_t UdpListenerPeerUVE::PendingCountUVE() const noexcept {
+std::size_t UdpListenerPeer::PendingCount() const noexcept {
     if (m_state == nullptr) {
         return 0U;
     }
@@ -425,26 +425,26 @@ std::size_t UdpListenerPeerUVE::PendingCountUVE() const noexcept {
     return peer == m_state->peers.end() ? 0U : peer->second.inbound.size();
 }
 
-UdpTransportStatsUVE UdpListenerPeerUVE::StatsUVE() const noexcept {
+UdpTransportStats UdpListenerPeer::Stats() const noexcept {
     if (m_state == nullptr) {
-        return UdpTransportStatsUVE{};
+        return UdpTransportStats{};
     }
     const auto peer = m_state->peers.find(m_remote);
-    return peer == m_state->peers.end() ? UdpTransportStatsUVE{} : peer->second.stats;
+    return peer == m_state->peers.end() ? UdpTransportStats{} : peer->second.stats;
 }
 
-UdpEndpointAddressUVE UdpListenerPeerUVE::RemoteUVE() const noexcept {
+UdpEndpointAddress UdpListenerPeer::Remote() const noexcept {
     return m_remote;
 }
 
-UdpListenerUVE::UdpListenerUVE(std::shared_ptr<UdpListenerStateUVE> state) noexcept
+UdpListener::UdpListener(std::shared_ptr<UdpListenerState> state) noexcept
     : m_state(std::move(state)) {}
 
-void UdpListenerUVE::UpdateUVE() {
+void UdpListener::Update() {
     if (m_state == nullptr) {
         return;
     }
-    std::vector<std::uint8_t> buffer(kUdpReceiveBufferBytesUVE);
+    std::vector<std::uint8_t> buffer(kUdpReceiveBufferBytes);
     for (std::size_t i = 0U; i < m_state->maxPumpDatagrams; ++i) {
         sockaddr_in from{};
 #if defined(_WIN32)
@@ -462,11 +462,11 @@ void UdpListenerUVE::UpdateUVE() {
         }
         ++m_state->stats.datagramsReceived;
         const auto bytes = static_cast<std::size_t>(received);
-        if (bytes > kTransportMaximumDatagramBytesUVE) {
+        if (bytes > kTransportMaximumDatagramBytes) {
             ++m_state->stats.datagramsDroppedOversize;
             continue;
         }
-        const UdpEndpointAddressUVE sender = AddressFromSockaddrUVE(from);
+        const UdpEndpointAddress sender = AddressFromSockaddr(from);
         const auto peer = m_state->peers.find(sender);
         if (peer != m_state->peers.end()) {
             if (peer->second.inbound.size() >= peer->second.maxPendingDatagrams) {
@@ -503,31 +503,31 @@ void UdpListenerUVE::UpdateUVE() {
     }
 }
 
-bool UdpListenerUVE::HasStrangersUVE() const noexcept {
+bool UdpListener::HasStrangers() const noexcept {
     return m_state != nullptr && !m_state->strangerOrder.empty();
 }
 
-std::optional<UdpEndpointAddressUVE> UdpListenerUVE::NextStrangerUVE() const {
+std::optional<UdpEndpointAddress> UdpListener::NextStranger() const {
     if (m_state == nullptr || m_state->strangerOrder.empty()) {
         return std::nullopt;
     }
     return m_state->strangerOrder.front();
 }
 
-std::size_t UdpListenerUVE::StrangerCountUVE() const noexcept {
+std::size_t UdpListener::StrangerCount() const noexcept {
     return m_state == nullptr ? 0U : m_state->strangers.size();
 }
 
-std::optional<UdpListenerPeerUVE> UdpListenerUVE::AcceptPeerUVE(
+std::optional<UdpListenerPeer> UdpListener::AcceptPeer(
     const std::size_t maxPendingDatagrams) {
     if (m_state == nullptr || m_state->strangerOrder.empty()) {
         return std::nullopt;
     }
-    return AcceptPeerUVE(m_state->strangerOrder.front(), maxPendingDatagrams);
+    return AcceptPeer(m_state->strangerOrder.front(), maxPendingDatagrams);
 }
 
-std::optional<UdpListenerPeerUVE> UdpListenerUVE::AcceptPeerUVE(
-    const UdpEndpointAddressUVE stranger, const std::size_t maxPendingDatagrams) {
+std::optional<UdpListenerPeer> UdpListener::AcceptPeer(
+    const UdpEndpointAddress stranger, const std::size_t maxPendingDatagrams) {
     if (m_state == nullptr) {
         return std::nullopt;
     }
@@ -535,16 +535,16 @@ std::optional<UdpListenerPeerUVE> UdpListenerUVE::AcceptPeerUVE(
     if (held == m_state->strangers.end()) {
         return std::nullopt;
     }
-    UdpListenerStateUVE::PeerRecordUVE record;
+    UdpListenerState::PeerRecord record;
     record.inbound = std::move(held->second);
     record.maxPendingDatagrams = maxPendingDatagrams;
     m_state->peers.emplace(stranger, std::move(record));
     m_state->strangers.erase(held);
-    ForgetStrangerOrderUVE(*m_state, stranger);
-    return UdpListenerPeerUVE(m_state, stranger);
+    ForgetStrangerOrder(*m_state, stranger);
+    return UdpListenerPeer(m_state, stranger);
 }
 
-bool UdpListenerUVE::RefuseStrangerUVE(const UdpEndpointAddressUVE stranger) {
+bool UdpListener::RefuseStranger(const UdpEndpointAddress stranger) {
     if (m_state == nullptr) {
         return false;
     }
@@ -553,52 +553,52 @@ bool UdpListenerUVE::RefuseStrangerUVE(const UdpEndpointAddressUVE stranger) {
         return false;
     }
     m_state->strangers.erase(held);
-    ForgetStrangerOrderUVE(*m_state, stranger);
+    ForgetStrangerOrder(*m_state, stranger);
     return true;
 }
 
-bool UdpListenerUVE::RemovePeerUVE(const UdpEndpointAddressUVE peer) {
+bool UdpListener::RemovePeer(const UdpEndpointAddress peer) {
     if (m_state == nullptr) {
         return false;
     }
     return m_state->peers.erase(peer) == 1U;
 }
 
-bool UdpListenerUVE::HasPeerUVE(const UdpEndpointAddressUVE peer) const noexcept {
+bool UdpListener::HasPeer(const UdpEndpointAddress peer) const noexcept {
     return m_state != nullptr && m_state->peers.contains(peer);
 }
 
-std::size_t UdpListenerUVE::PeerCountUVE() const noexcept {
+std::size_t UdpListener::PeerCount() const noexcept {
     return m_state == nullptr ? 0U : m_state->peers.size();
 }
 
-UdpListenerStatsUVE UdpListenerUVE::StatsUVE() const noexcept {
+UdpListenerStats UdpListener::Stats() const noexcept {
     if (m_state == nullptr) {
-        return UdpListenerStatsUVE{};
+        return UdpListenerStats{};
     }
     return m_state->stats;
 }
 
-std::uint16_t UdpListenerUVE::LocalPortUVE() const noexcept {
+std::uint16_t UdpListener::LocalPort() const noexcept {
     if (m_state == nullptr) {
         return 0U;
     }
     return m_state->localPort;
 }
 
-std::optional<UdpListenerUVE> CreateUdpListenerUVE(const UdpListenerConfigUVE& config) {
-    if (!EnsureSocketLibraryUVE()) {
+std::optional<UdpListener> CreateUdpListener(const UdpListenerConfig& config) {
+    if (!EnsureSocketLibrary()) {
         return std::nullopt;
     }
-    SocketHandleUVE socket = ::socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-    if (socket == kInvalidSocketUVE) {
+    SocketHandle socket = ::socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    if (socket == kInvalidSocket) {
         return std::nullopt;
     }
-    const auto fail = [&socket]() -> std::optional<UdpListenerUVE> {
-        CloseSocketUVE(socket);
+    const auto fail = [&socket]() -> std::optional<UdpListener> {
+        CloseSocket(socket);
         return std::nullopt;
     };
-    if (!SetNonBlockingUVE(socket)) {
+    if (!SetNonBlocking(socket)) {
         return fail();
     }
     sockaddr_in local{};
@@ -618,13 +618,13 @@ std::optional<UdpListenerUVE> CreateUdpListenerUVE(const UdpListenerConfigUVE& c
     if (::getsockname(socket, reinterpret_cast<sockaddr*>(&bound), &boundLength) == 0) {
         localPort = ::ntohs(bound.sin_port);
     }
-    auto state = std::make_shared<UdpListenerStateUVE>();
+    auto state = std::make_shared<UdpListenerState>();
     state->socket = socket;
     state->localPort = localPort;
     state->maxStrangers = config.maxStrangers;
     state->maxStrangerDatagrams = config.maxStrangerDatagrams;
     state->maxPumpDatagrams = config.maxPumpDatagrams;
-    return UdpListenerUVE(std::move(state));
+    return UdpListener(std::move(state));
 }
 
 } // namespace UVE::Network

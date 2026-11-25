@@ -27,29 +27,29 @@ namespace UVE::Physics {
 /// The islands are built from the pair list as given, so the caller's order is the contract: the
 /// deterministic path canonicalizes pairs *before* island building, and every path here preserves
 /// the relative order of pairs inside an island. Nothing is sorted by address or hash order.
-struct PhysicsIslandUVE final {
-    /// Index into PhysicsIslandPartitionUVE::pairOrderUVE of this island's first pair.
-    std::uint32_t firstPairUVE = 0U;
+struct PhysicsIsland final {
+    /// Index into PhysicsIslandPartition::pairOrder of this island's first pair.
+    std::uint32_t firstPair = 0U;
     /// How many pairs belong to this island.
-    std::uint32_t pairCountUVE = 0U;
+    std::uint32_t pairCount = 0U;
     /// Distinct bodies touched by this island's pairs. Reported for budgeting and diagnostics; the
     /// solver does not need it.
-    std::uint32_t bodyCountUVE = 0U;
+    std::uint32_t bodyCount = 0U;
 };
 
 /// The pair list reordered into islands, plus the island table that indexes into it.
 ///
-/// `pairOrderUVE` is a permutation of [0, pairs.size()): pairs of island 0 first, in their original
+/// `pairOrder` is a permutation of [0, pairs.size()): pairs of island 0 first, in their original
 /// relative order, then island 1's, and so on. Island ids follow first appearance in the input, so
 /// island 0 is the one containing pair 0 - which makes the whole structure reproducible from the
 /// pair list alone, with no dependence on entity storage order or hashing.
-struct PhysicsIslandPartitionUVE final {
-    std::vector<std::uint32_t> pairOrderUVE;
-    std::vector<PhysicsIslandUVE> islandsUVE;
+struct PhysicsIslandPartition final {
+    std::vector<std::uint32_t> pairOrder;
+    std::vector<PhysicsIsland> islands;
     /// Distinct bodies across every island: the size of the snapshot the solver has to take.
-    std::uint32_t bodyCountUVE = 0U;
+    std::uint32_t bodyCount = 0U;
 
-    [[nodiscard]] bool IsEmptyUVE() const noexcept { return islandsUVE.empty(); }
+    [[nodiscard]] bool IsEmpty() const noexcept { return islands.empty(); }
 };
 
 /// Groups the collision pairs into simulation islands.
@@ -68,8 +68,8 @@ struct PhysicsIslandPartitionUVE final {
 ///
 /// Pairs with `first == second` are ignored (a body cannot collide with itself): they contribute no
 /// union, so they must not create an island of their own either. They are still kept out of
-/// `pairOrderUVE`, because resolving a self-pair is meaningless.
-[[nodiscard]] PhysicsIslandPartitionUVE BuildPhysicsIslandPartitionUVE(
-    const std::vector<CollisionPairUVE>& pairs);
+/// `pairOrder`, because resolving a self-pair is meaningless.
+[[nodiscard]] PhysicsIslandPartition BuildPhysicsIslandPartition(
+    const std::vector<CollisionPair>& pairs);
 
 } // namespace UVE::Physics

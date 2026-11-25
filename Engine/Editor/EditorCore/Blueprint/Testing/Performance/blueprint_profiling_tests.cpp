@@ -11,38 +11,38 @@
 namespace UVE::Blueprint::Tests {
 namespace {
 
-TEST(BlueprintProfilingUVETest, ExecutionProfilerAndScopedSamples) {
-    Profiling::BlueprintExecutionProfilerUVE profiler;
-    profiler.RecordSampleUVE(10U, "EventTick", 120.0);
-    profiler.RecordSampleUVE(10U, "EventTick", 80.0);
-    profiler.RecordSampleUVE(20U, "HeavyMath", 450.0);
+TEST(BlueprintProfilingTest, ExecutionProfilerAndScopedSamples) {
+    Profiling::BlueprintExecutionProfiler profiler;
+    profiler.RecordSample(10U, "EventTick", 120.0);
+    profiler.RecordSample(10U, "EventTick", 80.0);
+    profiler.RecordSample(20U, "HeavyMath", 450.0);
 
     {
-        Profiling::BlueprintScopedProfileUVE scoped(profiler, 30U, "ScopedWork");
+        Profiling::BlueprintScopedProfile scoped(profiler, 30U, "ScopedWork");
     }
 
-    EXPECT_EQ(profiler.TotalCallCountUVE(), 4U);
-    EXPECT_GE(profiler.TotalRecordedMicrosUVE(), 650.0);
+    EXPECT_EQ(profiler.TotalCallCount(), 4U);
+    EXPECT_GE(profiler.TotalRecordedMicros(), 650.0);
 
-    const auto sorted = profiler.GetSamplesSortedByTotalTimeUVE();
+    const auto sorted = profiler.GetSamplesSortedByTotalTime();
     ASSERT_EQ(sorted.size(), 3U);
     EXPECT_EQ(sorted[0].nodeId, 20U);
     EXPECT_EQ(sorted[1].nodeId, 10U);
-    EXPECT_DOUBLE_EQ(sorted[1].AverageMicrosUVE(), 100.0);
+    EXPECT_DOUBLE_EQ(sorted[1].AverageMicros(), 100.0);
     EXPECT_DOUBLE_EQ(sorted[1].minMicros, 80.0);
     EXPECT_DOUBLE_EQ(sorted[1].maxMicros, 120.0);
 
-    profiler.ResetUVE();
-    EXPECT_EQ(profiler.TotalCallCountUVE(), 0U);
+    profiler.Reset();
+    EXPECT_EQ(profiler.TotalCallCount(), 0U);
 }
 
-TEST(BlueprintProfilingUVETest, ComplexityMemoryAndFormattedReport) {
-    Asset::BlueprintAssetUVE bp =
-        Resources::InstantiateBlueprintTemplateUVE(Resources::BlueprintTemplateKindUVE::NetworkRpcClient);
+TEST(BlueprintProfilingTest, ComplexityMemoryAndFormattedReport) {
+    Asset::BlueprintAsset bp =
+        Resources::InstantiateBlueprintTemplate(Resources::BlueprintTemplateKind::NetworkRpcClient);
     // Add an unconnected orphan branch node to exercise branch + orphan metrics.
-    bp.nodes.push_back(Asset::BlueprintNodeUVE{99U, "branch", {}, 500.0F, 400.0F, {}});
+    bp.nodes.push_back(Asset::BlueprintNode{99U, "branch", {}, 500.0F, 400.0F, {}});
 
-    const Profiling::BlueprintGraphComplexityUVE complexity = Profiling::AnalyzeBlueprintGraphComplexityUVE(bp);
+    const Profiling::BlueprintGraphComplexity complexity = Profiling::AnalyzeBlueprintGraphComplexity(bp);
     EXPECT_EQ(complexity.nodeCount, 4U);
     EXPECT_EQ(complexity.wireCount, 2U);
     EXPECT_EQ(complexity.eventEntryCount, 1U);
@@ -52,14 +52,14 @@ TEST(BlueprintProfilingUVETest, ComplexityMemoryAndFormattedReport) {
     EXPECT_EQ(complexity.maxChainDepth, 2U);
     EXPECT_EQ(complexity.cyclomaticComplexity, 2U);
 
-    const Profiling::BlueprintMemoryStatsUVE mem = Profiling::EstimateBlueprintAssetMemoryUVE(bp);
+    const Profiling::BlueprintMemoryStats mem = Profiling::EstimateBlueprintAssetMemory(bp);
     EXPECT_GT(mem.totalEstimatedBytes, 0U);
     EXPECT_GT(mem.nodesBytes, 0U);
 
-    Profiling::BlueprintExecutionProfilerUVE profiler;
-    profiler.RecordSampleUVE(2U, "RPC Begin", 35.5);
-    const auto report = Profiling::BuildBlueprintPerformanceReportUVE(bp, profiler, 5U);
-    const std::string formatted = Profiling::FormatBlueprintPerformanceReportUVE(report);
+    Profiling::BlueprintExecutionProfiler profiler;
+    profiler.RecordSample(2U, "RPC Begin", 35.5);
+    const auto report = Profiling::BuildBlueprintPerformanceReport(bp, profiler, 5U);
+    const std::string formatted = Profiling::FormatBlueprintPerformanceReport(report);
     EXPECT_NE(formatted.find("Blueprint Performance Report"), std::string::npos);
     EXPECT_NE(formatted.find("RPC Begin"), std::string::npos);
 }

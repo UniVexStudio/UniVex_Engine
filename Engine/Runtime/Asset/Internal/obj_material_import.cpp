@@ -25,14 +25,14 @@
 namespace UVE::Asset::Detail {
 namespace {
 
-constexpr const char* kObjImporterNameUVE = "ObjImporterUVE";
-constexpr std::string_view kObjTemporarySuffixUVE = ".uve_obj_tmp";
+constexpr const char* kObjImporterName = "ObjImporter";
+constexpr std::string_view kObjTemporarySuffix = ".uve_obj_tmp";
 
 /// Most `usemtl` switches the importer will record per file. A mesh that names more materials than
 /// this is not a shape anyone can look at in one viewport, and the bound keeps the scan linear.
-constexpr std::size_t kMaximumObjUsedMaterialsUVE = 256U;
+constexpr std::size_t kMaximumObjUsedMaterials = 256U;
 
-[[nodiscard]] std::string_view TrimmedLineUVE(std::string_view line) noexcept {
+[[nodiscard]] std::string_view TrimmedLine(std::string_view line) noexcept {
     const std::size_t commentStart = line.find('#');
     if (commentStart != std::string_view::npos) {
         line = line.substr(0U, commentStart);
@@ -49,18 +49,18 @@ constexpr std::size_t kMaximumObjUsedMaterialsUVE = 256U;
 /// Splits `line` into its directive and the trimmed remainder. The remainder is where OBJ puts the
 /// one argument every directive this importer reads takes (a library path or a material name), and
 /// material names may contain spaces, so it must stay whole.
-[[nodiscard]] std::pair<std::string_view, std::string_view> SplitDirectiveUVE(std::string_view line) noexcept {
+[[nodiscard]] std::pair<std::string_view, std::string_view> SplitDirective(std::string_view line) noexcept {
     const std::size_t separator = line.find_first_of(" \t");
     if (separator == std::string_view::npos) {
         return {line, std::string_view{}};
     }
     const std::string_view directive = line.substr(0U, separator);
-    return {directive, TrimmedLineUVE(line.substr(separator))};
+    return {directive, TrimmedLine(line.substr(separator))};
 }
 
 /// A texture reference that stays inside the source directory. Model files are untrusted, so an
 /// absolute path or one that climbs out is refused before any read.
-[[nodiscard]] bool IsTraversalSafeUVE(const std::filesystem::path& relative) {
+[[nodiscard]] bool IsTraversalSafe(const std::filesystem::path& relative) {
     if (relative.empty() || relative.has_root_path() || relative.is_absolute()) {
         return false;
     }
@@ -72,21 +72,21 @@ constexpr std::size_t kMaximumObjUsedMaterialsUVE = 256U;
     return true;
 }
 
-[[nodiscard]] std::string NormalisedRelativeUVE(const std::string_view authored) {
+[[nodiscard]] std::string NormalisedRelative(const std::string_view authored) {
     std::string normalised(authored);
     std::replace(normalised.begin(), normalised.end(), '\\', '/');
     return normalised;
 }
 
 /// Applies one authored texture file to a material slot through the shared model-texture helper.
-void ImportTextureSlotUVE(const std::filesystem::path& sourceDirectory, const std::filesystem::path& destinationPath,
-                          const std::string_view authoredFile, const TextureAssetColorSpaceUVE colorSpace,
-                          const TextureUsageUVE usage, const ModelTextureImportOptionsUVE& options,
-                          IAssetDatabaseUVE& assetDatabase, AssetGuidUVE& slot) {
+void ImportTextureSlot(const std::filesystem::path& sourceDirectory, const std::filesystem::path& destinationPath,
+                          const std::string_view authoredFile, const TextureAssetColorSpace colorSpace,
+                          const TextureUsage usage, const ModelTextureImportOptions& options,
+                          IAssetDatabase& assetDatabase, AssetGuid& slot) {
     if (authoredFile.empty()) {
         return;
     }
-    slot = ImportModelTextureFileUVE(sourceDirectory, destinationPath, authoredFile, colorSpace, usage, options,
+    slot = ImportModelTextureFile(sourceDirectory, destinationPath, authoredFile, colorSpace, usage, options,
                                      assetDatabase);
 }
 
@@ -98,9 +98,9 @@ namespace {
 /// was published in. Names are matched exactly as both readers read them, so a name that survived
 /// geometry conversion but has no published material - it was absent from the library, or failed
 /// validation - leaves that surface's slot invalid on purpose.
-void ApplyObjSurfaceRangesUVE(const std::vector<std::string>& publishedNames,
-                              const std::vector<ObjSurfaceRangeUVE>& surfaceRanges,
-                              MeshAssetUVE& mesh) {
+void ApplyObjSurfaceRanges(const std::vector<std::string>& publishedNames,
+                              const std::vector<ObjSurfaceRange>& surfaceRanges,
+                              MeshAsset& mesh) {
     if (surfaceRanges.size() < 2U || mesh.materialGuids.empty()) {
         return;
     }
@@ -109,32 +109,32 @@ void ApplyObjSurfaceRangesUVE(const std::vector<std::string>& publishedNames,
     for (std::size_t slot = 0U; slot < publishedNames.size(); ++slot) {
         slotByName.emplace(publishedNames[slot], static_cast<std::uint32_t>(slot));
     }
-    std::vector<MeshSurfaceUVE> surfaces;
+    std::vector<MeshSurface> surfaces;
     surfaces.reserve(surfaceRanges.size());
-    for (const ObjSurfaceRangeUVE& range : surfaceRanges) {
-        MeshSurfaceUVE surface{range.firstIndex, range.indexCount, kInvalidMeshSurfaceMaterialSlotUVE};
+    for (const ObjSurfaceRange& range : surfaceRanges) {
+        MeshSurface surface{range.firstIndex, range.indexCount, kInvalidMeshSurfaceMaterialSlot};
         if (const auto found = slotByName.find(range.materialName); found != slotByName.end()) {
             surface.materialSlot = found->second;
         }
         surfaces.push_back(surface);
     }
     mesh.surfaces = std::move(surfaces);
-    if (!IsMeshSurfaceDataValidUVE(mesh)) {
+    if (!IsMeshSurfaceDataValid(mesh)) {
         // The ranges come from the same index buffer the mesh holds, so this cannot happen unless
         // one of the two readers changed; refusing them keeps a broken table out of the .uvmodel.
         UVE_WARNING("{}: the {} converted surface ranges do not describe the index buffer; the mesh "
                     "publishes without them",
-                    kObjImporterNameUVE, mesh.surfaces.size());
+                    kObjImporterName, mesh.surfaces.size());
         mesh.surfaces.clear();
     }
 }
 
 } // namespace
 
-bool ImportObjMaterialsUVE(const std::string_view objSource, const std::filesystem::path& sourcePath,
-                           const std::filesystem::path& destinationPath, IAssetDatabaseUVE& assetDatabase,
-                           MeshAssetUVE& inOutMesh,
-                           const std::vector<ObjSurfaceRangeUVE>& surfaceRanges) {
+bool ImportObjMaterials(const std::string_view objSource, const std::filesystem::path& sourcePath,
+                           const std::filesystem::path& destinationPath, IAssetDatabase& assetDatabase,
+                           MeshAsset& inOutMesh,
+                           const std::vector<ObjSurfaceRange>& surfaceRanges) {
     inOutMesh.materialGuids.clear();
     inOutMesh.surfaces.clear();
     try {
@@ -147,18 +147,18 @@ bool ImportObjMaterialsUVE(const std::string_view objSource, const std::filesyst
         while (lineStart <= objSource.size()) {
             const std::size_t lineEnd = objSource.find('\n', lineStart);
             const std::string_view line =
-                TrimmedLineUVE(objSource.substr(lineStart, lineEnd == std::string_view::npos
+                TrimmedLine(objSource.substr(lineStart, lineEnd == std::string_view::npos
                                                                ? std::string_view::npos
                                                                : lineEnd - lineStart));
             if (!line.empty()) {
-                const auto [directive, argument] = SplitDirectiveUVE(line);
+                const auto [directive, argument] = SplitDirective(line);
                 if (directive == "mtllib" && !argument.empty()) {
                     ++libraryCount;
                     if (libraryFile.empty()) {
                         libraryFile = std::string(argument);
                     }
                 } else if (directive == "usemtl" && !argument.empty() &&
-                           usedNames.size() < kMaximumObjUsedMaterialsUVE) {
+                           usedNames.size() < kMaximumObjUsedMaterials) {
                     const std::string name(argument);
                     if (std::find(usedNames.begin(), usedNames.end(), name) == usedNames.end()) {
                         usedNames.push_back(name);
@@ -181,44 +181,44 @@ bool ImportObjMaterialsUVE(const std::string_view objSource, const std::filesyst
             // silently taking the last one would make the choice depend on line order in a file
             // the author never sees.
             UVE_WARNING("{}: source \"{}\" names {} material libraries; only \"{}\" is read",
-                        kObjImporterNameUVE, sourcePath.string(), libraryCount, libraryFile);
+                        kObjImporterName, sourcePath.string(), libraryCount, libraryFile);
         }
 
-        const std::filesystem::path relativeLibrary = std::filesystem::path(NormalisedRelativeUVE(libraryFile));
-        if (!IsTraversalSafeUVE(relativeLibrary)) {
+        const std::filesystem::path relativeLibrary = std::filesystem::path(NormalisedRelative(libraryFile));
+        if (!IsTraversalSafe(relativeLibrary)) {
             UVE_WARNING("{}: source \"{}\" names material library \"{}\" outside its own directory; the mesh "
                         "publishes without materials",
-                        kObjImporterNameUVE, sourcePath.string(), libraryFile);
+                        kObjImporterName, sourcePath.string(), libraryFile);
             return true;
         }
         const std::filesystem::path libraryPath = sourcePath.parent_path() / relativeLibrary;
         std::vector<std::byte> libraryBytes;
-        if (!ReadBoundedSourceBytesUVE(libraryPath, kObjImporterNameUVE, kMaximumMtlLibrarySourceBytesUVE,
+        if (!ReadBoundedSourceBytes(libraryPath, kObjImporterName, kMaximumMtlLibrarySourceBytes,
                                        libraryBytes)) {
             UVE_WARNING("{}: source \"{}\" names material library \"{}\" but it could not be read; the mesh "
                         "publishes without materials",
-                        kObjImporterNameUVE, sourcePath.string(), libraryPath.string());
+                        kObjImporterName, sourcePath.string(), libraryPath.string());
             return true;
         }
 
-        MtlLibraryUVE library;
+        MtlLibrary library;
         const std::string_view librarySource(reinterpret_cast<const char*>(libraryBytes.data()),
                                              libraryBytes.size());
-        if (!ConvertMtlLibraryUVE(librarySource, library)) {
+        if (!ConvertMtlLibrary(librarySource, library)) {
             UVE_WARNING("{}: material library \"{}\" failed bounded MTL conversion; the mesh publishes without "
                         "materials",
-                        kObjImporterNameUVE, libraryPath.string());
+                        kObjImporterName, libraryPath.string());
             return true;
         }
         if (library.skippedMaterials > 0U) {
             UVE_WARNING("{}: material library \"{}\" declared {} material(s) whose directives did not convert; "
                         "they are left out",
-                        kObjImporterNameUVE, libraryPath.string(), library.skippedMaterials);
+                        kObjImporterName, libraryPath.string(), library.skippedMaterials);
         }
         if (library.truncated) {
             UVE_WARNING("{}: material library \"{}\" declares more than {} materials; the ones past the "
                         "bound are left out",
-                        kObjImporterNameUVE, libraryPath.string(), kMaximumMtlLibraryMaterialsUVE);
+                        kObjImporterName, libraryPath.string(), kMaximumMtlLibraryMaterials);
         }
         if (library.materials.empty()) {
             return true;
@@ -237,7 +237,7 @@ bool ImportObjMaterialsUVE(const std::string_view objSource, const std::filesyst
             if (found == indexByName.end()) {
                 UVE_WARNING("{}: source \"{}\" switches to material \"{}\" which \"{}\" does not declare; that "
                             "material is left out",
-                            kObjImporterNameUVE, sourcePath.string(), name, libraryPath.string());
+                            kObjImporterName, sourcePath.string(), name, libraryPath.string());
                 continue;
             }
             publishOrder.push_back(found->second);
@@ -251,55 +251,55 @@ bool ImportObjMaterialsUVE(const std::string_view objSource, const std::filesyst
         const std::string modelStem = destinationPath.stem().string();
         const std::filesystem::path sourceDirectory = sourcePath.parent_path();
         std::vector<std::string> usedStems;
-        ModelTextureImportOptionsUVE options;
-        options.importerName = kObjImporterNameUVE;
-        options.temporarySuffix = kObjTemporarySuffixUVE;
+        ModelTextureImportOptions options;
+        options.importerName = kObjImporterName;
+        options.temporarySuffix = kObjTemporarySuffix;
 
-        std::vector<AssetGuidUVE> materialGuids;
+        std::vector<AssetGuid> materialGuids;
         materialGuids.reserve(publishOrder.size());
         // Parallel to materialGuids: what each published slot is called, so a surface range can
         // find the slot its `usemtl` name landed in.
         std::vector<std::string> publishedNames;
         publishedNames.reserve(publishOrder.size());
         for (const std::size_t index : publishOrder) {
-            MtlLibraryMaterialUVE& source = library.materials[index];
-            MaterialAssetUVE material = source.material;
-            ImportTextureSlotUVE(sourceDirectory, destinationPath, source.albedoTextureFile,
-                                 TextureAssetColorSpaceUVE::Srgb, TextureUsageUVE::Color, options, assetDatabase,
+            MtlLibraryMaterial& source = library.materials[index];
+            MaterialAsset material = source.material;
+            ImportTextureSlot(sourceDirectory, destinationPath, source.albedoTextureFile,
+                                 TextureAssetColorSpace::Srgb, TextureUsage::Color, options, assetDatabase,
                                  material.albedoTexture);
-            ImportTextureSlotUVE(sourceDirectory, destinationPath, source.normalTextureFile,
-                                 TextureAssetColorSpaceUVE::Linear, TextureUsageUVE::Normal, options, assetDatabase,
+            ImportTextureSlot(sourceDirectory, destinationPath, source.normalTextureFile,
+                                 TextureAssetColorSpace::Linear, TextureUsage::Normal, options, assetDatabase,
                                  material.normalTexture);
-            ImportTextureSlotUVE(sourceDirectory, destinationPath, source.metallicTextureFile,
-                                 TextureAssetColorSpaceUVE::Linear, TextureUsageUVE::Data, options, assetDatabase,
+            ImportTextureSlot(sourceDirectory, destinationPath, source.metallicTextureFile,
+                                 TextureAssetColorSpace::Linear, TextureUsage::Data, options, assetDatabase,
                                  material.metallicTexture);
-            ImportTextureSlotUVE(sourceDirectory, destinationPath, source.emissiveTextureFile,
-                                 TextureAssetColorSpaceUVE::Srgb, TextureUsageUVE::Color, options, assetDatabase,
+            ImportTextureSlot(sourceDirectory, destinationPath, source.emissiveTextureFile,
+                                 TextureAssetColorSpace::Srgb, TextureUsage::Color, options, assetDatabase,
                                  material.emissiveTexture);
-            ImportTextureSlotUVE(sourceDirectory, destinationPath, source.occlusionTextureFile,
-                                 TextureAssetColorSpaceUVE::Linear, TextureUsageUVE::Data, options, assetDatabase,
+            ImportTextureSlot(sourceDirectory, destinationPath, source.occlusionTextureFile,
+                                 TextureAssetColorSpace::Linear, TextureUsage::Data, options, assetDatabase,
                                  material.aoTexture);
 
-            if (!IsMaterialAssetValidUVE(material)) {
+            if (!IsMaterialAssetValid(material)) {
                 UVE_WARNING("{}: material \"{}\" describes values the material validator rejects; it is left out",
-                            kObjImporterNameUVE, source.name);
+                            kObjImporterName, source.name);
                 continue;
             }
             const std::string stem =
-                MakeMaterialFileStemUVE(modelStem, source.name, index, "material", usedStems);
+                MakeMaterialFileStem(modelStem, source.name, index, "material", usedStems);
             const std::filesystem::path materialPath = destinationPath.parent_path() / (stem + ".uvmat");
-            if (!PublishAssetAtomicallyUVE(
-                    materialPath, kObjImporterNameUVE, kObjTemporarySuffixUVE,
+            if (!PublishAssetAtomically(
+                    materialPath, kObjImporterName, kObjTemporarySuffix,
                     [&material](const std::filesystem::path& temporaryPath) {
-                        return SaveMaterialAssetUVE(material, temporaryPath);
+                        return SaveMaterialAsset(material, temporaryPath);
                     })) {
-                UVE_ERROR("{}: failed to publish imported material \"{}\"", kObjImporterNameUVE,
+                UVE_ERROR("{}: failed to publish imported material \"{}\"", kObjImporterName,
                           materialPath.string());
                 return false;
             }
-            const AssetGuidUVE guid = assetDatabase.RegisterUVE(materialPath);
-            if (guid == kInvalidAssetGuidUVE) {
-                UVE_ERROR("{}: asset database rejected imported material \"{}\"", kObjImporterNameUVE,
+            const AssetGuid guid = assetDatabase.Register(materialPath);
+            if (guid == kInvalidAssetGuid) {
+                UVE_ERROR("{}: asset database rejected imported material \"{}\"", kObjImporterName,
                           materialPath.string());
                 return false;
             }
@@ -307,10 +307,10 @@ bool ImportObjMaterialsUVE(const std::string_view objSource, const std::filesyst
             publishedNames.push_back(source.name);
         }
         inOutMesh.materialGuids = std::move(materialGuids);
-        ApplyObjSurfaceRangesUVE(publishedNames, surfaceRanges, inOutMesh);
+        ApplyObjSurfaceRanges(publishedNames, surfaceRanges, inOutMesh);
         return true;
     } catch (const std::bad_alloc&) {
-        UVE_ERROR("{}: out of memory while importing OBJ materials", kObjImporterNameUVE);
+        UVE_ERROR("{}: out of memory while importing OBJ materials", kObjImporterName);
         return false;
     }
 }

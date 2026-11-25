@@ -34,17 +34,17 @@ namespace {
 // --- helpers ------------------------------------------------------------------------------------
 
 /// Builds a gzip-compressed ustar archive in memory, entry by entry, for the extractor tests.
-class TarGzWriterUVE final {
+class TarGzWriter final {
 public:
-    void AddFileUVE(const std::string& name, const std::string& contents, const unsigned mode = 0644U,
+    void AddFile(const std::string& name, const std::string& contents, const unsigned mode = 0644U,
                     const char type = '0') {
-        HeaderUVE(name, contents.size(), mode, type);
+        Header(name, contents.size(), mode, type);
         m_tar.append(contents);
         m_tar.append((512U - (contents.size() % 512U)) % 512U, '\0');
     }
-    void AddDirectoryUVE(const std::string& name) { HeaderUVE(name, 0U, 0755U, '5'); }
+    void AddDirectory(const std::string& name) { Header(name, 0U, 0755U, '5'); }
 
-    void WriteUVE(const std::filesystem::path& file) {
+    void Write(const std::filesystem::path& file) {
         m_tar.append(1024U, '\0');
         gzFile output = gzopen(file.string().c_str(), "wb");
         ASSERT_NE(output, nullptr);
@@ -53,7 +53,7 @@ public:
     }
 
 private:
-    void HeaderUVE(const std::string& name, const std::size_t size, const unsigned mode, const char type) {
+    void Header(const std::string& name, const std::size_t size, const unsigned mode, const char type) {
         std::array<char, 512U> header{};
         std::memcpy(header.data(), name.data(), std::min<std::size_t>(name.size(), 100U));
         std::snprintf(header.data() + 100, 8, "%07o", mode);
@@ -76,25 +76,25 @@ private:
     std::string m_tar;
 };
 
-[[nodiscard]] std::string ReadTextUVE(const std::filesystem::path& file) {
+[[nodiscard]] std::string ReadText(const std::filesystem::path& file) {
     std::ifstream input(file, std::ios::binary);
     return {std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>()};
 }
 
 /// Serves fixed responses by URL, recording what it was asked.
-class FakeHttpClientUVE final : public IHttpClientUVE {
+class FakeHttpClient final : public IHttpClient {
 public:
-    std::map<std::string, HttpResponseUVE> responses;
+    std::map<std::string, HttpResponse> responses;
     std::map<std::string, std::filesystem::path> files;
-    std::vector<HttpRequestUVE> requests;
+    std::vector<HttpRequest> requests;
 
-    HttpResponseUVE GetUVE(const HttpRequestUVE& request) override {
+    HttpResponse Get(const HttpRequest& request) override {
         requests.push_back(request);
         const auto found = responses.find(request.url);
-        return found == responses.end() ? HttpResponseUVE{false, 0, {}, "unreachable"} : found->second;
+        return found == responses.end() ? HttpResponse{false, 0, {}, "unreachable"} : found->second;
     }
-    HttpResponseUVE DownloadUVE(const HttpRequestUVE& request, const std::filesystem::path& file,
-                                const HttpProgressUVE& progress) override {
+    HttpResponse Download(const HttpRequest& request, const std::filesystem::path& file,
+                                const HttpProgress& progress) override {
         requests.push_back(request);
         const auto found = files.find(request.url);
         if (found == files.end()) {
@@ -109,27 +109,27 @@ public:
     }
 };
 
-inline constexpr Core::VersionUVE kPackagedVersionUVE{2U, 1U, 0U, 3U};
+inline constexpr Core::Version kPackagedVersion{2U, 1U, 0U, 3U};
 
-/// Writes an engine package for kPackagedVersionUVE targeting this platform.
-[[nodiscard]] std::filesystem::path WriteEnginePackageUVE(const std::filesystem::path& directory,
-                                                          const Core::VersionUVE& version = kPackagedVersionUVE) {
-    TarGzWriterUVE writer;
+/// Writes an engine package for kPackagedVersion targeting this platform.
+[[nodiscard]] std::filesystem::path WriteEnginePackage(const std::filesystem::path& directory,
+                                                          const Core::Version& version = kPackagedVersion) {
+    TarGzWriter writer;
     const std::string manifest = std::string(R"({"format":"uvengine","schemaVersion":1,"version":")") +
-                                 version.ToStringUVE() + R"(","channel":"beta","target":")" +
-                                 std::string(Platform::GetApplicationTargetUVE()) + "\"}";
-    writer.AddFileUVE(std::string(kEngineManifestFileNameUVE), manifest);
-    writer.AddFileUVE(std::string(Pack::kEditorExecutableStemUVE) + std::string(Platform::kExecutableSuffixUVE),
+                                 version.ToString() + R"(","channel":"beta","target":")" +
+                                 std::string(Platform::GetApplicationTarget()) + "\"}";
+    writer.AddFile(std::string(kEngineManifestFileName), manifest);
+    writer.AddFile(std::string(Pack::kEditorExecutableStem) + std::string(Platform::kExecutableSuffix),
                       "editor", 0755U);
-    writer.AddDirectoryUVE("project_templates/");
-    writer.AddFileUVE("project_templates/Blank/template.json", "{}");
-    const std::filesystem::path package = directory / EnginePackageNameUVE(version, Platform::GetApplicationTargetUVE());
-    writer.WriteUVE(package);
+    writer.AddDirectory("project_templates/");
+    writer.AddFile("project_templates/Blank/template.json", "{}");
+    const std::filesystem::path package = directory / EnginePackageName(version, Platform::GetApplicationTarget());
+    writer.Write(package);
     return package;
 }
 
-[[nodiscard]] InstalledEngineUVE LocalBuildUVE(const Core::VersionUVE& version) {
-    InstalledEngineUVE local;
+[[nodiscard]] InstalledEngine LocalBuild(const Core::Version& version) {
+    InstalledEngine local;
     local.install.version = version;
     local.localBuild = true;
     return local;
@@ -137,43 +137,43 @@ inline constexpr Core::VersionUVE kPackagedVersionUVE{2U, 1U, 0U, 3U};
 
 // --- SHA-256 ------------------------------------------------------------------------------------
 
-TEST(Sha256UVETest, MatchesPublishedVectors) {
-    Sha256UVE empty;
-    EXPECT_EQ(ToHexUVE(empty.FinishUVE()), "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
-    Sha256UVE abc;
+TEST(Sha256Test, MatchesPublishedVectors) {
+    Sha256 empty;
+    EXPECT_EQ(ToHex(empty.Finish()), "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
+    Sha256 abc;
     const std::string_view text = "abc";
-    abc.UpdateUVE(std::as_bytes(std::span(text.data(), text.size())));
-    EXPECT_EQ(ToHexUVE(abc.FinishUVE()), "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
-    Sha256UVE twoBlocks;
+    abc.Update(std::as_bytes(std::span(text.data(), text.size())));
+    EXPECT_EQ(ToHex(abc.Finish()), "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
+    Sha256 twoBlocks;
     const std::string_view longer = "abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq";
-    twoBlocks.UpdateUVE(std::as_bytes(std::span(longer.data(), longer.size())));
-    EXPECT_EQ(ToHexUVE(twoBlocks.FinishUVE()), "248d6a61d20638b8e5c026930c3e6039a33ce45964ff2167f6ecedd419db06c1");
+    twoBlocks.Update(std::as_bytes(std::span(longer.data(), longer.size())));
+    EXPECT_EQ(ToHex(twoBlocks.Finish()), "248d6a61d20638b8e5c026930c3e6039a33ce45964ff2167f6ecedd419db06c1");
 }
 
-TEST(Sha256UVETest, ParsesHexInEitherCaseAndRejectsTheRest) {
+TEST(Sha256Test, ParsesHexInEitherCaseAndRejectsTheRest) {
     const std::string hex = "BA7816BF8F01CFEA414140DE5DAE2223B00361A396177A9CB410FF61F20015AD";
-    const std::optional<Sha256DigestUVE> digest = ParseSha256HexUVE(hex);
+    const std::optional<Sha256Digest> digest = ParseSha256Hex(hex);
     ASSERT_TRUE(digest.has_value());
-    EXPECT_EQ(ToHexUVE(*digest), "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
-    EXPECT_FALSE(ParseSha256HexUVE("abc").has_value());
-    EXPECT_FALSE(ParseSha256HexUVE(std::string(64U, 'z')).has_value());
+    EXPECT_EQ(ToHex(*digest), "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
+    EXPECT_FALSE(ParseSha256Hex("abc").has_value());
+    EXPECT_FALSE(ParseSha256Hex(std::string(64U, 'z')).has_value());
 }
 
 // --- archives -----------------------------------------------------------------------------------
 
-TEST(TarGzArchiveUVETest, ExtractsFilesDirectoriesAndExecutableBits) {
-    const std::filesystem::path root = ::UVE::Tests::MakeTestCaseDirectoryUVE("tar");
-    TarGzWriterUVE writer;
-    writer.AddDirectoryUVE("bin/");
-    writer.AddFileUVE("bin/tool", "#!/bin/sh\n", 0755U);
-    writer.AddFileUVE("data/readme.txt", std::string(1500U, 'x'));
-    writer.WriteUVE(root / "a.tar.gz");
+TEST(TarGzArchiveTest, ExtractsFilesDirectoriesAndExecutableBits) {
+    const std::filesystem::path root = ::UVE::Tests::MakeTestCaseDirectory("tar");
+    TarGzWriter writer;
+    writer.AddDirectory("bin/");
+    writer.AddFile("bin/tool", "#!/bin/sh\n", 0755U);
+    writer.AddFile("data/readme.txt", std::string(1500U, 'x'));
+    writer.Write(root / "a.tar.gz");
     std::filesystem::create_directories(root / "out");
 
-    const ArchiveExtractResultUVE result = ExtractTarGzUVE(root / "a.tar.gz", root / "out");
+    const ArchiveExtractResult result = ExtractTarGz(root / "a.tar.gz", root / "out");
 
     ASSERT_TRUE(result.extracted) << result.message;
-    EXPECT_EQ(ReadTextUVE(root / "out" / "bin" / "tool"), "#!/bin/sh\n");
+    EXPECT_EQ(ReadText(root / "out" / "bin" / "tool"), "#!/bin/sh\n");
     EXPECT_EQ(std::filesystem::file_size(root / "out" / "data" / "readme.txt"), 1500U);
 #if !defined(_WIN32)
     EXPECT_NE(std::filesystem::status(root / "out" / "bin" / "tool").permissions() & std::filesystem::perms::owner_exec,
@@ -182,75 +182,75 @@ TEST(TarGzArchiveUVETest, ExtractsFilesDirectoriesAndExecutableBits) {
     std::filesystem::remove_all(root);
 }
 
-TEST(TarGzArchiveUVETest, ExtractsOnlyTheEntriesAFilterAccepts) {
-    const std::filesystem::path root = ::UVE::Tests::MakeTestCaseDirectoryUVE("tarfilter");
-    TarGzWriterUVE writer;
-    writer.AddFileUVE("keep/a.txt", "a");
-    writer.AddFileUVE("skip/b.txt", std::string(2000U, 'b'));
-    writer.AddFileUVE("keep/c.txt", "c");
-    writer.WriteUVE(root / "f.tar.gz");
+TEST(TarGzArchiveTest, ExtractsOnlyTheEntriesAFilterAccepts) {
+    const std::filesystem::path root = ::UVE::Tests::MakeTestCaseDirectory("tarfilter");
+    TarGzWriter writer;
+    writer.AddFile("keep/a.txt", "a");
+    writer.AddFile("skip/b.txt", std::string(2000U, 'b'));
+    writer.AddFile("keep/c.txt", "c");
+    writer.Write(root / "f.tar.gz");
     std::filesystem::create_directories(root / "out");
-    ArchiveLimitsUVE limits;
+    ArchiveLimits limits;
     limits.include = [](const std::filesystem::path& path) { return *path.begin() == "keep"; };
 
-    ASSERT_TRUE(ExtractTarGzUVE(root / "f.tar.gz", root / "out", limits).extracted);
-    EXPECT_EQ(ReadTextUVE(root / "out" / "keep" / "c.txt"), "c");
+    ASSERT_TRUE(ExtractTarGz(root / "f.tar.gz", root / "out", limits).extracted);
+    EXPECT_EQ(ReadText(root / "out" / "keep" / "c.txt"), "c");
     EXPECT_FALSE(std::filesystem::exists(root / "out" / "skip"));
     std::filesystem::remove_all(root);
 }
 
-TEST(TarGzArchiveUVETest, RefusesEscapesLinksAndOversizedArchives) {
-    const std::filesystem::path root = ::UVE::Tests::MakeTestCaseDirectoryUVE("tarbad");
-    const auto attempt = [&root](TarGzWriterUVE& writer, const ArchiveLimitsUVE& limits = {}) {
-        writer.WriteUVE(root / "bad.tar.gz");
+TEST(TarGzArchiveTest, RefusesEscapesLinksAndOversizedArchives) {
+    const std::filesystem::path root = ::UVE::Tests::MakeTestCaseDirectory("tarbad");
+    const auto attempt = [&root](TarGzWriter& writer, const ArchiveLimits& limits = {}) {
+        writer.Write(root / "bad.tar.gz");
         std::filesystem::remove_all(root / "out");
         std::filesystem::create_directories(root / "out");
-        return ExtractTarGzUVE(root / "bad.tar.gz", root / "out", limits).extracted;
+        return ExtractTarGz(root / "bad.tar.gz", root / "out", limits).extracted;
     };
-    TarGzWriterUVE escape;
-    escape.AddFileUVE("../outside.txt", "x");
+    TarGzWriter escape;
+    escape.AddFile("../outside.txt", "x");
     EXPECT_FALSE(attempt(escape));
     EXPECT_FALSE(std::filesystem::exists(root / "outside.txt"));
 
-    TarGzWriterUVE absolute;
-    absolute.AddFileUVE("/etc/evil", "x");
+    TarGzWriter absolute;
+    absolute.AddFile("/etc/evil", "x");
     EXPECT_FALSE(attempt(absolute));
 
-    TarGzWriterUVE link;
-    link.AddFileUVE("link", "", 0777U, '2');
+    TarGzWriter link;
+    link.AddFile("link", "", 0777U, '2');
     EXPECT_FALSE(attempt(link));
 
-    TarGzWriterUVE big;
-    big.AddFileUVE("big.bin", std::string(4096U, 'b'));
-    ArchiveLimitsUVE small;
+    TarGzWriter big;
+    big.AddFile("big.bin", std::string(4096U, 'b'));
+    ArchiveLimits small;
     small.maximumTotalBytes = 1024U;
     EXPECT_FALSE(attempt(big, small));
 
     std::ofstream(root / "garbage.tar.gz") << "not gzip";
     std::filesystem::remove_all(root / "out");
     std::filesystem::create_directories(root / "out");
-    EXPECT_FALSE(ExtractTarGzUVE(root / "garbage.tar.gz", root / "out").extracted);
+    EXPECT_FALSE(ExtractTarGz(root / "garbage.tar.gz", root / "out").extracted);
     std::filesystem::remove_all(root);
 }
 
 // --- release feed -------------------------------------------------------------------------------
 
-TEST(EngineReleaseFeedUVETest, ParsesVersionTags) {
-    EXPECT_EQ(ParseEngineVersionTagUVE("v1.2.3"), (Core::VersionUVE{1U, 2U, 3U, 0U}));
-    EXPECT_EQ(ParseEngineVersionTagUVE("1.2.3+build.4"), (Core::VersionUVE{1U, 2U, 3U, 4U}));
-    EXPECT_EQ(ParseEngineVersionTagUVE("v1.2.3.4"), (Core::VersionUVE{1U, 2U, 3U, 4U}));
-    EXPECT_EQ(ParseEngineVersionTagUVE(Core::VersionUVE{0U, 1U, 0U, 1U}.ToStringUVE()),
-              (Core::VersionUVE{0U, 1U, 0U, 1U}));
-    EXPECT_EQ(ParseEngineVersionTagUVE("v1.3.0-beta"), (Core::VersionUVE{1U, 3U, 0U, 0U}));
-    EXPECT_FALSE(ParseEngineVersionTagUVE("v1.2").has_value());
-    EXPECT_FALSE(ParseEngineVersionTagUVE("release-7").has_value());
-    EXPECT_FALSE(ParseEngineVersionTagUVE("v1.2.3.4+build.5").has_value());
+TEST(EngineReleaseFeedTest, ParsesVersionTags) {
+    EXPECT_EQ(ParseEngineVersionTag("v1.2.3"), (Core::Version{1U, 2U, 3U, 0U}));
+    EXPECT_EQ(ParseEngineVersionTag("1.2.3+build.4"), (Core::Version{1U, 2U, 3U, 4U}));
+    EXPECT_EQ(ParseEngineVersionTag("v1.2.3.4"), (Core::Version{1U, 2U, 3U, 4U}));
+    EXPECT_EQ(ParseEngineVersionTag(Core::Version{0U, 1U, 0U, 1U}.ToString()),
+              (Core::Version{0U, 1U, 0U, 1U}));
+    EXPECT_EQ(ParseEngineVersionTag("v1.3.0-beta"), (Core::Version{1U, 3U, 0U, 0U}));
+    EXPECT_FALSE(ParseEngineVersionTag("v1.2").has_value());
+    EXPECT_FALSE(ParseEngineVersionTag("release-7").has_value());
+    EXPECT_FALSE(ParseEngineVersionTag("v1.2.3.4+build.5").has_value());
 }
 
-[[nodiscard]] std::string ReleaseJsonUVE(const std::string& tag, const bool prerelease, const bool draft,
+[[nodiscard]] std::string ReleaseJson(const std::string& tag, const bool prerelease, const bool draft,
                                          const std::string& target, const bool withChecksum = true) {
-    const std::optional<Core::VersionUVE> version = ParseEngineVersionTagUVE(tag);
-    const std::string package = EnginePackageNameUVE(*version, target);
+    const std::optional<Core::Version> version = ParseEngineVersionTag(tag);
+    const std::string package = EnginePackageName(*version, target);
     std::string assets = R"({"name":")" + package + R"(","url":"https://api.example/assets/)" + tag +
                          R"(/pkg","size":1234})";
     if (withChecksum) {
@@ -261,30 +261,30 @@ TEST(EngineReleaseFeedUVETest, ParsesVersionTags) {
            "]}";
 }
 
-TEST(EngineReleaseFeedUVETest, PackageNamesRoundTrip) {
-    const Core::VersionUVE version{1U, 2U, 3U, 4U};
-    EXPECT_EQ(ParseEnginePackageNameUVE(EnginePackageNameUVE(version, "linux"), "linux"), version);
-    EXPECT_FALSE(ParseEnginePackageNameUVE(EnginePackageNameUVE(version, "linux"), "windows").has_value());
-    EXPECT_FALSE(ParseEnginePackageNameUVE("something.uvpackage", "linux").has_value());
+TEST(EngineReleaseFeedTest, PackageNamesRoundTrip) {
+    const Core::Version version{1U, 2U, 3U, 4U};
+    EXPECT_EQ(ParseEnginePackageName(EnginePackageName(version, "linux"), "linux"), version);
+    EXPECT_FALSE(ParseEnginePackageName(EnginePackageName(version, "linux"), "windows").has_value());
+    EXPECT_FALSE(ParseEnginePackageName("something.uvpackage", "linux").has_value());
 }
 
-TEST(EngineReleaseFeedUVETest, ParsesReleasesForThisTargetNewestFirst) {
-    const std::string target(Platform::GetApplicationTargetUVE());
-    const std::string json = "[" + ReleaseJsonUVE("v0.9.0", false, false, target) + "," +
-                             ReleaseJsonUVE("v1.1.0", true, false, target) + "," +
-                             ReleaseJsonUVE("v1.0.0", false, false, target) + "," +
-                             ReleaseJsonUVE("v2.0.0", false, true, target) + "," +
-                             ReleaseJsonUVE("v1.0.1", false, false, "other-target") + "," +
-                             ReleaseJsonUVE("v1.0.2", false, false, target, false) + "]";
-    const std::vector<EngineReleaseUVE> releases = ParseGitHubReleasesUVE(json, target);
+TEST(EngineReleaseFeedTest, ParsesReleasesForThisTargetNewestFirst) {
+    const std::string target(Platform::GetApplicationTarget());
+    const std::string json = "[" + ReleaseJson("v0.9.0", false, false, target) + "," +
+                             ReleaseJson("v1.1.0", true, false, target) + "," +
+                             ReleaseJson("v1.0.0", false, false, target) + "," +
+                             ReleaseJson("v2.0.0", false, true, target) + "," +
+                             ReleaseJson("v1.0.1", false, false, "other-target") + "," +
+                             ReleaseJson("v1.0.2", false, false, target, false) + "]";
+    const std::vector<EngineRelease> releases = ParseGitHubReleases(json, target);
     ASSERT_EQ(releases.size(), 3U);
-    EXPECT_EQ(releases[0].version, (Core::VersionUVE{1U, 1U, 0U, 0U}));
-    EXPECT_EQ(releases[0].channel, EngineChannelUVE::Beta);
+    EXPECT_EQ(releases[0].version, (Core::Version{1U, 1U, 0U, 0U}));
+    EXPECT_EQ(releases[0].channel, EngineChannel::Beta);
     EXPECT_EQ(releases[1].tag, "v1.0.0");
     EXPECT_EQ(releases[1].packageBytes, 1234U);
     EXPECT_EQ(releases[1].checksumUrl, "https://api.example/assets/v1.0.0/sum");
 
-    const EngineReleaseGroupsUVE groups = GroupEngineReleasesUVE(releases);
+    const EngineReleaseGroups groups = GroupEngineReleases(releases);
     ASSERT_TRUE(groups.stable.has_value());
     EXPECT_EQ(groups.stable->tag, "v1.0.0");
     ASSERT_TRUE(groups.beta.has_value());
@@ -293,215 +293,215 @@ TEST(EngineReleaseFeedUVETest, ParsesReleasesForThisTargetNewestFirst) {
     EXPECT_EQ(groups.previous[0].tag, "v0.9.0");
 }
 
-TEST(EngineReleaseFeedUVETest, OlderBetaThanStableIsNotOffered) {
-    const std::string target(Platform::GetApplicationTargetUVE());
+TEST(EngineReleaseFeedTest, OlderBetaThanStableIsNotOffered) {
+    const std::string target(Platform::GetApplicationTarget());
     const std::string json =
-        "[" + ReleaseJsonUVE("v1.0.0", false, false, target) + "," + ReleaseJsonUVE("v0.9.0", true, false, target) + "]";
-    EXPECT_FALSE(GroupEngineReleasesUVE(ParseGitHubReleasesUVE(json, target)).beta.has_value());
+        "[" + ReleaseJson("v1.0.0", false, false, target) + "," + ReleaseJson("v0.9.0", true, false, target) + "]";
+    EXPECT_FALSE(GroupEngineReleases(ParseGitHubReleases(json, target)).beta.has_value());
 }
 
-TEST(EngineReleaseFeedUVETest, FetchReportsOfflineNotFoundBusyAndOnline) {
-    const EngineFeedSourceUVE source{"https://api.example", "studio", "engine"};
+TEST(EngineReleaseFeedTest, FetchReportsOfflineNotFoundBusyAndOnline) {
+    const EngineFeedSource source{"https://api.example", "studio", "engine"};
     const std::string url = "https://api.example/repos/studio/engine/releases?per_page=100";
-    FakeHttpClientUVE client;
-    EXPECT_EQ(FetchEngineReleasesUVE(client, source, "linux").state, EngineFeedStateUVE::Offline);
+    FakeHttpClient client;
+    EXPECT_EQ(FetchEngineReleases(client, source, "linux").state, EngineFeedState::Offline);
 
     client.responses[url] = {true, 404, "{}", {}};
-    EXPECT_EQ(FetchEngineReleasesUVE(client, source, "linux").state, EngineFeedStateUVE::NotFound);
+    EXPECT_EQ(FetchEngineReleases(client, source, "linux").state, EngineFeedState::NotFound);
 
     client.responses[url] = {true, 403, "{}", {}};
-    EXPECT_EQ(FetchEngineReleasesUVE(client, source, "linux").state, EngineFeedStateUVE::Failed);
+    EXPECT_EQ(FetchEngineReleases(client, source, "linux").state, EngineFeedState::Failed);
 
-    client.responses[url] = {true, 200, "[" + ReleaseJsonUVE("v1.0.0", false, false, "linux") + "]", {}};
-    const EngineFeedResultUVE online = FetchEngineReleasesUVE(client, source, "linux");
-    EXPECT_EQ(online.state, EngineFeedStateUVE::Online);
+    client.responses[url] = {true, 200, "[" + ReleaseJson("v1.0.0", false, false, "linux") + "]", {}};
+    const EngineFeedResult online = FetchEngineReleases(client, source, "linux");
+    EXPECT_EQ(online.state, EngineFeedState::Online);
     EXPECT_EQ(online.releases.size(), 1U);
     // The feed is public: no request ever carries credentials.
-    for (const HttpRequestUVE& request : client.requests) {
-        for (const HttpHeaderUVE& header : request.headers) {
+    for (const HttpRequest& request : client.requests) {
+        for (const HttpHeader& header : request.headers) {
             EXPECT_NE(header.name, "Authorization");
         }
     }
 }
 
-TEST(EngineReleaseFeedUVETest, LoadsFeedSourceAndRejectsInsecureOnes) {
-    const std::filesystem::path root = ::UVE::Tests::MakeTestCaseDirectoryUVE("feed");
+TEST(EngineReleaseFeedTest, LoadsFeedSourceAndRejectsInsecureOnes) {
+    const std::filesystem::path root = ::UVE::Tests::MakeTestCaseDirectory("feed");
     std::ofstream(root / "good.json")
         << R"({"format":"uvenginefeed","schemaVersion":1,"owner":"studio","repository":"engine"})";
     std::ofstream(root / "insecure.json")
         << R"({"format":"uvenginefeed","schemaVersion":1,"apiRoot":"http://x","owner":"a","repository":"b"})";
-    const std::optional<EngineFeedSourceUVE> good = LoadEngineFeedSourceUVE(root / "good.json");
+    const std::optional<EngineFeedSource> good = LoadEngineFeedSource(root / "good.json");
     ASSERT_TRUE(good.has_value());
-    EXPECT_EQ(good->apiRoot, kDefaultFeedApiRootUVE);
-    EXPECT_FALSE(LoadEngineFeedSourceUVE(root / "insecure.json").has_value());
-    EXPECT_FALSE(LoadEngineFeedSourceUVE(root / "missing.json").has_value());
+    EXPECT_EQ(good->apiRoot, kDefaultFeedApiRoot);
+    EXPECT_FALSE(LoadEngineFeedSource(root / "insecure.json").has_value());
+    EXPECT_FALSE(LoadEngineFeedSource(root / "missing.json").has_value());
     std::filesystem::remove_all(root);
 }
 
 // --- engine library -----------------------------------------------------------------------------
 
-TEST(EngineLibraryUVETest, InstallsVerifiedPackageAndListsIt) {
-    const std::filesystem::path root = ::UVE::Tests::MakeTestCaseDirectoryUVE("library");
-    const std::filesystem::path package = WriteEnginePackageUVE(root);
+TEST(EngineLibraryTest, InstallsVerifiedPackageAndListsIt) {
+    const std::filesystem::path root = ::UVE::Tests::MakeTestCaseDirectory("library");
+    const std::filesystem::path package = WriteEnginePackage(root);
     const std::filesystem::path engines = root / "Engines";
 
-    Sha256DigestUVE wrong{};
-    EXPECT_FALSE(InstallEnginePackageUVE(package, wrong, kPackagedVersionUVE, engines).installed);
+    Sha256Digest wrong{};
+    EXPECT_FALSE(InstallEnginePackage(package, wrong, kPackagedVersion, engines).installed);
 
-    const EngineInstallOutcomeUVE installed =
-        InstallEnginePackageUVE(package, *HashFileSha256UVE(package), kPackagedVersionUVE, engines);
+    const EngineInstallOutcome installed =
+        InstallEnginePackage(package, *HashFileSha256(package), kPackagedVersion, engines);
     ASSERT_TRUE(installed.installed) << installed.message;
-    EXPECT_FALSE(InstallEnginePackageUVE(package, *HashFileSha256UVE(package), kPackagedVersionUVE, engines).installed);
+    EXPECT_FALSE(InstallEnginePackage(package, *HashFileSha256(package), kPackagedVersion, engines).installed);
 
-    const std::vector<InstalledEngineUVE> listed =
-        ListInstalledEnginesUVE(engines, LocalBuildUVE(Core::VersionUVE{1U, 0U, 0U, 0U}));
+    const std::vector<InstalledEngine> listed =
+        ListInstalledEngines(engines, LocalBuild(Core::Version{1U, 0U, 0U, 0U}));
     ASSERT_EQ(listed.size(), 2U);
-    EXPECT_EQ(listed[0].install.version, kPackagedVersionUVE);
-    EXPECT_EQ(listed[0].channel, EngineChannelUVE::Beta);
+    EXPECT_EQ(listed[0].install.version, kPackagedVersion);
+    EXPECT_EQ(listed[0].channel, EngineChannel::Beta);
     EXPECT_FALSE(listed[0].localBuild);
     EXPECT_TRUE(listed[1].localBuild);
 
-    EXPECT_EQ(ListInstalledEnginesUVE(engines).size(), 1U);
-    EXPECT_TRUE(UninstallEngineUVE(engines, kPackagedVersionUVE));
-    EXPECT_EQ(ListInstalledEnginesUVE(engines, LocalBuildUVE(Core::VersionUVE{1U, 0U, 0U, 0U})).size(), 1U);
+    EXPECT_EQ(ListInstalledEngines(engines).size(), 1U);
+    EXPECT_TRUE(UninstallEngine(engines, kPackagedVersion));
+    EXPECT_EQ(ListInstalledEngines(engines, LocalBuild(Core::Version{1U, 0U, 0U, 0U})).size(), 1U);
     std::filesystem::remove_all(root);
 }
 
-TEST(EngineLibraryUVETest, RefusesPackageForAnotherVersion) {
-    const std::filesystem::path root = ::UVE::Tests::MakeTestCaseDirectoryUVE("mismatch");
-    const std::filesystem::path package = WriteEnginePackageUVE(root);
-    EXPECT_FALSE(InstallEnginePackageUVE(package, *HashFileSha256UVE(package), Core::VersionUVE{9U, 9U, 9U, 9U},
+TEST(EngineLibraryTest, RefusesPackageForAnotherVersion) {
+    const std::filesystem::path root = ::UVE::Tests::MakeTestCaseDirectory("mismatch");
+    const std::filesystem::path package = WriteEnginePackage(root);
+    EXPECT_FALSE(InstallEnginePackage(package, *HashFileSha256(package), Core::Version{9U, 9U, 9U, 9U},
                                          root / "Engines")
                      .installed);
-    EXPECT_FALSE(std::filesystem::exists(root / "Engines" / Core::VersionUVE{9U, 9U, 9U, 9U}.ToStringUVE()));
+    EXPECT_FALSE(std::filesystem::exists(root / "Engines" / Core::Version{9U, 9U, 9U, 9U}.ToString()));
     std::filesystem::remove_all(root);
 }
 
-TEST(EngineLibraryUVETest, ImportsLocalPackageVerifiedByItsChecksumFile) {
-    const std::filesystem::path root = ::UVE::Tests::MakeTestCaseDirectoryUVE("import_verified");
-    const std::filesystem::path package = WriteEnginePackageUVE(root);
+TEST(EngineLibraryTest, ImportsLocalPackageVerifiedByItsChecksumFile) {
+    const std::filesystem::path root = ::UVE::Tests::MakeTestCaseDirectory("import_verified");
+    const std::filesystem::path package = WriteEnginePackage(root);
     std::filesystem::path checksum = package;
-    checksum += kEngineChecksumSuffixUVE;
-    std::ofstream(checksum) << ToHexUVE(*HashFileSha256UVE(package)) << "  " << package.filename().string() << '\n';
+    checksum += kEngineChecksumSuffix;
+    std::ofstream(checksum) << ToHex(*HashFileSha256(package)) << "  " << package.filename().string() << '\n';
 
-    const EngineInstallOutcomeUVE outcome = InstallLocalEnginePackageUVE(package, root / "Engines");
+    const EngineInstallOutcome outcome = InstallLocalEnginePackage(package, root / "Engines");
     ASSERT_TRUE(outcome.installed) << outcome.message;
     EXPECT_TRUE(outcome.verified);
     ASSERT_TRUE(outcome.version.has_value());
-    EXPECT_EQ(*outcome.version, kPackagedVersionUVE);
-    EXPECT_FALSE(InstallLocalEnginePackageUVE(package, root / "Engines", false).installed);
+    EXPECT_EQ(*outcome.version, kPackagedVersion);
+    EXPECT_FALSE(InstallLocalEnginePackage(package, root / "Engines", false).installed);
     std::filesystem::remove_all(root);
 }
 
-TEST(EngineLibraryUVETest, ReimportingLocalPackageAtomicallyReplacesExistingInstall) {
-    const std::filesystem::path root = ::UVE::Tests::MakeTestCaseDirectoryUVE("import_replace");
+TEST(EngineLibraryTest, ReimportingLocalPackageAtomicallyReplacesExistingInstall) {
+    const std::filesystem::path root = ::UVE::Tests::MakeTestCaseDirectory("import_replace");
     const std::filesystem::path engines = root / "Engines";
     const std::string editorFile =
-        std::string(Pack::kEditorExecutableStemUVE) + std::string(Platform::kExecutableSuffixUVE);
+        std::string(Pack::kEditorExecutableStem) + std::string(Platform::kExecutableSuffix);
 
     const auto writeCustom = [&](const std::string& filename, const std::string& payload) {
-        TarGzWriterUVE writer;
+        TarGzWriter writer;
         const std::string manifest = std::string(R"({"format":"uvengine","schemaVersion":1,"version":")") +
-                                     kPackagedVersionUVE.ToStringUVE() + R"(","channel":"beta","target":")" +
-                                     std::string(Platform::GetEnginePackageTargetUVE()) + "\"}";
-        writer.AddFileUVE(std::string(kEngineManifestFileNameUVE), manifest);
-        writer.AddFileUVE(editorFile, payload, 0755U);
+                                     kPackagedVersion.ToString() + R"(","channel":"beta","target":")" +
+                                     std::string(Platform::GetEnginePackageTarget()) + "\"}";
+        writer.AddFile(std::string(kEngineManifestFileName), manifest);
+        writer.AddFile(editorFile, payload, 0755U);
         const std::filesystem::path path = root / filename;
-        writer.WriteUVE(path);
+        writer.Write(path);
         return path;
     };
 
     const std::filesystem::path v1 = writeCustom("dev-v1.uvpackage", "editor-v1");
     const std::filesystem::path v2 = writeCustom("dev-v2.uvpackage", "editor-v2");
-    ASSERT_TRUE(InstallLocalEnginePackageUVE(v1, engines).installed);
-    const std::filesystem::path installedEditor = engines / kPackagedVersionUVE.ToStringUVE() / editorFile;
-    EXPECT_EQ(ReadTextUVE(installedEditor), "editor-v1");
+    ASSERT_TRUE(InstallLocalEnginePackage(v1, engines).installed);
+    const std::filesystem::path installedEditor = engines / kPackagedVersion.ToString() / editorFile;
+    EXPECT_EQ(ReadText(installedEditor), "editor-v1");
 
-    const EngineInstallOutcomeUVE replaced = InstallLocalEnginePackageUVE(v2, engines);
+    const EngineInstallOutcome replaced = InstallLocalEnginePackage(v2, engines);
     ASSERT_TRUE(replaced.installed) << replaced.message;
-    EXPECT_EQ(ReadTextUVE(installedEditor), "editor-v2");
-    EXPECT_EQ(ListInstalledEnginesUVE(engines).size(), 1U);
+    EXPECT_EQ(ReadText(installedEditor), "editor-v2");
+    EXPECT_EQ(ListInstalledEngines(engines).size(), 1U);
     std::filesystem::remove_all(root);
 }
 
-TEST(EngineLibraryUVETest, TargetCompatibilityMatchesCurrentPlatform) {
-    EXPECT_TRUE(Platform::IsCompatibleEnginePackageTargetUVE(Platform::GetEnginePackageTargetUVE()));
-    EXPECT_FALSE(Platform::IsCompatibleEnginePackageTargetUVE("nonexistent-target"));
+TEST(EngineLibraryTest, TargetCompatibilityMatchesCurrentPlatform) {
+    EXPECT_TRUE(Platform::IsCompatibleEnginePackageTarget(Platform::GetEnginePackageTarget()));
+    EXPECT_FALSE(Platform::IsCompatibleEnginePackageTarget("nonexistent-target"));
 #if defined(__linux__) && !defined(__ANDROID__)
-    EXPECT_FALSE(Platform::IsCompatibleEnginePackageTargetUVE("windows"));
-    EXPECT_FALSE(Platform::IsCompatibleEnginePackageTargetUVE("android-arm64-v8a"));
+    EXPECT_FALSE(Platform::IsCompatibleEnginePackageTarget("windows"));
+    EXPECT_FALSE(Platform::IsCompatibleEnginePackageTarget("android-arm64-v8a"));
 #endif
 }
 
-TEST(EngineLibraryUVETest, ImportsRenamedPackageWithoutChecksumAsUnverified) {
-    const std::filesystem::path root = ::UVE::Tests::MakeTestCaseDirectoryUVE("import_unverified");
+TEST(EngineLibraryTest, ImportsRenamedPackageWithoutChecksumAsUnverified) {
+    const std::filesystem::path root = ::UVE::Tests::MakeTestCaseDirectory("import_unverified");
     const std::filesystem::path renamed = root / "my-engine-copy.uvpackage";
-    std::filesystem::rename(WriteEnginePackageUVE(root), renamed);
+    std::filesystem::rename(WriteEnginePackage(root), renamed);
 
-    const EngineInstallOutcomeUVE outcome = InstallLocalEnginePackageUVE(renamed, root / "Engines");
+    const EngineInstallOutcome outcome = InstallLocalEnginePackage(renamed, root / "Engines");
     ASSERT_TRUE(outcome.installed) << outcome.message;
     EXPECT_FALSE(outcome.verified);
     EXPECT_NE(outcome.message.find("not verified"), std::string::npos);
-    EXPECT_TRUE(std::filesystem::is_directory(root / "Engines" / kPackagedVersionUVE.ToStringUVE()));
+    EXPECT_TRUE(std::filesystem::is_directory(root / "Engines" / kPackagedVersion.ToString()));
     std::filesystem::remove_all(root);
 }
 
-TEST(EngineLibraryUVETest, RefusesLocalPackageThatDoesNotMatchItsChecksum) {
-    const std::filesystem::path root = ::UVE::Tests::MakeTestCaseDirectoryUVE("import_tampered");
-    const std::filesystem::path package = WriteEnginePackageUVE(root);
+TEST(EngineLibraryTest, RefusesLocalPackageThatDoesNotMatchItsChecksum) {
+    const std::filesystem::path root = ::UVE::Tests::MakeTestCaseDirectory("import_tampered");
+    const std::filesystem::path package = WriteEnginePackage(root);
     std::filesystem::path checksum = package;
-    checksum += kEngineChecksumSuffixUVE;
-    std::ofstream(checksum) << ToHexUVE(Sha256DigestUVE{}) << '\n';
+    checksum += kEngineChecksumSuffix;
+    std::ofstream(checksum) << ToHex(Sha256Digest{}) << '\n';
 
-    EXPECT_FALSE(InstallLocalEnginePackageUVE(package, root / "Engines").installed);
-    EXPECT_FALSE(InstallLocalEnginePackageUVE(root / "missing.tar.gz", root / "Engines").installed);
-    EXPECT_FALSE(std::filesystem::exists(root / "Engines" / kPackagedVersionUVE.ToStringUVE()));
+    EXPECT_FALSE(InstallLocalEnginePackage(package, root / "Engines").installed);
+    EXPECT_FALSE(InstallLocalEnginePackage(root / "missing.tar.gz", root / "Engines").installed);
+    EXPECT_FALSE(std::filesystem::exists(root / "Engines" / kPackagedVersion.ToString()));
     std::filesystem::remove_all(root);
 }
 
-TEST(EngineLibraryUVETest, ChoosesTheEngineForAProject) {
-    std::vector<InstalledEngineUVE> engines{LocalBuildUVE({2U, 0U, 0U, 0U}), LocalBuildUVE({1U, 4U, 0U, 0U}),
-                                            LocalBuildUVE({1U, 2U, 0U, 0U})};
-    EXPECT_EQ(ChooseEngineForProjectUVE(engines, {1U, 2U, 0U, 0U}, "")->install.version, (Core::VersionUVE{1U, 2U, 0U, 0U}));
-    EXPECT_EQ(ChooseEngineForProjectUVE(engines, {1U, 3U, 0U, 0U}, "")->install.version, (Core::VersionUVE{2U, 0U, 0U, 0U}));
-    EXPECT_EQ(ChooseEngineForProjectUVE(engines, {1U, 2U, 0U, 0U}, Core::VersionUVE{1U, 4U, 0U, 0U}.ToStringUVE())
+TEST(EngineLibraryTest, ChoosesTheEngineForAProject) {
+    std::vector<InstalledEngine> engines{LocalBuild({2U, 0U, 0U, 0U}), LocalBuild({1U, 4U, 0U, 0U}),
+                                            LocalBuild({1U, 2U, 0U, 0U})};
+    EXPECT_EQ(ChooseEngineForProject(engines, {1U, 2U, 0U, 0U}, "")->install.version, (Core::Version{1U, 2U, 0U, 0U}));
+    EXPECT_EQ(ChooseEngineForProject(engines, {1U, 3U, 0U, 0U}, "")->install.version, (Core::Version{2U, 0U, 0U, 0U}));
+    EXPECT_EQ(ChooseEngineForProject(engines, {1U, 2U, 0U, 0U}, Core::Version{1U, 4U, 0U, 0U}.ToString())
                   ->install.version,
-              (Core::VersionUVE{1U, 4U, 0U, 0U}));
-    EXPECT_EQ(ChooseEngineForProjectUVE(engines, {3U, 0U, 0U, 0U}, ""), nullptr);
+              (Core::Version{1U, 4U, 0U, 0U}));
+    EXPECT_EQ(ChooseEngineForProject(engines, {3U, 0U, 0U, 0U}, ""), nullptr);
 }
 
-TEST(EngineLibraryUVETest, DownloadJobFetchesVerifiesAndInstalls) {
-    const std::filesystem::path root = ::UVE::Tests::MakeTestCaseDirectoryUVE("download");
-    const std::filesystem::path package = WriteEnginePackageUVE(root);
-    auto client = std::make_unique<FakeHttpClientUVE>();
-    EngineReleaseUVE release;
-    release.version = kPackagedVersionUVE;
+TEST(EngineLibraryTest, DownloadJobFetchesVerifiesAndInstalls) {
+    const std::filesystem::path root = ::UVE::Tests::MakeTestCaseDirectory("download");
+    const std::filesystem::path package = WriteEnginePackage(root);
+    auto client = std::make_unique<FakeHttpClient>();
+    EngineRelease release;
+    release.version = kPackagedVersion;
     release.packageUrl = "https://api.example/pkg";
     release.checksumUrl = "https://api.example/sum";
-    client->responses[release.checksumUrl] = {true, 200, ToHexUVE(*HashFileSha256UVE(package)) + "  pkg\n", {}};
+    client->responses[release.checksumUrl] = {true, 200, ToHex(*HashFileSha256(package)) + "  pkg\n", {}};
     client->files[release.packageUrl] = package;
 
-    EngineDownloadUVE job(std::move(client), release, root / "Engines");
-    for (int attempt = 0; attempt < 500 && job.GetStateUVE() == EngineDownloadUVE::StateUVE::Running; ++attempt) {
+    EngineDownload job(std::move(client), release, root / "Engines");
+    for (int attempt = 0; attempt < 500 && job.GetState() == EngineDownload::State::Running; ++attempt) {
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
-    EXPECT_EQ(job.GetStateUVE(), EngineDownloadUVE::StateUVE::Installed) << job.MessageUVE();
-    EXPECT_TRUE(ReadEngineManifestUVE(root / "Engines" / kPackagedVersionUVE.ToStringUVE()).has_value());
+    EXPECT_EQ(job.GetState(), EngineDownload::State::Installed) << job.Message();
+    EXPECT_TRUE(ReadEngineManifest(root / "Engines" / kPackagedVersion.ToString()).has_value());
     std::filesystem::remove_all(root);
 }
 
-TEST(EngineLibraryUVETest, DownloadJobReportsOffline) {
-    const std::filesystem::path root = ::UVE::Tests::MakeTestCaseDirectoryUVE("offline");
-    EngineReleaseUVE release;
-    release.version = kPackagedVersionUVE;
+TEST(EngineLibraryTest, DownloadJobReportsOffline) {
+    const std::filesystem::path root = ::UVE::Tests::MakeTestCaseDirectory("offline");
+    EngineRelease release;
+    release.version = kPackagedVersion;
     release.packageUrl = "https://api.example/pkg";
     release.checksumUrl = "https://api.example/sum";
-    EngineDownloadUVE job(std::make_unique<FakeHttpClientUVE>(), release, root / "Engines");
-    for (int attempt = 0; attempt < 500 && job.GetStateUVE() == EngineDownloadUVE::StateUVE::Running; ++attempt) {
+    EngineDownload job(std::make_unique<FakeHttpClient>(), release, root / "Engines");
+    for (int attempt = 0; attempt < 500 && job.GetState() == EngineDownload::State::Running; ++attempt) {
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
-    EXPECT_EQ(job.GetStateUVE(), EngineDownloadUVE::StateUVE::Failed);
-    EXPECT_NE(job.MessageUVE().find("Offline"), std::string::npos);
+    EXPECT_EQ(job.GetState(), EngineDownload::State::Failed);
+    EXPECT_NE(job.Message().find("Offline"), std::string::npos);
     std::filesystem::remove_all(root);
 }
 

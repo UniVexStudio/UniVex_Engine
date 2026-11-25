@@ -11,184 +11,184 @@
 
 namespace UVE::Audio {
 
-struct NullAudioDeviceUVE::ImplUVE {
+struct NullAudioDevice::Impl {
     /// One voice slot. A streaming voice additionally owns a bounded ring; a clip voice leaves it
     /// unconfigured, which is exactly what every stream entry point checks for.
-    struct VoiceUVE final {
-        VoicePlaybackStateUVE state = VoicePlaybackStateUVE::Stopped;
-        AudioStreamRingBufferUVE stream;
+    struct Voice final {
+        VoicePlaybackState state = VoicePlaybackState::Stopped;
+        AudioStreamRingBuffer stream;
         bool endRequested = false;
-        AudioMeterReadingUVE meter{};
-        [[nodiscard]] bool IsStreamingUVE() const noexcept { return stream.IsConfiguredUVE(); }
+        AudioMeterReading meter{};
+        [[nodiscard]] bool IsStreaming() const noexcept { return stream.IsConfigured(); }
     };
 
-    Containers::HandleTableUVE<VoiceUVE, VoiceHandleUVE> voices;
-    std::vector<RecordedAudioCallUVE> recordedCalls;
+    Containers::HandleTable<Voice, VoiceHandle> voices;
+    std::vector<RecordedAudioCall> recordedCalls;
     /// Reused so draining never allocates: the null device stands in for a callback that must not.
     std::vector<float> drainScratch;
 };
 
-NullAudioDeviceUVE::NullAudioDeviceUVE() : m_impl(std::make_unique<ImplUVE>()) {}
+NullAudioDevice::NullAudioDevice() : m_impl(std::make_unique<Impl>()) {}
 
-NullAudioDeviceUVE::~NullAudioDeviceUVE() = default;
+NullAudioDevice::~NullAudioDevice() = default;
 
-AudioMeterReadingUVE NullAudioDeviceUVE::ReadVoiceMeterUVE(const VoiceHandleUVE voice) const {
-    const ImplUVE::VoiceUVE* const entry = m_impl->voices.FindUVE(voice);
-    return entry != nullptr ? entry->meter : kSilentAudioMeterUVE;
+AudioMeterReading NullAudioDevice::ReadVoiceMeter(const VoiceHandle voice) const {
+    const Impl::Voice* const entry = m_impl->voices.Find(voice);
+    return entry != nullptr ? entry->meter : kSilentAudioMeter;
 }
 
-void NullAudioDeviceUVE::SetVoiceMeterUVE(const VoiceHandleUVE voice, const AudioMeterReadingUVE reading) {
-    ImplUVE::VoiceUVE* const entry = m_impl->voices.FindUVE(voice);
+void NullAudioDevice::SetVoiceMeter(const VoiceHandle voice, const AudioMeterReading reading) {
+    Impl::Voice* const entry = m_impl->voices.Find(voice);
     if (entry != nullptr) {
         entry->meter = reading;
     }
 }
 
-VoiceHandleUVE NullAudioDeviceUVE::CreateVoiceUVE(const AudioVoiceDescUVE& desc) {
-    static_cast<void>(desc); // NullAudioDeviceUVE performs no real audio output, bookkeeping only.
-    return m_impl->voices.AcquireUVE();
+VoiceHandle NullAudioDevice::CreateVoice(const AudioVoiceDesc& desc) {
+    static_cast<void>(desc); // NullAudioDevice performs no real audio output, bookkeeping only.
+    return m_impl->voices.Acquire();
 }
 
-void NullAudioDeviceUVE::DestroyVoiceUVE(VoiceHandleUVE voice) {
-    if (!m_impl->voices.ReleaseUVE(voice)) {
-        UVE_ERROR("NullAudioDeviceUVE: DestroyVoiceUVE called with an unknown or already-destroyed handle ({})",
+void NullAudioDevice::DestroyVoice(VoiceHandle voice) {
+    if (!m_impl->voices.Release(voice)) {
+        UVE_ERROR("NullAudioDevice: DestroyVoice called with an unknown or already-destroyed handle ({})",
                    voice.value);
     }
 }
 
-bool NullAudioDeviceUVE::PlayUVE(VoiceHandleUVE voice) {
-    ImplUVE::VoiceUVE* const entry = m_impl->voices.FindUVE(voice);
+bool NullAudioDevice::Play(VoiceHandle voice) {
+    Impl::Voice* const entry = m_impl->voices.Find(voice);
     if (entry == nullptr) {
-        UVE_ERROR("NullAudioDeviceUVE: PlayUVE called with an unknown handle ({})", voice.value);
+        UVE_ERROR("NullAudioDevice: Play called with an unknown handle ({})", voice.value);
         return false;
     }
-    entry->state = VoicePlaybackStateUVE::Playing;
-    m_impl->recordedCalls.emplace_back(PlayVoiceCallUVE{voice});
+    entry->state = VoicePlaybackState::Playing;
+    m_impl->recordedCalls.emplace_back(PlayVoiceCall{voice});
     return true;
 }
 
-bool NullAudioDeviceUVE::StopUVE(VoiceHandleUVE voice) {
-    ImplUVE::VoiceUVE* const entry = m_impl->voices.FindUVE(voice);
+bool NullAudioDevice::Stop(VoiceHandle voice) {
+    Impl::Voice* const entry = m_impl->voices.Find(voice);
     if (entry == nullptr) {
-        UVE_ERROR("NullAudioDeviceUVE: StopUVE called with an unknown handle ({})", voice.value);
+        UVE_ERROR("NullAudioDevice: Stop called with an unknown handle ({})", voice.value);
         return false;
     }
-    entry->state = VoicePlaybackStateUVE::Stopped;
-    m_impl->recordedCalls.emplace_back(StopVoiceCallUVE{voice});
+    entry->state = VoicePlaybackState::Stopped;
+    m_impl->recordedCalls.emplace_back(StopVoiceCall{voice});
     return true;
 }
 
-bool NullAudioDeviceUVE::SetVoiceParamsUVE(VoiceHandleUVE voice, const AudioVoiceParamsUVE& params) {
-    if (!m_impl->voices.ContainsUVE(voice)) {
-        UVE_ERROR("NullAudioDeviceUVE: SetVoiceParamsUVE called with an unknown handle ({})", voice.value);
+bool NullAudioDevice::SetVoiceParams(VoiceHandle voice, const AudioVoiceParams& params) {
+    if (!m_impl->voices.Contains(voice)) {
+        UVE_ERROR("NullAudioDevice: SetVoiceParams called with an unknown handle ({})", voice.value);
         return false;
     }
-    if (!ValidateAudioVoiceParamsUVE(params)) {
-        UVE_ERROR("NullAudioDeviceUVE: SetVoiceParamsUVE received invalid parameters for handle ({})", voice.value);
+    if (!ValidateAudioVoiceParams(params)) {
+        UVE_ERROR("NullAudioDevice: SetVoiceParams received invalid parameters for handle ({})", voice.value);
         return false;
     }
-    m_impl->recordedCalls.emplace_back(SetVoiceParamsCallUVE{voice, params});
+    m_impl->recordedCalls.emplace_back(SetVoiceParamsCall{voice, params});
     return true;
 }
 
-VoicePlaybackStateUVE NullAudioDeviceUVE::GetVoiceStateUVE(VoiceHandleUVE voice) const {
-    const ImplUVE::VoiceUVE* const entry = m_impl->voices.FindUVE(voice);
+VoicePlaybackState NullAudioDevice::GetVoiceState(VoiceHandle voice) const {
+    const Impl::Voice* const entry = m_impl->voices.Find(voice);
     if (entry == nullptr) {
-        UVE_ERROR("NullAudioDeviceUVE: GetVoiceStateUVE called with an unknown handle ({})", voice.value);
-        return VoicePlaybackStateUVE::Stopped;
+        UVE_ERROR("NullAudioDevice: GetVoiceState called with an unknown handle ({})", voice.value);
+        return VoicePlaybackState::Stopped;
     }
     return entry->state;
 }
 
-VoiceHandleUVE NullAudioDeviceUVE::CreateStreamVoiceUVE(const AudioStreamFormatUVE& format) {
-    if (!IsAudioStreamFormatValidUVE(format)) {
-        UVE_ERROR("NullAudioDeviceUVE: CreateStreamVoiceUVE rejected an invalid format ({} Hz, {} channels)",
+VoiceHandle NullAudioDevice::CreateStreamVoice(const AudioStreamFormat& format) {
+    if (!IsAudioStreamFormatValid(format)) {
+        UVE_ERROR("NullAudioDevice: CreateStreamVoice rejected an invalid format ({} Hz, {} channels)",
                   format.sampleRate, format.channels);
-        return kInvalidVoiceHandleUVE;
+        return kInvalidVoiceHandle;
     }
-    const VoiceHandleUVE voice = m_impl->voices.AcquireUVE();
-    ImplUVE::VoiceUVE* const entry = m_impl->voices.FindUVE(voice);
+    const VoiceHandle voice = m_impl->voices.Acquire();
+    Impl::Voice* const entry = m_impl->voices.Find(voice);
     if (entry != nullptr) {
-        entry->stream.ConfigureUVE(kAudioStreamRingFramesUVE, format.channels);
+        entry->stream.Configure(kAudioStreamRingFrames, format.channels);
     }
     return voice;
 }
 
-std::size_t NullAudioDeviceUVE::PushStreamFramesUVE(const VoiceHandleUVE voice,
+std::size_t NullAudioDevice::PushStreamFrames(const VoiceHandle voice,
                                                     const std::span<const float> interleavedFrames) {
-    ImplUVE::VoiceUVE* const entry = m_impl->voices.FindUVE(voice);
+    Impl::Voice* const entry = m_impl->voices.Find(voice);
     if (entry == nullptr) {
-        UVE_ERROR("NullAudioDeviceUVE: PushStreamFramesUVE called with an unknown handle ({})", voice.value);
+        UVE_ERROR("NullAudioDevice: PushStreamFrames called with an unknown handle ({})", voice.value);
         return 0U;
     }
-    if (!entry->IsStreamingUVE()) {
-        UVE_ERROR("NullAudioDeviceUVE: PushStreamFramesUVE called on a clip voice ({})", voice.value);
+    if (!entry->IsStreaming()) {
+        UVE_ERROR("NullAudioDevice: PushStreamFrames called on a clip voice ({})", voice.value);
         return 0U;
     }
     if (entry->endRequested) {
-        UVE_ERROR("NullAudioDeviceUVE: PushStreamFramesUVE called after EndStreamUVE ({})", voice.value);
+        UVE_ERROR("NullAudioDevice: PushStreamFrames called after EndStream ({})", voice.value);
         return 0U;
     }
-    const std::size_t channels = static_cast<std::size_t>(entry->stream.GetChannelsUVE());
+    const std::size_t channels = static_cast<std::size_t>(entry->stream.GetChannels());
     if (channels == 0U || interleavedFrames.size() % channels != 0U) {
-        UVE_ERROR("NullAudioDeviceUVE: PushStreamFramesUVE received {} samples, not a whole number of frames",
+        UVE_ERROR("NullAudioDevice: PushStreamFrames received {} samples, not a whole number of frames",
                   interleavedFrames.size());
         return 0U;
     }
-    return entry->stream.WriteUVE(interleavedFrames.data(), interleavedFrames.size() / channels);
+    return entry->stream.Write(interleavedFrames.data(), interleavedFrames.size() / channels);
 }
 
-bool NullAudioDeviceUVE::EndStreamUVE(const VoiceHandleUVE voice) {
-    ImplUVE::VoiceUVE* const entry = m_impl->voices.FindUVE(voice);
-    if (entry == nullptr || !entry->IsStreamingUVE()) {
-        UVE_ERROR("NullAudioDeviceUVE: EndStreamUVE called with an unknown handle or a clip voice ({})",
+bool NullAudioDevice::EndStream(const VoiceHandle voice) {
+    Impl::Voice* const entry = m_impl->voices.Find(voice);
+    if (entry == nullptr || !entry->IsStreaming()) {
+        UVE_ERROR("NullAudioDevice: EndStream called with an unknown handle or a clip voice ({})",
                   voice.value);
         return false;
     }
     entry->endRequested = true;
-    if (entry->stream.GetBufferedFramesUVE() == 0U) {
-        entry->state = VoicePlaybackStateUVE::Stopped;
+    if (entry->stream.GetBufferedFrames() == 0U) {
+        entry->state = VoicePlaybackState::Stopped;
     }
     return true;
 }
 
-std::size_t NullAudioDeviceUVE::GetStreamBufferedFramesUVE(const VoiceHandleUVE voice) const {
-    const ImplUVE::VoiceUVE* const entry = m_impl->voices.FindUVE(voice);
-    return entry != nullptr && entry->IsStreamingUVE() ? entry->stream.GetBufferedFramesUVE() : 0U;
+std::size_t NullAudioDevice::GetStreamBufferedFrames(const VoiceHandle voice) const {
+    const Impl::Voice* const entry = m_impl->voices.Find(voice);
+    return entry != nullptr && entry->IsStreaming() ? entry->stream.GetBufferedFrames() : 0U;
 }
 
-std::size_t NullAudioDeviceUVE::GetStreamFreeFramesUVE(const VoiceHandleUVE voice) const {
-    const ImplUVE::VoiceUVE* const entry = m_impl->voices.FindUVE(voice);
-    return entry != nullptr && entry->IsStreamingUVE() ? entry->stream.GetFreeFramesUVE() : 0U;
+std::size_t NullAudioDevice::GetStreamFreeFrames(const VoiceHandle voice) const {
+    const Impl::Voice* const entry = m_impl->voices.Find(voice);
+    return entry != nullptr && entry->IsStreaming() ? entry->stream.GetFreeFrames() : 0U;
 }
 
-void NullAudioDeviceUVE::ConsumeStreamFramesUVE(const VoiceHandleUVE voice, const std::size_t frames) {
-    ImplUVE::VoiceUVE* const entry = m_impl->voices.FindUVE(voice);
-    if (entry == nullptr || !entry->IsStreamingUVE() || frames == 0U) {
+void NullAudioDevice::ConsumeStreamFrames(const VoiceHandle voice, const std::size_t frames) {
+    Impl::Voice* const entry = m_impl->voices.Find(voice);
+    if (entry == nullptr || !entry->IsStreaming() || frames == 0U) {
         return;
     }
-    m_impl->drainScratch.resize(std::min(frames, entry->stream.GetBufferedFramesUVE()) *
-                                static_cast<std::size_t>(entry->stream.GetChannelsUVE()));
-    static_cast<void>(entry->stream.ReadUVE(m_impl->drainScratch.data(), frames));
-    if (entry->endRequested && entry->stream.GetBufferedFramesUVE() == 0U) {
-        entry->state = VoicePlaybackStateUVE::Stopped;
+    m_impl->drainScratch.resize(std::min(frames, entry->stream.GetBufferedFrames()) *
+                                static_cast<std::size_t>(entry->stream.GetChannels()));
+    static_cast<void>(entry->stream.Read(m_impl->drainScratch.data(), frames));
+    if (entry->endRequested && entry->stream.GetBufferedFrames() == 0U) {
+        entry->state = VoicePlaybackState::Stopped;
     }
 }
 
-std::string_view NullAudioDeviceUVE::GetBackendNameUVE() const noexcept {
+std::string_view NullAudioDevice::GetBackendName() const noexcept {
     return "Null";
 }
 
-const std::vector<RecordedAudioCallUVE>& NullAudioDeviceUVE::GetRecordedCallsUVE() const noexcept {
+const std::vector<RecordedAudioCall>& NullAudioDevice::GetRecordedCalls() const noexcept {
     return m_impl->recordedCalls;
 }
 
-void NullAudioDeviceUVE::ClearRecordedCallsUVE() noexcept {
+void NullAudioDevice::ClearRecordedCalls() noexcept {
     m_impl->recordedCalls.clear();
 }
 
-std::size_t NullAudioDeviceUVE::GetLiveVoiceCountUVE() const noexcept {
-    return m_impl->voices.GetLiveCountUVE();
+std::size_t NullAudioDevice::GetLiveVoiceCount() const noexcept {
+    return m_impl->voices.GetLiveCount();
 }
 
 } // namespace UVE::Audio

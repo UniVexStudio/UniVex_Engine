@@ -31,7 +31,7 @@ out vec4 vLightSpacePositions[3];
 // the 240-odd lines of lighting below are shared verbatim, so an instanced object and a
 // non-instanced one cannot drift apart in how they are lit.
 //
-// Matrices arrive TRANSPOSED from the host (Matrix4x4UVE is row-major; std430 mat4 is
+// Matrices arrive TRANSPOSED from the host (Matrix4x4 is row-major; std430 mat4 is
 // column-major), exactly as in mesh_skin.glsl - the same convention, deliberately, so there is
 // one rule to remember rather than two.
 //
@@ -169,7 +169,7 @@ layout(location = 1) out vec4 FragRevealage;
 out vec4 FragColor;
 #endif
 
-struct LightUVE {
+struct Light {
     int type; // 0 = Directional, 1 = Point, 2 = Spot
     vec3 position;
     vec3 direction;
@@ -181,18 +181,18 @@ struct LightUVE {
     float specular;
 };
 
-uniform LightUVE uLights[16];
+uniform Light uLights[16];
 uniform int uActiveLightCount;
 uniform int uLightShadowSlot[16];
 #if !defined(UVE_MOBILE) && !defined(UVE_COMPATIBILITY) && !defined(UVE_MOBILE_PROFILE)
-struct ClusteredGpuLightUVE {
+struct ClusteredGpuLight {
     vec4 positionAndRange;
     vec4 directionAndType;
     vec4 colorAndIntensity;
     vec4 spotMaskSpecShadow;
 };
 layout(std430, binding = 4) readonly buffer ClusteredLightBlock {
-    ClusteredGpuLightUVE clusteredLights[];
+    ClusteredGpuLight clusteredLights[];
 };
 layout(std430, binding = 5) readonly buffer ClusteredCellBlock {
     uvec2 clusteredCells[];
@@ -269,7 +269,7 @@ uniform vec3 uUvOffset;
 #else
 uniform vec3 uUvOffset = vec3(0.0, 0.0, 0.0);
 #endif
-// Each map's own reading, on top of its UV set (see MaterialMapSettingsUVE). All zero reads the map
+// Each map's own reading, on top of its UV set (see MaterialMapSettings). All zero reads the map
 // as authored: Transform is (tiling - 1, offset); Control is (channel: 0 RGB, 1 R, 2 G, 3 B, 4 A;
 // invert; 1 - strength; on UV2).
 #if UVE_MOBILE
@@ -442,7 +442,7 @@ uniform vec3 uGiIndirectIrradiance;
 // Unified 2D shadow atlas for spot and point lights, sampled from texture slot 15 - the LAST unit
 // inside GLES3's guaranteed 16-unit floor, chosen so it cannot shadow one of the eleven dense
 // material/cascade/probe units below it. The renderer binds it there through
-// kShadowAtlasTextureSlotUVE; the two names are one contract.
+// kShadowAtlasTextureSlot; the two names are one contract.
 //
 // Every array here is indexed by the light's slot in uLights[], not by "nth shadowed light": a light
 // whose tile was dropped this frame simply has uLightShadowEnabled == 0 and its own slot stays empty.
@@ -456,7 +456,7 @@ uniform vec4 uLightShadowTileRects[4];
 uniform vec4 uLightShadowCubeRects[24];
 uniform int uLightShadowEnabled[4];
 // (near, far) of each light's projection, needed to convert a world-space bias into normalized
-// depth at the receiver - see AtlasShadowDepthBiasUVE.
+// depth at the receiver - see AtlasShadowDepthBias.
 uniform vec2 uLightShadowDepthRange[4];
 // 1 / atlas resolution, so the PCF tap spacing has one source of truth. Declared with a default so
 // a direct RHI caller that never sets it keeps the spacing this shader has always assumed.
@@ -465,18 +465,18 @@ uniform vec2 uShadowAtlasTexelSize;
 #else
 uniform vec2 uShadowAtlasTexelSize = vec2(1.0 / 4096.0);
 #endif
-const float kPiUVE = 3.14159265359;
-const float kBrdfEpsilonUVE = 0.0001;
+const float kPi = 3.14159265359;
+const float kBrdfEpsilon = 0.0001;
 /// The spot cone's bright inner region as a fraction of its authored outer half-angle; the band
 /// between the two is where the light falls off. Derived rather than authored so a material's
 /// existing single spotAngleDegrees keeps meaning exactly what it meant.
-const float kSpotInnerConeRatioUVE = 0.85;
+const float kSpotInnerConeRatio = 0.85;
 
-vec3 SafeNormalizeUVE(vec3 value) {
-    return value / max(length(value), kBrdfEpsilonUVE);
+vec3 SafeNormalize(vec3 value) {
+    return value / max(length(value), kBrdfEpsilon);
 }
 
-vec3 HemisphereAmbientUVE(vec3 normal) {
+vec3 HemisphereAmbient(vec3 normal) {
     if (dot(uSkyAmbient, uSkyAmbient) + dot(uGroundAmbient, uGroundAmbient) < 1.0e-10) {
         return uAmbientColor;
     }
@@ -491,44 +491,44 @@ vec3 HemisphereAmbientUVE(vec3 normal) {
     return mix(verticalBlend, horizonFill, horizonWeight * 0.25);
 }
 
-vec2 AmbientEnvironmentUvUVE(vec3 direction) {
-    vec3 dir = SafeNormalizeUVE(direction);
+vec2 AmbientEnvironmentUv(vec3 direction) {
+    vec3 dir = SafeNormalize(direction);
     float longitude = atan(dir.z, dir.x);
     float latitude = asin(clamp(dir.y, -1.0, 1.0));
-    return vec2(longitude * (1.0 / (2.0 * kPiUVE)) + 0.5, latitude * (1.0 / kPiUVE) + 0.5);
+    return vec2(longitude * (1.0 / (2.0 * kPi)) + 0.5, latitude * (1.0 / kPi) + 0.5);
 }
 
-vec3 SampleAmbientEnvironmentUVE(vec3 direction) {
-    return max(texture(uAmbientEnvironmentMap, AmbientEnvironmentUvUVE(direction)).rgb, vec3(0.0));
+vec3 SampleAmbientEnvironment(vec3 direction) {
+    return max(texture(uAmbientEnvironmentMap, AmbientEnvironmentUv(direction)).rgb, vec3(0.0));
 }
 
-vec3 SampleEnvironmentIrradianceUVE(vec3 normal) {
-    vec3 n = SafeNormalizeUVE(normal);
+vec3 SampleEnvironmentIrradiance(vec3 normal) {
+    vec3 n = SafeNormalize(normal);
     vec3 referenceAxis = abs(n.y) < 0.999 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0);
-    vec3 tangent = SafeNormalizeUVE(cross(referenceAxis, n));
+    vec3 tangent = SafeNormalize(cross(referenceAxis, n));
     vec3 bitangent = cross(n, tangent);
     const float spread = 0.65;
-    return SampleAmbientEnvironmentUVE(n) * 0.4 +
-           (SampleAmbientEnvironmentUVE(SafeNormalizeUVE(n + tangent * spread)) +
-            SampleAmbientEnvironmentUVE(SafeNormalizeUVE(n - tangent * spread)) +
-            SampleAmbientEnvironmentUVE(SafeNormalizeUVE(n + bitangent * spread)) +
-            SampleAmbientEnvironmentUVE(SafeNormalizeUVE(n - bitangent * spread))) * 0.15;
+    return SampleAmbientEnvironment(n) * 0.4 +
+           (SampleAmbientEnvironment(SafeNormalize(n + tangent * spread)) +
+            SampleAmbientEnvironment(SafeNormalize(n - tangent * spread)) +
+            SampleAmbientEnvironment(SafeNormalize(n + bitangent * spread)) +
+            SampleAmbientEnvironment(SafeNormalize(n - bitangent * spread))) * 0.15;
 }
 
-vec3 SampleEnvironmentSpecularUVE(vec3 direction, float roughness) {
-    vec3 reflection = SafeNormalizeUVE(direction);
+vec3 SampleEnvironmentSpecular(vec3 direction, float roughness) {
+    vec3 reflection = SafeNormalize(direction);
     vec3 referenceAxis = abs(reflection.y) < 0.999 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0);
-    vec3 tangent = SafeNormalizeUVE(cross(referenceAxis, reflection));
+    vec3 tangent = SafeNormalize(cross(referenceAxis, reflection));
     vec3 bitangent = cross(reflection, tangent);
     float spread = clamp(roughness, 0.0, 1.0) * 0.65;
-    return SampleAmbientEnvironmentUVE(reflection) * 0.4 +
-           (SampleAmbientEnvironmentUVE(SafeNormalizeUVE(reflection + tangent * spread)) +
-            SampleAmbientEnvironmentUVE(SafeNormalizeUVE(reflection - tangent * spread)) +
-            SampleAmbientEnvironmentUVE(SafeNormalizeUVE(reflection + bitangent * spread)) +
-            SampleAmbientEnvironmentUVE(SafeNormalizeUVE(reflection - bitangent * spread))) * 0.15;
+    return SampleAmbientEnvironment(reflection) * 0.4 +
+           (SampleAmbientEnvironment(SafeNormalize(reflection + tangent * spread)) +
+            SampleAmbientEnvironment(SafeNormalize(reflection - tangent * spread)) +
+            SampleAmbientEnvironment(SafeNormalize(reflection + bitangent * spread)) +
+            SampleAmbientEnvironment(SafeNormalize(reflection - bitangent * spread))) * 0.15;
 }
 
-vec3 SkyReflectionUVE(vec3 direction, float roughness) {
+vec3 SkyReflection(vec3 direction, float roughness) {
     float up = clamp(direction.y, -1.0, 1.0);
     vec3 sharp = up >= 0.0
         ? mix(uSkyReflectionHorizon, uSkyReflectionSky, smoothstep(0.0, 0.32, up))
@@ -541,7 +541,7 @@ vec3 SkyReflectionUVE(vec3 direction, float roughness) {
     return mix(sharp, soft, blur);
 }
 
-vec3 AmbientFromSourceUVE(vec3 normal) {
+vec3 AmbientFromSource(vec3 normal) {
     if (uAmbientSource == 0) {
         return vec3(0.0);
     }
@@ -549,22 +549,22 @@ vec3 AmbientFromSourceUVE(vec3 normal) {
         return max(uAmbientColor, vec3(0.0));
     }
     if (uAmbientSource == 3 && uAmbientEnvironmentMapEnabled != 0) {
-        return max(uAmbientColor, vec3(0.0)) * SampleEnvironmentIrradianceUVE(normal);
+        return max(uAmbientColor, vec3(0.0)) * SampleEnvironmentIrradiance(normal);
     }
     // Sky is the compatibility path and the fallback while an Environment Map asset is loading
     // or missing.
-    return HemisphereAmbientUVE(normal);
+    return HemisphereAmbient(normal);
 }
 
 // Roughness-aware cubemap probe sampling: mirror surfaces sample the exact reflection vector,
 // while rough surfaces integrate a 5-tap orthonormal cone across the cubemap.
-vec3 SampleReflectionProbeUVE(vec3 direction, float roughness) {
-    vec3 dir = SafeNormalizeUVE(direction);
+vec3 SampleReflectionProbe(vec3 direction, float roughness) {
+    vec3 dir = SafeNormalize(direction);
     if (roughness <= 0.08) {
         return texture(uReflectionProbeCube, dir).rgb;
     }
     vec3 referenceAxis = abs(dir.y) < 0.999 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0);
-    vec3 tangent = SafeNormalizeUVE(cross(referenceAxis, dir));
+    vec3 tangent = SafeNormalize(cross(referenceAxis, dir));
     vec3 bitangent = cross(dir, tangent);
     float spread = roughness * roughness * 0.45;
     return texture(uReflectionProbeCube, dir).rgb * 0.4 +
@@ -574,7 +574,7 @@ vec3 SampleReflectionProbeUVE(vec3 direction, float roughness) {
             texture(uReflectionProbeCube, dir - bitangent * spread).rgb) * 0.15;
 }
 
-float ReflectionProbeInfluenceUVE(vec3 worldPoint) {
+float ReflectionProbeInfluence(vec3 worldPoint) {
     vec3 halfExtents = uReflectionProbeHalfExtents;
     if (halfExtents.x <= 0.0 || halfExtents.y <= 0.0 || halfExtents.z <= 0.0) {
         return 0.0;
@@ -590,7 +590,7 @@ float ReflectionProbeInfluenceUVE(vec3 worldPoint) {
     return 1.0 - smoothstep(0.0, 1.0, normalizedDistance);
 }
 
-vec3 ReflectionProbeBoxProjectUVE(vec3 worldOrigin, vec3 worldDirection) {
+vec3 ReflectionProbeBoxProject(vec3 worldOrigin, vec3 worldDirection) {
     vec3 halfExtents = uReflectionProbeHalfExtents;
     vec3 delta = worldOrigin - uReflectionProbePosition;
     vec3 localOrigin = vec3(dot(delta, uReflectionProbeAxisX), dot(delta, uReflectionProbeAxisY),
@@ -603,7 +603,7 @@ vec3 ReflectionProbeBoxProjectUVE(vec3 worldOrigin, vec3 worldDirection) {
         float origin = axis == 0 ? localOrigin.x : (axis == 1 ? localOrigin.y : localOrigin.z);
         float dir = axis == 0 ? localDirection.x : (axis == 1 ? localDirection.y : localDirection.z);
         float halfExtent = axis == 0 ? halfExtents.x : (axis == 1 ? halfExtents.y : halfExtents.z);
-        if (abs(dir) < kBrdfEpsilonUVE) {
+        if (abs(dir) < kBrdfEpsilon) {
             if (origin < -halfExtent || origin > halfExtent) {
                 return worldDirection;
             }
@@ -614,7 +614,7 @@ vec3 ReflectionProbeBoxProjectUVE(vec3 worldOrigin, vec3 worldDirection) {
         float t2 = (halfExtent - origin) * inv;
         tFar = min(tFar, max(t1, t2));
     }
-    if (!(tFar > kBrdfEpsilonUVE)) {
+    if (!(tFar > kBrdfEpsilon)) {
         return worldDirection;
     }
     vec3 localHit = localOrigin + localDirection * tFar;
@@ -623,34 +623,34 @@ vec3 ReflectionProbeBoxProjectUVE(vec3 worldOrigin, vec3 worldDirection) {
     return worldHit - uReflectionProbePosition;
 }
 
-float Pow5UVE(float x) {
+float Pow5(float x) {
     float x2 = x * x;
     return x2 * x2 * x;
 }
 
-float DistributionGgxUVE(float normalDotHalf, float roughness) {
+float DistributionGgx(float normalDotHalf, float roughness) {
     float alpha = roughness * roughness;
     float alphaSquared = alpha * alpha;
     float normalDotHalfSquared = normalDotHalf * normalDotHalf;
     float denominator = normalDotHalfSquared * (alphaSquared - 1.0) + 1.0;
-    return alphaSquared / max(kPiUVE * denominator * denominator, kBrdfEpsilonUVE);
+    return alphaSquared / max(kPi * denominator * denominator, kBrdfEpsilon);
 }
 
 // Height-correlated Smith-GGX visibility term V = G / (4 * NdotV * NdotL).
-float VisibilitySmithGGXCorrelatedUVE(float normalDotView, float normalDotLight, float roughness) {
+float VisibilitySmithGGXCorrelated(float normalDotView, float normalDotLight, float roughness) {
     float alpha = roughness * roughness;
     float alpha2 = alpha * alpha;
     float ggxV = normalDotLight * sqrt(normalDotView * normalDotView * (1.0 - alpha2) + alpha2);
     float ggxL = normalDotView * sqrt(normalDotLight * normalDotLight * (1.0 - alpha2) + alpha2);
-    return 0.5 / max(ggxV + ggxL, kBrdfEpsilonUVE);
+    return 0.5 / max(ggxV + ggxL, kBrdfEpsilon);
 }
 
-vec3 FresnelSchlickUVE(float halfDotView, vec3 baseReflectance) {
-    return baseReflectance + (vec3(1.0) - baseReflectance) * Pow5UVE(clamp(1.0 - halfDotView, 0.0, 1.0));
+vec3 FresnelSchlick(float halfDotView, vec3 baseReflectance) {
+    return baseReflectance + (vec3(1.0) - baseReflectance) * Pow5(clamp(1.0 - halfDotView, 0.0, 1.0));
 }
 
 // Analytic split-sum GGX environment BRDF approximation (scale, bias).
-vec2 EnvBrdfApproxUVE(float roughness, float normalDotView) {
+vec2 EnvBrdfApprox(float roughness, float normalDotView) {
     const vec4 c0 = vec4(-1.0, -0.0275, -0.572, 0.022);
     const vec4 c1 = vec4(1.0, 0.0425, 1.04, -0.04);
     vec4 r = roughness * c0 + c1;
@@ -660,7 +660,7 @@ vec2 EnvBrdfApproxUVE(float roughness, float normalDotView) {
 
 // Screen-space microfacet normal-variance filtering to suppress sub-pixel specular aliasing on
 // curved geometry, thin bevels, and high-frequency normal maps.
-float ApplyGeometricSpecularAAUVE(vec3 geometricNormal, vec3 shadingNormal, float perceptualRoughness) {
+float ApplyGeometricSpecularAA(vec3 geometricNormal, vec3 shadingNormal, float perceptualRoughness) {
     vec3 dGeoU = dFdx(geometricNormal);
     vec3 dGeoV = dFdy(geometricNormal);
     vec3 dShadU = dFdx(shadingNormal);
@@ -672,7 +672,7 @@ float ApplyGeometricSpecularAAUVE(vec3 geometricNormal, vec3 shadingNormal, floa
     return clamp(sqrt(r2 + kernelRoughness2), 0.04, 1.0);
 }
 
-float SampleCascadeDepthUVE(int cascadeIndex, vec2 texCoord) {
+float SampleCascadeDepth(int cascadeIndex, vec2 texCoord) {
     if (cascadeIndex == 0) {
         return texture(uShadowMapTextures[0], texCoord).r;
     }
@@ -682,7 +682,7 @@ float SampleCascadeDepthUVE(int cascadeIndex, vec2 texCoord) {
     return texture(uShadowMapTextures[2], texCoord).r;
 }
 
-vec2 CascadeTexelSizeUVE(int cascadeIndex) {
+vec2 CascadeTexelSize(int cascadeIndex) {
     ivec2 sz = ivec2(1);
     if (cascadeIndex == 0) {
         sz = textureSize(uShadowMapTextures[0], 0);
@@ -694,7 +694,7 @@ vec2 CascadeTexelSizeUVE(int cascadeIndex) {
     return 1.0 / max(vec2(sz), vec2(1.0));
 }
 
-ivec2 CascadeMapSizeUVE(int cascadeIndex) {
+ivec2 CascadeMapSize(int cascadeIndex) {
     if (cascadeIndex == 0) {
         return textureSize(uShadowMapTextures[0], 0);
     }
@@ -705,7 +705,7 @@ ivec2 CascadeMapSizeUVE(int cascadeIndex) {
 }
 
 #if !defined(UVE_COMPATIBILITY)
-vec4 CascadeLightSpacePositionUVE(int cascadeIndex) {
+vec4 CascadeLightSpacePosition(int cascadeIndex) {
     if (cascadeIndex == 0) {
         return vLightSpacePositions[0];
     }
@@ -717,14 +717,14 @@ vec4 CascadeLightSpacePositionUVE(int cascadeIndex) {
 #endif
 
 // 16-tap golden-angle Vogel disc for isotropic, clumping-free soft shadow penumbra integration.
-const vec2 kVogelDisk16UVE[16] = vec2[16](
+const vec2 kVogelDisk16[16] = vec2[16](
     vec2( 0.176777,  0.000000), vec2(-0.225967,  0.205764), vec2( 0.034729, -0.393506), vec2( 0.281441,  0.372739),
     vec2(-0.511329, -0.095890), vec2( 0.430580, -0.355913), vec2(-0.054116,  0.587895), vec2(-0.382775, -0.477944),
     vec2( 0.677406,  0.118636), vec2(-0.625114,  0.372894), vec2( 0.264935, -0.727892), vec2( 0.140751,  0.798237),
     vec2(-0.800547, -0.252855), vec2( 0.779871, -0.415022), vec2(-0.357475,  0.848231), vec2(-0.427858, -0.875842)
 );
 
-float ShadowFactorFromPositionUVE(vec4 lightSpacePosition, vec3 normal, vec3 lightDirection, int cascadeIndex) {
+float ShadowFactorFromPosition(vec4 lightSpacePosition, vec3 normal, vec3 lightDirection, int cascadeIndex) {
     if (abs(lightSpacePosition.w) <= 0.0001) {
         return 1.0;
     }
@@ -737,7 +737,7 @@ float ShadowFactorFromPositionUVE(vec4 lightSpacePosition, vec3 normal, vec3 lig
     }
 
     ivec2 mapSize = cascadeIndex < 0 ? textureSize(uShadowMapTexture, 0)
-                                     : CascadeMapSizeUVE(cascadeIndex);
+                                     : CascadeMapSize(cascadeIndex);
     if (mapSize.x <= 1 || mapSize.y <= 1) {
         return 1.0;
     }
@@ -765,7 +765,7 @@ float ShadowFactorFromPositionUVE(vec4 lightSpacePosition, vec3 normal, vec3 lig
 #else
     if (filterMode == 0) {
         float sampledDepth = cascadeIndex < 0 ? texture(uShadowMapTexture, projected.xy).r
-                                              : SampleCascadeDepthUVE(cascadeIndex, projected.xy);
+                                              : SampleCascadeDepth(cascadeIndex, projected.xy);
         visibleWeight = compareDepth > sampledDepth ? 0.0 : 1.0;
         totalWeight = 1.0;
     } else {
@@ -784,9 +784,9 @@ float ShadowFactorFromPositionUVE(vec4 lightSpacePosition, vec3 normal, vec3 lig
             float blockerSum = 0.0;
             float blockers = 0.0;
             for (int i = 0; i < 16; i += 2) {
-                vec2 coord = projected.xy + rotation * kVogelDisk16UVE[i] * texelSize * 6.0;
+                vec2 coord = projected.xy + rotation * kVogelDisk16[i] * texelSize * 6.0;
                 float depth = cascadeIndex < 0 ? texture(uShadowMapTexture, coord).r
-                                               : SampleCascadeDepthUVE(cascadeIndex, coord);
+                                               : SampleCascadeDepth(cascadeIndex, coord);
                 if (depth < compareDepth) {
                     blockerSum += depth;
                     blockers += 1.0;
@@ -806,10 +806,10 @@ float ShadowFactorFromPositionUVE(vec4 lightSpacePosition, vec3 normal, vec3 lig
         int tapStep = 1;
 #endif
         for (int i = 0; i < 16; i += tapStep) {
-            vec2 offset = kVogelDisk16UVE[i];
+            vec2 offset = kVogelDisk16[i];
             vec2 sampleCoord = projected.xy + rotation * offset * texelSize * radius;
             float sampledDepth = cascadeIndex < 0 ? texture(uShadowMapTexture, sampleCoord).r
-                                                  : SampleCascadeDepthUVE(cascadeIndex, sampleCoord);
+                                                  : SampleCascadeDepth(cascadeIndex, sampleCoord);
             float tapW = 1.0 - 0.25 * dot(offset, offset);
             visibleWeight += (compareDepth > sampledDepth ? 0.0 : 1.0) * tapW;
             totalWeight += tapW;
@@ -825,7 +825,7 @@ float ShadowFactorFromPositionUVE(vec4 lightSpacePosition, vec3 normal, vec3 lig
     return factor;
 }
 
-float FadeShadowToLitAtDistanceUVE(float shadowFactor, float viewDepth, float finalCascadeFarDepth) {
+float FadeShadowToLitAtDistance(float shadowFactor, float viewDepth, float finalCascadeFarDepth) {
     float fadeRange = min(max(uShadowMaxDistanceFadeRange, 0.0), max(finalCascadeFarDepth, 0.0));
     if (fadeRange <= 0.0) {
         return shadowFactor;
@@ -835,11 +835,11 @@ float FadeShadowToLitAtDistanceUVE(float shadowFactor, float viewDepth, float fi
     return mix(1.0, shadowFactor, shadowWeight);
 }
 
-float DirectionalShadowFactorUVE(vec3 normal, vec3 lightDirection) {
+float DirectionalShadowFactor(vec3 normal, vec3 lightDirection) {
 #if defined(UVE_COMPATIBILITY)
-    float shadowFactor = ShadowFactorFromPositionUVE(vLightSpacePosition, normal, lightDirection, -1);
+    float shadowFactor = ShadowFactorFromPosition(vLightSpacePosition, normal, lightDirection, -1);
     if (uShadowCascadeCount > 0) {
-        float planarDepth = dot(vWorldPosition - uViewPosition, SafeNormalizeUVE(uCameraForward));
+        float planarDepth = dot(vWorldPosition - uViewPosition, SafeNormalize(uCameraForward));
         float viewDepth = (uOrthographic != 0 || planarDepth > 0.0)
                               ? max(planarDepth, 0.0)
                               : length(vWorldPosition - uViewPosition);
@@ -847,16 +847,16 @@ float DirectionalShadowFactorUVE(vec3 normal, vec3 lightDirection) {
         if (viewDepth > farDepth) {
             return 1.0;
         }
-        return FadeShadowToLitAtDistanceUVE(shadowFactor, viewDepth, farDepth);
+        return FadeShadowToLitAtDistance(shadowFactor, viewDepth, farDepth);
     }
     return shadowFactor;
 #else
     if (uShadowCascadeCount <= 0) {
         // No cascades: one map in uShadowMapTexture, projected by vLightSpacePosition.
-        return ShadowFactorFromPositionUVE(vLightSpacePosition, normal, lightDirection, -1);
+        return ShadowFactorFromPosition(vLightSpacePosition, normal, lightDirection, -1);
     }
 
-    float planarDepth = dot(vWorldPosition - uViewPosition, SafeNormalizeUVE(uCameraForward));
+    float planarDepth = dot(vWorldPosition - uViewPosition, SafeNormalize(uCameraForward));
     float viewDepth = (uOrthographic != 0 || planarDepth > 0.0)
                           ? max(planarDepth, 0.0)
                           : length(vWorldPosition - uViewPosition);
@@ -873,7 +873,7 @@ float DirectionalShadowFactorUVE(vec3 normal, vec3 lightDirection) {
             break;
         }
     }
-    float shadowFactor = ShadowFactorFromPositionUVE(CascadeLightSpacePositionUVE(cascadeIndex), normal,
+    float shadowFactor = ShadowFactorFromPosition(CascadeLightSpacePosition(cascadeIndex), normal,
                                                       lightDirection, cascadeIndex);
     if (cascadeIndex < finalCascadeIndex) {
         float cascadeNearDepth = cascadeIndex == 0 ? 0.0 : uShadowCascadeSplits[cascadeIndex - 1];
@@ -882,13 +882,13 @@ float DirectionalShadowFactorUVE(vec3 normal, vec3 lightDirection) {
         float blendWidth = cascadeDepthRange * clamp(uShadowCascadeBlendRatio, 0.0, 0.25);
         float blendStartDepth = cascadeFarDepth - blendWidth;
         if (blendWidth > 0.0 && viewDepth > blendStartDepth) {
-            float nextCascadeShadowFactor = ShadowFactorFromPositionUVE(
-                CascadeLightSpacePositionUVE(cascadeIndex + 1), normal, lightDirection, cascadeIndex + 1);
+            float nextCascadeShadowFactor = ShadowFactorFromPosition(
+                CascadeLightSpacePosition(cascadeIndex + 1), normal, lightDirection, cascadeIndex + 1);
             float blendWeight = smoothstep(blendStartDepth, cascadeFarDepth, viewDepth);
             shadowFactor = mix(shadowFactor, nextCascadeShadowFactor, blendWeight);
         }
     }
-    float finalFactor = FadeShadowToLitAtDistanceUVE(shadowFactor, viewDepth, finalCascadeFarDepth);
+    float finalFactor = FadeShadowToLitAtDistance(shadowFactor, viewDepth, finalCascadeFarDepth);
     if (isnan(finalFactor) || isinf(finalFactor)) {
         return 1.0;
     }
@@ -896,19 +896,19 @@ float DirectionalShadowFactorUVE(vec3 normal, vec3 lightDirection) {
 #endif
 }
 
-// kAtlasShadowBiasMetersPerUnitUVE keeps the atlas on the same authored scale as the cascades: the
+// kAtlasShadowBiasMetersPerUnit keeps the atlas on the same authored scale as the cascades: the
 // directional default uShadowBias (0.0025) is authored against roughly a 40 m cascade half-extent,
 // where it is worth about 0.05 m of separation. Reusing that ratio means one authored bias value
 // keeps meaning the same "how much gap", even though the two paths store depth in different spaces.
-const float kAtlasShadowBiasMetersPerUnitUVE = 20.0;
+const float kAtlasShadowBiasMetersPerUnit = 20.0;
 
 /// Converts a world-space shadow bias into normalized depth AT THE RECEIVER'S OWN DEPTH.
 ///
 /// A perspective projection's depth slope varies by orders of magnitude along one ray, so a constant
 /// normalized-depth bias is either acne beside the near plane or metres of peter-panning out at the
 /// light's range - and the same light is both, depending on where the surface is. Mirror of
-/// ShadowDepthSlopeUVE in light_shadow_planner_uve.h; the unit tests pin the two together.
-float AtlasShadowDepthBiasUVE(vec2 depthRange, float projectionDepth, float normalDotLight) {
+/// ShadowDepthSlope in light_shadow_planner_uve.h; the unit tests pin the two together.
+float AtlasShadowDepthBias(vec2 depthRange, float projectionDepth, float normalDotLight) {
     float nearPlane = max(depthRange.x, 0.01);
     float farPlane = max(depthRange.y, nearPlane + 0.1);
     // Same shape as the directional bias, reinterpreted in metres rather than normalized units.
@@ -919,16 +919,16 @@ float AtlasShadowDepthBiasUVE(vec2 depthRange, float projectionDepth, float norm
         (nearPlane * farPlane) / max(farPlane - (farPlane - nearPlane) * projectionDepth, 1.0e-6);
     float depthSlope =
         (nearPlane * farPlane) / max((farPlane - nearPlane) * linearDepth * linearDepth, 1.0e-6);
-    return normalizedBias * kAtlasShadowBiasMetersPerUnitUVE * depthSlope;
+    return normalizedBias * kAtlasShadowBiasMetersPerUnit * depthSlope;
 }
 
 /// Spot shadows: one perspective depth tile per light, sampled with the same receiver-plane PCF the
 /// directional cascades use.
 ///
-/// Depth convention: `projectionDepth` is the engine's [0, 1] projection depth (Matrix4x4UVE::
-/// PerspectiveUVE is Vulkan-style), and GL's depth attachment stores `(ndc + 1) / 2`, which is the
-/// `* 0.5 + 0.5` below - exactly the convention ShadowFactorFromPositionUVE has always used.
-float SpotShadowFactorUVE(int lightIndex, vec3 normal, vec3 lightDirection) {
+/// Depth convention: `projectionDepth` is the engine's [0, 1] projection depth (Matrix4x4::
+/// Perspective is Vulkan-style), and GL's depth attachment stores `(ndc + 1) / 2`, which is the
+/// `* 0.5 + 0.5` below - exactly the convention ShadowFactorFromPosition has always used.
+float SpotShadowFactor(int lightIndex, vec3 normal, vec3 lightDirection) {
     if (uLightShadowEnabled[lightIndex] == 0) {
         return 1.0;
     }
@@ -952,7 +952,7 @@ float SpotShadowFactorUVE(int lightIndex, vec3 normal, vec3 lightDirection) {
     }
 
     float currentDepth = projectionDepth * 0.5 + 0.5;
-    float bias = AtlasShadowDepthBiasUVE(uLightShadowDepthRange[lightIndex], projectionDepth,
+    float bias = AtlasShadowDepthBias(uLightShadowDepthRange[lightIndex], projectionDepth,
                                          dot(normal, lightDirection));
     vec2 atlasTexelSize = max(uShadowAtlasTexelSize, vec2(0.0));
     int kernelRadius = clamp(uShadowPcfKernelRadius, 0, 2);
@@ -980,11 +980,11 @@ float SpotShadowFactorUVE(int lightIndex, vec3 normal, vec3 lightDirection) {
 
 /// The six cube faces, in the order +X, -X, +Y, -Y, +Z, -Z.
 ///
-/// Explicit constants rather than a runtime basis build: `PointLightShadowFaceTableUVE` in
+/// Explicit constants rather than a runtime basis build: `PointLightShadowFaceTable` in
 /// shadow_atlas_manager_uve.h holds the same six triples, and the renderer rasterizes each face
 /// through exactly the one this shader samples with. A seam that lands on the wrong face reads as a
 /// plausible shadow instead of as a bug, so the two tables are pinned together by tests.
-void PointShadowFaceBasisUVE(int faceIndex, out vec3 faceRight, out vec3 faceUp,
+void PointShadowFaceBasis(int faceIndex, out vec3 faceRight, out vec3 faceUp,
                              out vec3 faceForward) {
     if (faceIndex == 0) {
         faceRight = vec3(0.0, 0.0, -1.0); faceUp = vec3(0.0, 1.0, 0.0); faceForward = vec3(1.0, 0.0, 0.0);
@@ -1002,8 +1002,8 @@ void PointShadowFaceBasisUVE(int faceIndex, out vec3 faceRight, out vec3 faceUp,
 }
 
 /// Cube face a direction lands on by dominant axis, ties broken X then Y then Z - the same rule
-/// `ShadowAtlasManagerUVE::PointLightShadowFaceForDirectionUVE` implements.
-int PointShadowFaceUVE(vec3 direction) {
+/// `ShadowAtlasManager::PointLightShadowFaceForDirection` implements.
+int PointShadowFace(vec3 direction) {
     vec3 a = abs(direction);
     if (a.x >= a.y && a.x >= a.z) {
         return direction.x >= 0.0 ? 0 : 1;
@@ -1016,10 +1016,10 @@ int PointShadowFaceUVE(vec3 direction) {
 
 /// `[0, 1]` projection depth a point at `axisDistance` along the face axis writes.
 ///
-/// Mirror of `PointShadowProjectionDepthUVE` in light_shadow_planner_uve.h, which the CPU uses to
+/// Mirror of `PointShadowProjectionDepth` in light_shadow_planner_uve.h, which the CPU uses to
 /// predict the same number with the light's own near/far. Both are the inverse of the
-/// `AtlasShadowDepthBiasUVE` linearization.
-float PointShadowProjectionDepthUVE(vec2 depthRange, float axisDistance) {
+/// `AtlasShadowDepthBias` linearization.
+float PointShadowProjectionDepth(vec2 depthRange, float axisDistance) {
     float nearPlane = max(depthRange.x, 0.01);
     float farPlane = max(depthRange.y, nearPlane + 0.1);
     return farPlane * (1.0 - nearPlane / max(axisDistance, nearPlane)) / (farPlane - nearPlane);
@@ -1033,7 +1033,7 @@ float PointShadowProjectionDepthUVE(vec2 depthRange, float axisDistance) {
 /// are the shape a depth-only pass can actually write - the same face matrices the CPU plans with -
 /// and the shader selects a face by dominant axis, which is exactly the seam rule a cube-map
 /// sampler uses internally.
-float PointShadowFactorUVE(int lightIndex, vec3 normal, vec3 lightPosition, float lightRange) {
+float PointShadowFactor(int lightIndex, vec3 normal, vec3 lightPosition, float lightRange) {
     if (uLightShadowEnabled[lightIndex] == 0) {
         return 1.0;
     }
@@ -1043,11 +1043,11 @@ float PointShadowFactorUVE(int lightIndex, vec3 normal, vec3 lightPosition, floa
         return 1.0;
     }
     vec3 dir = toFrag / dist;
-    int face = PointShadowFaceUVE(dir);
+    int face = PointShadowFace(dir);
     vec3 faceRight;
     vec3 faceUp;
     vec3 faceForward;
-    PointShadowFaceBasisUVE(face, faceRight, faceUp, faceForward);
+    PointShadowFaceBasis(face, faceRight, faceUp, faceForward);
 
     // The face's own coordinates are the ray's components along its basis. Their RATIO is the
     // normalized device position - dividing the absolute distance instead would make the sample
@@ -1075,12 +1075,12 @@ float PointShadowFactorUVE(int lightIndex, vec3 normal, vec3 lightPosition, floa
     // face's matrix, and therefore what the depth attachment stored.
     float axisDistance = axisDot * dist;
     vec2 depthRange = uLightShadowDepthRange[lightIndex];
-    float projectionDepth = PointShadowProjectionDepthUVE(depthRange, axisDistance);
+    float projectionDepth = PointShadowProjectionDepth(depthRange, axisDistance);
     if (projectionDepth <= 0.0 || projectionDepth >= 1.0) {
         return 1.0;
     }
     float currentDepth = projectionDepth * 0.5 + 0.5;
-    float bias = AtlasShadowDepthBiasUVE(depthRange, projectionDepth, dot(normal, -dir));
+    float bias = AtlasShadowDepthBias(depthRange, projectionDepth, dot(normal, -dir));
 
     vec2 atlasTexelSize = max(uShadowAtlasTexelSize, vec2(0.0));
     int kernelRadius = clamp(uShadowPcfKernelRadius, 0, 2);
@@ -1107,20 +1107,20 @@ float PointShadowFactorUVE(int lightIndex, vec3 normal, vec3 lightPosition, floa
 }
 // One exit point for the colour/alpha pair, so the four debug and unshaded early-outs cannot drift
 // from the lit path on premultiplication. Only the pipeline state decides whether it is needed.
-float LuminanceUVE(vec3 color) {
+float Luminance(vec3 color) {
     return dot(max(color, vec3(0.0)), vec3(0.2126, 0.7152, 0.0722));
 }
-vec4 ComposeFragmentUVE(vec3 color, float alpha) {
+vec4 ComposeFragment(vec3 color, float alpha) {
     return vec4(uPremultiplyAlpha != 0 ? color * alpha : color, alpha);
 }
-vec4 ComposeOutputUVE(vec3 color, float surfaceOpacity, float indirectWeight) {
+vec4 ComposeOutput(vec3 color, float surfaceOpacity, float indirectWeight) {
     if (uPackIndirectWeightAlpha != 0) {
         return vec4(color, clamp(indirectWeight, 0.0, 1.0));
     }
-    return ComposeFragmentUVE(color, surfaceOpacity);
+    return ComposeFragment(color, surfaceOpacity);
 }
 #if defined(UVE_COMPATIBILITY)
-vec4 ReadMapCompatUVE(sampler2D map, vec2 uv1, vec2 uv2, vec4 transform, vec4 control, vec4 neutral) {
+vec4 ReadMapCompat(sampler2D map, vec2 uv1, vec2 uv2, vec4 transform, vec4 control, vec4 neutral) {
     if (control.z >= 0.999) {
         return neutral;
     }
@@ -1139,7 +1139,7 @@ vec4 ReadMapCompatUVE(sampler2D map, vec2 uv1, vec2 uv2, vec4 transform, vec4 co
 void main() {
     vec2 uv1 = vTexCoord * uUvScale.xy + uUvOffset.xy;
     vec2 uv2 = vTexCoord * uUv2Scale.xy + uUv2Offset.xy;
-    vec4 albedoSample = ReadMapCompatUVE(uAlbedoTexture, uv1, uv2, uAlbedoMapTransform, uAlbedoMapControl, vec4(1.0));
+    vec4 albedoSample = ReadMapCompat(uAlbedoTexture, uv1, uv2, uAlbedoMapTransform, uAlbedoMapControl, vec4(1.0));
     if (uAlphaCutoff > 0.0 && albedoSample.a < uAlphaCutoff) {
         discard;
     }
@@ -1147,16 +1147,16 @@ void main() {
     float materialAlpha = uAlphaSource == 0 ? clamp(albedoSample.a * uAlbedoAlpha, 0.0, 1.0) : 1.0;
     float surfaceOpacity = clamp(uSurfaceOpacity, 0.0, 1.0) * materialAlpha;
     if (uShadingMode == 1 || uUnshaded != 0) {
-        FragColor = ComposeOutputUVE(albedo, surfaceOpacity, 0.0);
+        FragColor = ComposeOutput(albedo, surfaceOpacity, 0.0);
         return;
     }
     if (uShadingMode == 2) {
-        FragColor = ComposeOutputUVE(mix(albedo * 0.25, vec3(0.05, 0.85, 1.0), 0.75), surfaceOpacity, 0.0);
+        FragColor = ComposeOutput(mix(albedo * 0.25, vec3(0.05, 0.85, 1.0), 0.75), surfaceOpacity, 0.0);
         return;
     }
-    float ambientOcclusion = mix(1.0, ReadMapCompatUVE(uAOTexture, uv1, uv2, uOcclusionMapTransform, uOcclusionMapControl, vec4(1.0)).r, clamp(uOcclusionStrength, 0.0, 1.0));
-    vec3 normal = SafeNormalizeUVE(vWorldNormal);
-    if (dot(normal, normal) <= kBrdfEpsilonUVE * kBrdfEpsilonUVE) {
+    float ambientOcclusion = mix(1.0, ReadMapCompat(uAOTexture, uv1, uv2, uOcclusionMapTransform, uOcclusionMapControl, vec4(1.0)).r, clamp(uOcclusionStrength, 0.0, 1.0));
+    vec3 normal = SafeNormalize(vWorldNormal);
+    if (dot(normal, normal) <= kBrdfEpsilon * kBrdfEpsilon) {
         normal = vec3(0.0, 0.0, 1.0);
     }
     if (uNormalMapControl.z < 0.999) {
@@ -1165,55 +1165,55 @@ void main() {
             vec3 fallbackAxis = abs(normal.y) < 0.999 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0);
             tangent = cross(fallbackAxis, normal);
         }
-        tangent = SafeNormalizeUVE(tangent);
-        vec3 bitangent = SafeNormalizeUVE(cross(normal, tangent)) * (vTangentHandedness < 0.0 ? -1.0 : 1.0);
-        vec3 tsNormal = ReadMapCompatUVE(uNormalTexture, uv1, uv2, uNormalMapTransform, uNormalMapControl, vec4(0.5, 0.5, 1.0, 1.0)).xyz * 2.0 - 1.0;
+        tangent = SafeNormalize(tangent);
+        vec3 bitangent = SafeNormalize(cross(normal, tangent)) * (vTangentHandedness < 0.0 ? -1.0 : 1.0);
+        vec3 tsNormal = ReadMapCompat(uNormalTexture, uv1, uv2, uNormalMapTransform, uNormalMapControl, vec4(0.5, 0.5, 1.0, 1.0)).xyz * 2.0 - 1.0;
         if (uNormalFlipGreen != 0) {
             tsNormal.y = -tsNormal.y;
         }
         tsNormal.xy *= uNormalScale;
-        normal = SafeNormalizeUVE(mat3(tangent, bitangent, normal) * tsNormal);
+        normal = SafeNormalize(mat3(tangent, bitangent, normal) * tsNormal);
     }
     if (uShadingMode == 4) {
-        FragColor = ComposeOutputUVE(normal * 0.5 + 0.5, surfaceOpacity, 0.0);
+        FragColor = ComposeOutput(normal * 0.5 + 0.5, surfaceOpacity, 0.0);
         return;
     }
     vec3 viewDirection = uOrthographic != 0
-                             ? SafeNormalizeUVE(-uCameraForward)
-                             : SafeNormalizeUVE(uViewPosition - vWorldPosition);
+                             ? SafeNormalize(-uCameraForward)
+                             : SafeNormalize(uViewPosition - vWorldPosition);
     if (!gl_FrontFacing) {
         normal = -normal;
     }
     if (uShadingMode == 3) {
         albedo = vec3(0.82);
     }
-    vec3 mrSample = ReadMapCompatUVE(uMetallicRoughnessTexture, uv1, uv2, uMetallicRoughnessMapTransform, uMetallicRoughnessMapControl, vec4(1.0)).rgb;
+    vec3 mrSample = ReadMapCompat(uMetallicRoughnessTexture, uv1, uv2, uMetallicRoughnessMapTransform, uMetallicRoughnessMapControl, vec4(1.0)).rgb;
     float metallic = uShadingMode == 3 ? 0.0 : clamp(uMetallic * mrSample.b, 0.0, 1.0);
     float roughness = uShadingMode == 3 ? 0.5 : clamp(uRoughness * mrSample.g, 0.06, 1.0);
     float dielectricSpec = clamp(uDielectricSpecular, 0.0, 1.0);
     float dielectricF0 = 0.16 * dielectricSpec * dielectricSpec;
     vec3 baseReflectance = mix(vec3(dielectricF0), albedo, metallic);
     float normalDotView = max(dot(normal, viewDirection), 0.001);
-    vec2 envBrdf = EnvBrdfApproxUVE(roughness, normalDotView);
-    vec3 ambientColor = AmbientFromSourceUVE(normal);
-    vec3 specEnv = uSkyReflectionsLinked != 0 ? SkyReflectionUVE(reflect(-viewDirection, normal), roughness) : ambientColor;
+    vec2 envBrdf = EnvBrdfApprox(roughness, normalDotView);
+    vec3 ambientColor = AmbientFromSource(normal);
+    vec3 specEnv = uSkyReflectionsLinked != 0 ? SkyReflection(reflect(-viewDirection, normal), roughness) : ambientColor;
     vec3 indirectLighting = ((vec3(1.0) - baseReflectance) * (1.0 - metallic) * albedo * (ambientColor + max(uGiIndirectIrradiance, vec3(0.0))) +
                              (baseReflectance * envBrdf.x + vec3(envBrdf.y)) * specEnv) * ambientOcclusion;
     vec3 emissiveLighting =
         uEmissiveColor * max(uEmissiveEnergy, 0.0) *
-        ReadMapCompatUVE(uEmissiveTexture, uv1, uv2, uEmissiveMapTransform, uEmissiveMapControl, vec4(1.0)).rgb;
+        ReadMapCompat(uEmissiveTexture, uv1, uv2, uEmissiveMapTransform, uEmissiveMapControl, vec4(1.0)).rgb;
     vec3 lighting = indirectLighting + emissiveLighting;
 
     int activeLightCount = uActiveLightCount < 0 ? 0 : (uActiveLightCount > 0 ? min(uActiveLightCount, 4) : 4);
     for (int lightIndex = 0; lightIndex < activeLightCount; ++lightIndex) {
-        LightUVE light = uLights[lightIndex];
+        Light light = uLights[lightIndex];
         if (light.intensity <= 0.0 || (light.cullMask & uMeshRenderLayers) == 0) {
             continue;
         }
         vec3 lightDirection;
         float attenuation = 1.0;
         if (light.type == 0) {
-            lightDirection = SafeNormalizeUVE(-light.direction);
+            lightDirection = SafeNormalize(-light.direction);
         } else {
             vec3 toLight = light.position - vWorldPosition;
             float distanceToLight = max(length(toLight), 0.0001);
@@ -1227,9 +1227,9 @@ void main() {
             }
             if (light.type == 2) {
                 float cosOuter = cos(radians(light.spotAngleDegrees));
-                float cosInner = cos(radians(light.spotAngleDegrees) * kSpotInnerConeRatioUVE);
-                float coneAlignment = dot(-lightDirection, SafeNormalizeUVE(light.direction));
-                float coneFalloff = clamp((coneAlignment - cosOuter) / max(cosInner - cosOuter, kBrdfEpsilonUVE), 0.0, 1.0);
+                float cosInner = cos(radians(light.spotAngleDegrees) * kSpotInnerConeRatio);
+                float coneAlignment = dot(-lightDirection, SafeNormalize(light.direction));
+                float coneFalloff = clamp((coneAlignment - cosOuter) / max(cosInner - cosOuter, kBrdfEpsilon), 0.0, 1.0);
                 attenuation *= coneFalloff * coneFalloff;
             }
         }
@@ -1237,27 +1237,27 @@ void main() {
         if (normalDotLight <= 0.0 || attenuation <= 0.0) {
             continue;
         }
-        vec3 halfDirection = SafeNormalizeUVE(lightDirection + viewDirection);
+        vec3 halfDirection = SafeNormalize(lightDirection + viewDirection);
         float normalDotHalf = max(dot(normal, halfDirection), 0.0);
         float halfDotView = max(dot(halfDirection, viewDirection), 0.0);
-        vec3 fresnel = FresnelSchlickUVE(halfDotView, baseReflectance);
-        float distribution = DistributionGgxUVE(normalDotHalf, roughness);
-        float visibility = VisibilitySmithGGXCorrelatedUVE(normalDotView, normalDotLight, roughness);
+        vec3 fresnel = FresnelSchlick(halfDotView, baseReflectance);
+        float distribution = DistributionGgx(normalDotHalf, roughness);
+        float visibility = VisibilitySmithGGXCorrelated(normalDotView, normalDotLight, roughness);
         vec3 specular = (distribution * visibility * fresnel) * max(light.specular, 0.0);
-        vec3 diffuse = (vec3(1.0) - fresnel) * (1.0 - metallic) * albedo / kPiUVE;
+        vec3 diffuse = (vec3(1.0) - fresnel) * (1.0 - metallic) * albedo / kPi;
         vec3 directContribution = (diffuse + specular) * (light.color * light.intensity * attenuation) * normalDotLight;
         if (uDisableReceiveShadows == 0 && light.type == 0) {
-            directContribution *= clamp(DirectionalShadowFactorUVE(normal, lightDirection), 0.0, 1.0);
+            directContribution *= clamp(DirectionalShadowFactor(normal, lightDirection), 0.0, 1.0);
         }
         lighting += directContribution;
     }
     vec3 finalColor = max(lighting, vec3(0.0));
-    float indirectWeight = clamp(LuminanceUVE(indirectLighting) / max(LuminanceUVE(finalColor), 1.0e-4), 0.0, 1.0);
-    FragColor = ComposeOutputUVE(finalColor, surfaceOpacity, indirectWeight);
+    float indirectWeight = clamp(Luminance(indirectLighting) / max(Luminance(finalColor), 1.0e-4), 0.0, 1.0);
+    FragColor = ComposeOutput(finalColor, surfaceOpacity, indirectWeight);
 }
 #else
 // One UV set: planar 2D coordinates or normal-weighted triplanar projection.
-struct UvSetUVE {
+struct UvSet {
     vec2 uv;
     int triplanar;
     vec2 uvX;
@@ -1266,8 +1266,8 @@ struct UvSetUVE {
     vec3 weights;
     vec3 triNormal;
 };
-UvSetUVE MakeUvSetUVE(vec3 scale, vec3 offset, int triplanar, float sharpness) {
-    UvSetUVE set;
+UvSet MakeUvSet(vec3 scale, vec3 offset, int triplanar, float sharpness) {
+    UvSet set;
     set.triplanar = triplanar;
     set.uv = vTexCoord * scale.xy + offset.xy;
     set.uvX = set.uv;
@@ -1277,7 +1277,7 @@ UvSetUVE MakeUvSetUVE(vec3 scale, vec3 offset, int triplanar, float sharpness) {
     set.triNormal = vec3(0.0, 1.0, 0.0);
     if (triplanar != 0) {
         vec3 position = triplanar == 2 ? vWorldPosition : vObjectPosition;
-        vec3 n = SafeNormalizeUVE(triplanar == 2 ? vWorldNormal : vObjectNormal);
+        vec3 n = SafeNormalize(triplanar == 2 ? vWorldNormal : vObjectNormal);
         set.triNormal = n;
         vec3 weights = pow(max(abs(n), vec3(1.0e-4)), vec3(max(sharpness, 0.001)));
         set.weights = weights / max(dot(weights, vec3(1.0)), 1.0e-5);
@@ -1291,7 +1291,7 @@ UvSetUVE MakeUvSetUVE(vec3 scale, vec3 offset, int triplanar, float sharpness) {
     }
     return set;
 }
-vec4 SampleUvSetUVE(sampler2D map, UvSetUVE set) {
+vec4 SampleUvSet(sampler2D map, UvSet set) {
     if (set.triplanar == 0) {
         return texture(map, set.uv);
     }
@@ -1300,7 +1300,7 @@ vec4 SampleUvSetUVE(sampler2D map, UvSetUVE set) {
            texture(map, set.uvY) * set.weights.y +
            texture(map, set.uvZ) * set.weights.z;
 }
-vec3 SampleTriplanarNormalUVE(sampler2D normalMap, UvSetUVE set, float normalScale, int flipGreen) {
+vec3 SampleTriplanarNormal(sampler2D normalMap, UvSet set, float normalScale, int flipGreen) {
     vec3 tX = texture(normalMap, set.uvX).xyz * 2.0 - 1.0;
     vec3 tY = texture(normalMap, set.uvY).xyz * 2.0 - 1.0;
     vec3 tZ = texture(normalMap, set.uvZ).xyz * 2.0 - 1.0;
@@ -1324,15 +1324,15 @@ vec3 SampleTriplanarNormalUVE(sampler2D normalMap, UvSetUVE set, float normalSca
     if (set.triplanar == 1) {
         blended = mat3(vNormalAxisX, vNormalAxisY, vNormalAxisZ) * blended;
     }
-    return SafeNormalizeUVE(blended);
+    return SafeNormalize(blended);
 }
 // One map read its own way: its UV set, tiling and offset, then the channel, invert and strength
 // (strength 0 is `neutral`: what the material looks like without the map).
-vec4 ReadMapUVE(sampler2D map, UvSetUVE uv1, UvSetUVE uv2, vec4 transform, vec4 control, vec4 neutral) {
+vec4 ReadMap(sampler2D map, UvSet uv1, UvSet uv2, vec4 transform, vec4 control, vec4 neutral) {
     if (control.z >= 0.999) {
         return neutral;
     }
-    UvSetUVE set = uv1;
+    UvSet set = uv1;
     if (control.w > 0.5) {
         set = uv2;
     }
@@ -1341,7 +1341,7 @@ vec4 ReadMapUVE(sampler2D map, UvSetUVE uv1, UvSetUVE uv2, vec4 transform, vec4 
     set.uvX = set.uvX * tiling + transform.zw;
     set.uvY = set.uvY * tiling + transform.zw;
     set.uvZ = set.uvZ * tiling + transform.zw;
-    vec4 value = SampleUvSetUVE(map, set);
+    vec4 value = SampleUvSet(map, set);
     int channel = int(control.x + 0.5);
     if (channel >= 1) {
         float grey = channel == 1 ? value.r : channel == 2 ? value.g : channel == 3 ? value.b : value.a;
@@ -1353,9 +1353,9 @@ vec4 ReadMapUVE(sampler2D map, UvSetUVE uv1, UvSetUVE uv2, vec4 transform, vec4 
     return mix(value, neutral, clamp(control.z, 0.0, 1.0));
 }
 void main() {
-    UvSetUVE uv1 = MakeUvSetUVE(vec3(uUvScale.xy, uUvScale.x), uUvOffset, uUv1Triplanar, uUv1TriplanarSharpness);
-    UvSetUVE uv2 = MakeUvSetUVE(uUv2Scale, uUv2Offset, uUv2Triplanar, uUv2TriplanarSharpness);
-    vec4 albedoSample = ReadMapUVE(uAlbedoTexture, uv1, uv2, uAlbedoMapTransform, uAlbedoMapControl, vec4(1.0));
+    UvSet uv1 = MakeUvSet(vec3(uUvScale.xy, uUvScale.x), uUvOffset, uUv1Triplanar, uUv1TriplanarSharpness);
+    UvSet uv2 = MakeUvSet(uUv2Scale, uUv2Offset, uUv2Triplanar, uUv2TriplanarSharpness);
+    vec4 albedoSample = ReadMap(uAlbedoTexture, uv1, uv2, uAlbedoMapTransform, uAlbedoMapControl, vec4(1.0));
     if (uAlphaCutoff > 0.0 && albedoSample.a < uAlphaCutoff) {
         discard;
     }
@@ -1367,50 +1367,50 @@ void main() {
     float materialAlpha = uAlphaSource == 0 ? clamp(albedoSample.a * uAlbedoAlpha, 0.0, 1.0) : 1.0;
     float surfaceOpacity = clamp(uSurfaceOpacity, 0.0, 1.0) * materialAlpha;
     if (uShadingMode == 1 || uUnshaded != 0) {
-        FragColor = ComposeOutputUVE(albedo, surfaceOpacity, 0.0);
+        FragColor = ComposeOutput(albedo, surfaceOpacity, 0.0);
         return;
     }
     if (uShadingMode == 2) {
-        FragColor = ComposeOutputUVE(mix(albedo * 0.25, vec3(0.05, 0.85, 1.0), 0.75), surfaceOpacity, 0.0);
+        FragColor = ComposeOutput(mix(albedo * 0.25, vec3(0.05, 0.85, 1.0), 0.75), surfaceOpacity, 0.0);
         return;
     }
-    float ambientOcclusion = mix(1.0, ReadMapUVE(uAOTexture, uv1, uv2, uOcclusionMapTransform, uOcclusionMapControl, vec4(1.0)).r, clamp(uOcclusionStrength, 0.0, 1.0));
-    vec3 geometricNormal = SafeNormalizeUVE(vWorldNormal);
+    float ambientOcclusion = mix(1.0, ReadMap(uAOTexture, uv1, uv2, uOcclusionMapTransform, uOcclusionMapControl, vec4(1.0)).r, clamp(uOcclusionStrength, 0.0, 1.0));
+    vec3 geometricNormal = SafeNormalize(vWorldNormal);
     // A few legacy/direct RHI callers do not provide a usable normal attribute. Keep those
     // materials lit instead of allowing a zero vector to poison the tangent frame and BRDF.
-    if (dot(geometricNormal, geometricNormal) <= kBrdfEpsilonUVE * kBrdfEpsilonUVE) {
+    if (dot(geometricNormal, geometricNormal) <= kBrdfEpsilon * kBrdfEpsilon) {
         geometricNormal = vec3(0.0, 0.0, 1.0);
     }
     vec3 normal = geometricNormal;
     if (uNormalMapControl.z < 0.999) {
         if (uv1.triplanar != 0) {
-            normal = SampleTriplanarNormalUVE(uNormalTexture, uv1, uNormalScale, uNormalFlipGreen);
+            normal = SampleTriplanarNormal(uNormalTexture, uv1, uNormalScale, uNormalFlipGreen);
         } else {
             vec3 tangent = vWorldTangent - normal * dot(normal, vWorldTangent);
             if (dot(tangent, tangent) <= 0.00000001) {
                 vec3 fallbackAxis = abs(normal.y) < 0.999 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0);
                 tangent = cross(fallbackAxis, normal);
             }
-            tangent = SafeNormalizeUVE(tangent);
-            vec3 bitangent = SafeNormalizeUVE(cross(normal, tangent));
+            tangent = SafeNormalize(tangent);
+            vec3 bitangent = SafeNormalize(cross(normal, tangent));
             bitangent *= vTangentHandedness < 0.0 ? -1.0 : 1.0;
-            vec3 tangentSpaceNormal = ReadMapUVE(uNormalTexture, uv1, uv2, uNormalMapTransform, uNormalMapControl, vec4(0.5, 0.5, 1.0, 1.0)).xyz * 2.0 - 1.0;
+            vec3 tangentSpaceNormal = ReadMap(uNormalTexture, uv1, uv2, uNormalMapTransform, uNormalMapControl, vec4(0.5, 0.5, 1.0, 1.0)).xyz * 2.0 - 1.0;
             if (uNormalFlipGreen != 0) {
                 tangentSpaceNormal.y = -tangentSpaceNormal.y;
             }
             tangentSpaceNormal.xy *= uNormalScale;
-            normal = SafeNormalizeUVE(mat3(tangent, bitangent, normal) * tangentSpaceNormal);
+            normal = SafeNormalize(mat3(tangent, bitangent, normal) * tangentSpaceNormal);
         }
     }
 
     if (uShadingMode == 4) {
-        FragColor = ComposeOutputUVE(normal * 0.5 + 0.5, surfaceOpacity, 0.0);
+        FragColor = ComposeOutput(normal * 0.5 + 0.5, surfaceOpacity, 0.0);
         return;
     }
 
     vec3 viewDirection = uOrthographic != 0
-                             ? SafeNormalizeUVE(-uCameraForward)
-                             : SafeNormalizeUVE(uViewPosition - vWorldPosition);
+                             ? SafeNormalize(-uCameraForward)
+                             : SafeNormalize(uViewPosition - vWorldPosition);
     // For two-sided geometry or backfaces, orient the normal outwards from the observed face.
     if (!gl_FrontFacing) {
         normal = -normal;
@@ -1420,35 +1420,35 @@ void main() {
         albedo = vec3(0.82);
     }
 
-    vec3 metallicRoughnessSample = ReadMapUVE(uMetallicRoughnessTexture, uv1, uv2, uMetallicRoughnessMapTransform, uMetallicRoughnessMapControl, vec4(1.0)).rgb;
+    vec3 metallicRoughnessSample = ReadMap(uMetallicRoughnessTexture, uv1, uv2, uMetallicRoughnessMapTransform, uMetallicRoughnessMapControl, vec4(1.0)).rgb;
     float metallic = uShadingMode == 3 ? 0.0 : clamp(uMetallic * metallicRoughnessSample.b, 0.0, 1.0);
     float rawRoughness = uShadingMode == 3 ? 0.5 : clamp(uRoughness * metallicRoughnessSample.g, 0.04, 1.0);
-    float roughness = ApplyGeometricSpecularAAUVE(geometricNormal, normal, rawRoughness);
+    float roughness = ApplyGeometricSpecularAA(geometricNormal, normal, rawRoughness);
     float dielectricSpec = clamp(uDielectricSpecular, 0.0, 1.0);
     float dielectricF0 = 0.16 * dielectricSpec * dielectricSpec;
     vec3 ambientBaseReflectance = mix(vec3(dielectricF0), albedo, metallic);
     float normalDotViewAmbient = max(dot(normal, viewDirection), 0.001);
-    vec2 envBrdf = EnvBrdfApproxUVE(roughness, normalDotViewAmbient);
+    vec2 envBrdf = EnvBrdfApprox(roughness, normalDotViewAmbient);
     vec3 energyCompensation = vec3(1.0) + ambientBaseReflectance * (1.0 / max(envBrdf.x + envBrdf.y, 0.05) - 1.0);
     vec3 ambientFresnel =
         ambientBaseReflectance +
         (max(vec3(1.0 - roughness), ambientBaseReflectance) - ambientBaseReflectance) *
-            Pow5UVE(clamp(1.0 - normalDotViewAmbient, 0.0, 1.0));
+            Pow5(clamp(1.0 - normalDotViewAmbient, 0.0, 1.0));
     vec3 ambientDiffuseWeight = (vec3(1.0) - ambientFresnel) * (1.0 - metallic);
-    vec3 ambientColor = AmbientFromSourceUVE(normal);
+    vec3 ambientColor = AmbientFromSource(normal);
     vec3 reflection = reflect(-viewDirection, normal);
     vec3 specEnv = ambientColor;
     if (uSkyReflectionsLinked != 0) {
-        specEnv = SkyReflectionUVE(reflection, roughness);
+        specEnv = SkyReflection(reflection, roughness);
     }
     if (uAmbientSource == 3 && uAmbientEnvironmentMapEnabled != 0) {
-        specEnv = max(uAmbientColor, vec3(0.0)) * SampleEnvironmentSpecularUVE(reflection, roughness);
+        specEnv = max(uAmbientColor, vec3(0.0)) * SampleEnvironmentSpecular(reflection, roughness);
     }
     if (uReflectionProbeEnabled != 0) {
-        float probeWeight = ReflectionProbeInfluenceUVE(vWorldPosition);
+        float probeWeight = ReflectionProbeInfluence(vWorldPosition);
         if (probeWeight > 0.0) {
-            vec3 sampleDir = ReflectionProbeBoxProjectUVE(vWorldPosition, reflection);
-            vec3 captured = SampleReflectionProbeUVE(sampleDir, roughness);
+            vec3 sampleDir = ReflectionProbeBoxProject(vWorldPosition, reflection);
+            vec3 captured = SampleReflectionProbe(sampleDir, roughness);
             float secondaryBlend = clamp(uReflectionProbeBlendWeight, 0.0, 1.0);
             if (secondaryBlend > 0.001) {
                 vec3 secondaryCaptured = texture(uReflectionProbeSecondaryCube, sampleDir).rgb;
@@ -1463,7 +1463,7 @@ void main() {
     vec3 indirectLighting = (ambientDiffuse + ambientSpecular) * ambientOcclusion;
     vec3 emissiveLighting =
         uEmissiveColor * max(uEmissiveEnergy, 0.0) *
-        ReadMapUVE(uEmissiveTexture, uv1, uv2, uEmissiveMapTransform, uEmissiveMapControl, vec4(1.0)).rgb;
+        ReadMap(uEmissiveTexture, uv1, uv2, uEmissiveMapTransform, uEmissiveMapControl, vec4(1.0)).rgb;
     vec3 lighting = indirectLighting + emissiveLighting;
 
     vec3 baseReflectance = mix(vec3(dielectricF0), albedo, metallic);
@@ -1477,7 +1477,7 @@ void main() {
         vec2 screenUv = clamp(gl_FragCoord.xy / max(uClusterViewportSize, vec2(1.0)), vec2(0.0), vec2(0.999999));
         int cx = clamp(int(screenUv.x * float(gridX)), 0, gridX - 1);
         int cy = clamp(int(screenUv.y * float(gridY)), 0, gridY - 1);
-        float positiveViewDepth = max(dot(vWorldPosition - uViewPosition, SafeNormalizeUVE(uCameraForward)),
+        float positiveViewDepth = max(dot(vWorldPosition - uViewPosition, SafeNormalize(uCameraForward)),
                                       max(uClusterNearFar.x, 0.001));
         float safeNear = max(uClusterNearFar.x, 0.001);
         float safeFar = max(uClusterNearFar.y, safeNear + 0.01);
@@ -1488,8 +1488,8 @@ void main() {
         uint count = min(cell.y, 64u);
         for (uint ci = 0u; ci < count; ++ci) {
             uint li = clusteredLightIndices[cell.x + ci];
-            ClusteredGpuLightUVE gpuLight = clusteredLights[li];
-            LightUVE light;
+            ClusteredGpuLight gpuLight = clusteredLights[li];
+            Light light;
             light.type = int(gpuLight.directionAndType.w + 0.5);
             light.position = gpuLight.positionAndRange.xyz;
             light.direction = gpuLight.directionAndType.xyz;
@@ -1506,7 +1506,7 @@ void main() {
             vec3 lightDirection;
             float attenuation = 1.0;
             if (light.type == 0) {
-                lightDirection = SafeNormalizeUVE(-light.direction);
+                lightDirection = SafeNormalize(-light.direction);
             } else {
                 vec3 toLight = light.position - vWorldPosition;
                 float distanceToLight = max(length(toLight), 0.0001);
@@ -1520,10 +1520,10 @@ void main() {
                 }
                 if (light.type == 2) {
                     float cosOuter = cos(radians(light.spotAngleDegrees));
-                    float cosInner = cos(radians(light.spotAngleDegrees) * kSpotInnerConeRatioUVE);
-                    float coneAlignment = dot(-lightDirection, SafeNormalizeUVE(light.direction));
+                    float cosInner = cos(radians(light.spotAngleDegrees) * kSpotInnerConeRatio);
+                    float coneAlignment = dot(-lightDirection, SafeNormalize(light.direction));
                     float coneFalloff = clamp((coneAlignment - cosOuter) /
-                                                  max(cosInner - cosOuter, kBrdfEpsilonUVE),
+                                                  max(cosInner - cosOuter, kBrdfEpsilon),
                                               0.0, 1.0);
                     attenuation *= coneFalloff * coneFalloff;
                 }
@@ -1532,30 +1532,30 @@ void main() {
             if (normalDotLight <= 0.0 || attenuation <= 0.0) {
                 continue;
             }
-            vec3 halfDirection = SafeNormalizeUVE(lightDirection + viewDirection);
+            vec3 halfDirection = SafeNormalize(lightDirection + viewDirection);
             float normalDotHalf = max(dot(normal, halfDirection), 0.0);
             float halfDotView = max(dot(halfDirection, viewDirection), 0.0);
-            vec3 fresnel = FresnelSchlickUVE(halfDotView, baseReflectance);
-            float distribution = DistributionGgxUVE(normalDotHalf, roughness);
-            float visibility = VisibilitySmithGGXCorrelatedUVE(normalDotView, normalDotLight, roughness);
+            vec3 fresnel = FresnelSchlick(halfDotView, baseReflectance);
+            float distribution = DistributionGgx(normalDotHalf, roughness);
+            float visibility = VisibilitySmithGGXCorrelated(normalDotView, normalDotLight, roughness);
             vec3 specular = (distribution * visibility * fresnel) * energyCompensation * max(light.specular, 0.0);
             vec3 diffuseWeight = (vec3(1.0) - fresnel) * (1.0 - metallic);
-            vec3 diffuse = diffuseWeight * albedo / kPiUVE;
+            vec3 diffuse = diffuseWeight * albedo / kPi;
             vec3 radiance = light.color * light.intensity * attenuation;
             vec3 directContribution = (diffuse + specular) * radiance * normalDotLight;
             if (uDisableReceiveShadows == 0) {
                 int shadowSlot = encodedShadowSlot > 0 ? (encodedShadowSlot - 1) : -1;
                 if (light.type == 0) {
-                    float shadowFactor = DirectionalShadowFactorUVE(normal, lightDirection);
+                    float shadowFactor = DirectionalShadowFactor(normal, lightDirection);
                     if (isnan(shadowFactor) || isinf(shadowFactor)) {
                         shadowFactor = 1.0;
                     }
                     directContribution *= clamp(shadowFactor, 0.0, 1.0);
                 } else if (light.type == 1 && shadowSlot >= 0 && shadowSlot < 4) {
-                    float shadowFactor = PointShadowFactorUVE(shadowSlot, normal, light.position, light.range);
+                    float shadowFactor = PointShadowFactor(shadowSlot, normal, light.position, light.range);
                     directContribution *= clamp(shadowFactor, 0.0, 1.0);
                 } else if (light.type == 2 && shadowSlot >= 0 && shadowSlot < 4) {
-                    float shadowFactor = SpotShadowFactorUVE(shadowSlot, normal, lightDirection);
+                    float shadowFactor = SpotShadowFactor(shadowSlot, normal, lightDirection);
                     directContribution *= clamp(shadowFactor, 0.0, 1.0);
                 }
             }
@@ -1575,7 +1575,7 @@ void main() {
 #endif
         int activeLightCount = uActiveLightCount < 0 ? 0 : (uActiveLightCount > 0 ? min(uActiveLightCount, maxProfileLights) : maxProfileLights);
         for (int lightIndex = 0; lightIndex < activeLightCount; ++lightIndex) {
-            LightUVE light = uLights[lightIndex];
+            Light light = uLights[lightIndex];
             if (light.intensity <= 0.0) {
                 continue;
             }
@@ -1586,7 +1586,7 @@ void main() {
             vec3 lightDirection;
             float attenuation = 1.0;
             if (light.type == 0) {
-                lightDirection = SafeNormalizeUVE(-light.direction);
+                lightDirection = SafeNormalize(-light.direction);
             } else {
                 vec3 toLight = light.position - vWorldPosition;
                 float distanceToLight = max(length(toLight), 0.0001);
@@ -1600,10 +1600,10 @@ void main() {
                 }
                 if (light.type == 2) {
                     float cosOuter = cos(radians(light.spotAngleDegrees));
-                    float cosInner = cos(radians(light.spotAngleDegrees) * kSpotInnerConeRatioUVE);
-                    float coneAlignment = dot(-lightDirection, SafeNormalizeUVE(light.direction));
+                    float cosInner = cos(radians(light.spotAngleDegrees) * kSpotInnerConeRatio);
+                    float coneAlignment = dot(-lightDirection, SafeNormalize(light.direction));
                     float coneFalloff = clamp((coneAlignment - cosOuter) /
-                                                  max(cosInner - cosOuter, kBrdfEpsilonUVE),
+                                                  max(cosInner - cosOuter, kBrdfEpsilon),
                                               0.0, 1.0);
                     attenuation *= coneFalloff * coneFalloff;
                 }
@@ -1614,15 +1614,15 @@ void main() {
                 continue;
             }
 
-            vec3 halfDirection = SafeNormalizeUVE(lightDirection + viewDirection);
+            vec3 halfDirection = SafeNormalize(lightDirection + viewDirection);
             float normalDotHalf = max(dot(normal, halfDirection), 0.0);
             float halfDotView = max(dot(halfDirection, viewDirection), 0.0);
-            vec3 fresnel = FresnelSchlickUVE(halfDotView, baseReflectance);
-            float distribution = DistributionGgxUVE(normalDotHalf, roughness);
-            float visibility = VisibilitySmithGGXCorrelatedUVE(normalDotView, normalDotLight, roughness);
+            vec3 fresnel = FresnelSchlick(halfDotView, baseReflectance);
+            float distribution = DistributionGgx(normalDotHalf, roughness);
+            float visibility = VisibilitySmithGGXCorrelated(normalDotView, normalDotLight, roughness);
             vec3 specular = (distribution * visibility * fresnel) * energyCompensation * max(light.specular, 0.0);
             vec3 diffuseWeight = (vec3(1.0) - fresnel) * (1.0 - metallic);
-            vec3 diffuse = diffuseWeight * albedo / kPiUVE;
+            vec3 diffuse = diffuseWeight * albedo / kPi;
             vec3 radiance = light.color * light.intensity * attenuation;
             vec3 directContribution = (diffuse + specular) * radiance * normalDotLight;
 
@@ -1631,16 +1631,16 @@ void main() {
                 int shadowSlot = encodedShadowSlot > 0 ? (encodedShadowSlot - 1)
                                : (encodedShadowSlot < 0 ? -1 : (lightIndex < 4 ? lightIndex : -1));
                 if (light.type == 0) {
-                    float shadowFactor = DirectionalShadowFactorUVE(normal, lightDirection);
+                    float shadowFactor = DirectionalShadowFactor(normal, lightDirection);
                     if (isnan(shadowFactor) || isinf(shadowFactor)) {
                         shadowFactor = 1.0;
                     }
                     directContribution *= clamp(shadowFactor, 0.0, 1.0);
                 } else if (light.type == 1 && shadowSlot >= 0 && shadowSlot < 4) {
-                    float shadowFactor = PointShadowFactorUVE(shadowSlot, normal, light.position, light.range);
+                    float shadowFactor = PointShadowFactor(shadowSlot, normal, light.position, light.range);
                     directContribution *= clamp(shadowFactor, 0.0, 1.0);
                 } else if (light.type == 2 && shadowSlot >= 0 && shadowSlot < 4) {
-                    float shadowFactor = SpotShadowFactorUVE(shadowSlot, normal, lightDirection);
+                    float shadowFactor = SpotShadowFactor(shadowSlot, normal, lightDirection);
                     directContribution *= clamp(shadowFactor, 0.0, 1.0);
                 }
             }
@@ -1659,8 +1659,8 @@ void main() {
     FragColor = vec4(finalColor * a * weight, a * weight);
     FragRevealage = vec4(-log(max(1.0 - a, 1.0e-4)), 0.0, 0.0, 0.0);
 #else
-    float indirectWeight = clamp(LuminanceUVE(indirectLighting) / max(LuminanceUVE(finalColor), 1.0e-4), 0.0, 1.0);
-    FragColor = ComposeOutputUVE(finalColor, surfaceOpacity, indirectWeight);
+    float indirectWeight = clamp(Luminance(indirectLighting) / max(Luminance(finalColor), 1.0e-4), 0.0, 1.0);
+    FragColor = ComposeOutput(finalColor, surfaceOpacity, indirectWeight);
 #endif
 }
 #endif

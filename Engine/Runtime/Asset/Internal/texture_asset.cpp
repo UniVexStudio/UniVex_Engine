@@ -33,56 +33,56 @@ namespace {
 
 // The original texture payload had no discriminator. Version 1 added import metadata, version 2
 // added raw mip levels, and version 3 adds a storage-encoding tag plus portable Basis/KTX2 bytes.
-constexpr std::array<char, 4U> kTexturePayloadMagicUVE{'U', 'V', 'T', 'X'};
-constexpr std::array<std::uint8_t, 12U> kKtx2IdentifierUVE{
+constexpr std::array<char, 4U> kTexturePayloadMagic{'U', 'V', 'T', 'X'};
+constexpr std::array<std::uint8_t, 12U> kKtx2Identifier{
     0xABU, 0x4BU, 0x54U, 0x58U, 0x20U, 0x32U, 0x30U, 0xBBU, 0x0DU, 0x0AU, 0x1AU, 0x0AU};
-constexpr std::uint32_t kTexturePayloadMetadataVersionUVE = 1U;
-constexpr std::uint32_t kTexturePayloadMipmapVersionUVE = 2U;
-constexpr std::uint32_t kTexturePayloadVersionUVE = 3U;
+constexpr std::uint32_t kTexturePayloadMetadataVersion = 1U;
+constexpr std::uint32_t kTexturePayloadMipmapVersion = 2U;
+constexpr std::uint32_t kTexturePayloadVersion = 3U;
 
-[[nodiscard]] bool IsTextureColorSpaceValidUVE(const TextureAssetColorSpaceUVE colorSpace) noexcept {
+[[nodiscard]] bool IsTextureColorSpaceValid(const TextureAssetColorSpace colorSpace) noexcept {
     switch (colorSpace) {
-        case TextureAssetColorSpaceUVE::Linear:
-        case TextureAssetColorSpaceUVE::Srgb:
+        case TextureAssetColorSpace::Linear:
+        case TextureAssetColorSpace::Srgb:
             return true;
     }
     return false;
 }
 
-[[nodiscard]] bool IsTextureUsageValidUVE(const TextureUsageUVE usage) noexcept {
+[[nodiscard]] bool IsTextureUsageValid(const TextureUsage usage) noexcept {
     switch (usage) {
-        case TextureUsageUVE::Generic:
-        case TextureUsageUVE::Color:
-        case TextureUsageUVE::Normal:
-        case TextureUsageUVE::Data:
-        case TextureUsageUVE::Hdr:
+        case TextureUsage::Generic:
+        case TextureUsage::Color:
+        case TextureUsage::Normal:
+        case TextureUsage::Data:
+        case TextureUsage::Hdr:
             return true;
     }
     return false;
 }
 
-[[nodiscard]] bool IsTexturePayloadEncodingValidUVE(const TexturePayloadEncodingUVE encoding) noexcept {
+[[nodiscard]] bool IsTexturePayloadEncodingValid(const TexturePayloadEncoding encoding) noexcept {
     switch (encoding) {
-        case TexturePayloadEncodingUVE::RawPixels:
-        case TexturePayloadEncodingUVE::BasisUniversalKtx2:
+        case TexturePayloadEncoding::RawPixels:
+        case TexturePayloadEncoding::BasisUniversalKtx2:
             return true;
     }
     return false;
 }
 
-[[nodiscard]] bool HasVersionedTexturePayloadMagicUVE(const std::vector<std::byte>& payload) noexcept {
-    return payload.size() >= kTexturePayloadMagicUVE.size() &&
-           std::memcmp(payload.data(), kTexturePayloadMagicUVE.data(), kTexturePayloadMagicUVE.size()) == 0;
+[[nodiscard]] bool HasVersionedTexturePayloadMagic(const std::vector<std::byte>& payload) noexcept {
+    return payload.size() >= kTexturePayloadMagic.size() &&
+           std::memcmp(payload.data(), kTexturePayloadMagic.data(), kTexturePayloadMagic.size()) == 0;
 }
 
-[[nodiscard]] bool CalculateExpectedPixelBytesUVE(const std::uint32_t width, const std::uint32_t height,
-                                                   const TextureAssetFormatUVE format,
+[[nodiscard]] bool CalculateExpectedPixelBytes(const std::uint32_t width, const std::uint32_t height,
+                                                   const TextureAssetFormat format,
                                                    std::uint64_t& outExpectedBytes) noexcept {
     if (width == 0U || height == 0U) {
         return false;
     }
 
-    const std::uint32_t bytesPerPixel = BytesPerPixelUVE(format);
+    const std::uint32_t bytesPerPixel = BytesPerPixel(format);
     if (bytesPerPixel == 0U) {
         return false;
     }
@@ -95,7 +95,7 @@ constexpr std::uint32_t kTexturePayloadVersionUVE = 3U;
     return outExpectedBytes <= std::numeric_limits<std::size_t>::max();
 }
 
-[[nodiscard]] std::uint32_t MaximumMipLevelCountUVE(std::uint32_t width, std::uint32_t height) noexcept {
+[[nodiscard]] std::uint32_t MaximumMipLevelCount(std::uint32_t width, std::uint32_t height) noexcept {
     if (width == 0U || height == 0U) {
         return 0U;
     }
@@ -108,20 +108,20 @@ constexpr std::uint32_t kTexturePayloadVersionUVE = 3U;
     return levelCount;
 }
 
-[[nodiscard]] bool IsBasisKtx2PayloadStructurallyValidUVE(const TextureAssetUVE& texture) noexcept {
+[[nodiscard]] bool IsBasisKtx2PayloadStructurallyValid(const TextureAsset& texture) noexcept {
     const std::vector<std::byte>& bytes = texture.basisKtx2Data;
-    constexpr std::size_t kKtx2HeaderSizeUVE = 80U;
-    constexpr std::size_t kKtx2LevelIndexEntrySizeUVE = 24U;
-    if (bytes.size() < kKtx2HeaderSizeUVE || bytes.size() > std::numeric_limits<std::uint32_t>::max()) {
+    constexpr std::size_t kKtx2HeaderSize = 80U;
+    constexpr std::size_t kKtx2LevelIndexEntrySize = 24U;
+    if (bytes.size() < kKtx2HeaderSize || bytes.size() > std::numeric_limits<std::uint32_t>::max()) {
         return false;
     }
-    for (std::size_t index = 0U; index < kKtx2IdentifierUVE.size(); ++index) {
-        if (std::to_integer<std::uint8_t>(bytes[index]) != kKtx2IdentifierUVE[index]) {
+    for (std::size_t index = 0U; index < kKtx2Identifier.size(); ++index) {
+        if (std::to_integer<std::uint8_t>(bytes[index]) != kKtx2Identifier[index]) {
             return false;
         }
     }
 
-    std::size_t offset = kKtx2IdentifierUVE.size();
+    std::size_t offset = kKtx2Identifier.size();
     std::uint32_t vkFormat = 0U;
     std::uint32_t typeSize = 0U;
     std::uint32_t width = 0U;
@@ -131,42 +131,42 @@ constexpr std::uint32_t kTexturePayloadVersionUVE = 3U;
     std::uint32_t faceCount = 0U;
     std::uint32_t levelCount = 0U;
     std::uint32_t supercompressionScheme = 0U;
-    if (!Utilities::ReadUint32LeFromBufferUVE(bytes, offset, vkFormat) ||
-        !Utilities::ReadUint32LeFromBufferUVE(bytes, offset, typeSize) ||
-        !Utilities::ReadUint32LeFromBufferUVE(bytes, offset, width) ||
-        !Utilities::ReadUint32LeFromBufferUVE(bytes, offset, height) ||
-        !Utilities::ReadUint32LeFromBufferUVE(bytes, offset, depth) ||
-        !Utilities::ReadUint32LeFromBufferUVE(bytes, offset, layerCount) ||
-        !Utilities::ReadUint32LeFromBufferUVE(bytes, offset, faceCount) ||
-        !Utilities::ReadUint32LeFromBufferUVE(bytes, offset, levelCount) ||
-        !Utilities::ReadUint32LeFromBufferUVE(bytes, offset, supercompressionScheme)) {
+    if (!Utilities::ReadUint32LeFromBuffer(bytes, offset, vkFormat) ||
+        !Utilities::ReadUint32LeFromBuffer(bytes, offset, typeSize) ||
+        !Utilities::ReadUint32LeFromBuffer(bytes, offset, width) ||
+        !Utilities::ReadUint32LeFromBuffer(bytes, offset, height) ||
+        !Utilities::ReadUint32LeFromBuffer(bytes, offset, depth) ||
+        !Utilities::ReadUint32LeFromBuffer(bytes, offset, layerCount) ||
+        !Utilities::ReadUint32LeFromBuffer(bytes, offset, faceCount) ||
+        !Utilities::ReadUint32LeFromBuffer(bytes, offset, levelCount) ||
+        !Utilities::ReadUint32LeFromBuffer(bytes, offset, supercompressionScheme)) {
         return false;
     }
 
-    const std::uint32_t maximumMipCount = MaximumMipLevelCountUVE(texture.width, texture.height);
+    const std::uint32_t maximumMipCount = MaximumMipLevelCount(texture.width, texture.height);
     if (vkFormat != 0U || typeSize != 1U || width != texture.width || height != texture.height ||
         depth != 0U || layerCount != 0U || faceCount != 1U || levelCount == 0U ||
         levelCount > maximumMipCount || (supercompressionScheme != 0U && supercompressionScheme != 1U)) {
         return false;
     }
-    if (std::cmp_greater(levelCount, (std::numeric_limits<std::size_t>::max() - kKtx2HeaderSizeUVE) /
-                         kKtx2LevelIndexEntrySizeUVE)) {
+    if (std::cmp_greater(levelCount, (std::numeric_limits<std::size_t>::max() - kKtx2HeaderSize) /
+                         kKtx2LevelIndexEntrySize)) {
         return false;
     }
-    const std::size_t levelIndexEnd = kKtx2HeaderSizeUVE +
-                                      static_cast<std::size_t>(levelCount) * kKtx2LevelIndexEntrySizeUVE;
+    const std::size_t levelIndexEnd = kKtx2HeaderSize +
+                                      static_cast<std::size_t>(levelCount) * kKtx2LevelIndexEntrySize;
     if (levelIndexEnd > bytes.size()) {
         return false;
     }
 
-    offset = kKtx2HeaderSizeUVE;
+    offset = kKtx2HeaderSize;
     for (std::uint32_t level = 0U; level < levelCount; ++level) {
         std::uint64_t levelOffset = 0U;
         std::uint64_t levelLength = 0U;
         std::uint64_t uncompressedLength = 0U;
-        if (!Utilities::ReadUint64LeFromBufferUVE(bytes, offset, levelOffset) ||
-            !Utilities::ReadUint64LeFromBufferUVE(bytes, offset, levelLength) ||
-            !Utilities::ReadUint64LeFromBufferUVE(bytes, offset, uncompressedLength)) {
+        if (!Utilities::ReadUint64LeFromBuffer(bytes, offset, levelOffset) ||
+            !Utilities::ReadUint64LeFromBuffer(bytes, offset, levelLength) ||
+            !Utilities::ReadUint64LeFromBuffer(bytes, offset, uncompressedLength)) {
             return false;
         }
         // KTX2 BasisLZ (ETC1S) requires uncompressedByteLength == 0; uncompressed UASTC
@@ -181,7 +181,7 @@ constexpr std::uint32_t kTexturePayloadVersionUVE = 3U;
     return true;
 }
 
-[[nodiscard]] bool ReadPixelBytesUVE(const std::vector<std::byte>& payload, std::size_t& offset,
+[[nodiscard]] bool ReadPixelBytes(const std::vector<std::byte>& payload, std::size_t& offset,
                                      const std::uint64_t byteCount,
                                      std::vector<std::byte>& outPixels) {
     if (byteCount > std::numeric_limits<std::size_t>::max() || offset > payload.size() ||
@@ -197,54 +197,54 @@ constexpr std::uint32_t kTexturePayloadVersionUVE = 3U;
 
 } // namespace
 
-std::uint32_t BytesPerPixelUVE(const TextureAssetFormatUVE format) noexcept {
+std::uint32_t BytesPerPixel(const TextureAssetFormat format) noexcept {
     switch (format) {
-        case TextureAssetFormatUVE::RGBA8Unorm:
+        case TextureAssetFormat::RGBA8Unorm:
             return 4U;
-        case TextureAssetFormatUVE::RGBA16Float:
+        case TextureAssetFormat::RGBA16Float:
             return 8U;
     }
     return 0U;
 }
 
-bool IsTextureAssetMetadataValidUVE(const TextureAssetUVE& texture) noexcept {
-    return BytesPerPixelUVE(texture.format) != 0U && IsTextureColorSpaceValidUVE(texture.colorSpace) &&
-           IsTextureUsageValidUVE(texture.usage) &&
-           (texture.colorSpace != TextureAssetColorSpaceUVE::Srgb ||
-            texture.format == TextureAssetFormatUVE::RGBA8Unorm);
+bool IsTextureAssetMetadataValid(const TextureAsset& texture) noexcept {
+    return BytesPerPixel(texture.format) != 0U && IsTextureColorSpaceValid(texture.colorSpace) &&
+           IsTextureUsageValid(texture.usage) &&
+           (texture.colorSpace != TextureAssetColorSpace::Srgb ||
+            texture.format == TextureAssetFormat::RGBA8Unorm);
 }
 
-bool IsTextureAssetValidUVE(const TextureAssetUVE& texture) noexcept {
-    if (!IsTextureAssetMetadataValidUVE(texture) || !IsTexturePayloadEncodingValidUVE(texture.payloadEncoding)) {
+bool IsTextureAssetValid(const TextureAsset& texture) noexcept {
+    if (!IsTextureAssetMetadataValid(texture) || !IsTexturePayloadEncodingValid(texture.payloadEncoding)) {
         return false;
     }
-    if (texture.payloadEncoding == TexturePayloadEncodingUVE::BasisUniversalKtx2) {
-        return texture.format == TextureAssetFormatUVE::RGBA8Unorm && texture.pixels.empty() &&
-               texture.mipLevels.empty() && IsBasisKtx2PayloadStructurallyValidUVE(texture);
+    if (texture.payloadEncoding == TexturePayloadEncoding::BasisUniversalKtx2) {
+        return texture.format == TextureAssetFormat::RGBA8Unorm && texture.pixels.empty() &&
+               texture.mipLevels.empty() && IsBasisKtx2PayloadStructurallyValid(texture);
     }
     if (!texture.basisKtx2Data.empty()) {
         return false;
     }
 
     std::uint64_t expectedPixelBytes = 0U;
-    if (!CalculateExpectedPixelBytesUVE(texture.width, texture.height, texture.format, expectedPixelBytes) ||
+    if (!CalculateExpectedPixelBytes(texture.width, texture.height, texture.format, expectedPixelBytes) ||
         expectedPixelBytes != texture.pixels.size()) {
         return false;
     }
 
-    const std::uint32_t maximumMipCount = MaximumMipLevelCountUVE(texture.width, texture.height);
+    const std::uint32_t maximumMipCount = MaximumMipLevelCount(texture.width, texture.height);
     if (texture.mipLevels.size() > static_cast<std::size_t>(maximumMipCount - 1U)) {
         return false;
     }
     std::uint32_t expectedWidth = texture.width;
     std::uint32_t expectedHeight = texture.height;
-    for (const TextureMipLevelUVE& mipLevel : texture.mipLevels) {
+    for (const TextureMipLevel& mipLevel : texture.mipLevels) {
         expectedWidth = std::max(1U, expectedWidth / 2U);
         expectedHeight = std::max(1U, expectedHeight / 2U);
         if (mipLevel.width != expectedWidth || mipLevel.height != expectedHeight) {
             return false;
         }
-        if (!CalculateExpectedPixelBytesUVE(mipLevel.width, mipLevel.height, texture.format,
+        if (!CalculateExpectedPixelBytes(mipLevel.width, mipLevel.height, texture.format,
                                             expectedPixelBytes) ||
             expectedPixelBytes != mipLevel.pixels.size()) {
             return false;
@@ -253,30 +253,30 @@ bool IsTextureAssetValidUVE(const TextureAssetUVE& texture) noexcept {
     return true;
 }
 
-bool LoadTextureAssetUVE(const std::filesystem::path& path, TextureAssetUVE& outTexture) {
-    const std::optional<std::pair<UveFileHeaderUVE, std::vector<std::byte>>> file = ReadUveFileUVE(path);
+bool LoadTextureAsset(const std::filesystem::path& path, TextureAsset& outTexture) {
+    const std::optional<std::pair<UveFileHeader, std::vector<std::byte>>> file = ReadUveFile(path);
     if (!file.has_value()) {
-        return false; // ReadUveFileUVE already logged the specific reason.
+        return false; // ReadUveFile already logged the specific reason.
     }
-    if (file->first.assetType != AssetKindUVE::Texture) {
-        UVE_ERROR("TextureAssetUVE: \"{}\" is not a texture file (asset type {})", path.string(),
+    if (file->first.assetType != AssetKind::Texture) {
+        UVE_ERROR("TextureAsset: \"{}\" is not a texture file (asset type {})", path.string(),
                   static_cast<std::uint32_t>(file->first.assetType));
         return false;
     }
 
     const std::vector<std::byte>& payload = file->second;
-    const bool hasVersionedHeader = HasVersionedTexturePayloadMagicUVE(payload);
+    const bool hasVersionedHeader = HasVersionedTexturePayloadMagic(payload);
     std::uint32_t payloadVersion = 0U;
     std::size_t offset = 0U;
     if (hasVersionedHeader) {
-        offset += kTexturePayloadMagicUVE.size();
-        if (!Utilities::ReadUint32LeFromBufferUVE(payload, offset, payloadVersion)) {
-            UVE_ERROR("TextureAssetUVE: \"{}\" has a truncated payload version", path.string());
+        offset += kTexturePayloadMagic.size();
+        if (!Utilities::ReadUint32LeFromBuffer(payload, offset, payloadVersion)) {
+            UVE_ERROR("TextureAsset: \"{}\" has a truncated payload version", path.string());
             return false;
         }
-        if (payloadVersion != kTexturePayloadMetadataVersionUVE &&
-            payloadVersion != kTexturePayloadMipmapVersionUVE && payloadVersion != kTexturePayloadVersionUVE) {
-            UVE_ERROR("TextureAssetUVE: \"{}\" has unsupported texture payload version {}", path.string(),
+        if (payloadVersion != kTexturePayloadMetadataVersion &&
+            payloadVersion != kTexturePayloadMipmapVersion && payloadVersion != kTexturePayloadVersion) {
+            UVE_ERROR("TextureAsset: \"{}\" has unsupported texture payload version {}", path.string(),
                       payloadVersion);
             return false;
         }
@@ -285,43 +285,43 @@ bool LoadTextureAssetUVE(const std::filesystem::path& path, TextureAssetUVE& out
     std::uint32_t width = 0U;
     std::uint32_t height = 0U;
     std::uint32_t formatValue = 0U;
-    std::uint32_t colorSpaceValue = static_cast<std::uint32_t>(TextureAssetColorSpaceUVE::Linear);
-    std::uint32_t usageValue = static_cast<std::uint32_t>(TextureUsageUVE::Generic);
-    std::uint32_t encodingValue = static_cast<std::uint32_t>(TexturePayloadEncodingUVE::RawPixels);
-    if (!Utilities::ReadUint32LeFromBufferUVE(payload, offset, width) ||
-        !Utilities::ReadUint32LeFromBufferUVE(payload, offset, height) ||
-        !Utilities::ReadUint32LeFromBufferUVE(payload, offset, formatValue)) {
-        UVE_ERROR("TextureAssetUVE: \"{}\" has a truncated header", path.string());
+    std::uint32_t colorSpaceValue = static_cast<std::uint32_t>(TextureAssetColorSpace::Linear);
+    std::uint32_t usageValue = static_cast<std::uint32_t>(TextureUsage::Generic);
+    std::uint32_t encodingValue = static_cast<std::uint32_t>(TexturePayloadEncoding::RawPixels);
+    if (!Utilities::ReadUint32LeFromBuffer(payload, offset, width) ||
+        !Utilities::ReadUint32LeFromBuffer(payload, offset, height) ||
+        !Utilities::ReadUint32LeFromBuffer(payload, offset, formatValue)) {
+        UVE_ERROR("TextureAsset: \"{}\" has a truncated header", path.string());
         return false;
     }
-    if (payloadVersion >= kTexturePayloadMetadataVersionUVE &&
-        (!Utilities::ReadUint32LeFromBufferUVE(payload, offset, colorSpaceValue) ||
-         !Utilities::ReadUint32LeFromBufferUVE(payload, offset, usageValue))) {
-        UVE_ERROR("TextureAssetUVE: \"{}\" has truncated texture metadata", path.string());
+    if (payloadVersion >= kTexturePayloadMetadataVersion &&
+        (!Utilities::ReadUint32LeFromBuffer(payload, offset, colorSpaceValue) ||
+         !Utilities::ReadUint32LeFromBuffer(payload, offset, usageValue))) {
+        UVE_ERROR("TextureAsset: \"{}\" has truncated texture metadata", path.string());
         return false;
     }
-    if (payloadVersion == kTexturePayloadVersionUVE &&
-        !Utilities::ReadUint32LeFromBufferUVE(payload, offset, encodingValue)) {
-        UVE_ERROR("TextureAssetUVE: \"{}\" has a truncated texture storage encoding", path.string());
+    if (payloadVersion == kTexturePayloadVersion &&
+        !Utilities::ReadUint32LeFromBuffer(payload, offset, encodingValue)) {
+        UVE_ERROR("TextureAsset: \"{}\" has a truncated texture storage encoding", path.string());
         return false;
     }
 
-    const auto format = static_cast<TextureAssetFormatUVE>(formatValue);
-    const auto colorSpace = static_cast<TextureAssetColorSpaceUVE>(colorSpaceValue);
-    const auto usage = static_cast<TextureUsageUVE>(usageValue);
-    const auto payloadEncoding = static_cast<TexturePayloadEncodingUVE>(encodingValue);
-    if (BytesPerPixelUVE(format) == 0U || !IsTextureColorSpaceValidUVE(colorSpace) ||
-        !IsTextureUsageValidUVE(usage) || !IsTexturePayloadEncodingValidUVE(payloadEncoding)) {
-        UVE_ERROR("TextureAssetUVE: \"{}\" has an unknown format, color space, usage, or storage encoding",
+    const auto format = static_cast<TextureAssetFormat>(formatValue);
+    const auto colorSpace = static_cast<TextureAssetColorSpace>(colorSpaceValue);
+    const auto usage = static_cast<TextureUsage>(usageValue);
+    const auto payloadEncoding = static_cast<TexturePayloadEncoding>(encodingValue);
+    if (BytesPerPixel(format) == 0U || !IsTextureColorSpaceValid(colorSpace) ||
+        !IsTextureUsageValid(usage) || !IsTexturePayloadEncodingValid(payloadEncoding)) {
+        UVE_ERROR("TextureAsset: \"{}\" has an unknown format, color space, usage, or storage encoding",
                   path.string());
         return false;
     }
-    if (colorSpace == TextureAssetColorSpaceUVE::Srgb && format != TextureAssetFormatUVE::RGBA8Unorm) {
-        UVE_ERROR("TextureAssetUVE: \"{}\" uses sRGB color space with an unsupported pixel format", path.string());
+    if (colorSpace == TextureAssetColorSpace::Srgb && format != TextureAssetFormat::RGBA8Unorm) {
+        UVE_ERROR("TextureAsset: \"{}\" uses sRGB color space with an unsupported pixel format", path.string());
         return false;
     }
 
-    TextureAssetUVE candidate;
+    TextureAsset candidate;
     candidate.width = width;
     candidate.height = height;
     candidate.format = format;
@@ -330,42 +330,42 @@ bool LoadTextureAssetUVE(const std::filesystem::path& path, TextureAssetUVE& out
     candidate.payloadEncoding = payloadEncoding;
 
     std::uint64_t byteCount = 0U;
-    if (payloadEncoding == TexturePayloadEncodingUVE::BasisUniversalKtx2) {
-        if (payloadVersion != kTexturePayloadVersionUVE ||
-            !Utilities::ReadUint64LeFromBufferUVE(payload, offset, byteCount) ||
-            !ReadPixelBytesUVE(payload, offset, byteCount, candidate.basisKtx2Data)) {
-            UVE_ERROR("TextureAssetUVE: \"{}\" has a malformed or truncated Basis/KTX2 payload", path.string());
+    if (payloadEncoding == TexturePayloadEncoding::BasisUniversalKtx2) {
+        if (payloadVersion != kTexturePayloadVersion ||
+            !Utilities::ReadUint64LeFromBuffer(payload, offset, byteCount) ||
+            !ReadPixelBytes(payload, offset, byteCount, candidate.basisKtx2Data)) {
+            UVE_ERROR("TextureAsset: \"{}\" has a malformed or truncated Basis/KTX2 payload", path.string());
             return false;
         }
     } else {
-        if (!Utilities::ReadUint64LeFromBufferUVE(payload, offset, byteCount)) {
-            UVE_ERROR("TextureAssetUVE: \"{}\" has a truncated level-0 byte count", path.string());
+        if (!Utilities::ReadUint64LeFromBuffer(payload, offset, byteCount)) {
+            UVE_ERROR("TextureAsset: \"{}\" has a truncated level-0 byte count", path.string());
             return false;
         }
         std::uint64_t expectedPixelByteCount = 0U;
-        if (!CalculateExpectedPixelBytesUVE(width, height, format, expectedPixelByteCount)) {
-            UVE_ERROR("TextureAssetUVE: \"{}\" has zero or overflowing texture dimensions", path.string());
+        if (!CalculateExpectedPixelBytes(width, height, format, expectedPixelByteCount)) {
+            UVE_ERROR("TextureAsset: \"{}\" has zero or overflowing texture dimensions", path.string());
             return false;
         }
         if (byteCount != expectedPixelByteCount) {
-            UVE_ERROR("TextureAssetUVE: \"{}\" has {} pixel bytes, expected {} for a {}x{} texture",
+            UVE_ERROR("TextureAsset: \"{}\" has {} pixel bytes, expected {} for a {}x{} texture",
                       path.string(), byteCount, expectedPixelByteCount, width, height);
             return false;
         }
-        if (!ReadPixelBytesUVE(payload, offset, byteCount, candidate.pixels)) {
-            UVE_ERROR("TextureAssetUVE: \"{}\" has truncated level-0 pixel data", path.string());
+        if (!ReadPixelBytes(payload, offset, byteCount, candidate.pixels)) {
+            UVE_ERROR("TextureAsset: \"{}\" has truncated level-0 pixel data", path.string());
             return false;
         }
 
-        if (payloadVersion == kTexturePayloadMipmapVersionUVE || payloadVersion == kTexturePayloadVersionUVE) {
+        if (payloadVersion == kTexturePayloadMipmapVersion || payloadVersion == kTexturePayloadVersion) {
             std::uint32_t mipLevelCount = 0U;
-            if (!Utilities::ReadUint32LeFromBufferUVE(payload, offset, mipLevelCount)) {
-                UVE_ERROR("TextureAssetUVE: \"{}\" has a truncated mip-level count", path.string());
+            if (!Utilities::ReadUint32LeFromBuffer(payload, offset, mipLevelCount)) {
+                UVE_ERROR("TextureAsset: \"{}\" has a truncated mip-level count", path.string());
                 return false;
             }
-            const std::uint32_t maximumMipCount = MaximumMipLevelCountUVE(width, height);
+            const std::uint32_t maximumMipCount = MaximumMipLevelCount(width, height);
             if (mipLevelCount > maximumMipCount - 1U) {
-                UVE_ERROR("TextureAssetUVE: \"{}\" declares too many mip levels for {}x{}", path.string(),
+                UVE_ERROR("TextureAsset: \"{}\" declares too many mip levels for {}x{}", path.string(),
                           width, height);
                 return false;
             }
@@ -376,31 +376,31 @@ bool LoadTextureAssetUVE(const std::filesystem::path& path, TextureAssetUVE& out
                 std::uint32_t levelWidth = 0U;
                 std::uint32_t levelHeight = 0U;
                 std::uint64_t levelByteCount = 0U;
-                if (!Utilities::ReadUint32LeFromBufferUVE(payload, offset, levelWidth) ||
-                    !Utilities::ReadUint32LeFromBufferUVE(payload, offset, levelHeight) ||
-                    !Utilities::ReadUint64LeFromBufferUVE(payload, offset, levelByteCount)) {
-                    UVE_ERROR("TextureAssetUVE: \"{}\" has a truncated mip-level header", path.string());
+                if (!Utilities::ReadUint32LeFromBuffer(payload, offset, levelWidth) ||
+                    !Utilities::ReadUint32LeFromBuffer(payload, offset, levelHeight) ||
+                    !Utilities::ReadUint64LeFromBuffer(payload, offset, levelByteCount)) {
+                    UVE_ERROR("TextureAsset: \"{}\" has a truncated mip-level header", path.string());
                     return false;
                 }
                 expectedWidth = std::max(1U, expectedWidth / 2U);
                 expectedHeight = std::max(1U, expectedHeight / 2U);
                 if (levelWidth != expectedWidth || levelHeight != expectedHeight) {
-                    UVE_ERROR("TextureAssetUVE: \"{}\" mip level {} has invalid dimensions", path.string(),
+                    UVE_ERROR("TextureAsset: \"{}\" mip level {} has invalid dimensions", path.string(),
                               levelIndex + 1U);
                     return false;
                 }
                 std::uint64_t expectedLevelByteCount = 0U;
-                if (!CalculateExpectedPixelBytesUVE(levelWidth, levelHeight, format, expectedLevelByteCount) ||
+                if (!CalculateExpectedPixelBytes(levelWidth, levelHeight, format, expectedLevelByteCount) ||
                     levelByteCount != expectedLevelByteCount) {
-                    UVE_ERROR("TextureAssetUVE: \"{}\" mip level {} has an invalid byte count", path.string(),
+                    UVE_ERROR("TextureAsset: \"{}\" mip level {} has an invalid byte count", path.string(),
                               levelIndex + 1U);
                     return false;
                 }
-                TextureMipLevelUVE mipLevel;
+                TextureMipLevel mipLevel;
                 mipLevel.width = levelWidth;
                 mipLevel.height = levelHeight;
-                if (!ReadPixelBytesUVE(payload, offset, levelByteCount, mipLevel.pixels)) {
-                    UVE_ERROR("TextureAssetUVE: \"{}\" has truncated pixel data for mip level {}", path.string(),
+                if (!ReadPixelBytes(payload, offset, levelByteCount, mipLevel.pixels)) {
+                    UVE_ERROR("TextureAsset: \"{}\" has truncated pixel data for mip level {}", path.string(),
                               levelIndex + 1U);
                     return false;
                 }
@@ -412,61 +412,61 @@ bool LoadTextureAssetUVE(const std::filesystem::path& path, TextureAssetUVE& out
     // Versioned layouts are consumed exactly. Keep the original legacy tolerance for trailing
     // bytes because those files predate the payload discriminator and may be extended.
     if (hasVersionedHeader && offset != payload.size()) {
-        UVE_ERROR("TextureAssetUVE: \"{}\" has unexpected trailing bytes after texture data", path.string());
+        UVE_ERROR("TextureAsset: \"{}\" has unexpected trailing bytes after texture data", path.string());
         return false;
     }
-    if (!IsTextureAssetValidUVE(candidate)) {
-        UVE_ERROR("TextureAssetUVE: \"{}\" failed final texture, mip-chain, or KTX2 validation", path.string());
+    if (!IsTextureAssetValid(candidate)) {
+        UVE_ERROR("TextureAsset: \"{}\" failed final texture, mip-chain, or KTX2 validation", path.string());
         return false;
     }
     outTexture = std::move(candidate);
     return true;
 }
 
-bool SaveTextureAssetUVE(const TextureAssetUVE& texture, const std::filesystem::path& path) {
-    if (!IsTextureAssetValidUVE(texture)) {
-        UVE_ERROR("TextureAssetUVE: rejected invalid texture, mip chain, or KTX2 payload before writing {}",
+bool SaveTextureAsset(const TextureAsset& texture, const std::filesystem::path& path) {
+    if (!IsTextureAssetValid(texture)) {
+        UVE_ERROR("TextureAsset: rejected invalid texture, mip chain, or KTX2 payload before writing {}",
                   path.string());
         return false;
     }
 
     std::vector<std::byte> payload;
-    payload.reserve(kTexturePayloadMagicUVE.size() + 7U * sizeof(std::uint32_t) + sizeof(std::uint64_t) +
+    payload.reserve(kTexturePayloadMagic.size() + 7U * sizeof(std::uint32_t) + sizeof(std::uint64_t) +
                     texture.pixels.size() + texture.basisKtx2Data.size());
-    Utilities::AppendBytesUVE(payload, kTexturePayloadMagicUVE.data(), kTexturePayloadMagicUVE.size());
-    Utilities::AppendUint32LeUVE(payload, kTexturePayloadVersionUVE);
-    Utilities::AppendUint32LeUVE(payload, texture.width);
-    Utilities::AppendUint32LeUVE(payload, texture.height);
-    Utilities::AppendUint32LeUVE(payload, static_cast<std::uint32_t>(texture.format));
-    Utilities::AppendUint32LeUVE(payload, static_cast<std::uint32_t>(texture.colorSpace));
-    Utilities::AppendUint32LeUVE(payload, static_cast<std::uint32_t>(texture.usage));
-    Utilities::AppendUint32LeUVE(payload, static_cast<std::uint32_t>(texture.payloadEncoding));
-    if (texture.payloadEncoding == TexturePayloadEncodingUVE::BasisUniversalKtx2) {
-        Utilities::AppendUint64LeUVE(payload, static_cast<std::uint64_t>(texture.basisKtx2Data.size()));
-        Utilities::AppendBytesUVE(payload, texture.basisKtx2Data.data(), texture.basisKtx2Data.size());
+    Utilities::AppendBytes(payload, kTexturePayloadMagic.data(), kTexturePayloadMagic.size());
+    Utilities::AppendUint32Le(payload, kTexturePayloadVersion);
+    Utilities::AppendUint32Le(payload, texture.width);
+    Utilities::AppendUint32Le(payload, texture.height);
+    Utilities::AppendUint32Le(payload, static_cast<std::uint32_t>(texture.format));
+    Utilities::AppendUint32Le(payload, static_cast<std::uint32_t>(texture.colorSpace));
+    Utilities::AppendUint32Le(payload, static_cast<std::uint32_t>(texture.usage));
+    Utilities::AppendUint32Le(payload, static_cast<std::uint32_t>(texture.payloadEncoding));
+    if (texture.payloadEncoding == TexturePayloadEncoding::BasisUniversalKtx2) {
+        Utilities::AppendUint64Le(payload, static_cast<std::uint64_t>(texture.basisKtx2Data.size()));
+        Utilities::AppendBytes(payload, texture.basisKtx2Data.data(), texture.basisKtx2Data.size());
     } else {
-        Utilities::AppendUint64LeUVE(payload, static_cast<std::uint64_t>(texture.pixels.size()));
-        Utilities::AppendBytesUVE(payload, texture.pixels.data(), texture.pixels.size());
-        Utilities::AppendUint32LeUVE(payload, static_cast<std::uint32_t>(texture.mipLevels.size()));
-        for (const TextureMipLevelUVE& mipLevel : texture.mipLevels) {
-            Utilities::AppendUint32LeUVE(payload, mipLevel.width);
-            Utilities::AppendUint32LeUVE(payload, mipLevel.height);
-            Utilities::AppendUint64LeUVE(payload, static_cast<std::uint64_t>(mipLevel.pixels.size()));
-            Utilities::AppendBytesUVE(payload, mipLevel.pixels.data(), mipLevel.pixels.size());
+        Utilities::AppendUint64Le(payload, static_cast<std::uint64_t>(texture.pixels.size()));
+        Utilities::AppendBytes(payload, texture.pixels.data(), texture.pixels.size());
+        Utilities::AppendUint32Le(payload, static_cast<std::uint32_t>(texture.mipLevels.size()));
+        for (const TextureMipLevel& mipLevel : texture.mipLevels) {
+            Utilities::AppendUint32Le(payload, mipLevel.width);
+            Utilities::AppendUint32Le(payload, mipLevel.height);
+            Utilities::AppendUint64Le(payload, static_cast<std::uint64_t>(mipLevel.pixels.size()));
+            Utilities::AppendBytes(payload, mipLevel.pixels.data(), mipLevel.pixels.size());
         }
     }
-    return WriteUveFileUVE(path, AssetKindUVE::Texture, payload);
+    return WriteUveFile(path, AssetKind::Texture, payload);
 }
 
 namespace {
 
 /// One source image, bounded exactly as every image importer bounds it, so a load can never become
 /// a way around the limit the import path holds.
-constexpr std::uint64_t kMaximumSourceImageBytesUVE = 64ULL * 1024ULL * 1024ULL;
+constexpr std::uint64_t kMaximumSourceImageBytes = 64ULL * 1024ULL * 1024ULL;
 
 /// The source images a texture reference may name instead of a published `.uvtex`: the same five
 /// forms the four decoders below read and the Inspector's picker offers.
-[[nodiscard]] bool IsSourceImageExtensionUVE(const std::string_view extension) noexcept {
+[[nodiscard]] bool IsSourceImageExtension(const std::string_view extension) noexcept {
     return extension == ".png" || extension == ".jpg" || extension == ".jpeg" || extension == ".bmp" ||
            extension == ".tga";
 }
@@ -475,62 +475,62 @@ constexpr std::uint64_t kMaximumSourceImageBytesUVE = 64ULL * 1024ULL * 1024ULL;
 /// it with default settings: RGBA8, sRGB, a colour map. A decoder that produced nothing usable
 /// leaves `texture` untouched and reports failure, so a half-decoded image never reaches the GPU as
 /// a texture with zero pixels in it.
-template <typename ImageUVE>
-[[nodiscard]] bool AdoptDecodedSourceImageUVE(ImageUVE& image, TextureAssetUVE& texture) {
+template <typename Image>
+[[nodiscard]] bool AdoptDecodedSourceImage(Image& image, TextureAsset& texture) {
     if (image.width == 0U || image.height == 0U || image.pixels.empty()) {
         return false;
     }
     texture.width = image.width;
     texture.height = image.height;
-    texture.format = TextureAssetFormatUVE::RGBA8Unorm;
-    texture.colorSpace = TextureAssetColorSpaceUVE::Srgb;
-    texture.usage = TextureUsageUVE::Color;
+    texture.format = TextureAssetFormat::RGBA8Unorm;
+    texture.colorSpace = TextureAssetColorSpace::Srgb;
+    texture.usage = TextureUsage::Color;
     texture.pixels = std::move(image.pixels);
     return true;
 }
 
 } // namespace
 
-bool LoadTextureAssetSourceUVE(const std::filesystem::path& path, TextureAssetUVE& outTexture) {
+bool LoadTextureAssetSource(const std::filesystem::path& path, TextureAsset& outTexture) {
     std::string extension = path.extension().string();
     std::transform(extension.begin(), extension.end(), extension.begin(),
                    [](const unsigned char character) { return static_cast<char>(std::tolower(character)); });
-    if (!IsSourceImageExtensionUVE(extension)) {
+    if (!IsSourceImageExtension(extension)) {
         // Everything else is either the envelope or not a texture at all; the envelope reader is
         // the one that can say which, in the terms of the file it just opened.
-        return LoadTextureAssetUVE(path, outTexture);
+        return LoadTextureAsset(path, outTexture);
     }
 
     std::vector<std::byte> sourceBytes;
-    if (!Detail::ReadBoundedSourceBytesUVE(path, "TextureAssetUVE", kMaximumSourceImageBytesUVE, sourceBytes)) {
+    if (!Detail::ReadBoundedSourceBytes(path, "TextureAsset", kMaximumSourceImageBytes, sourceBytes)) {
         return false;
     }
 
-    TextureAssetUVE texture;
+    TextureAsset texture;
     bool decoded = false;
     if (extension == ".png") {
-        PngRgba8ImageUVE image;
-        decoded = DecodePngRgba8ImageUVE(sourceBytes, image) && AdoptDecodedSourceImageUVE(image, texture);
+        PngRgba8Image image;
+        decoded = DecodePngRgba8Image(sourceBytes, image) && AdoptDecodedSourceImage(image, texture);
     } else if (extension == ".jpg" || extension == ".jpeg") {
-        JpegRgba8ImageUVE image;
-        decoded = DecodeJpegRgba8ImageUVE(sourceBytes, image) && AdoptDecodedSourceImageUVE(image, texture);
+        JpegRgba8Image image;
+        decoded = DecodeJpegRgba8Image(sourceBytes, image) && AdoptDecodedSourceImage(image, texture);
     } else if (extension == ".bmp") {
-        BmpRgba8ImageUVE image;
-        decoded = DecodeBmpRgba8ImageUVE(sourceBytes, image) && AdoptDecodedSourceImageUVE(image, texture);
+        BmpRgba8Image image;
+        decoded = DecodeBmpRgba8Image(sourceBytes, image) && AdoptDecodedSourceImage(image, texture);
     } else {
-        TgaRgba8ImageUVE image;
-        decoded = DecodeTgaRgba8ImageUVE(sourceBytes, image) && AdoptDecodedSourceImageUVE(image, texture);
+        TgaRgba8Image image;
+        decoded = DecodeTgaRgba8Image(sourceBytes, image) && AdoptDecodedSourceImage(image, texture);
     }
     if (!decoded) {
-        UVE_ERROR("TextureAssetUVE: source image \"{}\" could not be decoded", path.string());
+        UVE_ERROR("TextureAsset: source image \"{}\" could not be decoded", path.string());
         return false;
     }
 
     // Without a chain the map aliases badly the moment the surface is not facing the camera; the
     // importer would have built one, and the importer's defaults are the ones taken above, so the
     // two paths produce the same picture.
-    if (!GenerateTextureMipmapsUVE(texture, TextureMipmapFilterUVE::Box, 0U) || !IsTextureAssetValidUVE(texture)) {
-        UVE_ERROR("TextureAssetUVE: source image \"{}\" could not be completed into a texture", path.string());
+    if (!GenerateTextureMipmaps(texture, TextureMipmapFilter::Box, 0U) || !IsTextureAssetValid(texture)) {
+        UVE_ERROR("TextureAsset: source image \"{}\" could not be completed into a texture", path.string());
         return false;
     }
     outTexture = std::move(texture);
@@ -541,23 +541,23 @@ namespace {
 
 /// Past this the slope is a wall: every edge becomes a cliff and the surface reads as embossed
 /// metal rather than as the material the picture shows.
-constexpr float kMaximumDerivedNormalStrengthUVE = 16.0F;
+constexpr float kMaximumDerivedNormalStrength = 16.0F;
 
 } // namespace
 
-bool DeriveNormalTextureUVE(const TextureAssetUVE& source, const float strength,
-                            TextureAssetUVE& outNormal) {
-    if (source.format != TextureAssetFormatUVE::RGBA8Unorm || source.width == 0U || source.height == 0U ||
+bool DeriveNormalTexture(const TextureAsset& source, const float strength,
+                            TextureAsset& outNormal) {
+    if (source.format != TextureAssetFormat::RGBA8Unorm || source.width == 0U || source.height == 0U ||
         source.pixels.size() != static_cast<std::size_t>(source.width) * source.height * 4U) {
         return false;
     }
-    if (!(strength >= 0.0F) || strength > kMaximumDerivedNormalStrengthUVE) {
+    if (!(strength >= 0.0F) || strength > kMaximumDerivedNormalStrength) {
         return false;
     }
 
     // Height is read from the stored bytes, so the picture keeps the even weighting it has on
     // screen; decoding a colour map to linear first would push every dark area towards flat.
-    const auto heightAtUVE = [&source](const std::uint32_t x, const std::uint32_t y) -> float {
+    const auto heightAt = [&source](const std::uint32_t x, const std::uint32_t y) -> float {
         // Clamped, not wrapped: a tileable map derives the same map it would without the seam,
         // and a photo's border does not pull detail in from the opposite edge.
         const std::uint32_t clampedX = std::min(x, source.width - 1U);
@@ -569,20 +569,20 @@ bool DeriveNormalTextureUVE(const TextureAssetUVE& source, const float strength,
         return (0.299F * red + 0.587F * green + 0.114F * blue) / 255.0F;
     };
 
-    TextureAssetUVE normal{};
+    TextureAsset normal{};
     normal.width = source.width;
     normal.height = source.height;
-    normal.format = TextureAssetFormatUVE::RGBA8Unorm;
-    normal.colorSpace = TextureAssetColorSpaceUVE::Linear;
-    normal.usage = TextureUsageUVE::Normal;
+    normal.format = TextureAssetFormat::RGBA8Unorm;
+    normal.colorSpace = TextureAssetColorSpace::Linear;
+    normal.usage = TextureUsage::Normal;
     normal.pixels.resize(source.pixels.size());
 
     for (std::uint32_t y = 0U; y < source.height; ++y) {
         for (std::uint32_t x = 0U; x < source.width; ++x) {
             // Central difference over one pixel each way. Rows run downwards while the tangent
             // space the shader samples has +Y up, which is where the green sign comes from.
-            const float slopeX = 0.5F * (heightAtUVE(x + 1U, y) - heightAtUVE(x - 1U, y)) * strength;
-            const float slopeY = 0.5F * (heightAtUVE(x, y + 1U) - heightAtUVE(x, y - 1U)) * strength;
+            const float slopeX = 0.5F * (heightAt(x + 1U, y) - heightAt(x - 1U, y)) * strength;
+            const float slopeY = 0.5F * (heightAt(x, y + 1U) - heightAt(x, y - 1U)) * strength;
             const float normalX = -slopeX;
             const float normalY = slopeY;
             const float normalZ = 1.0F;
@@ -601,8 +601,8 @@ bool DeriveNormalTextureUVE(const TextureAssetUVE& source, const float strength,
 
     // The chain the importer would have built, so a derived map is not the one asset in the
     // project that aliases when the surface turns away from the camera.
-    if (!IsTextureAssetValidUVE(normal) || !GenerateTextureMipmapsUVE(normal, TextureMipmapFilterUVE::Box, 0U)) {
-        UVE_ERROR("TextureAssetUVE: could not complete a derived normal map of {}x{}", normal.width,
+    if (!IsTextureAssetValid(normal) || !GenerateTextureMipmaps(normal, TextureMipmapFilter::Box, 0U)) {
+        UVE_ERROR("TextureAsset: could not complete a derived normal map of {}x{}", normal.width,
                   normal.height);
         return false;
     }
@@ -610,16 +610,16 @@ bool DeriveNormalTextureUVE(const TextureAssetUVE& source, const float strength,
     return true;
 }
 
-bool PackOrmTextureUVE(const TextureAssetUVE* occlusion, const TextureAssetUVE* roughness, const TextureAssetUVE* metallic,
-                       TextureAssetUVE& outOrm) {
-    const std::array<const TextureAssetUVE*, 3> maps{occlusion, roughness, metallic};
+bool PackOrmTexture(const TextureAsset* occlusion, const TextureAsset* roughness, const TextureAsset* metallic,
+                       TextureAsset& outOrm) {
+    const std::array<const TextureAsset*, 3> maps{occlusion, roughness, metallic};
     std::uint32_t width = 0U;
     std::uint32_t height = 0U;
-    for (const TextureAssetUVE* map : maps) {
+    for (const TextureAsset* map : maps) {
         if (map == nullptr) {
             continue;
         }
-        if (map->format != TextureAssetFormatUVE::RGBA8Unorm || map->payloadEncoding != TexturePayloadEncodingUVE::RawPixels ||
+        if (map->format != TextureAssetFormat::RGBA8Unorm || map->payloadEncoding != TexturePayloadEncoding::RawPixels ||
             map->width == 0U || map->height == 0U ||
             map->pixels.size() < static_cast<std::size_t>(map->width) * map->height * 4U) {
             return false;
@@ -630,18 +630,18 @@ bool PackOrmTextureUVE(const TextureAssetUVE* occlusion, const TextureAssetUVE* 
     if (width == 0U || height == 0U) {
         return false;
     }
-    TextureAssetUVE orm;
+    TextureAsset orm;
     orm.width = width;
     orm.height = height;
-    orm.format = TextureAssetFormatUVE::RGBA8Unorm;
-    orm.colorSpace = TextureAssetColorSpaceUVE::Linear;
-    orm.usage = TextureUsageUVE::Data;
+    orm.format = TextureAssetFormat::RGBA8Unorm;
+    orm.colorSpace = TextureAssetColorSpace::Linear;
+    orm.usage = TextureUsage::Data;
     orm.pixels.resize(static_cast<std::size_t>(width) * height * 4U);
     for (std::uint32_t y = 0U; y < height; ++y) {
         for (std::uint32_t x = 0U; x < width; ++x) {
             const std::size_t at = (static_cast<std::size_t>(y) * width + x) * 4U;
             for (std::size_t channel = 0U; channel < maps.size(); ++channel) {
-                const TextureAssetUVE* const map = maps[channel];
+                const TextureAsset* const map = maps[channel];
                 std::byte value{255};
                 if (map != nullptr) {
                     // Nearest texel of a smaller map, stretched over the whole.
@@ -654,7 +654,7 @@ bool PackOrmTextureUVE(const TextureAssetUVE* occlusion, const TextureAssetUVE* 
             orm.pixels[at + 3U] = std::byte{255};
         }
     }
-    if (!IsTextureAssetValidUVE(orm) || !GenerateTextureMipmapsUVE(orm, TextureMipmapFilterUVE::Box, 0U)) {
+    if (!IsTextureAssetValid(orm) || !GenerateTextureMipmaps(orm, TextureMipmapFilter::Box, 0U)) {
         return false;
     }
     outOrm = std::move(orm);

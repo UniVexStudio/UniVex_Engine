@@ -16,7 +16,7 @@
 //
 // Transports are loopback (in-process, deterministic, no ports and no clock but the sim's).
 //
-// RunPacketCaptureSampleUVE() runs the whole story synchronously and answers a verdict:
+// RunPacketCaptureSample() runs the whole story synchronously and answers a verdict:
 // success plus statistics, or the list of violated invariants. The binary prints the log
 // and exits by the verdict; the test suite runs it silent and asserts green.
 //
@@ -28,12 +28,12 @@
 
 namespace UVE::Samples {
 
-struct PacketCaptureSampleConfigUVE final {
+struct PacketCaptureSampleConfig final {
     /// One human-readable log line. Empty silences the story; the verdict never needs it.
     std::function<void(const std::string&)> log;
 };
 
-struct PacketCaptureSampleStatsUVE final {
+struct PacketCaptureSampleStats final {
     /// Datagrams the tap fed the ring (every server-side send and receive).
     std::uint64_t pushed = 0U;
     /// Packets retained (the ring cap).
@@ -55,13 +55,13 @@ struct PacketCaptureSampleStatsUVE final {
     std::uint64_t hexdumpBytes = 0U;
 };
 
-struct PacketCaptureSampleResultUVE final {
+struct PacketCaptureSampleResult final {
     bool success = false;
     std::vector<std::string> failures;
-    PacketCaptureSampleStatsUVE stats;
+    PacketCaptureSampleStats stats;
 };
 
-[[nodiscard]] PacketCaptureSampleResultUVE RunPacketCaptureSampleUVE(
-    const PacketCaptureSampleConfigUVE& config = PacketCaptureSampleConfigUVE{});
+[[nodiscard]] PacketCaptureSampleResult RunPacketCaptureSample(
+    const PacketCaptureSampleConfig& config = PacketCaptureSampleConfig{});
 
 } // namespace UVE::Samples

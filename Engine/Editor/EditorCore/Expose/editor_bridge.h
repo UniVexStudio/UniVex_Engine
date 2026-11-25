@@ -17,23 +17,23 @@
 
 namespace UVE::Editor {
 
-inline constexpr std::uint32_t kEditorBridgeProtocolVersionUVE = 1U;
+inline constexpr std::uint32_t kEditorBridgeProtocolVersion = 1U;
 
 /// Copy-only identity suitable for protocol DTOs. It intentionally mirrors a generational entity
 /// handle without exposing entity-manager memory or behavior across a future managed boundary.
-struct EditorBridgeEntityRefUVE final {
-    std::uint32_t index = Scene::kInvalidEntityUVE.index;
-    std::uint32_t generation = Scene::kInvalidEntityUVE.generation;
+struct EditorBridgeEntityRef final {
+    std::uint32_t index = Scene::kInvalidEntity.index;
+    std::uint32_t generation = Scene::kInvalidEntity.generation;
 
-    [[nodiscard]] constexpr bool IsValidUVE() const noexcept {
-        return Scene::EntityUVE{index, generation} != Scene::kInvalidEntityUVE;
+    [[nodiscard]] constexpr bool IsValid() const noexcept {
+        return Scene::Entity{index, generation} != Scene::kInvalidEntity;
     }
-    [[nodiscard]] constexpr bool operator==(const EditorBridgeEntityRefUVE&) const noexcept = default;
+    [[nodiscard]] constexpr bool operator==(const EditorBridgeEntityRef&) const noexcept = default;
 };
 
 /// Capabilities are ordered stable protocol facts. A future C# host must only surface controls that
 /// are advertised here and must still handle request rejection from an authoritative C++ backend.
-enum class EditorBridgeCapabilityUVE : std::uint8_t {
+enum class EditorBridgeCapability : std::uint8_t {
     ReadSnapshot,
     SelectEntity,
     ClearSelection,
@@ -63,8 +63,8 @@ enum class EditorBridgeCapabilityUVE : std::uint8_t {
 };
 
 /// The deliberately small v1 request vocabulary. No generic command string is accepted because
-/// every mutation must be routed through a named, testable EditorUVE command path.
-enum class EditorBridgeRequestKindUVE : std::uint8_t {
+/// every mutation must be routed through a named, testable Editor command path.
+enum class EditorBridgeRequestKind : std::uint8_t {
     ReadSnapshot,
     SelectEntity,
     ClearSelection,
@@ -92,14 +92,14 @@ enum class EditorBridgeRequestKindUVE : std::uint8_t {
 
 /// Explicitly describes whether this bridge session has a native-owned viewport surface. No raw
 /// window, GL context, texture, or input-forwarding handle crosses the bridge boundary.
-enum class EditorBridgeViewportSurfaceStateUVE : std::uint8_t {
+enum class EditorBridgeViewportSurfaceState : std::uint8_t {
     Unavailable,
     NativeOwned,
     Detached,
 };
 
-struct EditorBridgeViewportSurfaceSnapshotUVE final {
-    EditorBridgeViewportSurfaceStateUVE state = EditorBridgeViewportSurfaceStateUVE::Unavailable;
+struct EditorBridgeViewportSurfaceSnapshot final {
+    EditorBridgeViewportSurfaceState state = EditorBridgeViewportSurfaceState::Unavailable;
     std::uint64_t generation = 0U;
     std::uint32_t width = 0U;
     std::uint32_t height = 0U;
@@ -107,41 +107,41 @@ struct EditorBridgeViewportSurfaceSnapshotUVE final {
     bool managedAttachAllowed = false;
     std::string reason;
 
-    [[nodiscard]] bool operator==(const EditorBridgeViewportSurfaceSnapshotUVE&) const = default;
+    [[nodiscard]] bool operator==(const EditorBridgeViewportSurfaceSnapshot&) const = default;
 };
 
 /// One copied entity fact usable by a UI. The label is intentionally presentation data, while all
 /// component and hierarchy ownership remains in the native editor and ECS.
-struct EditorBridgeEntitySnapshotUVE final {
-    EditorBridgeEntityRefUVE entity;
+struct EditorBridgeEntitySnapshot final {
+    EditorBridgeEntityRef entity;
     std::string displayLabel;
 
-    [[nodiscard]] bool operator==(const EditorBridgeEntitySnapshotUVE&) const = default;
+    [[nodiscard]] bool operator==(const EditorBridgeEntitySnapshot&) const = default;
 };
 
-/// Read-only asset references copied from the selected native MeshComponentUVE. GUIDs are values,
+/// Read-only asset references copied from the selected native MeshComponent. GUIDs are values,
 /// not asset handles; the bridge never transfers resource ownership or loading authority.
-struct EditorBridgeAssetBindingSnapshotUVE final {
+struct EditorBridgeAssetBindingSnapshot final {
     std::optional<std::uint64_t> meshGuid;
     std::optional<std::uint64_t> materialGuid;
 
-    [[nodiscard]] bool operator==(const EditorBridgeAssetBindingSnapshotUVE&) const = default;
+    [[nodiscard]] bool operator==(const EditorBridgeAssetBindingSnapshot&) const = default;
 };
 
 /// The bridge deliberately bounds presentation records before serializing them. A client must show
 /// the explicit truncation fact and never infer that an omitted entry was deleted from the editor.
-inline constexpr std::size_t kEditorBridgeMaximumPanelEntriesUVE = 256U;
-inline constexpr std::size_t kEditorBridgeMaximumPresentationTextBytesUVE = 256U;
+inline constexpr std::size_t kEditorBridgeMaximumPanelEntries = 256U;
+inline constexpr std::size_t kEditorBridgeMaximumPresentationTextBytes = 256U;
 /// Relative content paths double as native-validated request identities, so they use a separate
 /// conservative bound rather than the shorter display-text bound. 128 such rows remain well below
 /// the framed protocol's 1 MiB maximum after JSON encoding.
-inline constexpr std::size_t kEditorBridgeMaximumContentPathBytesUVE = 4096U;
+inline constexpr std::size_t kEditorBridgeMaximumContentPathBytes = 4096U;
 
 /// One depth-first copied Scene Outliner row. Parentage stays value-only and C++ remains the sole
 /// owner of graph traversal, document membership, selection, and type-tag priority.
-struct EditorBridgeHierarchyEntryUVE final {
-    EditorBridgeEntityRefUVE entity;
-    std::optional<EditorBridgeEntityRefUVE> parent;
+struct EditorBridgeHierarchyEntry final {
+    EditorBridgeEntityRef entity;
+    std::optional<EditorBridgeEntityRef> parent;
     std::string displayLabel;
     std::string typeTag;
     std::size_t depth = 0U;
@@ -149,19 +149,19 @@ struct EditorBridgeHierarchyEntryUVE final {
     bool selected = false;
     bool active = false;
 
-    [[nodiscard]] bool operator==(const EditorBridgeHierarchyEntryUVE&) const = default;
+    [[nodiscard]] bool operator==(const EditorBridgeHierarchyEntry&) const = default;
 };
 
-struct EditorBridgeHierarchySnapshotUVE final {
+struct EditorBridgeHierarchySnapshot final {
     std::string filter;
     bool filterActive = false;
     bool truncated = false;
-    std::vector<EditorBridgeHierarchyEntryUVE> entries;
+    std::vector<EditorBridgeHierarchyEntry> entries;
 
-    [[nodiscard]] bool operator==(const EditorBridgeHierarchySnapshotUVE&) const = default;
+    [[nodiscard]] bool operator==(const EditorBridgeHierarchySnapshot&) const = default;
 };
 
-enum class EditorBridgeInspectorModeUVE : std::uint8_t {
+enum class EditorBridgeInspectorMode : std::uint8_t {
     NoSelection,
     MultiSelection,
     SingleSelection,
@@ -169,55 +169,55 @@ enum class EditorBridgeInspectorModeUVE : std::uint8_t {
 
 /// Read-only inspector context. Drawer identifiers are copied stable native registry facts, not
 /// reflection metadata or a managed authorization to edit arbitrary components.
-enum class EditorBridgePrefabRevisionStatusUVE : std::uint8_t {
+enum class EditorBridgePrefabRevisionStatus : std::uint8_t {
     Unavailable,
     Current,
     Stale,
     MergeRequired,
 };
 
-struct EditorBridgePrefabSnapshotUVE final {
+struct EditorBridgePrefabSnapshot final {
     std::optional<std::uint64_t> sourcePrefabGuid;
     std::uint64_t sourceRevision = 0U;
     std::uint64_t instanceRevision = 0U;
     std::size_t overrideCount = 0U;
-    EditorBridgePrefabRevisionStatusUVE status = EditorBridgePrefabRevisionStatusUVE::Unavailable;
+    EditorBridgePrefabRevisionStatus status = EditorBridgePrefabRevisionStatus::Unavailable;
     bool canRefresh = false;
 
-    [[nodiscard]] bool operator==(const EditorBridgePrefabSnapshotUVE&) const noexcept = default;
+    [[nodiscard]] bool operator==(const EditorBridgePrefabSnapshot&) const noexcept = default;
 };
 
-struct EditorBridgeInspectorSnapshotUVE final {
-    EditorBridgeInspectorModeUVE mode = EditorBridgeInspectorModeUVE::NoSelection;
+struct EditorBridgeInspectorSnapshot final {
+    EditorBridgeInspectorMode mode = EditorBridgeInspectorMode::NoSelection;
     bool selectedEntitiesTruncated = false;
-    std::vector<EditorBridgeEntitySnapshotUVE> selectedEntities;
-    std::optional<EditorBridgeEntitySnapshotUVE> activeEntity;
-    std::optional<EditorBridgeEntitySnapshotUVE> parent;
-    std::vector<EditorBridgeEntitySnapshotUVE> ancestry;
+    std::vector<EditorBridgeEntitySnapshot> selectedEntities;
+    std::optional<EditorBridgeEntitySnapshot> activeEntity;
+    std::optional<EditorBridgeEntitySnapshot> parent;
+    std::vector<EditorBridgeEntitySnapshot> ancestry;
     std::vector<std::string> eligibleDrawerIds;
     std::vector<std::string> attachedComponentIds;
-    std::optional<EditorBridgeAssetBindingSnapshotUVE> assetBinding;
-    std::optional<EditorBridgePrefabSnapshotUVE> prefab;
+    std::optional<EditorBridgeAssetBindingSnapshot> assetBinding;
+    std::optional<EditorBridgePrefabSnapshot> prefab;
     bool canEditSelectedName = false;
 
-    [[nodiscard]] bool operator==(const EditorBridgeInspectorSnapshotUVE&) const = default;
+    [[nodiscard]] bool operator==(const EditorBridgeInspectorSnapshot&) const = default;
 };
 
 /// One cached project-content row. This contains no absolute path traversal authority and no file
 /// handle; `relativePath` is relative to the native index's configured content root.
-struct EditorBridgeAssetTableEntryUVE final {
+struct EditorBridgeAssetTableEntry final {
     std::string relativePath;
     bool isDirectory = false;
     std::string typeLabel;
     std::optional<std::uint64_t> registeredAssetGuid;
 
-    [[nodiscard]] bool operator==(const EditorBridgeAssetTableEntryUVE&) const = default;
+    [[nodiscard]] bool operator==(const EditorBridgeAssetTableEntry&) const = default;
 };
 
 /// Value-only import/reimport facts for the selected Asset Table entry. This is capability
 /// presentation, not an execution token: native importer registration, filesystem access, and
 /// AssetDatabase ownership remain on the C++ side.
-struct EditorBridgeContentImportActionSnapshotUVE final {
+struct EditorBridgeContentImportActionSnapshot final {
     bool hasSelection = false;
     bool canImport = false;
     bool canReimport = false;
@@ -226,12 +226,12 @@ struct EditorBridgeContentImportActionSnapshotUVE final {
     std::string sourceKind;
     std::string diagnostic;
 
-    [[nodiscard]] bool operator==(const EditorBridgeContentImportActionSnapshotUVE&) const = default;
+    [[nodiscard]] bool operator==(const EditorBridgeContentImportActionSnapshot&) const = default;
 };
 
-/// Copied current-folder view over the native ProjectFileIndexUVE cache. UI filtering, navigation,
+/// Copied current-folder view over the native ProjectFileIndex cache. UI filtering, navigation,
 /// refresh, and selection all remain C++ editor session state and never trigger managed filesystem I/O.
-struct EditorBridgeAssetTableSnapshotUVE final {
+struct EditorBridgeAssetTableSnapshot final {
     std::string contentRoot;
     std::string currentDirectory;
     std::string filter;
@@ -244,49 +244,49 @@ struct EditorBridgeAssetTableSnapshotUVE final {
     bool initialized = false;
     bool lastRefreshSucceeded = true;
     bool truncated = false;
-    std::vector<EditorBridgeAssetTableEntryUVE> entries;
-    std::optional<EditorBridgeAssetTableEntryUVE> selectedEntry;
-    EditorBridgeContentImportActionSnapshotUVE importAction;
+    std::vector<EditorBridgeAssetTableEntry> entries;
+    std::optional<EditorBridgeAssetTableEntry> selectedEntry;
+    EditorBridgeContentImportActionSnapshot importAction;
 
-    [[nodiscard]] bool operator==(const EditorBridgeAssetTableSnapshotUVE&) const = default;
+    [[nodiscard]] bool operator==(const EditorBridgeAssetTableSnapshot&) const = default;
 };
 
 /// Immutable bridge-visible state. A revision is incremented whenever any field observable through
 /// this snapshot changes, whether the editor's own UI or the bridge initiated that change.
-struct EditorBridgeDeveloperConsoleSnapshotUVE final {
-    DeveloperConsoleSnapshotUVE console;
-    [[nodiscard]] bool operator==(const EditorBridgeDeveloperConsoleSnapshotUVE&) const = default;
+struct EditorBridgeDeveloperConsoleSnapshot final {
+    DeveloperConsoleSnapshot console;
+    [[nodiscard]] bool operator==(const EditorBridgeDeveloperConsoleSnapshot&) const = default;
 };
 
-struct EditorBridgeDataTableCatalogEntryUVE final {
+struct EditorBridgeDataTableCatalogEntry final {
     std::string name;
     std::uint64_t generation = 0U;
     std::size_t columnCount = 0U;
     std::size_t rowCount = 0U;
     bool valid = false;
-    [[nodiscard]] bool operator==(const EditorBridgeDataTableCatalogEntryUVE&) const = default;
+    [[nodiscard]] bool operator==(const EditorBridgeDataTableCatalogEntry&) const = default;
 };
 
-struct EditorBridgeDataTableCatalogSnapshotUVE final {
+struct EditorBridgeDataTableCatalogSnapshot final {
     std::uint64_t generation = 0U;
     bool entriesTruncated = false;
-    std::vector<EditorBridgeDataTableCatalogEntryUVE> entries;
-    [[nodiscard]] bool operator==(const EditorBridgeDataTableCatalogSnapshotUVE&) const = default;
+    std::vector<EditorBridgeDataTableCatalogEntry> entries;
+    [[nodiscard]] bool operator==(const EditorBridgeDataTableCatalogSnapshot&) const = default;
 };
 
-struct EditorBridgeDataTablePreviewColumnUVE final {
+struct EditorBridgeDataTablePreviewColumn final {
     std::string name;
-    Asset::DataTableColumnTypeUVE type = Asset::DataTableColumnTypeUVE::String;
-    [[nodiscard]] bool operator==(const EditorBridgeDataTablePreviewColumnUVE&) const = default;
+    Asset::DataTableColumnType type = Asset::DataTableColumnType::String;
+    [[nodiscard]] bool operator==(const EditorBridgeDataTablePreviewColumn&) const = default;
 };
 
-struct EditorBridgeDataTablePreviewRowUVE final {
+struct EditorBridgeDataTablePreviewRow final {
     std::string identifier;
     std::vector<std::string> values;
-    [[nodiscard]] bool operator==(const EditorBridgeDataTablePreviewRowUVE&) const = default;
+    [[nodiscard]] bool operator==(const EditorBridgeDataTablePreviewRow&) const = default;
 };
 
-struct EditorBridgeDataTablePreviewSnapshotUVE final {
+struct EditorBridgeDataTablePreviewSnapshot final {
     bool available = false;
     std::uint64_t generation = 0U;
     std::string name;
@@ -296,43 +296,43 @@ struct EditorBridgeDataTablePreviewSnapshotUVE final {
     bool rowsTruncated = false;
     bool valuesTruncated = false;
     std::string reason;
-    std::vector<EditorBridgeDataTablePreviewColumnUVE> columns;
-    std::vector<EditorBridgeDataTablePreviewRowUVE> rows;
-    [[nodiscard]] bool operator==(const EditorBridgeDataTablePreviewSnapshotUVE&) const = default;
+    std::vector<EditorBridgeDataTablePreviewColumn> columns;
+    std::vector<EditorBridgeDataTablePreviewRow> rows;
+    [[nodiscard]] bool operator==(const EditorBridgeDataTablePreviewSnapshot&) const = default;
 };
 
-struct EditorBridgeSnapshotUVE final {
-    std::uint32_t protocolVersion = kEditorBridgeProtocolVersionUVE;
+struct EditorBridgeSnapshot final {
+    std::uint32_t protocolVersion = kEditorBridgeProtocolVersion;
     std::uint64_t revision = 0U;
-    EditorStateUVE editorState = EditorStateUVE::Uninitialized;
-    EditorPlayModeStateUVE playModeState = EditorPlayModeStateUVE::Edit;
+    EditorState editorState = EditorState::Uninitialized;
+    EditorPlayModeState playModeState = EditorPlayModeState::Edit;
     bool sceneDirty = false;
     bool canUndo = false;
     bool canRedo = false;
     std::filesystem::path activeScenePath;
-    std::vector<EditorBridgeEntitySnapshotUVE> selectedEntities;
+    std::vector<EditorBridgeEntitySnapshot> selectedEntities;
     bool selectedEntitiesTruncated = false;
-    std::optional<EditorBridgeEntityRefUVE> activeEntity;
-    EditorBridgeHierarchySnapshotUVE hierarchy;
-    EditorBridgeInspectorSnapshotUVE inspector;
-    EditorBridgeAssetTableSnapshotUVE assetTable;
-    EditorBridgeViewportSurfaceSnapshotUVE viewportSurface;
-    EditorBridgeDeveloperConsoleSnapshotUVE developerConsole;
-    EditorBridgeDataTableCatalogSnapshotUVE dataTableCatalog;
-    EditorBridgeDataTablePreviewSnapshotUVE dataTablePreview;
-    std::vector<EditorBridgeCapabilityUVE> capabilities;
+    std::optional<EditorBridgeEntityRef> activeEntity;
+    EditorBridgeHierarchySnapshot hierarchy;
+    EditorBridgeInspectorSnapshot inspector;
+    EditorBridgeAssetTableSnapshot assetTable;
+    EditorBridgeViewportSurfaceSnapshot viewportSurface;
+    EditorBridgeDeveloperConsoleSnapshot developerConsole;
+    EditorBridgeDataTableCatalogSnapshot dataTableCatalog;
+    EditorBridgeDataTablePreviewSnapshot dataTablePreview;
+    std::vector<EditorBridgeCapability> capabilities;
 };
 
 /// A value-only request. `expectedRevision` protects a future C# UI from applying a mutation based
 /// on a stale copied snapshot after the editor's own UI or another bridge request changed visible state.
-struct EditorBridgeRequestUVE final {
-    std::uint32_t protocolVersion = kEditorBridgeProtocolVersionUVE;
+struct EditorBridgeRequest final {
+    std::uint32_t protocolVersion = kEditorBridgeProtocolVersion;
     std::uint64_t requestId = 0U;
     std::uint64_t expectedRevision = 0U;
-    EditorBridgeRequestKindUVE kind = EditorBridgeRequestKindUVE::ReadSnapshot;
-    std::optional<EditorBridgeEntityRefUVE> entity;
+    EditorBridgeRequestKind kind = EditorBridgeRequestKind::ReadSnapshot;
+    std::optional<EditorBridgeEntityRef> entity;
     std::optional<std::string> entityName;
-    std::optional<EditorEntityKindUVE> entityKind;
+    std::optional<EditorEntityKind> entityKind;
     std::optional<std::string> hierarchyFilter;
     std::optional<std::string> contentDirectory;
     std::optional<std::string> contentFilter;
@@ -341,19 +341,19 @@ struct EditorBridgeRequestUVE final {
     std::optional<std::string> contentImportDestinationPath;
     std::optional<std::string> dataTableName;
     std::optional<std::string> developerConsoleCommand;
-    std::optional<DeveloperConsoleSeverityFilterUVE> developerConsoleSeverityFilter;
+    std::optional<DeveloperConsoleSeverityFilter> developerConsoleSeverityFilter;
     std::optional<std::string> developerConsoleCompletionPrefix;
     std::optional<std::int32_t> developerConsoleHistoryDelta;
 
-    EditorBridgeRequestUVE() = default;
+    EditorBridgeRequest() = default;
 
     /// Retains source compatibility with the original named-command request shape. New panel
     /// payloads stay opt-in fields so existing callers cannot accidentally reinterpret a request.
-    EditorBridgeRequestUVE(std::uint32_t inProtocolVersion, std::uint64_t inRequestId,
-                           std::uint64_t inExpectedRevision, EditorBridgeRequestKindUVE inKind,
-                           std::optional<EditorBridgeEntityRefUVE> inEntity,
+    EditorBridgeRequest(std::uint32_t inProtocolVersion, std::uint64_t inRequestId,
+                           std::uint64_t inExpectedRevision, EditorBridgeRequestKind inKind,
+                           std::optional<EditorBridgeEntityRef> inEntity,
                            std::optional<std::string> inEntityName,
-                           std::optional<EditorEntityKindUVE> inEntityKind)
+                           std::optional<EditorEntityKind> inEntityKind)
         : protocolVersion(inProtocolVersion),
           requestId(inRequestId),
           expectedRevision(inExpectedRevision),
@@ -365,87 +365,87 @@ struct EditorBridgeRequestUVE final {
 
 /// A deterministic response. `code` is a stable machine-readable protocol identifier and `message`
 /// is safe human-facing context. The copied snapshot is always freshly synchronized before return.
-struct EditorBridgeResponseUVE final {
-    std::uint32_t protocolVersion = kEditorBridgeProtocolVersionUVE;
+struct EditorBridgeResponse final {
+    std::uint32_t protocolVersion = kEditorBridgeProtocolVersion;
     std::uint64_t requestId = 0U;
     bool applied = false;
     std::string code;
     std::string message;
-    EditorBridgeSnapshotUVE snapshot;
-    std::optional<EditorBridgeEntityRefUVE> createdEntity;
+    EditorBridgeSnapshot snapshot;
+    std::optional<EditorBridgeEntityRef> createdEntity;
     std::optional<std::uint64_t> contentImportJobId;
 };
 
-/// Main-thread adapter over EditorUVE. It supports coexistence with the editor's own UI: every
+/// Main-thread adapter over Editor. It supports coexistence with the editor's own UI: every
 /// public entry synchronizes the bridge-visible snapshot before inspecting expectedRevision, so a
 /// C# client can observe native changes and cannot apply a stale mutation silently.
-class EditorBridgeUVE final {
+class EditorBridge final {
 public:
     /// The optional registry is non-owning and must outlive this bridge. When supplied, it is the
     /// authoritative source for catalog facts and selected preview snapshots; the legacy injection
     /// seams remain available only for bridge sessions without a registry dependency.
-    explicit EditorBridgeUVE(EditorUVE& editor, const Asset::DataTableRegistryUVE* dataTableRegistry = nullptr);
+    explicit EditorBridge(Editor& editor, const Asset::DataTableRegistry* dataTableRegistry = nullptr);
 
-    [[nodiscard]] EditorBridgeSnapshotUVE GetSnapshotUVE();
-    [[nodiscard]] EditorBridgeResponseUVE DispatchUVE(const EditorBridgeRequestUVE& request);
+    [[nodiscard]] EditorBridgeSnapshot GetSnapshot();
+    [[nodiscard]] EditorBridgeResponse Dispatch(const EditorBridgeRequest& request);
     /// Selects a registry-owned table for read-only preview. An empty name clears the selection.
     /// Unknown or overlong names are rejected without changing the current selection.
-    [[nodiscard]] bool SetPreviewTableUVE(std::string_view name);
-    void SetDataTableCatalogSnapshotUVE(Asset::DataTableCatalogSnapshotUVE snapshot);
-    void SetDataTablePreviewSnapshotUVE(Asset::DataTableSnapshotUVE snapshot);
+    [[nodiscard]] bool SetPreviewTable(std::string_view name);
+    void SetDataTableCatalogSnapshot(Asset::DataTableCatalogSnapshot snapshot);
+    void SetDataTablePreviewSnapshot(Asset::DataTableSnapshot snapshot);
 
-    [[nodiscard]] static const std::vector<EditorBridgeCapabilityUVE>& GetCapabilitiesUVE() noexcept;
+    [[nodiscard]] static const std::vector<EditorBridgeCapability>& GetCapabilities() noexcept;
 
 private:
-    struct ObservedStateUVE final {
-        EditorStateUVE editorState = EditorStateUVE::Uninitialized;
-        EditorPlayModeStateUVE playModeState = EditorPlayModeStateUVE::Edit;
+    struct ObservedState final {
+        EditorState editorState = EditorState::Uninitialized;
+        EditorPlayModeState playModeState = EditorPlayModeState::Edit;
         bool sceneDirty = false;
         bool canUndo = false;
         bool canRedo = false;
         std::filesystem::path activeScenePath;
-        std::vector<EditorBridgeEntitySnapshotUVE> selectedEntities;
+        std::vector<EditorBridgeEntitySnapshot> selectedEntities;
         bool selectedEntitiesTruncated = false;
-        std::optional<EditorBridgeEntityRefUVE> activeEntity;
-        EditorBridgeHierarchySnapshotUVE hierarchy;
-        EditorBridgeInspectorSnapshotUVE inspector;
-        EditorBridgeAssetTableSnapshotUVE assetTable;
-        EditorBridgeViewportSurfaceSnapshotUVE viewportSurface;
-        EditorBridgeDeveloperConsoleSnapshotUVE developerConsole;
-        EditorBridgeDataTableCatalogSnapshotUVE dataTableCatalog;
-        EditorBridgeDataTablePreviewSnapshotUVE dataTablePreview;
+        std::optional<EditorBridgeEntityRef> activeEntity;
+        EditorBridgeHierarchySnapshot hierarchy;
+        EditorBridgeInspectorSnapshot inspector;
+        EditorBridgeAssetTableSnapshot assetTable;
+        EditorBridgeViewportSurfaceSnapshot viewportSurface;
+        EditorBridgeDeveloperConsoleSnapshot developerConsole;
+        EditorBridgeDataTableCatalogSnapshot dataTableCatalog;
+        EditorBridgeDataTablePreviewSnapshot dataTablePreview;
 
-        [[nodiscard]] bool operator==(const ObservedStateUVE&) const = default;
+        [[nodiscard]] bool operator==(const ObservedState&) const = default;
     };
 
-    [[nodiscard]] ObservedStateUVE CaptureObservedStateUVE();
-    void SynchronizeRevisionUVE();
-    [[nodiscard]] EditorBridgeSnapshotUVE BuildSnapshotUVE() const;
-    [[nodiscard]] EditorBridgeResponseUVE MakeResponseUVE(const EditorBridgeRequestUVE& request, bool applied,
+    [[nodiscard]] ObservedState CaptureObservedState();
+    void SynchronizeRevision();
+    [[nodiscard]] EditorBridgeSnapshot BuildSnapshot() const;
+    [[nodiscard]] EditorBridgeResponse MakeResponse(const EditorBridgeRequest& request, bool applied,
                                                            std::string code, std::string message) const;
-    [[nodiscard]] static Scene::EntityUVE ToEntityUVE(EditorBridgeEntityRefUVE entity) noexcept;
-    [[nodiscard]] static EditorBridgeEntityRefUVE ToBridgeEntityUVE(Scene::EntityUVE entity) noexcept;
-    [[nodiscard]] bool IsSupportedEntityKindUVE(EditorEntityKindUVE kind) const noexcept;
-    [[nodiscard]] static std::string BoundPresentationTextUVE(std::string value);
-    [[nodiscard]] static std::string BoundContentPathUVE(std::string value);
-    [[nodiscard]] EditorBridgeDeveloperConsoleSnapshotUVE CaptureDeveloperConsoleUVE() const;
-    [[nodiscard]] EditorBridgeDataTableCatalogSnapshotUVE CaptureDataTableCatalogUVE() const;
-    [[nodiscard]] EditorBridgeDataTablePreviewSnapshotUVE CaptureDataTablePreviewUVE() const;
-    [[nodiscard]] EditorBridgeHierarchySnapshotUVE CaptureHierarchyUVE();
-    [[nodiscard]] EditorBridgeInspectorSnapshotUVE CaptureInspectorUVE() const;
-    [[nodiscard]] EditorBridgeAssetTableSnapshotUVE CaptureAssetTableUVE();
-    [[nodiscard]] EditorBridgeAssetTableEntryUVE ToContentEntryUVE(
-        const Asset::ProjectFileEntryUVE& entry) const;
-    [[nodiscard]] static std::optional<EditorUVE::AssetTableTypeFocusUVE> ParseAssetTableFocusUVE(
+    [[nodiscard]] static Scene::Entity ToEntity(EditorBridgeEntityRef entity) noexcept;
+    [[nodiscard]] static EditorBridgeEntityRef ToBridgeEntity(Scene::Entity entity) noexcept;
+    [[nodiscard]] bool IsSupportedEntityKind(EditorEntityKind kind) const noexcept;
+    [[nodiscard]] static std::string BoundPresentationText(std::string value);
+    [[nodiscard]] static std::string BoundContentPath(std::string value);
+    [[nodiscard]] EditorBridgeDeveloperConsoleSnapshot CaptureDeveloperConsole() const;
+    [[nodiscard]] EditorBridgeDataTableCatalogSnapshot CaptureDataTableCatalog() const;
+    [[nodiscard]] EditorBridgeDataTablePreviewSnapshot CaptureDataTablePreview() const;
+    [[nodiscard]] EditorBridgeHierarchySnapshot CaptureHierarchy();
+    [[nodiscard]] EditorBridgeInspectorSnapshot CaptureInspector() const;
+    [[nodiscard]] EditorBridgeAssetTableSnapshot CaptureAssetTable();
+    [[nodiscard]] EditorBridgeAssetTableEntry ToContentEntry(
+        const Asset::ProjectFileEntry& entry) const;
+    [[nodiscard]] static std::optional<Editor::AssetTableTypeFocus> ParseAssetTableFocus(
         const std::string& focus) noexcept;
 
-    EditorUVE* m_editor = nullptr;
-    DeveloperConsoleUVE m_developerConsole;
-    const Asset::DataTableRegistryUVE* m_dataTableRegistry = nullptr;
+    Editor* m_editor = nullptr;
+    DeveloperConsole m_developerConsole;
+    const Asset::DataTableRegistry* m_dataTableRegistry = nullptr;
     std::optional<std::string> m_dataTablePreviewName;
-    Asset::DataTableCatalogSnapshotUVE m_dataTableCatalogSnapshot;
-    Asset::DataTableSnapshotUVE m_dataTablePreviewSnapshot;
-    std::optional<ObservedStateUVE> m_lastObservedState;
+    Asset::DataTableCatalogSnapshot m_dataTableCatalogSnapshot;
+    Asset::DataTableSnapshot m_dataTablePreviewSnapshot;
+    std::optional<ObservedState> m_lastObservedState;
     std::uint64_t m_revision = 0U;
 };
 

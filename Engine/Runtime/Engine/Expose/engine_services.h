@@ -60,12 +60,12 @@
 #include "i_window_manager.h"
 
 namespace UVE::VFX {
-class VfxWorldUVE;
+class VfxWorld;
 } // namespace UVE::VFX
 
 namespace UVE::Core {
 
-/// EngineServicesUVE is the engine's central dependency-provider / service
+/// EngineServices is the engine's central dependency-provider / service
 /// container: a small bundle of references to the core engine services
 /// (Logger, Timer, EventSystem, MemoryManager, ThreadPool, CommandLine,
 /// ConfigManager, EntityManager, SceneGraph, AssetDatabase, ProjectFileIndex, DerivedArtifactCache,
@@ -74,189 +74,189 @@ namespace UVE::Core {
 /// MeshRenderer, LightSystem, Renderer3D, CollisionSystem, PhysicsSystem,
 /// PhysicsQuerySystem, RaycastSystem, PhysicsConstraintSystem, InputSystem, GamepadInputSystem, MobileInputSystem, MobileGestureSystem, AudioDevice, AudioSystem, AudioSourceSystem,
 /// SaveGameSystem, CheckpointManager, WindowManager, ParticleRuntime), built once
-/// EngineCoreUVE has constructed all forty. Any future subsystem that
-/// needs access to one of these should receive an EngineServicesUVE&
-/// (obtained from EngineCoreUVE::GetServicesUVE()) rather than a raw global
+/// EngineCore has constructed all forty. Any future subsystem that
+/// needs access to one of these should receive an EngineServices&
+/// (obtained from EngineCore::GetServices()) rather than a raw global
 /// pointer — the logging macros' internal active-instance pointer remains
 /// the one intentional exception to that rule (see
 /// docs/CODING_STANDARDS.md).
 /// Referenced through the
-/// ILoggerUVE/ITimerUVE/IEventSystemUVE/IMemoryManagerUVE/IThreadPoolUVE/
-/// ICommandLineUVE/IConfigManagerUVE/IEntityManagerUVE/ISceneGraphUVE/
-/// IAssetDatabaseUVE/IProjectFileIndexUVE/IDerivedArtifactCacheUVE/IProjectChangeWatcherUVE/ISceneSerializerUVE/IPrefabSystemUVE/IHotReloadUVE/
-/// IAssetManagerUVE/IAssetImporterUVE/IAssetImportQueueUVE/IAssetBundleUVE/IFileSystemUVE/
-/// IRenderDeviceUVE/Shader::IShaderManagerUVE/IRenderSystemUVE/IComputeSystemUVE/
-/// ICameraSystemUVE/IMeshRendererUVE/ILightSystemUVE/
-/// IRenderer3DUVE/ICollisionSystemUVE/IPhysicsSystemUVE/IPhysicsQuerySystemUVE/
-/// IRaycastSystemUVE/PhysicsConstraintSystemUVE/IInputSystemUVE/IGamepadInputSystemUVE/IMobileInputSystemUVE/
-/// IMobileGestureSystemUVE/IAudioDeviceUVE/IAudioSystemUVE/IAudioSourceSystemUVE/
-/// ISaveGameSystemUVE/ICheckpointManagerUVE/IWindowManagerUVE/IParticleRuntimeUVE interfaces,
+/// ILogger/ITimer/IEventSystem/IMemoryManager/IThreadPool/
+/// ICommandLine/IConfigManager/IEntityManager/ISceneGraph/
+/// IAssetDatabase/IProjectFileIndex/IDerivedArtifactCache/IProjectChangeWatcher/ISceneSerializer/IPrefabSystem/IHotReload/
+/// IAssetManager/IAssetImporter/IAssetImportQueue/IAssetBundle/IFileSystem/
+/// IRenderDevice/Shader::IShaderManager/IRenderSystem/IComputeSystem/
+/// ICameraSystem/IMeshRenderer/ILightSystem/
+/// IRenderer3D/ICollisionSystem/IPhysicsSystem/IPhysicsQuerySystem/
+/// IRaycastSystem/PhysicsConstraintSystem/IInputSystem/IGamepadInputSystem/IMobileInputSystem/
+/// IMobileGestureSystem/IAudioDevice/IAudioSystem/IAudioSourceSystem/
+/// ISaveGameSystem/ICheckpointManager/IWindowManager/IParticleRuntime interfaces,
 /// not the concrete types, so a future substitute implementation of any of
 /// the forty requires no change here.
-/// Thread-safety: EngineServicesUVE itself holds only non-owning pointers
+/// Thread-safety: EngineServices itself holds only non-owning pointers
 /// and has no mutable state of its own; the thread-safety of each accessor
 /// is whatever the referenced service documents.
-class EngineServicesUVE final {
+class EngineServices final {
 public:
-    EngineServicesUVE(Debug::ILoggerUVE& logger, Utilities::ITimerUVE& timer,
-                       Events::IEventSystemUVE& eventSystem,
-                       Memory::IMemoryManagerUVE& memoryManager,
-                       Threading::IThreadPoolUVE& threadPool,
-                       CommandLine::ICommandLineUVE& commandLine,
-                       Config::IConfigManagerUVE& configManager,
-                       Config::SettingsDocumentUVE& projectSettings,
-                       Core::InputMapDocumentUVE& inputMap,
-                       Scene::IEntityManagerUVE& entityManager,
-                       Scene::ISceneGraphUVE& sceneGraph,
-                       Asset::IAssetDatabaseUVE& assetDatabase,
-                       Asset::IProjectFileIndexUVE& projectFileIndex,
-                       Asset::IDerivedArtifactCacheUVE& derivedArtifactCache,
-                       Asset::IProjectChangeWatcherUVE& projectChangeWatcher,
-                       Scene::ISceneSerializerUVE& sceneSerializer,
-                       Scene::IPrefabSystemUVE& prefabSystem,
-                       Scene::IParticleRuntimeUVE& particleRuntime,
-                       Asset::IHotReloadUVE& hotReload,
-                       Asset::IAssetManagerUVE& assetManager,
-                       Asset::IAssetImporterUVE& assetImporter,
-                       Asset::IAssetImportQueueUVE& assetImportQueue,
-                       Asset::IAssetBundleUVE& assetBundle,
-                       Asset::IFileSystemUVE& fileSystem,
-                       Render::IRenderDeviceUVE& renderDevice,
-                       Render::Shader::IShaderManagerUVE& shaderManager,
-                       Render::IRenderSystemUVE& renderSystem,
-                       Render::IComputeSystemUVE& computeSystem,
-                       Render::ICameraSystemUVE& cameraSystem,
-                       Render::IMeshRendererUVE& meshRenderer,
-                       Render::ILightSystemUVE& lightSystem,
-                       Render::IRenderer3DUVE& renderer3D,
-                       Physics::ICollisionSystemUVE& collisionSystem,
-                       Physics::IPhysicsSystemUVE& physicsSystem,
-                       Physics::IPhysicsQuerySystemUVE& physicsQuerySystem,
-                       Physics::IRaycastSystemUVE& raycastSystem,
-                       Physics::PhysicsConstraintSystemUVE& physicsConstraintSystem,
-                       Input::IInputSystemUVE& inputSystem,
-                       Input::IGamepadInputSystemUVE& gamepadInputSystem,
-                       Input::IMobileInputSystemUVE& mobileInputSystem,
-                       Input::IMobileGestureSystemUVE& mobileGestureSystem,
-                       Audio::IAudioDeviceUVE& audioDevice,
-                       Audio::IAudioSystemUVE& audioSystem,
-                       Audio::IAudioSourceSystemUVE& audioSourceSystem,
-                       Save::ISaveGameSystemUVE& saveGameSystem,
-                       Save::ICheckpointManagerUVE& checkpointManager,
-                       Window::IWindowManagerUVE& windowManager) noexcept;
+    EngineServices(Debug::ILogger& logger, Utilities::ITimer& timer,
+                       Events::IEventSystem& eventSystem,
+                       Memory::IMemoryManager& memoryManager,
+                       Threading::IThreadPool& threadPool,
+                       CommandLine::ICommandLine& commandLine,
+                       Config::IConfigManager& configManager,
+                       Config::SettingsDocument& projectSettings,
+                       Core::InputMapDocument& inputMap,
+                       Scene::IEntityManager& entityManager,
+                       Scene::ISceneGraph& sceneGraph,
+                       Asset::IAssetDatabase& assetDatabase,
+                       Asset::IProjectFileIndex& projectFileIndex,
+                       Asset::IDerivedArtifactCache& derivedArtifactCache,
+                       Asset::IProjectChangeWatcher& projectChangeWatcher,
+                       Scene::ISceneSerializer& sceneSerializer,
+                       Scene::IPrefabSystem& prefabSystem,
+                       Scene::IParticleRuntime& particleRuntime,
+                       Asset::IHotReload& hotReload,
+                       Asset::IAssetManager& assetManager,
+                       Asset::IAssetImporter& assetImporter,
+                       Asset::IAssetImportQueue& assetImportQueue,
+                       Asset::IAssetBundle& assetBundle,
+                       Asset::IFileSystem& fileSystem,
+                       Render::IRenderDevice& renderDevice,
+                       Render::Shader::IShaderManager& shaderManager,
+                       Render::IRenderSystem& renderSystem,
+                       Render::IComputeSystem& computeSystem,
+                       Render::ICameraSystem& cameraSystem,
+                       Render::IMeshRenderer& meshRenderer,
+                       Render::ILightSystem& lightSystem,
+                       Render::IRenderer3D& renderer3D,
+                       Physics::ICollisionSystem& collisionSystem,
+                       Physics::IPhysicsSystem& physicsSystem,
+                       Physics::IPhysicsQuerySystem& physicsQuerySystem,
+                       Physics::IRaycastSystem& raycastSystem,
+                       Physics::PhysicsConstraintSystem& physicsConstraintSystem,
+                       Input::IInputSystem& inputSystem,
+                       Input::IGamepadInputSystem& gamepadInputSystem,
+                       Input::IMobileInputSystem& mobileInputSystem,
+                       Input::IMobileGestureSystem& mobileGestureSystem,
+                       Audio::IAudioDevice& audioDevice,
+                       Audio::IAudioSystem& audioSystem,
+                       Audio::IAudioSourceSystem& audioSourceSystem,
+                       Save::ISaveGameSystem& saveGameSystem,
+                       Save::ICheckpointManager& checkpointManager,
+                       Window::IWindowManager& windowManager) noexcept;
 
-    [[nodiscard]] Debug::ILoggerUVE& GetLoggerUVE() const noexcept;
-    [[nodiscard]] Utilities::ITimerUVE& GetTimerUVE() const noexcept;
-    [[nodiscard]] Events::IEventSystemUVE& GetEventSystemUVE() const noexcept;
-    [[nodiscard]] Memory::IMemoryManagerUVE& GetMemoryManagerUVE() const noexcept;
-    [[nodiscard]] Threading::IThreadPoolUVE& GetThreadPoolUVE() const noexcept;
-    [[nodiscard]] CommandLine::ICommandLineUVE& GetCommandLineUVE() const noexcept;
-    [[nodiscard]] Config::IConfigManagerUVE& GetConfigManagerUVE() const noexcept;
+    [[nodiscard]] Debug::ILogger& GetLogger() const noexcept;
+    [[nodiscard]] Utilities::ITimer& GetTimer() const noexcept;
+    [[nodiscard]] Events::IEventSystem& GetEventSystem() const noexcept;
+    [[nodiscard]] Memory::IMemoryManager& GetMemoryManager() const noexcept;
+    [[nodiscard]] Threading::IThreadPool& GetThreadPool() const noexcept;
+    [[nodiscard]] CommandLine::ICommandLine& GetCommandLine() const noexcept;
+    [[nodiscard]] Config::IConfigManager& GetConfigManager() const noexcept;
     /// The project's settings (project.uvsettings): the settings that belong to the project and
-    /// ship with it, as opposed to one person's editor preferences in GetConfigManagerUVE().
-    [[nodiscard]] Config::SettingsDocumentUVE& GetProjectSettingsUVE() const noexcept;
+    /// ship with it, as opposed to one person's editor preferences in GetConfigManager().
+    [[nodiscard]] Config::SettingsDocument& GetProjectSettings() const noexcept;
     /// The project's input map (project.uvinput): its named actions and their bindings.
-    [[nodiscard]] Core::InputMapDocumentUVE& GetInputMapUVE() const noexcept;
-    [[nodiscard]] Scene::IEntityManagerUVE& GetEntityManagerUVE() const noexcept;
-    [[nodiscard]] Scene::ISceneGraphUVE& GetSceneGraphUVE() const noexcept;
-    [[nodiscard]] Asset::IAssetDatabaseUVE& GetAssetDatabaseUVE() const noexcept;
-    [[nodiscard]] Asset::IProjectFileIndexUVE& GetProjectFileIndexUVE() const noexcept;
-    [[nodiscard]] Asset::IDerivedArtifactCacheUVE& GetDerivedArtifactCacheUVE() const noexcept;
-    [[nodiscard]] Asset::IProjectChangeWatcherUVE& GetProjectChangeWatcherUVE() const noexcept;
-    [[nodiscard]] Scene::ISceneSerializerUVE& GetSceneSerializerUVE() const noexcept;
-    [[nodiscard]] Scene::IPrefabSystemUVE& GetPrefabSystemUVE() const noexcept;
-    [[nodiscard]] Scene::IParticleRuntimeUVE& GetParticleRuntimeUVE() const noexcept;
-    [[nodiscard]] Asset::IHotReloadUVE& GetHotReloadUVE() const noexcept;
-    [[nodiscard]] Asset::IAssetManagerUVE& GetAssetManagerUVE() const noexcept;
-    [[nodiscard]] Asset::IAssetImporterUVE& GetAssetImporterUVE() const noexcept;
-    [[nodiscard]] Asset::IAssetImportQueueUVE& GetAssetImportQueueUVE() const noexcept;
-    [[nodiscard]] Asset::IAssetBundleUVE& GetAssetBundleUVE() const noexcept;
-    [[nodiscard]] Asset::IFileSystemUVE& GetFileSystemUVE() const noexcept;
-    [[nodiscard]] Render::IRenderDeviceUVE& GetRenderDeviceUVE() const noexcept;
-    [[nodiscard]] Render::Shader::IShaderManagerUVE& GetShaderManagerUVE() const noexcept;
-    [[nodiscard]] Render::IRenderSystemUVE& GetRenderSystemUVE() const noexcept;
-    [[nodiscard]] Render::IComputeSystemUVE& GetComputeSystemUVE() const noexcept;
-    [[nodiscard]] Render::ICameraSystemUVE& GetCameraSystemUVE() const noexcept;
-    [[nodiscard]] Render::IMeshRendererUVE& GetMeshRendererUVE() const noexcept;
-    [[nodiscard]] Render::ILightSystemUVE& GetLightSystemUVE() const noexcept;
-    [[nodiscard]] Render::IRenderer3DUVE& GetRenderer3DUVE() const noexcept;
-    [[nodiscard]] Physics::ICollisionSystemUVE& GetCollisionSystemUVE() const noexcept;
-    [[nodiscard]] Physics::IPhysicsSystemUVE& GetPhysicsSystemUVE() const noexcept;
-    [[nodiscard]] Physics::IPhysicsQuerySystemUVE& GetPhysicsQuerySystemUVE() const noexcept;
-    [[nodiscard]] Physics::IRaycastSystemUVE& GetRaycastSystemUVE() const noexcept;
-    [[nodiscard]] Physics::PhysicsConstraintSystemUVE& GetPhysicsConstraintSystemUVE() const noexcept;
-    [[nodiscard]] Input::IInputSystemUVE& GetInputSystemUVE() const noexcept;
-    [[nodiscard]] Input::IGamepadInputSystemUVE& GetGamepadInputSystemUVE() const noexcept;
-    [[nodiscard]] Input::IMobileInputSystemUVE& GetMobileInputSystemUVE() const noexcept;
-    [[nodiscard]] Input::IMobileGestureSystemUVE& GetMobileGestureSystemUVE() const noexcept;
-    [[nodiscard]] Audio::IAudioDeviceUVE& GetAudioDeviceUVE() const noexcept;
-    [[nodiscard]] Audio::IAudioSystemUVE& GetAudioSystemUVE() const noexcept;
-    [[nodiscard]] Audio::IAudioSourceSystemUVE& GetAudioSourceSystemUVE() const noexcept;
-    [[nodiscard]] Save::ISaveGameSystemUVE& GetSaveGameSystemUVE() const noexcept;
-    [[nodiscard]] Save::ICheckpointManagerUVE& GetCheckpointManagerUVE() const noexcept;
-    [[nodiscard]] Window::IWindowManagerUVE& GetWindowManagerUVE() const noexcept;
+    [[nodiscard]] Core::InputMapDocument& GetInputMap() const noexcept;
+    [[nodiscard]] Scene::IEntityManager& GetEntityManager() const noexcept;
+    [[nodiscard]] Scene::ISceneGraph& GetSceneGraph() const noexcept;
+    [[nodiscard]] Asset::IAssetDatabase& GetAssetDatabase() const noexcept;
+    [[nodiscard]] Asset::IProjectFileIndex& GetProjectFileIndex() const noexcept;
+    [[nodiscard]] Asset::IDerivedArtifactCache& GetDerivedArtifactCache() const noexcept;
+    [[nodiscard]] Asset::IProjectChangeWatcher& GetProjectChangeWatcher() const noexcept;
+    [[nodiscard]] Scene::ISceneSerializer& GetSceneSerializer() const noexcept;
+    [[nodiscard]] Scene::IPrefabSystem& GetPrefabSystem() const noexcept;
+    [[nodiscard]] Scene::IParticleRuntime& GetParticleRuntime() const noexcept;
+    [[nodiscard]] Asset::IHotReload& GetHotReload() const noexcept;
+    [[nodiscard]] Asset::IAssetManager& GetAssetManager() const noexcept;
+    [[nodiscard]] Asset::IAssetImporter& GetAssetImporter() const noexcept;
+    [[nodiscard]] Asset::IAssetImportQueue& GetAssetImportQueue() const noexcept;
+    [[nodiscard]] Asset::IAssetBundle& GetAssetBundle() const noexcept;
+    [[nodiscard]] Asset::IFileSystem& GetFileSystem() const noexcept;
+    [[nodiscard]] Render::IRenderDevice& GetRenderDevice() const noexcept;
+    [[nodiscard]] Render::Shader::IShaderManager& GetShaderManager() const noexcept;
+    [[nodiscard]] Render::IRenderSystem& GetRenderSystem() const noexcept;
+    [[nodiscard]] Render::IComputeSystem& GetComputeSystem() const noexcept;
+    [[nodiscard]] Render::ICameraSystem& GetCameraSystem() const noexcept;
+    [[nodiscard]] Render::IMeshRenderer& GetMeshRenderer() const noexcept;
+    [[nodiscard]] Render::ILightSystem& GetLightSystem() const noexcept;
+    [[nodiscard]] Render::IRenderer3D& GetRenderer3D() const noexcept;
+    [[nodiscard]] Physics::ICollisionSystem& GetCollisionSystem() const noexcept;
+    [[nodiscard]] Physics::IPhysicsSystem& GetPhysicsSystem() const noexcept;
+    [[nodiscard]] Physics::IPhysicsQuerySystem& GetPhysicsQuerySystem() const noexcept;
+    [[nodiscard]] Physics::IRaycastSystem& GetRaycastSystem() const noexcept;
+    [[nodiscard]] Physics::PhysicsConstraintSystem& GetPhysicsConstraintSystem() const noexcept;
+    [[nodiscard]] Input::IInputSystem& GetInputSystem() const noexcept;
+    [[nodiscard]] Input::IGamepadInputSystem& GetGamepadInputSystem() const noexcept;
+    [[nodiscard]] Input::IMobileInputSystem& GetMobileInputSystem() const noexcept;
+    [[nodiscard]] Input::IMobileGestureSystem& GetMobileGestureSystem() const noexcept;
+    [[nodiscard]] Audio::IAudioDevice& GetAudioDevice() const noexcept;
+    [[nodiscard]] Audio::IAudioSystem& GetAudioSystem() const noexcept;
+    [[nodiscard]] Audio::IAudioSourceSystem& GetAudioSourceSystem() const noexcept;
+    [[nodiscard]] Save::ISaveGameSystem& GetSaveGameSystem() const noexcept;
+    [[nodiscard]] Save::ICheckpointManager& GetCheckpointManager() const noexcept;
+    [[nodiscard]] Window::IWindowManager& GetWindowManager() const noexcept;
 
-    void SetVfxWorldUVE(VFX::VfxWorldUVE* vfxWorld) noexcept;
-    [[nodiscard]] VFX::VfxWorldUVE* TryGetVfxWorldUVE() const noexcept;
+    void SetVfxWorld(VFX::VfxWorld* vfxWorld) noexcept;
+    [[nodiscard]] VFX::VfxWorld* TryGetVfxWorld() const noexcept;
 
     /// These services with the scene half replaced: another scene's entities and graph, drawn by
-    /// its own renderer and render systems (see DocumentSceneUVE). Everything else is shared.
-    [[nodiscard]] EngineServicesUVE WithSceneUVE(Scene::IEntityManagerUVE& entityManager,
-                                                 Scene::ISceneGraphUVE& sceneGraph,
-                                                 Render::ICameraSystemUVE& cameraSystem,
-                                                 Render::IMeshRendererUVE& meshRenderer,
-                                                 Render::ILightSystemUVE& lightSystem,
-                                                 Render::IRenderer3DUVE& renderer3D) const noexcept;
+    /// its own renderer and render systems (see DocumentScene). Everything else is shared.
+    [[nodiscard]] EngineServices WithScene(Scene::IEntityManager& entityManager,
+                                                 Scene::ISceneGraph& sceneGraph,
+                                                 Render::ICameraSystem& cameraSystem,
+                                                 Render::IMeshRenderer& meshRenderer,
+                                                 Render::ILightSystem& lightSystem,
+                                                 Render::IRenderer3D& renderer3D) const noexcept;
 
 private:
-    Debug::ILoggerUVE* m_logger;
-    Utilities::ITimerUVE* m_timer;
-    Events::IEventSystemUVE* m_eventSystem;
-    Memory::IMemoryManagerUVE* m_memoryManager;
-    Threading::IThreadPoolUVE* m_threadPool;
-    CommandLine::ICommandLineUVE* m_commandLine;
-    Config::IConfigManagerUVE* m_configManager;
-    Config::SettingsDocumentUVE* m_projectSettings;
-    Core::InputMapDocumentUVE* m_inputMap;
-    Scene::IEntityManagerUVE* m_entityManager;
-    Scene::ISceneGraphUVE* m_sceneGraph;
-    Asset::IAssetDatabaseUVE* m_assetDatabase;
-    Asset::IProjectFileIndexUVE* m_projectFileIndex;
-    Asset::IDerivedArtifactCacheUVE* m_derivedArtifactCache;
-    Asset::IProjectChangeWatcherUVE* m_projectChangeWatcher;
-    Scene::ISceneSerializerUVE* m_sceneSerializer;
-    Scene::IPrefabSystemUVE* m_prefabSystem;
-    Scene::IParticleRuntimeUVE* m_particleRuntime;
-    Asset::IHotReloadUVE* m_hotReload;
-    Asset::IAssetManagerUVE* m_assetManager;
-    Asset::IAssetImporterUVE* m_assetImporter;
-    Asset::IAssetImportQueueUVE* m_assetImportQueue;
-    Asset::IAssetBundleUVE* m_assetBundle;
-    Asset::IFileSystemUVE* m_fileSystem;
-    Render::IRenderDeviceUVE* m_renderDevice;
-    Render::Shader::IShaderManagerUVE* m_shaderManager;
-    Render::IRenderSystemUVE* m_renderSystem;
-    Render::IComputeSystemUVE* m_computeSystem;
-    Render::ICameraSystemUVE* m_cameraSystem;
-    Render::IMeshRendererUVE* m_meshRenderer;
-    Render::ILightSystemUVE* m_lightSystem;
-    Render::IRenderer3DUVE* m_renderer3D;
-    Physics::ICollisionSystemUVE* m_collisionSystem;
-    Physics::IPhysicsSystemUVE* m_physicsSystem;
-    Physics::IPhysicsQuerySystemUVE* m_physicsQuerySystem;
-    Physics::IRaycastSystemUVE* m_raycastSystem;
-    Physics::PhysicsConstraintSystemUVE* m_physicsConstraintSystem;
-    Input::IInputSystemUVE* m_inputSystem;
-    Input::IGamepadInputSystemUVE* m_gamepadInputSystem;
-    Input::IMobileInputSystemUVE* m_mobileInputSystem;
-    Input::IMobileGestureSystemUVE* m_mobileGestureSystem;
-    Audio::IAudioDeviceUVE* m_audioDevice;
-    Audio::IAudioSystemUVE* m_audioSystem;
-    Audio::IAudioSourceSystemUVE* m_audioSourceSystem;
-    Save::ISaveGameSystemUVE* m_saveGameSystem;
-    Save::ICheckpointManagerUVE* m_checkpointManager;
-    Window::IWindowManagerUVE* m_windowManager;
-    VFX::VfxWorldUVE* m_vfxWorld = nullptr;
+    Debug::ILogger* m_logger;
+    Utilities::ITimer* m_timer;
+    Events::IEventSystem* m_eventSystem;
+    Memory::IMemoryManager* m_memoryManager;
+    Threading::IThreadPool* m_threadPool;
+    CommandLine::ICommandLine* m_commandLine;
+    Config::IConfigManager* m_configManager;
+    Config::SettingsDocument* m_projectSettings;
+    Core::InputMapDocument* m_inputMap;
+    Scene::IEntityManager* m_entityManager;
+    Scene::ISceneGraph* m_sceneGraph;
+    Asset::IAssetDatabase* m_assetDatabase;
+    Asset::IProjectFileIndex* m_projectFileIndex;
+    Asset::IDerivedArtifactCache* m_derivedArtifactCache;
+    Asset::IProjectChangeWatcher* m_projectChangeWatcher;
+    Scene::ISceneSerializer* m_sceneSerializer;
+    Scene::IPrefabSystem* m_prefabSystem;
+    Scene::IParticleRuntime* m_particleRuntime;
+    Asset::IHotReload* m_hotReload;
+    Asset::IAssetManager* m_assetManager;
+    Asset::IAssetImporter* m_assetImporter;
+    Asset::IAssetImportQueue* m_assetImportQueue;
+    Asset::IAssetBundle* m_assetBundle;
+    Asset::IFileSystem* m_fileSystem;
+    Render::IRenderDevice* m_renderDevice;
+    Render::Shader::IShaderManager* m_shaderManager;
+    Render::IRenderSystem* m_renderSystem;
+    Render::IComputeSystem* m_computeSystem;
+    Render::ICameraSystem* m_cameraSystem;
+    Render::IMeshRenderer* m_meshRenderer;
+    Render::ILightSystem* m_lightSystem;
+    Render::IRenderer3D* m_renderer3D;
+    Physics::ICollisionSystem* m_collisionSystem;
+    Physics::IPhysicsSystem* m_physicsSystem;
+    Physics::IPhysicsQuerySystem* m_physicsQuerySystem;
+    Physics::IRaycastSystem* m_raycastSystem;
+    Physics::PhysicsConstraintSystem* m_physicsConstraintSystem;
+    Input::IInputSystem* m_inputSystem;
+    Input::IGamepadInputSystem* m_gamepadInputSystem;
+    Input::IMobileInputSystem* m_mobileInputSystem;
+    Input::IMobileGestureSystem* m_mobileGestureSystem;
+    Audio::IAudioDevice* m_audioDevice;
+    Audio::IAudioSystem* m_audioSystem;
+    Audio::IAudioSourceSystem* m_audioSourceSystem;
+    Save::ISaveGameSystem* m_saveGameSystem;
+    Save::ICheckpointManager* m_checkpointManager;
+    Window::IWindowManager* m_windowManager;
+    VFX::VfxWorld* m_vfxWorld = nullptr;
 };
 
 } // namespace UVE::Core

@@ -14,7 +14,7 @@ namespace UVE::Scene {
 /// tool - translating those either does nothing or actively corrupts them. Translating everything
 /// by default and adding exceptions gets this wrong in the direction that is hardest to notice: a
 /// missing translation is visible, a wrongly-translated identifier is not.
-enum class LocalizeModeUVE : std::uint8_t {
+enum class LocalizeMode : std::uint8_t {
     /// Take the parent's answer, or Localized at the top of the hierarchy. The default, so a whole
     /// menu is switched by its root.
     Inherit = 0,
@@ -26,34 +26,34 @@ enum class LocalizeModeUVE : std::uint8_t {
 };
 
 /// An entity's translation preference.
-struct AutoTranslateComponentUVE final {
-    LocalizeModeUVE mode = LocalizeModeUVE::Inherit;
+struct AutoTranslateComponent final {
+    LocalizeMode mode = LocalizeMode::Inherit;
 
-    /// Derived: the mode resolved against ancestors. Written only by SceneGraphUVE::UpdateUVE, and
+    /// Derived: the mode resolved against ancestors. Written only by SceneGraph::Update, and
     /// read by whatever draws the entity's text.
-    LocalizeModeUVE resolvedModeInHierarchy = LocalizeModeUVE::Localized;
+    LocalizeMode resolvedModeInHierarchy = LocalizeMode::Localized;
 };
 
 /// True when `mode` is `Inherit`, `Localized`, or `Literal`.
-[[nodiscard]] bool IsLocalizeModeValidUVE(LocalizeModeUVE mode) noexcept;
+[[nodiscard]] bool IsLocalizeModeValid(LocalizeMode mode) noexcept;
 
-[[nodiscard]] bool IsAutoTranslateComponentValidUVE(const AutoTranslateComponentUVE& component) noexcept;
+[[nodiscard]] bool IsAutoTranslateComponentValid(const AutoTranslateComponent& component) noexcept;
 
 /// Resolves `mode` against the parent's already-resolved answer. Inherit passes through; anything
 /// else replaces it, because a single label inside a translated menu must be able to opt out.
-[[nodiscard]] LocalizeModeUVE ResolveLocalizeModeUVE(LocalizeModeUVE mode,
-                                                     LocalizeModeUVE parentMode) noexcept;
+[[nodiscard]] LocalizeMode ResolveLocalizeMode(LocalizeMode mode,
+                                                     LocalizeMode parentMode) noexcept;
 
 /// Resolves and writes `component->resolvedModeInHierarchy` against `parentResolvedMode`
 /// (passes through when `component` is null).
-[[nodiscard]] LocalizeModeUVE ResolveHierarchyLocalizeModeUVE(
-    AutoTranslateComponentUVE* component, LocalizeModeUVE parentResolvedMode) noexcept;
+[[nodiscard]] LocalizeMode ResolveHierarchyLocalizeMode(
+    AutoTranslateComponent* component, LocalizeMode parentResolvedMode) noexcept;
 
 /// True when the entity's text should be looked up in the active locale (`Localized` when null).
-[[nodiscard]] bool ShouldTranslateEntityTextUVE(const AutoTranslateComponentUVE* component) noexcept;
+[[nodiscard]] bool ShouldTranslateEntityText(const AutoTranslateComponent* component) noexcept;
 
 /// Resets invalid enum values to `Inherit` / `Localized`.
-[[nodiscard]] AutoTranslateComponentUVE SanitizeAutoTranslateComponentUVE(
-    const AutoTranslateComponentUVE& component) noexcept;
+[[nodiscard]] AutoTranslateComponent SanitizeAutoTranslateComponent(
+    const AutoTranslateComponent& component) noexcept;
 
 } // namespace UVE::Scene

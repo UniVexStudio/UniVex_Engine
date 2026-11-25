@@ -12,18 +12,18 @@ namespace UVE::Scene {
 
 namespace {
 
-[[nodiscard]] bool SortsBeforeMarker3DUVE(const EntityUVE lhs, const EntityUVE rhs) noexcept {
+[[nodiscard]] bool SortsBeforeMarker3D(const Entity lhs, const Entity rhs) noexcept {
     return lhs.index < rhs.index || (lhs.index == rhs.index && lhs.generation < rhs.generation);
 }
 
-/// Bounded, ordered insertion. The array always holds the first `kMaximumMarker3DQueryResultsUVE`
+/// Bounded, ordered insertion. The array always holds the first `kMaximumMarker3DQueryResults`
 /// candidates in stable content order no matter what order the pool hands them over in: a
 /// candidate that sorts before the current last one displaces it, and whatever falls off the end
 /// sets `overflowed`.
-void InsertOrderedUVE(Marker3DQueryResultsUVE& results, Marker3DQueryResultUVE candidate) {
+void InsertOrdered(Marker3DQueryResults& results, Marker3DQueryResult candidate) {
     std::size_t slot = results.count;
-    if (results.count == kMaximumMarker3DQueryResultsUVE) {
-        if (!SortsBeforeMarker3DUVE(candidate.entity, results.results[results.count - 1U].entity)) {
+    if (results.count == kMaximumMarker3DQueryResults) {
+        if (!SortsBeforeMarker3D(candidate.entity, results.results[results.count - 1U].entity)) {
             results.overflowed = true;
             return;
         }
@@ -33,7 +33,7 @@ void InsertOrderedUVE(Marker3DQueryResultsUVE& results, Marker3DQueryResultUVE c
         ++results.count;
     }
 
-    while (slot > 0U && SortsBeforeMarker3DUVE(candidate.entity, results.results[slot - 1U].entity)) {
+    while (slot > 0U && SortsBeforeMarker3D(candidate.entity, results.results[slot - 1U].entity)) {
         results.results[slot] = std::move(results.results[slot - 1U]);
         --slot;
     }
@@ -42,42 +42,42 @@ void InsertOrderedUVE(Marker3DQueryResultsUVE& results, Marker3DQueryResultUVE c
 
 } // namespace
 
-Marker3DQueryResultsUVE QueryMarkers3DUVE(IEntityManagerUVE& entityManager, const Marker3DQueryUVE& query) {
-    Marker3DQueryResultsUVE results;
+Marker3DQueryResults QueryMarkers3D(IEntityManager& entityManager, const Marker3DQuery& query) {
+    Marker3DQueryResults results;
 
-    entityManager.ForEachUVE<Marker3DComponentUVE>(
-        [&entityManager, &query, &results](const EntityUVE entity, Marker3DComponentUVE& marker) {
-            if (!Marker3DUVE::IsQueryableUVE(marker) ||
-                !Marker3DUVE::MatchesNameFilterUVE(marker, query.name)) {
+    entityManager.ForEach<Marker3DComponent>(
+        [&entityManager, &query, &results](const Entity entity, Marker3DComponent& marker) {
+            if (!Marker3D::IsQueryable(marker) ||
+                !Marker3D::MatchesNameFilter(marker, query.name)) {
                 return;
             }
-            if (!entityManager.HasComponentUVE<WorldTransformComponentUVE>(entity)) {
+            if (!entityManager.HasComponent<WorldTransformComponent>(entity)) {
                 return;
             }
 
-            const WorldTransformComponentUVE& world =
-                entityManager.GetComponentUVE<WorldTransformComponentUVE>(entity);
-            const std::optional<Marker3DPoseUVE> pose =
-                Marker3DUVE::ResolveWorldPoseUVE(marker, world.worldPosition, world.worldRotation);
+            const WorldTransformComponent& world =
+                entityManager.GetComponent<WorldTransformComponent>(entity);
+            const std::optional<Marker3DPose> pose =
+                Marker3D::ResolveWorldPose(marker, world.worldPosition, world.worldRotation);
             if (!pose.has_value()) {
                 return;
             }
 
-            InsertOrderedUVE(results, Marker3DQueryResultUVE{entity, marker.markerName, *pose});
+            InsertOrdered(results, Marker3DQueryResult{entity, marker.markerName, *pose});
         });
 
     return results;
 }
 
-std::optional<Marker3DQueryResultUVE> FindMarker3DUVE(IEntityManagerUVE& entityManager,
+std::optional<Marker3DQueryResult> FindMarker3D(IEntityManager& entityManager,
                                                       const std::string_view name) {
     if (name.empty()) {
         return std::nullopt;
     }
-    Marker3DQueryUVE query;
+    Marker3DQuery query;
     query.name = std::string{name};
-    const Marker3DQueryResultsUVE results = QueryMarkers3DUVE(entityManager, query);
-    const Marker3DQueryResultUVE* const first = results.FirstUVE();
+    const Marker3DQueryResults results = QueryMarkers3D(entityManager, query);
+    const Marker3DQueryResult* const first = results.First();
     if (first == nullptr) {
         return std::nullopt;
     }

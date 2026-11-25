@@ -7,45 +7,45 @@
 namespace UVE::Scene {
 namespace {
 
-[[nodiscard]] float SanitizedInputUVE(const float input) noexcept {
+[[nodiscard]] float SanitizedInput(const float input) noexcept {
     if (!std::isfinite(input) || input <= 0.0F) {
         return 0.0F;
     }
     return input >= 1.0F ? 1.0F : input;
 }
 
-[[nodiscard]] bool IsUsableIdUVE(const std::string_view id, const std::size_t maximumBytes) noexcept {
+[[nodiscard]] bool IsUsableId(const std::string_view id, const std::size_t maximumBytes) noexcept {
     return !id.empty() && id.size() <= maximumBytes;
 }
 
-[[nodiscard]] bool IsKnownCurveUVE(const AiResponseCurveUVE curve) noexcept {
-    return static_cast<std::uint8_t>(curve) <= static_cast<std::uint8_t>(AiResponseCurveUVE::InverseQuadratic);
+[[nodiscard]] bool IsKnownCurve(const AiResponseCurve curve) noexcept {
+    return static_cast<std::uint8_t>(curve) <= static_cast<std::uint8_t>(AiResponseCurve::InverseQuadratic);
 }
 
 } // namespace
 
-float EvaluateAiResponseCurveUVE(const AiResponseCurveUVE curve, const float input) noexcept {
-    const float x = SanitizedInputUVE(input);
+float EvaluateAiResponseCurve(const AiResponseCurve curve, const float input) noexcept {
+    const float x = SanitizedInput(input);
     switch (curve) {
-        case AiResponseCurveUVE::Linear:
+        case AiResponseCurve::Linear:
             return x;
-        case AiResponseCurveUVE::Quadratic:
+        case AiResponseCurve::Quadratic:
             return x * x;
-        case AiResponseCurveUVE::InverseLinear:
+        case AiResponseCurve::InverseLinear:
             return 1.0F - x;
-        case AiResponseCurveUVE::InverseQuadratic:
+        case AiResponseCurve::InverseQuadratic:
             return (1.0F - x) * (1.0F - x);
     }
     return x;
 }
 
-bool IsBlackboardComponentValidUVE(const BlackboardComponentUVE& board) noexcept {
-    if (board.entries.size() > kMaximumAiBlackboardEntriesUVE) {
+bool IsBlackboardComponentValid(const BlackboardComponent& board) noexcept {
+    if (board.entries.size() > kMaximumAiBlackboardEntries) {
         return false;
     }
     for (std::size_t index = 0U; index < board.entries.size(); ++index) {
-        const AiBlackboardEntryUVE& entry = board.entries[index];
-        if (!IsUsableIdUVE(entry.key, kMaximumAiInputIdBytesUVE) || !std::isfinite(entry.value)) {
+        const AiBlackboardEntry& entry = board.entries[index];
+        if (!IsUsableId(entry.key, kMaximumAiInputIdBytes) || !std::isfinite(entry.value)) {
             return false;
         }
         for (std::size_t earlier = 0U; earlier < index; ++earlier) {
@@ -54,12 +54,12 @@ bool IsBlackboardComponentValidUVE(const BlackboardComponentUVE& board) noexcept
             }
         }
     }
-    if (board.vectors.size() > kMaximumAiBlackboardVectorsUVE) {
+    if (board.vectors.size() > kMaximumAiBlackboardVectors) {
         return false;
     }
     for (std::size_t index = 0U; index < board.vectors.size(); ++index) {
-        const AiBlackboardVectorEntryUVE& entry = board.vectors[index];
-        if (!IsUsableIdUVE(entry.key, kMaximumAiInputIdBytesUVE) || !std::isfinite(entry.value.x) ||
+        const AiBlackboardVectorEntry& entry = board.vectors[index];
+        if (!IsUsableId(entry.key, kMaximumAiInputIdBytes) || !std::isfinite(entry.value.x) ||
             !std::isfinite(entry.value.y) || !std::isfinite(entry.value.z)) {
             return false;
         }
@@ -72,16 +72,16 @@ bool IsBlackboardComponentValidUVE(const BlackboardComponentUVE& board) noexcept
     return true;
 }
 
-bool IsAiBrainComponentValidUVE(const AiBrainComponentUVE& brain) noexcept {
-    if (brain.actions.size() > kMaximumAiActionsUVE || !std::isfinite(brain.hysteresis) ||
+bool IsAiBrainComponentValid(const AiBrainComponent& brain) noexcept {
+    if (brain.actions.size() > kMaximumAiActions || !std::isfinite(brain.hysteresis) ||
         brain.hysteresis < 0.0F || !std::isfinite(brain.currentScore)) {
         return false;
     }
     for (std::size_t index = 0U; index < brain.actions.size(); ++index) {
-        const AiActionUVE& action = brain.actions[index];
-        if (!IsUsableIdUVE(action.actionId, kMaximumAiActionIdBytesUVE) ||
+        const AiAction& action = brain.actions[index];
+        if (!IsUsableId(action.actionId, kMaximumAiActionIdBytes) ||
             !std::isfinite(action.baseScore) || action.baseScore < 0.0F || action.baseScore > 1.0F ||
-            action.considerations.size() > kMaximumAiConsiderationsUVE) {
+            action.considerations.size() > kMaximumAiConsiderations) {
             return false;
         }
         for (std::size_t earlier = 0U; earlier < index; ++earlier) {
@@ -89,9 +89,9 @@ bool IsAiBrainComponentValidUVE(const AiBrainComponentUVE& brain) noexcept {
                 return false;
             }
         }
-        for (const AiConsiderationUVE& consideration : action.considerations) {
-            if (!IsUsableIdUVE(consideration.inputId, kMaximumAiInputIdBytesUVE) ||
-                !IsKnownCurveUVE(consideration.curve) || !std::isfinite(consideration.weight) ||
+        for (const AiConsideration& consideration : action.considerations) {
+            if (!IsUsableId(consideration.inputId, kMaximumAiInputIdBytes) ||
+                !IsKnownCurve(consideration.curve) || !std::isfinite(consideration.weight) ||
                 consideration.weight < 0.0F) {
                 return false;
             }
@@ -100,8 +100,8 @@ bool IsAiBrainComponentValidUVE(const AiBrainComponentUVE& brain) noexcept {
     return true;
 }
 
-float GetBlackboardValueUVE(const BlackboardComponentUVE& board, const std::string_view key) noexcept {
-    for (const AiBlackboardEntryUVE& entry : board.entries) {
+float GetBlackboardValue(const BlackboardComponent& board, const std::string_view key) noexcept {
+    for (const AiBlackboardEntry& entry : board.entries) {
         if (entry.key == key) {
             return entry.value;
         }
@@ -109,24 +109,24 @@ float GetBlackboardValueUVE(const BlackboardComponentUVE& board, const std::stri
     return 0.0F;
 }
 
-bool SetBlackboardValueUVE(BlackboardComponentUVE& board, std::string key, const float value) {
-    if (!IsUsableIdUVE(key, kMaximumAiInputIdBytesUVE) || !std::isfinite(value)) {
+bool SetBlackboardValue(BlackboardComponent& board, std::string key, const float value) {
+    if (!IsUsableId(key, kMaximumAiInputIdBytes) || !std::isfinite(value)) {
         return false;
     }
-    for (AiBlackboardEntryUVE& entry : board.entries) {
+    for (AiBlackboardEntry& entry : board.entries) {
         if (entry.key == key) {
             entry.value = value;
             return true;
         }
     }
-    if (board.entries.size() >= kMaximumAiBlackboardEntriesUVE) {
+    if (board.entries.size() >= kMaximumAiBlackboardEntries) {
         return false;
     }
-    board.entries.push_back(AiBlackboardEntryUVE{std::move(key), value});
+    board.entries.push_back(AiBlackboardEntry{std::move(key), value});
     return true;
 }
 
-bool RemoveBlackboardValueUVE(BlackboardComponentUVE& board, const std::string_view key) {
+bool RemoveBlackboardValue(BlackboardComponent& board, const std::string_view key) {
     for (auto entry = board.entries.begin(); entry != board.entries.end(); ++entry) {
         if (entry->key == key) {
             board.entries.erase(entry);
@@ -136,35 +136,35 @@ bool RemoveBlackboardValueUVE(BlackboardComponentUVE& board, const std::string_v
     return false;
 }
 
-Math::Vector3UVE GetBlackboardVectorUVE(const BlackboardComponentUVE& board,
+Math::Vector3 GetBlackboardVector(const BlackboardComponent& board,
                                         const std::string_view key) noexcept {
-    for (const AiBlackboardVectorEntryUVE& entry : board.vectors) {
+    for (const AiBlackboardVectorEntry& entry : board.vectors) {
         if (entry.key == key) {
             return entry.value;
         }
     }
-    return Math::Vector3UVE{};
+    return Math::Vector3{};
 }
 
-bool SetBlackboardVectorUVE(BlackboardComponentUVE& board, std::string key, const Math::Vector3UVE value) {
-    if (!IsUsableIdUVE(key, kMaximumAiInputIdBytesUVE) || !std::isfinite(value.x) ||
+bool SetBlackboardVector(BlackboardComponent& board, std::string key, const Math::Vector3 value) {
+    if (!IsUsableId(key, kMaximumAiInputIdBytes) || !std::isfinite(value.x) ||
         !std::isfinite(value.y) || !std::isfinite(value.z)) {
         return false;
     }
-    for (AiBlackboardVectorEntryUVE& entry : board.vectors) {
+    for (AiBlackboardVectorEntry& entry : board.vectors) {
         if (entry.key == key) {
             entry.value = value;
             return true;
         }
     }
-    if (board.vectors.size() >= kMaximumAiBlackboardVectorsUVE) {
+    if (board.vectors.size() >= kMaximumAiBlackboardVectors) {
         return false;
     }
-    board.vectors.push_back(AiBlackboardVectorEntryUVE{std::move(key), value});
+    board.vectors.push_back(AiBlackboardVectorEntry{std::move(key), value});
     return true;
 }
 
-bool RemoveBlackboardVectorUVE(BlackboardComponentUVE& board, const std::string_view key) {
+bool RemoveBlackboardVector(BlackboardComponent& board, const std::string_view key) {
     for (auto entry = board.vectors.begin(); entry != board.vectors.end(); ++entry) {
         if (entry->key == key) {
             board.vectors.erase(entry);
@@ -174,12 +174,12 @@ bool RemoveBlackboardVectorUVE(BlackboardComponentUVE& board, const std::string_
     return false;
 }
 
-float ScoreAiActionUVE(const AiActionUVE& action, const BlackboardComponentUVE& board) noexcept {
-    double score = SanitizedInputUVE(action.baseScore);
+float ScoreAiAction(const AiAction& action, const BlackboardComponent& board) noexcept {
+    double score = SanitizedInput(action.baseScore);
     std::size_t activeConsiderations = 0U;
-    for (const AiConsiderationUVE& consideration : action.considerations) {
-        const float value = GetBlackboardValueUVE(board, consideration.inputId);
-        const double curved = EvaluateAiResponseCurveUVE(consideration.curve, value);
+    for (const AiConsideration& consideration : action.considerations) {
+        const float value = GetBlackboardValue(board, consideration.inputId);
+        const double curved = EvaluateAiResponseCurve(consideration.curve, value);
         const double weight =
             std::isfinite(consideration.weight) && consideration.weight >= 0.0F ? consideration.weight : 0.0;
         score *= std::pow(curved, weight);
@@ -195,18 +195,18 @@ float ScoreAiActionUVE(const AiActionUVE& action, const BlackboardComponentUVE& 
     return static_cast<float>(score);
 }
 
-AiActionSelectionUVE SelectAiActionUVE(const AiBrainComponentUVE& brain,
-                                       const BlackboardComponentUVE& board) {
-    const AiActionUVE* best = nullptr;
+AiActionSelection SelectAiAction(const AiBrainComponent& brain,
+                                       const BlackboardComponent& board) {
+    const AiAction* best = nullptr;
     float bestScore = 0.0F;
-    for (const AiActionUVE& action : brain.actions) {
-        const float score = ScoreAiActionUVE(action, board);
+    for (const AiAction& action : brain.actions) {
+        const float score = ScoreAiAction(action, board);
         if (best == nullptr || score > bestScore) {
             best = &action;
             bestScore = score;
         }
     }
-    AiActionSelectionUVE selection;
+    AiActionSelection selection;
     if (best == nullptr || bestScore <= 0.0F) {
         selection.changed = !brain.currentAction.empty();
         return selection;
@@ -215,9 +215,9 @@ AiActionSelectionUVE SelectAiActionUVE(const AiBrainComponentUVE& brain,
         std::isfinite(brain.hysteresis) && brain.hysteresis >= 0.0F ? brain.hysteresis : 0.0F;
     float incumbentScore = -1.0F;
     if (!brain.currentAction.empty()) {
-        for (const AiActionUVE& action : brain.actions) {
+        for (const AiAction& action : brain.actions) {
             if (action.actionId == brain.currentAction) {
-                incumbentScore = ScoreAiActionUVE(action, board);
+                incumbentScore = ScoreAiAction(action, board);
                 break;
             }
         }

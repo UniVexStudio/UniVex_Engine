@@ -7,40 +7,40 @@
 
 namespace UVE::Save {
 
-/// CheckpointManagerUVE is the concrete, engine-standard implementation of
-/// ICheckpointManagerUVE. Composes an ISaveGameSystemUVE& (dependency injection, matching
-/// Physics::PhysicsSystemUVE's ICollisionSystemUVE& precedent) and holds only the small pieces of
+/// CheckpointManager is the concrete, engine-standard implementation of
+/// ICheckpointManager. Composes an ISaveGameSystem& (dependency injection, matching
+/// Physics::PhysicsSystem's ICollisionSystem& precedent) and holds only the small pieces of
 /// state its own doc comment promises (elapsed-since-last-save, total playtime, configured
 /// interval) — no per-entity state.
-class CheckpointManagerUVE final : public ICheckpointManagerUVE {
+class CheckpointManager final : public ICheckpointManager {
 public:
-    /// `saveGameSystem` must outlive this CheckpointManagerUVE. `autoSaveIntervalSeconds` must be
+    /// `saveGameSystem` must outlive this CheckpointManager. `autoSaveIntervalSeconds` must be
     /// finite and positive; invalid construction input falls back to 300.0 (the spec's "e.g.,
     /// every 5 minutes" example). `metadataTemplate` is copied and supplies caller-owned policy
     /// fields (such as the canonical engine version) to both automatic and manual checkpoints;
-    /// SaveGameSystemUVE still overwrites timestamp, slot, and payload schema.
-    explicit CheckpointManagerUVE(ISaveGameSystemUVE& saveGameSystem, double autoSaveIntervalSeconds = 300.0,
-                                  GameStateMetadataUVE metadataTemplate = {});
+    /// SaveGameSystem still overwrites timestamp, slot, and payload schema.
+    explicit CheckpointManager(ISaveGameSystem& saveGameSystem, double autoSaveIntervalSeconds = 300.0,
+                                  GameStateMetadata metadataTemplate = {});
 
-    void UpdateUVE(double deltaTimeSeconds, Scene::IEntityManagerUVE& entityManager,
-                    const std::vector<Scene::EntityUVE>& rootEntities) override;
-    [[nodiscard]] bool CheckpointUVE(Scene::IEntityManagerUVE& entityManager,
-                                      const std::vector<Scene::EntityUVE>& rootEntities) override;
-    void SetAutoSaveIntervalSecondsUVE(double intervalSeconds) noexcept override;
-    [[nodiscard]] double GetAutoSaveIntervalSecondsUVE() const noexcept override;
-    [[nodiscard]] double GetElapsedSinceLastSaveSecondsUVE() const noexcept override;
-    [[nodiscard]] double GetTotalPlaytimeSecondsUVE() const noexcept override;
+    void Update(double deltaTimeSeconds, Scene::IEntityManager& entityManager,
+                    const std::vector<Scene::Entity>& rootEntities) override;
+    [[nodiscard]] bool Checkpoint(Scene::IEntityManager& entityManager,
+                                      const std::vector<Scene::Entity>& rootEntities) override;
+    void SetAutoSaveIntervalSeconds(double intervalSeconds) noexcept override;
+    [[nodiscard]] double GetAutoSaveIntervalSeconds() const noexcept override;
+    [[nodiscard]] double GetElapsedSinceLastSaveSeconds() const noexcept override;
+    [[nodiscard]] double GetTotalPlaytimeSeconds() const noexcept override;
 
 private:
-    /// Builds this checkpoint's GameStateMetadataUVE (playtimeSeconds = m_totalPlaytimeSeconds,
-    /// every other field default) and calls m_saveGameSystem->SaveUVE() for the caller-selected
+    /// Builds this checkpoint's GameStateMetadata (playtimeSeconds = m_totalPlaytimeSeconds,
+    /// every other field default) and calls m_saveGameSystem->Save() for the caller-selected
     /// reserved slot, then resets m_elapsedSinceLastSaveSeconds to 0 only after success. Shared by
-    /// both UpdateUVE()'s interval-triggered path and CheckpointUVE()'s immediate path.
-    [[nodiscard]] bool SaveCheckpointUVE(int slotIndex, Scene::IEntityManagerUVE& entityManager,
-                                          const std::vector<Scene::EntityUVE>& rootEntities);
+    /// both Update()'s interval-triggered path and Checkpoint()'s immediate path.
+    [[nodiscard]] bool SaveCheckpoint(int slotIndex, Scene::IEntityManager& entityManager,
+                                          const std::vector<Scene::Entity>& rootEntities);
 
-    ISaveGameSystemUVE* m_saveGameSystem;
-    GameStateMetadataUVE m_metadataTemplate;
+    ISaveGameSystem* m_saveGameSystem;
+    GameStateMetadata m_metadataTemplate;
     double m_autoSaveIntervalSeconds;
     double m_elapsedSinceLastSaveSeconds = 0.0;
     double m_totalPlaytimeSeconds = 0.0;

@@ -12,28 +12,28 @@
 
 namespace UVE::Render {
 
-/// IMeshRendererUVE walks every entity with a WorldTransformComponentUVE + MeshComponentUVE (the
-/// spec's `MeshRendererUVE`, Part 7.2), resolves its mesh/material assets, culls it against a
-/// frustum, and buckets it into a sorted RenderQueueUVE — the ECS-to-draw-item extraction step
-/// between CameraSystemUVE (Increment 11) and a future Renderer3DUVE (Increment 14).
-/// Entities whose meshGuid/materialGuid is kInvalidAssetGuidUVE, or whose asset load hasn't
-/// finished yet this frame, are silently skipped (no error) — consistent with AssetManagerUVE's
+/// IMeshRenderer walks every entity with a WorldTransformComponent + MeshComponent (the
+/// spec's `MeshRenderer`, Part 7.2), resolves its mesh/material assets, culls it against a
+/// frustum, and buckets it into a sorted RenderQueue — the ECS-to-draw-item extraction step
+/// between CameraSystem (Increment 11) and a future Renderer3D (Increment 14).
+/// Entities whose meshGuid/materialGuid is kInvalidAssetGuid, or whose asset load hasn't
+/// finished yet this frame, are silently skipped (no error) — consistent with AssetManager's
 /// async, non-blocking loading design; they appear automatically once loaded.
 /// Thread-safety: implementations should be stateless (holding no members), matching
-/// CameraSystemUVE's contract. ExtractRenderQueueUVE itself is not thread-safe to call
+/// CameraSystem's contract. ExtractRenderQueue itself is not thread-safe to call
 /// concurrently — intended to be called once per frame from the main engine thread, after
-/// SceneGraphUVE::UpdateUVE() has produced this frame's WorldTransformComponentUVE data.
-class IMeshRendererUVE {
+/// SceneGraph::Update() has produced this frame's WorldTransformComponent data.
+class IMeshRenderer {
 public:
-    virtual ~IMeshRendererUVE() = default;
+    virtual ~IMeshRenderer() = default;
 
-    /// Extracts this frame's RenderQueueUVE: every visible, asset-ready entity with both
-    /// WorldTransformComponentUVE and MeshComponentUVE, culled against `cullFrustum` and bucketed
-    /// into opaque/transparent per its MaterialAssetUVE::isTransparent.
-    [[nodiscard]] virtual RenderQueueUVE ExtractRenderQueueUVE(Scene::IEntityManagerUVE& entityManager,
-                                                                 Asset::IAssetManagerUVE& assetManager,
-                                                                 Asset::IAssetDatabaseUVE& assetDatabase,
-                                                                 const Math::FrustumUVE& cullFrustum) const = 0;
+    /// Extracts this frame's RenderQueue: every visible, asset-ready entity with both
+    /// WorldTransformComponent and MeshComponent, culled against `cullFrustum` and bucketed
+    /// into opaque/transparent per its MaterialAsset::isTransparent.
+    [[nodiscard]] virtual RenderQueue ExtractRenderQueue(Scene::IEntityManager& entityManager,
+                                                                 Asset::IAssetManager& assetManager,
+                                                                 Asset::IAssetDatabase& assetDatabase,
+                                                                 const Math::Frustum& cullFrustum) const = 0;
 
     /// Builds this frame's frustum-INDEPENDENT candidate set: every entity resolved, validated and
     /// placed in the world, with no culling applied.
@@ -41,20 +41,20 @@ public:
     /// Split from extraction because a frame culls against four frusta (three shadow cascades plus
     /// the main view) and the expensive work - asset resolution, quaternion normalization, TRS
     /// compose, bounds transform - is identical across all four. Build once, then call
-    /// CullVisibilitySetIntoUVE per frustum.
+    /// CullVisibilitySetInto per frustum.
     ///
     /// The default implementation is a no-op returning nothing useful, so existing test doubles
-    /// keep compiling; MeshRendererUVE implements it. A caller that gets an empty set from a
+    /// keep compiling; MeshRenderer implements it. A caller that gets an empty set from a
     /// double simply sees no meshes, which is the same thing a double that renders nothing already
     /// did.
-    virtual void BuildVisibilitySetUVE(Scene::IEntityManagerUVE& entityManager,
-                                       Asset::IAssetManagerUVE& assetManager,
-                                       Asset::IAssetDatabaseUVE& assetDatabase,
-                                       MeshVisibilitySetUVE& outVisibilitySet) const {
+    virtual void BuildVisibilitySet(Scene::IEntityManager& entityManager,
+                                       Asset::IAssetManager& assetManager,
+                                       Asset::IAssetDatabase& assetDatabase,
+                                       MeshVisibilitySet& outVisibilitySet) const {
         static_cast<void>(entityManager);
         static_cast<void>(assetManager);
         static_cast<void>(assetDatabase);
-        outVisibilitySet.ClearUVE();
+        outVisibilitySet.Clear();
     }
 
     /// Culls an already-built candidate set against one frustum into a queue. This is the part
@@ -62,33 +62,33 @@ public:
     /// derivation and a bucket push per candidate.
     ///
     /// Defaulted to the full extraction path for the same compatibility reason as above - a double
-    /// that only implements ExtractRenderQueueUVE still behaves correctly, just without the saving.
-    virtual void CullVisibilitySetIntoUVE(const MeshVisibilitySetUVE& visibilitySet,
-                                          const Math::FrustumUVE& cullFrustum,
-                                          RenderQueueUVE& outQueue) const {
+    /// that only implements ExtractRenderQueue still behaves correctly, just without the saving.
+    virtual void CullVisibilitySetInto(const MeshVisibilitySet& visibilitySet,
+                                          const Math::Frustum& cullFrustum,
+                                          RenderQueue& outQueue) const {
         static_cast<void>(visibilitySet);
         static_cast<void>(cullFrustum);
-        outQueue.ClearUVE();
+        outQueue.Clear();
     }
 
     /// Fills caller-owned queue storage. The default preserves compatibility for existing
-    /// implementations/test doubles; MeshRendererUVE overrides it to reuse vector capacity.
-    virtual void ExtractRenderQueueIntoUVE(Scene::IEntityManagerUVE& entityManager,
-                                           Asset::IAssetManagerUVE& assetManager,
-                                           Asset::IAssetDatabaseUVE& assetDatabase,
-                                           const Math::FrustumUVE& cullFrustum, RenderQueueUVE& outQueue) const {
-        outQueue = ExtractRenderQueueUVE(entityManager, assetManager, assetDatabase, cullFrustum);
+    /// implementations/test doubles; MeshRenderer overrides it to reuse vector capacity.
+    virtual void ExtractRenderQueueInto(Scene::IEntityManager& entityManager,
+                                           Asset::IAssetManager& assetManager,
+                                           Asset::IAssetDatabase& assetDatabase,
+                                           const Math::Frustum& cullFrustum, RenderQueue& outQueue) const {
+        outQueue = ExtractRenderQueue(entityManager, assetManager, assetDatabase, cullFrustum);
     }
 
-    virtual void SetActiveCullFrustumUVE(const Math::FrustumUVE& frustum) const noexcept {
+    virtual void SetActiveCullFrustum(const Math::Frustum& frustum) const noexcept {
         static_cast<void>(frustum);
     }
 
-    virtual void ClearActiveCullFrustumUVE() const noexcept {}
+    virtual void ClearActiveCullFrustum() const noexcept {}
 
-    virtual void SynchronizeSpatialAccelerationUVE(Scene::IEntityManagerUVE& entityManager,
-                                                   Asset::IAssetManagerUVE& assetManager,
-                                                   Asset::IAssetDatabaseUVE& assetDatabase) const {
+    virtual void SynchronizeSpatialAcceleration(Scene::IEntityManager& entityManager,
+                                                   Asset::IAssetManager& assetManager,
+                                                   Asset::IAssetDatabase& assetDatabase) const {
         static_cast<void>(entityManager);
         static_cast<void>(assetManager);
         static_cast<void>(assetDatabase);

@@ -14,7 +14,7 @@
 
 namespace UVE::Events {
 
-/// IEventSystemUVE is the interface for the engine's type-safe publish/
+/// IEventSystem is the interface for the engine's type-safe publish/
 /// subscribe event bus, keyed entirely by std::type_index (never by
 /// string). Subscribe/Publish/QueueEvent are non-virtual templates so call
 /// sites keep full compile-time type safety; they route internally through
@@ -23,31 +23,31 @@ namespace UVE::Events {
 /// changing any template call site.
 /// Thread-safety: implementations must support Subscribe()/Unsubscribe()/
 /// QueueEvent() being called concurrently from any thread; Publish() and
-/// DispatchQueuedUVE() are documented per-implementation (see
-/// EventSystemUVE) as dispatch-thread-only for this increment.
-class IEventSystemUVE {
+/// DispatchQueued() are documented per-implementation (see
+/// EventSystem) as dispatch-thread-only for this increment.
+class IEventSystem {
 public:
-    virtual ~IEventSystemUVE() = default;
+    virtual ~IEventSystem() = default;
 
     /// Subscribes `handler` to every future Publish<TEvent>() call and
-    /// every future DispatchQueuedUVE() delivery of a QueueEvent<TEvent>().
+    /// every future DispatchQueued() delivery of a QueueEvent<TEvent>().
     /// Returns a handle that can later be passed to Unsubscribe(). Safe to
     /// call from any thread.
     template <typename TEvent>
-    EventSubscriptionUVE Subscribe(std::function<void(const TEvent&)> handler) {
+    EventSubscription Subscribe(std::function<void(const TEvent&)> handler) {
         const std::type_index eventType(typeid(TEvent));
         const std::uint64_t id = SubscribeErased(
             eventType, [handler = std::move(handler)](const void* eventPtr) {
                 handler(*static_cast<const TEvent*>(eventPtr));
             });
-        return EventSubscriptionUVE{id, eventType};
+        return EventSubscription{id, eventType};
     }
 
     /// Convenience overload: subscribes a member function, bound to
     /// `instance`, as the handler. Equivalent to Subscribe<TEvent>() with a
     /// lambda that calls `(instance->*method)(event)`.
     template <typename TEvent, typename TClass>
-    EventSubscriptionUVE Subscribe(TClass* instance, void (TClass::*method)(const TEvent&)) {
+    EventSubscription Subscribe(TClass* instance, void (TClass::*method)(const TEvent&)) {
         return Subscribe<TEvent>(
             [instance, method](const TEvent& event) { (instance->*method)(event); });
     }
@@ -55,23 +55,23 @@ public:
     /// Unsubscribes a handler previously returned by Subscribe(). A
     /// default-constructed or already-unsubscribed handle is a safe no-op.
     /// Safe to call from any thread.
-    virtual void Unsubscribe(const EventSubscriptionUVE& subscription) = 0;
+    virtual void Unsubscribe(const EventSubscription& subscription) = 0;
 
     /// Synchronously and immediately invokes every current subscriber of
     /// TEvent with `event`, in subscription order. Must be called only from
     /// the thread the concrete implementation documents as its dispatch
-    /// thread (see EventSystemUVE).
+    /// thread (see EventSystem).
     template <typename TEvent>
     void Publish(const TEvent& event) {
         PublishErased(std::type_index(typeid(TEvent)), &event);
     }
 
-    /// Queues `event` for delivery on a future DispatchQueuedUVE() call, at
+    /// Queues `event` for delivery on a future DispatchQueued() call, at
     /// the given priority. The event is copied/moved into shared ownership
     /// so it stays alive until dispatched, regardless of the caller's
     /// lifetime. Safe to call from any thread.
     template <typename TEvent>
-    void QueueEvent(TEvent event, EventPriorityUVE priority = EventPriorityUVE::Normal) {
+    void QueueEvent(TEvent event, EventPriority priority = EventPriority::Normal) {
         auto ownedEvent = std::make_shared<TEvent>(std::move(event));
         const std::type_index eventType(typeid(TEvent));
         QueueErased(eventType, priority,
@@ -82,10 +82,10 @@ public:
     /// Critical-priority events first (in FIFO publish order), then all
     /// High-priority, then all Normal-priority. Fixed and deterministic for
     /// this increment, not configurable. An event queued by a handler
-    /// during this call is delivered on a future DispatchQueuedUVE() call,
+    /// during this call is delivered on a future DispatchQueued() call,
     /// never within the same call that queued it. Must be called only from
     /// the dispatch thread.
-    virtual void DispatchQueuedUVE() = 0;
+    virtual void DispatchQueued() = 0;
 
     /// Removes every subscription and every queued (not yet dispatched)
     /// event.
@@ -105,10 +105,10 @@ protected:
 
     /// Type-erased queue primitive: stores `dispatchClosure` (which already
     /// captures the concrete event by shared ownership) under `priority`,
-    /// to be invoked later by DispatchQueuedUVE(). `eventType` is passed
+    /// to be invoked later by DispatchQueued(). `eventType` is passed
     /// through for implementations that want it for diagnostics/metrics; a
     /// conforming implementation is not required to use it for storage.
-    virtual void QueueErased(std::type_index eventType, EventPriorityUVE priority,
+    virtual void QueueErased(std::type_index eventType, EventPriority priority,
                               std::function<void()> dispatchClosure) = 0;
 };
 

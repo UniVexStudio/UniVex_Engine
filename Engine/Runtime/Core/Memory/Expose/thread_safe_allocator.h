@@ -9,8 +9,8 @@
 
 namespace UVE::Memory {
 
-/// `ThreadSafeAllocatorUVE` is the bridge the module's own docs anticipate: every concrete
-/// allocator is single-threaded by contract, yet `IMemoryTrackerUVE` explicitly anticipates
+/// `ThreadSafeAllocator` is the bridge the module's own docs anticipate: every concrete
+/// allocator is single-threaded by contract, yet `IMemoryTracker` explicitly anticipates
 /// worker-thread allocation. This decorator serializes one inner allocator behind a mutex, so
 /// any allocator becomes shareable without changing its contract or its tests.
 ///
@@ -18,28 +18,28 @@ namespace UVE::Memory {
 /// directly while shared (direct use bypasses the lock). The lock is uncontended-cheap but it
 /// is still one lock per allocation — hot per-thread allocation wants per-thread arenas, not
 /// one of these.
-class ThreadSafeAllocatorUVE final : public IAllocatorUVE {
+class ThreadSafeAllocator final : public IAllocator {
 public:
-    explicit ThreadSafeAllocatorUVE(IAllocatorUVE& inner) noexcept : m_inner(inner) {}
+    explicit ThreadSafeAllocator(IAllocator& inner) noexcept : m_inner(inner) {}
 
-    [[nodiscard]] void* AllocateUVE(const std::size_t sizeBytes, const std::size_t alignment,
+    [[nodiscard]] void* Allocate(const std::size_t sizeBytes, const std::size_t alignment,
                                     const char* sourceFile, const int sourceLine) override {
         const std::lock_guard<std::mutex> lock(m_mutex);
-        return m_inner.AllocateUVE(sizeBytes, alignment, sourceFile, sourceLine);
+        return m_inner.Allocate(sizeBytes, alignment, sourceFile, sourceLine);
     }
 
-    void DeallocateUVE(void* pointer) override {
+    void Deallocate(void* pointer) override {
         const std::lock_guard<std::mutex> lock(m_mutex);
-        m_inner.DeallocateUVE(pointer);
+        m_inner.Deallocate(pointer);
     }
 
-    [[nodiscard]] std::size_t GetAllocatedBytesUVE() const override {
+    [[nodiscard]] std::size_t GetAllocatedBytes() const override {
         const std::lock_guard<std::mutex> lock(m_mutex);
-        return m_inner.GetAllocatedBytesUVE();
+        return m_inner.GetAllocatedBytes();
     }
 
 private:
-    IAllocatorUVE& m_inner;
+    IAllocator& m_inner;
     mutable std::mutex m_mutex;
 };
 

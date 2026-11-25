@@ -1,8 +1,8 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
 // The Entity Editor: one entity asset (.uventity / .uvprefab) opened on its own, in its own OS
-// window, in a scene of its own (Core::DocumentSceneUVE) beside the level. Inside an
-// EntityDocumentScopeUVE the entity is the document - its scene, selection, undo and dirty state
+// window, in a scene of its own (Core::DocumentScene) beside the level. Inside an
+// EntityDocumentScope the entity is the document - its scene, selection, undo and dirty state
 // stand in for the level's - so the Scene tree, the Inspector, gizmos and undo all work on the
 // entity with no second set of tools, while the level stays open and editable in its own window.
 
@@ -46,91 +46,91 @@ namespace UVE::Editor {
 namespace {
 
 /// A script slot that holds a node graph: a Blueprint Class, or a Widget Blueprint's own graph.
-[[nodiscard]] bool IsGraphScriptPathUVE(const std::string_view path) noexcept {
-    return path.ends_with(".uvbp") || Asset::IsWidgetBlueprintPathUVE(path);
+[[nodiscard]] bool IsGraphScriptPath(const std::string_view path) noexcept {
+    return path.ends_with(".uvbp") || Asset::IsWidgetBlueprintPath(path);
 }
 
-[[nodiscard]] std::optional<Asset::BlueprintAssetUVE> DecodeGraphScriptUVE(const std::string_view path, const std::vector<std::byte>& bytes) {
-    return Asset::IsWidgetBlueprintPathUVE(path) ? Asset::ReadWidgetBlueprintGraphUVE(bytes) : Asset::DecodeBlueprintAssetUVE(bytes);
+[[nodiscard]] std::optional<Asset::BlueprintAsset> DecodeGraphScript(const std::string_view path, const std::vector<std::byte>& bytes) {
+    return Asset::IsWidgetBlueprintPath(path) ? Asset::ReadWidgetBlueprintGraph(bytes) : Asset::DecodeBlueprintAsset(bytes);
 }
 
-[[nodiscard]] bool IsUVScriptFileUVE(const std::string_view path) noexcept { return path.ends_with(".uvs"); }
+[[nodiscard]] bool IsUVScriptFile(const std::string_view path) noexcept { return path.ends_with(".uvs"); }
 
 
 } // namespace
 
 /// The Entity Editor's Simulate: each scripted object's compiled UVScript, and the entity as it
 /// was when Play was pressed.
-struct EntitySimulationUVE final {
-    struct ScriptUVE final {
-        Scene::EntityUVE entity = Scene::kInvalidEntityUVE;
-        std::unique_ptr<Core::BlueprintObjectHostUVE> host;
-        std::unique_ptr<Blueprint::ScriptInstanceUVE> instance;
+struct EntitySimulation final {
+    struct Script final {
+        Scene::Entity entity = Scene::kInvalidEntity;
+        std::unique_ptr<Core::BlueprintObjectHost> host;
+        std::unique_ptr<Blueprint::ScriptInstance> instance;
         bool ready = false;
     };
-    Scene::SceneSnapshotUVE snapshot;
+    Scene::SceneSnapshot snapshot;
     bool dirtyBefore = false;
     bool paused = false;
-    std::vector<ScriptUVE> scripts;
+    std::vector<Script> scripts;
 };
 
-Scene::EntityUVE EditorUVE::LoadEntityIntoDocumentUVE(const Asset::AssetGuidUVE guid) {
-    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
-    const Scene::EntityUVE root = m_services->GetPrefabSystemUVE().InstantiateUVE(
-        entityManager, m_services->GetSceneGraphUVE(), m_services->GetAssetDatabaseUVE(), guid, Scene::kInvalidEntityUVE);
-    if (root == Scene::kInvalidEntityUVE) {
+Scene::Entity Editor::LoadEntityIntoDocument(const Asset::AssetGuid guid) {
+    Scene::IEntityManager& entityManager = m_services->GetEntityManager();
+    const Scene::Entity root = m_services->GetPrefabSystem().Instantiate(
+        entityManager, m_services->GetSceneGraph(), m_services->GetAssetDatabase(), guid, Scene::kInvalidEntity);
+    if (root == Scene::kInvalidEntity) {
         return root;
     }
     // Edited as itself, not as an instance of itself: saving writes a plain tree.
-    if (entityManager.HasComponentUVE<Scene::PrefabInstanceComponentUVE>(root)) {
-        entityManager.RemoveComponentUVE<Scene::PrefabInstanceComponentUVE>(root);
+    if (entityManager.HasComponent<Scene::PrefabInstanceComponent>(root)) {
+        entityManager.RemoveComponent<Scene::PrefabInstanceComponent>(root);
     }
     // Synchronize root entity name with the open asset filename stem
     if (m_entityEditSession.has_value() && !m_entityEditSession->assetPath.empty()) {
         const std::string assetStem = m_entityEditSession->assetPath.stem().string();
         if (!assetStem.empty()) {
-            if (entityManager.HasComponentUVE<Scene::NameComponentUVE>(root)) {
-                entityManager.GetComponentUVE<Scene::NameComponentUVE>(root).name = assetStem;
+            if (entityManager.HasComponent<Scene::NameComponent>(root)) {
+                entityManager.GetComponent<Scene::NameComponent>(root).name = assetStem;
             } else {
-                entityManager.AddComponentUVE<Scene::NameComponentUVE>(root, Scene::NameComponentUVE{assetStem});
+                entityManager.AddComponent<Scene::NameComponent>(root, Scene::NameComponent{assetStem});
             }
         }
     }
-    InvalidateHierarchyFilterCacheUVE();
-    SelectEntityUVE(root);
+    InvalidateHierarchyFilterCache();
+    SelectEntity(root);
     return root;
 }
 
-EditorUVE::EntityDocumentScopeUVE::EntityDocumentScopeUVE(EditorUVE& editor) : m_editor(editor) {
+Editor::EntityDocumentScope::EntityDocumentScope(Editor& editor) : m_editor(editor) {
     if (m_editor.m_entityScene == nullptr || m_editor.m_entityDocumentActive) {
         return;
     }
-    m_editor.SwapDocumentStateUVE();
+    m_editor.SwapDocumentState();
     m_editor.m_entityDocumentActive = true;
     m_entered = true;
 }
 
-EditorUVE::EntityDocumentScopeUVE::~EntityDocumentScopeUVE() {
+Editor::EntityDocumentScope::~EntityDocumentScope() {
     if (!m_entered) {
         return;
     }
-    m_editor.SwapDocumentStateUVE();
+    m_editor.SwapDocumentState();
     m_editor.m_entityDocumentActive = false;
     if (m_editor.m_entityLevelRefreshPending && m_editor.m_entityEditSession.has_value()) {
         m_editor.m_entityLevelRefreshPending = false;
         const std::string status = m_editor.m_contentStatusMessage;
-        if (m_editor.RefreshLevelCopiesUVE(m_editor.m_entityEditSession->guid, m_editor.m_entityEditSession->assetPath) == 0U) {
+        if (m_editor.RefreshLevelCopies(m_editor.m_entityEditSession->guid, m_editor.m_entityEditSession->assetPath) == 0U) {
             m_editor.m_contentStatusMessage = status;
         }
     }
     if (m_editor.m_entityClosePending.has_value()) {
         m_editor.m_entityClosePending.reset();
-        m_editor.FinishEntityEditorCloseUVE();
+        m_editor.FinishEntityEditorClose();
     }
 }
 
-void EditorUVE::SwapDocumentStateUVE() {
-    DocumentStateUVE& other = m_otherDocument;
+void Editor::SwapDocumentState() {
+    DocumentState& other = m_otherDocument;
     std::swap(m_services, other.services);
     std::swap(m_selectedEntities, other.selectedEntities);
     std::swap(m_selectedEntity, other.selectedEntity);
@@ -147,40 +147,40 @@ void EditorUVE::SwapDocumentStateUVE() {
     // Each document has its own view: camera requests, gizmo mode, grid, shading, preview lighting.
     std::swap(m_viewportOverlayState, m_entityViewportOverlayState);
     // The scene tree's caches and one-shot gestures describe the document they were made for.
-    m_hierarchyRenameEntity = Scene::kInvalidEntityUVE;
+    m_hierarchyRenameEntity = Scene::kInvalidEntity;
     m_hierarchyRenameBuffer.clear();
-    m_hierarchyRevealedEntity = Scene::kInvalidEntityUVE;
+    m_hierarchyRevealedEntity = Scene::kInvalidEntity;
     m_hierarchyRevealAncestors.clear();
     m_hierarchyRevealPending = false;
-    InvalidateHierarchyFilterCacheUVE();
+    InvalidateHierarchyFilterCache();
 }
 
-bool EditorUVE::OpenEntityEditorUVE(const std::filesystem::path& assetPath) {
+bool Editor::OpenEntityEditor(const std::filesystem::path& assetPath) {
     if (m_entityEditSession.has_value() && m_entityEditSession->assetPath == assetPath) {
         m_entityEditSession->focusPending = true;
         return true;
     }
     std::error_code error;
-    if (m_state != EditorStateUVE::Running || m_playModeState != EditorPlayModeStateUVE::Edit ||
-        m_entityDocumentActive || !IsAuthoringCommandAllowedUVE() || !std::filesystem::is_regular_file(assetPath, error)) {
+    if (m_state != EditorState::Running || m_playModeState != EditorPlayModeState::Edit ||
+        m_entityDocumentActive || !IsAuthoringCommandAllowed() || !std::filesystem::is_regular_file(assetPath, error)) {
         return false;
     }
     if (!m_documentSceneFactory) {
         m_contentStatusMessage = "This editor cannot open entities: it has no scene for them.";
         return false;
     }
-    if (m_entityEditSession.has_value() && !CloseEntityEditorUVE(true)) {
+    if (m_entityEditSession.has_value() && !CloseEntityEditor(true)) {
         return false;
     }
-    if (m_openUVScript.has_value() && m_openUVScript->IsDirtyUVE()) {
+    if (m_openUVScript.has_value() && m_openUVScript->IsDirty()) {
         m_contentStatusMessage = "Save or close " + std::filesystem::path{m_openUVScript->path}.filename().string() +
                                  " first: it has unsaved text.";
         return false;
     }
-    static_cast<void>(CommitComponentPropertyPreviewUVE());
+    static_cast<void>(CommitComponentPropertyPreview());
 
-    const Asset::AssetGuidUVE guid = m_services->GetAssetDatabaseUVE().RegisterUVE(assetPath);
-    if (guid == Asset::kInvalidAssetGuidUVE) {
+    const Asset::AssetGuid guid = m_services->GetAssetDatabase().Register(assetPath);
+    if (guid == Asset::kInvalidAssetGuid) {
         return false;
     }
     // The entity gets a scene of its own: the level stays exactly as it is, open and editable.
@@ -188,25 +188,25 @@ bool EditorUVE::OpenEntityEditorUVE(const std::filesystem::path& assetPath) {
     if (m_entityScene == nullptr) {
         return false;
     }
-    m_otherDocument = DocumentStateUVE{};
-    m_otherDocument.services = &m_entityScene->GetServicesUVE();
+    m_otherDocument = DocumentState{};
+    m_otherDocument.services = &m_entityScene->GetServices();
 
-    EntityEditSessionUVE session;
+    EntityEditSession session;
     session.assetPath = assetPath;
     session.guid = guid;
     m_entityEditSession = std::move(session);
 
-    Scene::EntityUVE loadedRoot = Scene::kInvalidEntityUVE;
+    Scene::Entity loadedRoot = Scene::kInvalidEntity;
     {
-        const EntityDocumentScopeUVE scope(*this);
-        loadedRoot = LoadEntityIntoDocumentUVE(guid);
+        const EntityDocumentScope scope(*this);
+        loadedRoot = LoadEntityIntoDocument(guid);
         m_sceneDirty = false;
     }
-    if (loadedRoot == Scene::kInvalidEntityUVE) {
+    if (loadedRoot == Scene::kInvalidEntity) {
         m_entityEditSession.reset();
-        m_otherDocument = DocumentStateUVE{};
+        m_otherDocument = DocumentState{};
         if (m_documentSceneClosing) {
-            m_documentSceneClosing(m_entityScene->GetServicesUVE());
+            m_documentSceneClosing(m_entityScene->GetServices());
         }
         m_entityScene.reset();
         m_contentStatusMessage = "Could not read " + assetPath.filename().string() + ".";
@@ -215,64 +215,64 @@ bool EditorUVE::OpenEntityEditorUVE(const std::filesystem::path& assetPath) {
     m_entityEditSession->rootEntity = loadedRoot;
     m_entityEditSession->focusPending = true;
     // The script editor worked on scene objects; the entity brings its own.
-    CloseOpenUVScriptUVE();
+    CloseOpenUVScript();
     return true;
 }
 
-bool EditorUVE::IsEntityEditorOpenUVE() const noexcept {
+bool Editor::IsEntityEditorOpen() const noexcept {
     return m_entityEditSession.has_value();
 }
 
-std::filesystem::path EditorUVE::GetEntityEditorAssetPathUVE() const {
+std::filesystem::path Editor::GetEntityEditorAssetPath() const {
     return m_entityEditSession.has_value() ? m_entityEditSession->assetPath : std::filesystem::path{};
 }
 
-Scene::EntityUVE EditorUVE::GetEntityEditorRootUVE() {
+Scene::Entity Editor::GetEntityEditorRoot() {
     if (!m_entityEditSession.has_value()) {
-        return Scene::kInvalidEntityUVE;
+        return Scene::kInvalidEntity;
     }
-    const EntityDocumentScopeUVE scope(*this);
-    const Scene::EntityUVE sceneRoot = GetDocumentSceneRootUVE();
-    if (sceneRoot != Scene::kInvalidEntityUVE) {
-        const std::vector<Scene::EntityUVE> children =
-            m_services->GetSceneGraphUVE().GetChildrenUVE(m_services->GetEntityManagerUVE(), sceneRoot);
-        return children.size() == 1U ? children.front() : Scene::kInvalidEntityUVE;
+    const EntityDocumentScope scope(*this);
+    const Scene::Entity sceneRoot = GetDocumentSceneRoot();
+    if (sceneRoot != Scene::kInvalidEntity) {
+        const std::vector<Scene::Entity> children =
+            m_services->GetSceneGraph().GetChildren(m_services->GetEntityManager(), sceneRoot);
+        return children.size() == 1U ? children.front() : Scene::kInvalidEntity;
     }
-    const std::vector<Scene::EntityUVE> roots = GetDocumentRootsUVE();
-    return roots.size() == 1U ? roots.front() : Scene::kInvalidEntityUVE;
+    const std::vector<Scene::Entity> roots = GetDocumentRoots();
+    return roots.size() == 1U ? roots.front() : Scene::kInvalidEntity;
 }
 
-bool EditorUVE::SaveEntityEditorUVE() {
+bool Editor::SaveEntityEditor() {
     if (!m_entityEditSession.has_value()) {
         return false;
     }
     // The entity is saved in its own pose, never the pose the Sequencer is previewing on it (the
     // preview writes it again next frame).
-    RestoreAnimationTimelineObjectUVE();
-    if (m_saveOpenBlueprintUVE) {
-        m_saveOpenBlueprintUVE();   // Ctrl+S saves the graph and the entity together
+    RestoreAnimationTimelineObject();
+    if (m_saveOpenBlueprint) {
+        m_saveOpenBlueprint();   // Ctrl+S saves the graph and the entity together
     }
     // What a simulation did is not the entity: it is put back before anything is written.
-    static_cast<void>(StopEntitySimulationUVE());
-    const EntityDocumentScopeUVE scope(*this);
-    static_cast<void>(CommitComponentPropertyPreviewUVE());
-    const Scene::EntityUVE root = GetEntityEditorRootUVE();
-    if (root == Scene::kInvalidEntityUVE) {
+    static_cast<void>(StopEntitySimulation());
+    const EntityDocumentScope scope(*this);
+    static_cast<void>(CommitComponentPropertyPreview());
+    const Scene::Entity root = GetEntityEditorRoot();
+    if (root == Scene::kInvalidEntity) {
         m_contentStatusMessage = "An entity has exactly one root object: put the other top-level objects under it, then save.";
         return false;
     }
     // A Widget Blueprint's graph lives in the same file: kept across the widgets being written.
-    const bool widget = Asset::IsWidgetBlueprintPathUVE(m_entityEditSession->assetPath.generic_string());
-    std::optional<Asset::BlueprintAssetUVE> widgetGraph;
+    const bool widget = Asset::IsWidgetBlueprintPath(m_entityEditSession->assetPath.generic_string());
+    std::optional<Asset::BlueprintAsset> widgetGraph;
     if (widget) {
-        widgetGraph = Asset::LoadWidgetBlueprintGraphUVE(m_entityEditSession->assetPath);
+        widgetGraph = Asset::LoadWidgetBlueprintGraph(m_entityEditSession->assetPath);
     }
-    const Asset::AssetGuidUVE guid = m_services->GetPrefabSystemUVE().SavePrefabUVE(
-        m_services->GetEntityManagerUVE(), m_services->GetAssetDatabaseUVE(), root, m_entityEditSession->assetPath);
-    if (guid != Asset::kInvalidAssetGuidUVE && widget && widgetGraph.has_value()) {
-        static_cast<void>(Asset::SaveWidgetBlueprintGraphUVE(m_entityEditSession->assetPath, *widgetGraph));
+    const Asset::AssetGuid guid = m_services->GetPrefabSystem().SavePrefab(
+        m_services->GetEntityManager(), m_services->GetAssetDatabase(), root, m_entityEditSession->assetPath);
+    if (guid != Asset::kInvalidAssetGuid && widget && widgetGraph.has_value()) {
+        static_cast<void>(Asset::SaveWidgetBlueprintGraph(m_entityEditSession->assetPath, *widgetGraph));
     }
-    if (guid == Asset::kInvalidAssetGuidUVE) {
+    if (guid == Asset::kInvalidAssetGuid) {
         m_contentStatusMessage = "Could not save " + m_entityEditSession->assetPath.filename().string() + ".";
         return false;
     }
@@ -280,7 +280,7 @@ bool EditorUVE::SaveEntityEditorUVE() {
     m_sceneDirty = false;
     // The level's copies follow every save, not only the close (done once the level is active).
     m_entityLevelRefreshPending = true;
-    if (m_openUVScript.has_value() && m_openUVScript->IsDirtyUVE() && !SaveOpenUVScriptUVE()) {
+    if (m_openUVScript.has_value() && m_openUVScript->IsDirty() && !SaveOpenUVScript()) {
         m_contentStatusMessage = "Saved the entity, but could not write " + m_openUVScript->path + ".";
         return false;
     }
@@ -288,41 +288,41 @@ bool EditorUVE::SaveEntityEditorUVE() {
     return true;
 }
 
-bool EditorUVE::RevertEntityEditorUVE() {
+bool Editor::RevertEntityEditor() {
     if (!m_entityEditSession.has_value()) {
         return false;
     }
-    if (m_saveOpenBlueprintUVE) {
-        m_saveOpenBlueprintUVE();   // Revert is the entity's, not the Blueprint's edits
+    if (m_saveOpenBlueprint) {
+        m_saveOpenBlueprint();   // Revert is the entity's, not the Blueprint's edits
     }
     if (m_entityEditSession->simulation != nullptr) {
         m_entityEditSession->simulation->scripts.clear();
         m_entityEditSession->simulation.reset();
     }
-    const EntityDocumentScopeUVE scope(*this);
+    const EntityDocumentScope scope(*this);
     m_componentPropertyPreview.reset();
-    ClearDocumentSceneUVE();
-    const Scene::EntityUVE loadedRoot = LoadEntityIntoDocumentUVE(m_entityEditSession->guid);
-    if (loadedRoot == Scene::kInvalidEntityUVE) {
+    ClearDocumentScene();
+    const Scene::Entity loadedRoot = LoadEntityIntoDocument(m_entityEditSession->guid);
+    if (loadedRoot == Scene::kInvalidEntity) {
         m_contentStatusMessage = "Could not read " + m_entityEditSession->assetPath.filename().string() + " again.";
         return false;
     }
     m_entityEditSession->rootEntity = loadedRoot;
     m_entityEditSession->focusPending = true;
-    ClearHistoryUVE();
+    ClearHistory();
     m_sceneDirty = false;
     // Object handles are new; the script text goes back to what is on disk.
-    CloseOpenUVScriptUVE();
+    CloseOpenUVScript();
     m_entityEditSession->problems.clear();
     m_entityEditSession->compiled = false;
     return true;
 }
 
-bool EditorUVE::CloseEntityEditorUVE(const bool save) {
+bool Editor::CloseEntityEditor(const bool save) {
     if (!m_entityEditSession.has_value()) {
         return false;
     }
-    if (save && HasEntityEditorUnsavedChangesUVE() && !SaveEntityEditorUVE()) {
+    if (save && HasEntityEditorUnsavedChanges() && !SaveEntityEditor()) {
         m_contentStatusMessage = "Could not save entity changes before closing.";
         return false;
     }
@@ -332,156 +332,156 @@ bool EditorUVE::CloseEntityEditorUVE(const bool save) {
         m_entityClosePending = save;
         return true;
     }
-    FinishEntityEditorCloseUVE();
+    FinishEntityEditorClose();
     return true;
 }
 
-void EditorUVE::FinishEntityEditorCloseUVE() {
+void Editor::FinishEntityEditorClose() {
     if (!m_entityEditSession.has_value() || m_entityDocumentActive) {
         return;
     }
-    CloseOpenUVScriptUVE();
+    CloseOpenUVScript();
     m_componentPropertyPreview.reset();
     if (m_entityEditSession->simulation != nullptr) {
         m_entityEditSession->simulation->scripts.clear();   // before the scene they run on goes
         m_entityEditSession->simulation.reset();
     }
-    const EntityEditSessionUVE session = std::move(*m_entityEditSession);
+    const EntityEditSession session = std::move(*m_entityEditSession);
     m_entityEditSession.reset();
-    m_otherDocument = DocumentStateUVE{};
+    m_otherDocument = DocumentState{};
     if (m_documentSceneClosing && m_entityScene != nullptr) {
-        m_documentSceneClosing(m_entityScene->GetServicesUVE());
+        m_documentSceneClosing(m_entityScene->GetServices());
     }
     m_entityScene.reset();
 
     // The file changed: the copies of it in the level follow it.
     if (session.savedOnce) {
-        RefreshLevelCopiesUVE(session.guid, session.assetPath);
+        RefreshLevelCopies(session.guid, session.assetPath);
     }
 }
 
-std::size_t EditorUVE::RefreshLevelCopiesUVE(const Asset::AssetGuidUVE guid, const std::filesystem::path& assetPath) {
-    if (m_entityDocumentActive || guid == Asset::kInvalidAssetGuidUVE) {
+std::size_t Editor::RefreshLevelCopies(const Asset::AssetGuid guid, const std::filesystem::path& assetPath) {
+    if (m_entityDocumentActive || guid == Asset::kInvalidAssetGuid) {
         return 0U;   // only on the level's own scene
     }
-    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
-    Scene::ISceneGraphUVE& sceneGraph = m_services->GetSceneGraphUVE();
-    std::vector<Scene::EntityUVE> instances;
-    entityManager.ForEachUVE<Scene::PrefabInstanceComponentUVE>(
-        [&instances, guid](const Scene::EntityUVE entity, Scene::PrefabInstanceComponentUVE& instance) {
+    Scene::IEntityManager& entityManager = m_services->GetEntityManager();
+    Scene::ISceneGraph& sceneGraph = m_services->GetSceneGraph();
+    std::vector<Scene::Entity> instances;
+    entityManager.ForEach<Scene::PrefabInstanceComponent>(
+        [&instances, guid](const Scene::Entity entity, Scene::PrefabInstanceComponent& instance) {
             if (instance.sourcePrefabGuid == guid) {
                 instances.push_back(entity);
             }
         });
     std::size_t refreshed = 0U;
-    for (const Scene::EntityUVE instance : instances) {
+    for (const Scene::Entity instance : instances) {
         // Where the copy stands and what it is called are the level's, not the file's: kept.
-        const std::optional<Scene::TransformComponentUVE> placed =
-            entityManager.HasComponentUVE<Scene::TransformComponentUVE>(instance)
-                ? std::optional<Scene::TransformComponentUVE>{entityManager.GetComponentUVE<Scene::TransformComponentUVE>(instance)}
+        const std::optional<Scene::TransformComponent> placed =
+            entityManager.HasComponent<Scene::TransformComponent>(instance)
+                ? std::optional<Scene::TransformComponent>{entityManager.GetComponent<Scene::TransformComponent>(instance)}
                 : std::nullopt;
         const std::optional<std::string> name =
-            entityManager.HasComponentUVE<Scene::NameComponentUVE>(instance)
-                ? std::optional<std::string>{entityManager.GetComponentUVE<Scene::NameComponentUVE>(instance).name}
+            entityManager.HasComponent<Scene::NameComponent>(instance)
+                ? std::optional<std::string>{entityManager.GetComponent<Scene::NameComponent>(instance).name}
                 : std::nullopt;
-        const Scene::PrefabRefreshResultUVE result = m_services->GetPrefabSystemUVE().RefreshInstanceUVE(
-            entityManager, sceneGraph, m_services->GetAssetDatabaseUVE(), instance, true);
-        if (result.code != Scene::PrefabRefreshCodeUVE::Refreshed || !entityManager.IsAliveUVE(result.rootEntity)) {
+        const Scene::PrefabRefreshResult result = m_services->GetPrefabSystem().RefreshInstance(
+            entityManager, sceneGraph, m_services->GetAssetDatabase(), instance, true);
+        if (result.code != Scene::PrefabRefreshCode::Refreshed || !entityManager.IsAlive(result.rootEntity)) {
             continue;
         }
-        if (placed.has_value() && entityManager.HasComponentUVE<Scene::TransformComponentUVE>(result.rootEntity)) {
-            sceneGraph.SetLocalTransformUVE(entityManager, result.rootEntity, *placed);
+        if (placed.has_value() && entityManager.HasComponent<Scene::TransformComponent>(result.rootEntity)) {
+            sceneGraph.SetLocalTransform(entityManager, result.rootEntity, *placed);
         }
-        if (name.has_value() && entityManager.HasComponentUVE<Scene::NameComponentUVE>(result.rootEntity)) {
-            entityManager.GetComponentUVE<Scene::NameComponentUVE>(result.rootEntity).name = *name;
+        if (name.has_value() && entityManager.HasComponent<Scene::NameComponent>(result.rootEntity)) {
+            entityManager.GetComponent<Scene::NameComponent>(result.rootEntity).name = *name;
         }
         ++refreshed;
     }
     if (refreshed > 0U) {
         m_sceneDirty = true;
-        InvalidateHierarchyFilterCacheUVE();
+        InvalidateHierarchyFilterCache();
         m_contentStatusMessage = "Updated " + std::to_string(refreshed) + " placed " + (refreshed == 1U ? "copy" : "copies") + " of " +
                                  assetPath.filename().string() + " in the level.";
     }
     return refreshed;
 }
 
-EditorUVE::EntityEditorTabUVE EditorUVE::GetEntityEditorTabUVE() const noexcept {
-    return m_entityEditSession.has_value() ? m_entityEditSession->tab : EntityEditorTabUVE::Viewport;
+Editor::EntityEditorTab Editor::GetEntityEditorTab() const noexcept {
+    return m_entityEditSession.has_value() ? m_entityEditSession->tab : EntityEditorTab::Viewport;
 }
 
-void EditorUVE::SetEntityEditorTabUVE(const EntityEditorTabUVE tab) noexcept {
+void Editor::SetEntityEditorTab(const EntityEditorTab tab) noexcept {
     if (m_entityEditSession.has_value()) {
         m_entityEditSession->tab = tab;
         m_entityEditSession->forceTab = true;
     }
 }
 
-bool EditorUVE::HasEntityEditorUnsavedChangesUVE() const noexcept {
+bool Editor::HasEntityEditorUnsavedChanges() const noexcept {
     if (!m_entityEditSession.has_value()) {
         return false;
     }
     const bool entityDirty = m_entityDocumentActive ? m_sceneDirty : m_otherDocument.sceneDirty;
     // An unsaved Blueprint counts: closing must never drop the nodes made in it.
-    const bool blueprintDirty = m_openBlueprintDirtyUVE && m_openBlueprintDirtyUVE();
-    return entityDirty || blueprintDirty || (m_openUVScript.has_value() && m_openUVScript->IsDirtyUVE());
+    const bool blueprintDirty = m_openBlueprintDirty && m_openBlueprintDirty();
+    return entityDirty || blueprintDirty || (m_openUVScript.has_value() && m_openUVScript->IsDirty());
 }
 
-std::vector<Scene::EntityUVE> EditorUVE::CollectEntityEditorObjectsUVE() {
-    std::vector<Scene::EntityUVE> objects;
+std::vector<Scene::Entity> Editor::CollectEntityEditorObjects() {
+    std::vector<Scene::Entity> objects;
     if (!m_entityEditSession.has_value()) {
         return objects;
     }
-    const EntityDocumentScopeUVE scope(*this);
+    const EntityDocumentScope scope(*this);
     // Depth first, children in their authored order: the order the Scene tree shows.
-    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
-    const Scene::EntityUVE sceneRoot = GetDocumentSceneRootUVE();
-    std::vector<Scene::EntityUVE> pending;
-    if (sceneRoot != Scene::kInvalidEntityUVE) {
-        pending = m_services->GetSceneGraphUVE().GetChildrenUVE(entityManager, sceneRoot);
+    Scene::IEntityManager& entityManager = m_services->GetEntityManager();
+    const Scene::Entity sceneRoot = GetDocumentSceneRoot();
+    std::vector<Scene::Entity> pending;
+    if (sceneRoot != Scene::kInvalidEntity) {
+        pending = m_services->GetSceneGraph().GetChildren(entityManager, sceneRoot);
     } else {
-        pending = GetDocumentRootsUVE();
+        pending = GetDocumentRoots();
     }
     std::reverse(pending.begin(), pending.end());
     while (!pending.empty()) {
-        const Scene::EntityUVE entity = pending.back();
+        const Scene::Entity entity = pending.back();
         pending.pop_back();
         objects.push_back(entity);
-        std::vector<Scene::EntityUVE> children = m_services->GetSceneGraphUVE().GetChildrenUVE(entityManager, entity);
+        std::vector<Scene::Entity> children = m_services->GetSceneGraph().GetChildren(entityManager, entity);
         pending.insert(pending.end(), children.rbegin(), children.rend());
     }
     return objects;
 }
 
-std::vector<EditorUVE::EntityCompileProblemUVE> EditorUVE::CollectEntityStructureProblemsUVE() {
-    std::vector<EntityCompileProblemUVE> problems;
+std::vector<Editor::EntityCompileProblem> Editor::CollectEntityStructureProblems() {
+    std::vector<EntityCompileProblem> problems;
     if (!m_entityEditSession.has_value()) {
         return problems;
     }
-    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
-    Scene::ISceneGraphUVE& graph = m_services->GetSceneGraphUVE();
-    using Kind = Scene::Objects::SceneObjectKindUVE;
-    for (const Scene::EntityUVE entity : CollectEntityEditorObjectsUVE()) {
-        const Kind kind = Scene::ResolveSceneObjectKindUVE(entityManager, entity);
+    Scene::IEntityManager& entityManager = m_services->GetEntityManager();
+    Scene::ISceneGraph& graph = m_services->GetSceneGraph();
+    using Kind = Scene::Objects::SceneObjectKind;
+    for (const Scene::Entity entity : CollectEntityEditorObjects()) {
+        const Kind kind = Scene::ResolveSceneObjectKind(entityManager, entity);
         if (kind != Kind::Character3D && kind != Kind::Player3D && kind != Kind::Static3D && kind != Kind::Rigid3D &&
             kind != Kind::Kinematic3D) {
             continue;
         }
         // A collider on the body itself or anywhere under it.
         bool collides = false;
-        std::vector<Scene::EntityUVE> pending{entity};
+        std::vector<Scene::Entity> pending{entity};
         for (std::size_t next = 0U; next < pending.size() && next < 4096U && !collides; ++next) {
-            collides = entityManager.HasComponentUVE<Scene::ColliderComponentUVE>(pending[next]);
-            const std::vector<Scene::EntityUVE> children = graph.GetChildrenUVE(entityManager, pending[next]);
+            collides = entityManager.HasComponent<Scene::ColliderComponent>(pending[next]);
+            const std::vector<Scene::Entity> children = graph.GetChildren(entityManager, pending[next]);
             pending.insert(pending.end(), children.begin(), children.end());
         }
         if (collides) {
             continue;
         }
-        EntityCompileProblemUVE problem;
+        EntityCompileProblem problem;
         problem.entity = entity;
-        problem.objectName = GetEntityDisplayLabelUVE(entity);
-        problem.message = std::string(GetObjectTypeNameUVE(entity)) + " '" + problem.objectName +
+        problem.objectName = GetEntityDisplayLabel(entity);
+        problem.message = std::string(GetObjectTypeName(entity)) + " '" + problem.objectName +
                           "' has no Collider3D: add one so it can collide.";
         problem.structural = true;
         problems.push_back(std::move(problem));
@@ -489,69 +489,69 @@ std::vector<EditorUVE::EntityCompileProblemUVE> EditorUVE::CollectEntityStructur
     return problems;
 }
 
-bool EditorUVE::RefreshEntityStructureProblemsUVE() {
+bool Editor::RefreshEntityStructureProblems() {
     if (!m_entityEditSession.has_value()) {
         return false;
     }
-    std::vector<EntityCompileProblemUVE> now;
+    std::vector<EntityCompileProblem> now;
     {
-        const EntityDocumentScopeUVE scope(*this);
-        now = CollectEntityStructureProblemsUVE();
+        const EntityDocumentScope scope(*this);
+        now = CollectEntityStructureProblems();
     }
-    std::vector<EntityCompileProblemUVE>& problems = m_entityEditSession->problems;
+    std::vector<EntityCompileProblem>& problems = m_entityEditSession->problems;
     std::vector<std::string> before;
-    for (const EntityCompileProblemUVE& problem : problems) {
+    for (const EntityCompileProblem& problem : problems) {
         if (problem.structural) {
             before.push_back(problem.message);
         }
     }
     std::vector<std::string> after;
-    for (const EntityCompileProblemUVE& problem : now) {
+    for (const EntityCompileProblem& problem : now) {
         after.push_back(problem.message);
     }
     if (before == after) {
         return false;
     }
-    std::erase_if(problems, [](const EntityCompileProblemUVE& problem) { return problem.structural; });
+    std::erase_if(problems, [](const EntityCompileProblem& problem) { return problem.structural; });
     problems.insert(problems.begin(), now.begin(), now.end());
     return true;
 }
 
-std::size_t EditorUVE::CompileEntityEditorUVE() {
+std::size_t Editor::CompileEntityEditor() {
     if (!m_entityEditSession.has_value()) {
         return 0U;
     }
-    const EntityDocumentScopeUVE scope(*this);
-    std::vector<EntityCompileProblemUVE> problems;
-    const std::vector<Scene::EntityUVE> objects = CollectEntityEditorObjectsUVE();
-    if (GetEntityEditorRootUVE() == Scene::kInvalidEntityUVE) {
-        EntityCompileProblemUVE problem;
+    const EntityDocumentScope scope(*this);
+    std::vector<EntityCompileProblem> problems;
+    const std::vector<Scene::Entity> objects = CollectEntityEditorObjects();
+    if (GetEntityEditorRoot() == Scene::kInvalidEntity) {
+        EntityCompileProblem problem;
         problem.message = objects.empty() ? "The entity has no objects." :
                                           "An entity has exactly one root object: put the other top-level objects under it.";
         problems.push_back(std::move(problem));
     }
-    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
-    for (const Scene::EntityUVE entity : objects) {
-        if (!entityManager.HasComponentUVE<Scene::ScriptComponentUVE>(entity)) {
+    Scene::IEntityManager& entityManager = m_services->GetEntityManager();
+    for (const Scene::Entity entity : objects) {
+        if (!entityManager.HasComponent<Scene::ScriptComponent>(entity)) {
             continue;
         }
-        const std::string path = entityManager.GetComponentUVE<Scene::ScriptComponentUVE>(entity).scriptAssetPath;
+        const std::string path = entityManager.GetComponent<Scene::ScriptComponent>(entity).scriptAssetPath;
         if (path.empty()) {
             continue;
         }
-        EntityCompileProblemUVE base;
+        EntityCompileProblem base;
         base.entity = entity;
-        base.objectName = GetEntityDisplayLabelUVE(entity);
+        base.objectName = GetEntityDisplayLabel(entity);
         base.scriptPath = path;
-        if (IsGraphScriptPathUVE(path)) {
+        if (IsGraphScriptPath(path)) {
             // A Blueprint Class: the graph being edited (or the file), translated and compiled
             // against this object; each problem points at its node.
-            std::optional<Asset::BlueprintAssetUVE> blueprint =
-                m_openBlueprintProviderUVE ? m_openBlueprintProviderUVE(path) : std::optional<Asset::BlueprintAssetUVE>{};
+            std::optional<Asset::BlueprintAsset> blueprint =
+                m_openBlueprintProvider ? m_openBlueprintProvider(path) : std::optional<Asset::BlueprintAsset>{};
             if (!blueprint.has_value()) {
-                if (const std::optional<std::string> bytes = ReadProjectTextFileUVE(path); bytes.has_value()) {
+                if (const std::optional<std::string> bytes = ReadProjectTextFile(path); bytes.has_value()) {
                     const auto* const data = reinterpret_cast<const std::byte*>(bytes->data());
-                    blueprint = DecodeGraphScriptUVE(path, std::vector<std::byte>(data, data + bytes->size()));
+                    blueprint = DecodeGraphScript(path, std::vector<std::byte>(data, data + bytes->size()));
                 }
             }
             if (!blueprint.has_value()) {
@@ -559,14 +559,14 @@ std::size_t EditorUVE::CompileEntityEditorUVE() {
                 problems.push_back(std::move(base));
                 continue;
             }
-            const Scene::Objects::SceneObjectDescriptorUVE* const descriptor =
-                Scene::Objects::FindSceneObjectDescriptorUVE(Scene::ResolveSceneObjectKindUVE(entityManager, entity));
-            const Asset::BlueprintTranslationUVE translated = Asset::TranslateBlueprintToUVScriptUVE(
+            const Scene::Objects::SceneObjectDescriptor* const descriptor =
+                Scene::Objects::FindSceneObjectDescriptor(Scene::ResolveSceneObjectKind(entityManager, entity));
+            const Asset::BlueprintTranslation translated = Asset::TranslateBlueprintToUVScript(
                 *blueprint, std::filesystem::path(path).stem().string(), descriptor != nullptr ? descriptor->displayName : "Object3D");
             const auto titled = [&blueprint](const std::uint32_t node, const std::string& message) {
-                for (const Asset::BlueprintNodeUVE& n : blueprint->nodes) {
+                for (const Asset::BlueprintNode& n : blueprint->nodes) {
                     if (n.id == node) {
-                        const Asset::BlueprintNodeTypeUVE* const type = Asset::FindBlueprintNodeTypeUVE(n.type);
+                        const Asset::BlueprintNodeType* const type = Asset::FindBlueprintNodeType(n.type);
                         const std::string title = type == nullptr ? n.type : n.variable.empty() ? type->title : type->title + " " + n.variable;
                         return title + ": " + message;
                     }
@@ -574,21 +574,21 @@ std::size_t EditorUVE::CompileEntityEditorUVE() {
                 return message;
             };
             for (const auto& [node, message] : translated.problems) {
-                EntityCompileProblemUVE problem = base;
+                EntityCompileProblem problem = base;
                 problem.blueprintNode = node;
                 problem.message = titled(node, message);
                 problems.push_back(std::move(problem));
             }
-            Core::BlueprintObjectHostUVE host(entityManager, nullptr, entity);
-            for (const Blueprint::DiagnosticUVE& diagnostic : Blueprint::CompileUVScriptSourceUVE(translated.source, host).diagnostics) {
-                EntityCompileProblemUVE problem = base;
-                problem.blueprintNode = translated.NodeAtLineUVE(diagnostic.at.line);
+            Core::BlueprintObjectHost host(entityManager, nullptr, entity);
+            for (const Blueprint::Diagnostic& diagnostic : Blueprint::CompileUVScriptSource(translated.source, host).diagnostics) {
+                EntityCompileProblem problem = base;
+                problem.blueprintNode = translated.NodeAtLine(diagnostic.at.line);
                 problem.message = titled(problem.blueprintNode, diagnostic.message);
                 problems.push_back(std::move(problem));
             }
             continue;
         }
-        if (!IsUVScriptFileUVE(path)) {
+        if (!IsUVScriptFile(path)) {
             base.message = "The script is not a UVScript file (.uvs).";
             problems.push_back(std::move(base));
             continue;
@@ -598,23 +598,23 @@ std::size_t EditorUVE::CompileEntityEditorUVE() {
         if (m_openUVScript.has_value() && m_openUVScript->path == path) {
             text = m_openUVScript->text;
         } else {
-            text = ReadProjectTextFileUVE(path);
+            text = ReadProjectTextFile(path);
         }
         if (!text.has_value()) {
             base.message = "There is no file at " + path + ".";
             problems.push_back(std::move(base));
             continue;
         }
-        Core::BlueprintObjectHostUVE host(entityManager, nullptr, entity);
-        for (const Blueprint::DiagnosticUVE& diagnostic : Blueprint::CompileUVScriptSourceUVE(*text, host).diagnostics) {
-            EntityCompileProblemUVE problem = base;
+        Core::BlueprintObjectHost host(entityManager, nullptr, entity);
+        for (const Blueprint::Diagnostic& diagnostic : Blueprint::CompileUVScriptSource(*text, host).diagnostics) {
+            EntityCompileProblem problem = base;
             problem.at = diagnostic.at;
             problem.message = diagnostic.message;
             problems.push_back(std::move(problem));
         }
     }
     {
-        std::vector<EntityCompileProblemUVE> structure = CollectEntityStructureProblemsUVE();
+        std::vector<EntityCompileProblem> structure = CollectEntityStructureProblems();
         problems.insert(problems.begin(), structure.begin(), structure.end());
     }
     m_entityEditSession->problems = std::move(problems);
@@ -622,39 +622,39 @@ std::size_t EditorUVE::CompileEntityEditorUVE() {
     return m_entityEditSession->problems.size();
 }
 
-std::vector<EntityDiffRowUVE> EditorUVE::DiffEntityEditorUVE() {
+std::vector<EntityDiffRow> Editor::DiffEntityEditor() {
     if (!m_entityEditSession.has_value()) {
         return {};
     }
-    const EntityDocumentScopeUVE scope(*this);
-    static_cast<void>(CommitComponentPropertyPreviewUVE());
+    const EntityDocumentScope scope(*this);
+    static_cast<void>(CommitComponentPropertyPreview());
     const auto payloadText = [](const std::vector<std::byte>& payload) {
         return std::string(reinterpret_cast<const char*>(payload.data()), payload.size());
     };
     std::string saved;
-    if (const auto file = Asset::ReadUveFileUVE(m_entityEditSession->assetPath); file.has_value()) {
+    if (const auto file = Asset::ReadUveFile(m_entityEditSession->assetPath); file.has_value()) {
         saved = payloadText(file->second);
     }
     std::string current;
-    const Scene::EntityUVE root = GetEntityEditorRootUVE();
-    if (root != Scene::kInvalidEntityUVE) {
-        const std::optional<Scene::SceneSnapshotUVE> snapshot = m_services->GetSceneSerializerUVE().CaptureUVE(
-            m_services->GetEntityManagerUVE(), {root}, Asset::AssetKindUVE::Prefab);
+    const Scene::Entity root = GetEntityEditorRoot();
+    if (root != Scene::kInvalidEntity) {
+        const std::optional<Scene::SceneSnapshot> snapshot = m_services->GetSceneSerializer().Capture(
+            m_services->GetEntityManager(), {root}, Asset::AssetKind::Prefab);
         if (snapshot.has_value()) {
-            if (const auto decoded = Asset::DecodeUveFileEnvelopeUVE(snapshot->bytes); decoded.has_value()) {
+            if (const auto decoded = Asset::DecodeUveFileEnvelope(snapshot->bytes); decoded.has_value()) {
                 current = payloadText(decoded->second);
             }
         }
     }
-    return DiffEntityPayloadsUVE(saved, current);
+    return DiffEntityPayloads(saved, current);
 }
 
-std::vector<EditorUVE::EntityFindRowUVE> EditorUVE::FindInEntityEditorUVE(const std::string_view query) {
-    std::vector<EntityFindRowUVE> rows;
+std::vector<Editor::EntityFindRow> Editor::FindInEntityEditor(const std::string_view query) {
+    std::vector<EntityFindRow> rows;
     if (!m_entityEditSession.has_value() || query.empty()) {
         return rows;
     }
-    const EntityDocumentScopeUVE scope(*this);
+    const EntityDocumentScope scope(*this);
     const auto lower = [](std::string text) {
         std::transform(text.begin(), text.end(), text.begin(),
                        [](const unsigned char c) { return static_cast<char>(std::tolower(c)); });
@@ -662,23 +662,23 @@ std::vector<EditorUVE::EntityFindRowUVE> EditorUVE::FindInEntityEditorUVE(const 
     };
     const std::string needle = lower(std::string(query));
     const auto matches = [&](const std::string& text) { return lower(text).find(needle) != std::string::npos; };
-    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
-    for (const Scene::EntityUVE entity : CollectEntityEditorObjectsUVE()) {
-        const std::string object = GetEntityDisplayLabelUVE(entity);
+    Scene::IEntityManager& entityManager = m_services->GetEntityManager();
+    for (const Scene::Entity entity : CollectEntityEditorObjects()) {
+        const std::string object = GetEntityDisplayLabel(entity);
         if (matches(object)) {
-            rows.push_back(EntityFindRowUVE{entity, object, "Name", object});
+            rows.push_back(EntityFindRow{entity, object, "Name", object});
         }
-        const std::string type(GetObjectTypeNameUVE(entity));
+        const std::string type(GetObjectTypeName(entity));
         if (matches(type)) {
-            rows.push_back(EntityFindRowUVE{entity, object, "Type", type});
+            rows.push_back(EntityFindRow{entity, object, "Type", type});
         }
         // Its components as the file holds them: every property name and value can be found.
-        const std::optional<Scene::SceneSnapshotUVE> snapshot =
-            m_services->GetSceneSerializerUVE().CaptureUVE(entityManager, {entity}, Asset::AssetKindUVE::Prefab);
+        const std::optional<Scene::SceneSnapshot> snapshot =
+            m_services->GetSceneSerializer().Capture(entityManager, {entity}, Asset::AssetKind::Prefab);
         if (!snapshot.has_value()) {
             continue;
         }
-        const auto decoded = Asset::DecodeUveFileEnvelopeUVE(snapshot->bytes);
+        const auto decoded = Asset::DecodeUveFileEnvelope(snapshot->bytes);
         if (!decoded.has_value()) {
             continue;
         }
@@ -690,20 +690,20 @@ std::vector<EditorUVE::EntityFindRowUVE> EditorUVE::FindInEntityEditorUVE(const 
         for (const nlohmann::json& item : doc["entities"]) {
             // The captured object itself (its descendants are listed as themselves).
             const nlohmann::json& components = item.contains("components") ? item["components"] : nlohmann::json::object();
-            if (!components.is_object() || !components.contains("HierarchyComponentUVE") ||
-                components["HierarchyComponentUVE"].value("parentLocalId", static_cast<std::int64_t>(0)) >= 0) {
+            if (!components.is_object() || !components.contains("HierarchyComponent") ||
+                components["HierarchyComponent"].value("parentLocalId", static_cast<std::int64_t>(0)) >= 0) {
                 continue;
             }
             for (auto c = components.begin(); c != components.end(); ++c) {
                 std::string component = c.key();
-                if (component == "HierarchyComponentUVE" || component == "NameComponentUVE") {
+                if (component == "HierarchyComponent" || component == "NameComponent") {
                     continue;
                 }
-                if (component.size() > 12U && component.ends_with("ComponentUVE")) {
+                if (component.size() > 12U && component.ends_with("Component")) {
                     component.resize(component.size() - 12U);
                 }
                 if (matches(component)) {
-                    rows.push_back(EntityFindRowUVE{entity, object, component, component});
+                    rows.push_back(EntityFindRow{entity, object, component, component});
                 }
                 if (!c.value().is_object()) {
                     continue;
@@ -711,7 +711,7 @@ std::vector<EditorUVE::EntityFindRowUVE> EditorUVE::FindInEntityEditorUVE(const 
                 for (auto p = c.value().begin(); p != c.value().end(); ++p) {
                     const std::string value = p.value().is_string() ? p.value().get<std::string>() : p.value().dump();
                     if (matches(p.key()) || (p.value().is_string() && matches(value))) {
-                        rows.push_back(EntityFindRowUVE{entity, object, component + "." + p.key(), value});
+                        rows.push_back(EntityFindRow{entity, object, component + "." + p.key(), value});
                     }
                 }
             }
@@ -721,61 +721,61 @@ std::vector<EditorUVE::EntityFindRowUVE> EditorUVE::FindInEntityEditorUVE(const 
     return rows;
 }
 
-std::optional<std::string> EditorUVE::ReadEntityScriptSourceUVE(const std::string& path, const Scene::EntityUVE entity) const {
-    if (IsGraphScriptPathUVE(path)) {
-        std::optional<Asset::BlueprintAssetUVE> blueprint =
-            m_openBlueprintProviderUVE ? m_openBlueprintProviderUVE(path) : std::optional<Asset::BlueprintAssetUVE>{};
+std::optional<std::string> Editor::ReadEntityScriptSource(const std::string& path, const Scene::Entity entity) const {
+    if (IsGraphScriptPath(path)) {
+        std::optional<Asset::BlueprintAsset> blueprint =
+            m_openBlueprintProvider ? m_openBlueprintProvider(path) : std::optional<Asset::BlueprintAsset>{};
         if (!blueprint.has_value()) {
-            if (const std::optional<std::string> bytes = ReadProjectTextFileUVE(path); bytes.has_value()) {
+            if (const std::optional<std::string> bytes = ReadProjectTextFile(path); bytes.has_value()) {
                 const auto* const data = reinterpret_cast<const std::byte*>(bytes->data());
-                blueprint = DecodeGraphScriptUVE(path, std::vector<std::byte>(data, data + bytes->size()));
+                blueprint = DecodeGraphScript(path, std::vector<std::byte>(data, data + bytes->size()));
             }
         }
         if (!blueprint.has_value()) {
             return std::nullopt;
         }
-        const Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
-        const Scene::Objects::SceneObjectDescriptorUVE* const descriptor =
-            Scene::Objects::FindSceneObjectDescriptorUVE(Scene::ResolveSceneObjectKindUVE(entityManager, entity));
-        return Asset::TranslateBlueprintToUVScriptUVE(*blueprint, std::filesystem::path(path).stem().string(),
+        const Scene::IEntityManager& entityManager = m_services->GetEntityManager();
+        const Scene::Objects::SceneObjectDescriptor* const descriptor =
+            Scene::Objects::FindSceneObjectDescriptor(Scene::ResolveSceneObjectKind(entityManager, entity));
+        return Asset::TranslateBlueprintToUVScript(*blueprint, std::filesystem::path(path).stem().string(),
                                                       descriptor != nullptr ? descriptor->displayName : "Object3D")
             .source;
     }
     if (m_openUVScript.has_value() && m_openUVScript->path == path) {
         return m_openUVScript->text;
     }
-    return ReadProjectTextFileUVE(path);
+    return ReadProjectTextFile(path);
 }
 
-const std::vector<EditorUVE::EntityCompileProblemUVE>& EditorUVE::GetEntityEditorProblemsUVE() const noexcept {
-    static const std::vector<EntityCompileProblemUVE> kNoneUVE;
-    return m_entityEditSession.has_value() ? m_entityEditSession->problems : kNoneUVE;
+const std::vector<Editor::EntityCompileProblem>& Editor::GetEntityEditorProblems() const noexcept {
+    static const std::vector<EntityCompileProblem> kNone;
+    return m_entityEditSession.has_value() ? m_entityEditSession->problems : kNone;
 }
 
-bool EditorUVE::HasEntityEditorCompiledUVE() const noexcept {
+bool Editor::HasEntityEditorCompiled() const noexcept {
     return m_entityEditSession.has_value() && m_entityEditSession->compiled;
 }
 
-std::vector<EditorUVE::EntitySignalRowUVE> EditorUVE::GetEntityEditorSignalsUVE() {
-    std::vector<EntitySignalRowUVE> rows;
-    const EntityDocumentScopeUVE scope(*this);
-    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
-    for (const Scene::EntityUVE entity : CollectEntityEditorObjectsUVE()) {
-        if (!entityManager.HasComponentUVE<Scene::ScriptComponentUVE>(entity)) {
+std::vector<Editor::EntitySignalRow> Editor::GetEntityEditorSignals() {
+    std::vector<EntitySignalRow> rows;
+    const EntityDocumentScope scope(*this);
+    Scene::IEntityManager& entityManager = m_services->GetEntityManager();
+    for (const Scene::Entity entity : CollectEntityEditorObjects()) {
+        if (!entityManager.HasComponent<Scene::ScriptComponent>(entity)) {
             continue;
         }
-        const std::string path = entityManager.GetComponentUVE<Scene::ScriptComponentUVE>(entity).scriptAssetPath;
-        if (!IsUVScriptFileUVE(path) && !IsGraphScriptPathUVE(path)) {
+        const std::string path = entityManager.GetComponent<Scene::ScriptComponent>(entity).scriptAssetPath;
+        if (!IsUVScriptFile(path) && !IsGraphScriptPath(path)) {
             continue;
         }
-        const std::optional<std::string> text = ReadEntityScriptSourceUVE(path, entity);
+        const std::optional<std::string> text = ReadEntityScriptSource(path, entity);
         if (!text.has_value()) {
             continue;
         }
-        const std::string objectName = GetEntityDisplayLabelUVE(entity);
+        const std::string objectName = GetEntityDisplayLabel(entity);
         // Whatever parsed is listed, even while the file has mistakes elsewhere.
-        for (const Blueprint::HandlerUVE& handler : Blueprint::ParseUVScriptUVE(*text).file.handlers) {
-            EntitySignalRowUVE row;
+        for (const Blueprint::Handler& handler : Blueprint::ParseUVScript(*text).file.handlers) {
+            EntitySignalRow row;
             row.entity = entity;
             row.objectName = objectName;
             row.scriptPath = path;
@@ -794,17 +794,17 @@ std::vector<EditorUVE::EntitySignalRowUVE> EditorUVE::GetEntityEditorSignalsUVE(
     return rows;
 }
 
-bool EditorUVE::GoToEntityScriptUVE(const Scene::EntityUVE entity, const std::uint32_t line) {
+bool Editor::GoToEntityScript(const Scene::Entity entity, const std::uint32_t line) {
     if (!m_entityEditSession.has_value()) {
         return false;
     }
-    const EntityDocumentScopeUVE scope(*this);
-    SelectEntityUVE(entity);
-    if (!OpenUVScriptForEntityUVE(entity)) {
+    const EntityDocumentScope scope(*this);
+    SelectEntity(entity);
+    if (!OpenUVScriptForEntity(entity)) {
         return false;
     }
-    m_activeWorkspace = EditorWorkspaceUVE::Library; // The script lives in this window, not the main one.
-    m_entityEditSession->tab = EntityEditorTabUVE::Scripting;
+    m_activeWorkspace = EditorWorkspace::Library; // The script lives in this window, not the main one.
+    m_entityEditSession->tab = EntityEditorTab::Scripting;
     m_entityEditSession->forceTab = true;
     m_uvscriptJumpLine = line;
     return true;
@@ -814,74 +814,74 @@ bool EditorUVE::GoToEntityScriptUVE(const Scene::EntityUVE entity, const std::ui
 // ------------------------------------------------------------------------------------ simulate
 
 
-bool EditorUVE::PlayEntitySimulationUVE() {
+bool Editor::PlayEntitySimulation() {
     if (!m_entityEditSession.has_value()) {
         return false;
     }
-    if (m_entityEditSession->simulation == nullptr && m_saveOpenBlueprintUVE) {
-        m_saveOpenBlueprintUVE();   // the run and the editor read the same graph, and Stop keeps it
+    if (m_entityEditSession->simulation == nullptr && m_saveOpenBlueprint) {
+        m_saveOpenBlueprint();   // the run and the editor read the same graph, and Stop keeps it
     }
     if (m_entityEditSession->simulation != nullptr) {
         m_entityEditSession->simulation->paused = false;
         return true;
     }
-    const EntityDocumentScopeUVE scope(*this);
-    static_cast<void>(CommitComponentPropertyPreviewUVE());
-    const Scene::EntityUVE root = GetEntityEditorRootUVE();
-    if (root == Scene::kInvalidEntityUVE) {
+    const EntityDocumentScope scope(*this);
+    static_cast<void>(CommitComponentPropertyPreview());
+    const Scene::Entity root = GetEntityEditorRoot();
+    if (root == Scene::kInvalidEntity) {
         m_contentStatusMessage = "An entity has exactly one root object: put the other top-level objects under it, then simulate.";
         return false;
     }
-    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
-    const std::optional<Scene::SceneSnapshotUVE> snapshot =
-        m_services->GetSceneSerializerUVE().CaptureUVE(entityManager, {root}, Asset::AssetKindUVE::Prefab);
+    Scene::IEntityManager& entityManager = m_services->GetEntityManager();
+    const std::optional<Scene::SceneSnapshot> snapshot =
+        m_services->GetSceneSerializer().Capture(entityManager, {root}, Asset::AssetKind::Prefab);
     if (!snapshot.has_value()) {
         m_contentStatusMessage = "Could not take the entity's state to simulate it.";
         return false;
     }
-    auto simulation = std::make_shared<EntitySimulationUVE>();
+    auto simulation = std::make_shared<EntitySimulation>();
     simulation->snapshot = *snapshot;
     simulation->dirtyBefore = m_sceneDirty;
     std::size_t failed = 0U;
-    for (const Scene::EntityUVE entity : CollectEntityEditorObjectsUVE()) {
-        if (!entityManager.HasComponentUVE<Scene::ScriptComponentUVE>(entity)) {
+    for (const Scene::Entity entity : CollectEntityEditorObjects()) {
+        if (!entityManager.HasComponent<Scene::ScriptComponent>(entity)) {
             continue;
         }
-        const Scene::ScriptComponentUVE& component = entityManager.GetComponentUVE<Scene::ScriptComponentUVE>(entity);
-        if (!IsUVScriptFileUVE(component.scriptAssetPath) && !IsGraphScriptPathUVE(component.scriptAssetPath)) {
+        const Scene::ScriptComponent& component = entityManager.GetComponent<Scene::ScriptComponent>(entity);
+        if (!IsUVScriptFile(component.scriptAssetPath) && !IsGraphScriptPath(component.scriptAssetPath)) {
             continue;
         }
-        std::optional<std::string> text = ReadEntityScriptSourceUVE(component.scriptAssetPath, entity);
+        std::optional<std::string> text = ReadEntityScriptSource(component.scriptAssetPath, entity);
         if (!text.has_value()) {
             ++failed;
             continue;
         }
-        EntitySimulationUVE::ScriptUVE script;
+        EntitySimulation::Script script;
         script.entity = entity;
-        EntitySimulationUVE* const raw = simulation.get();
-        script.host = std::make_unique<Core::BlueprintObjectHostUVE>(
-            entityManager, &m_services->GetInputSystemUVE(), entity, nullptr, nullptr,
-            [raw](const Scene::EntityUVE other) -> Blueprint::ScriptInstanceUVE* {
-                for (EntitySimulationUVE::ScriptUVE& candidate : raw->scripts) {
+        EntitySimulation* const raw = simulation.get();
+        script.host = std::make_unique<Core::BlueprintObjectHost>(
+            entityManager, &m_services->GetInputSystem(), entity, nullptr, nullptr,
+            [raw](const Scene::Entity other) -> Blueprint::ScriptInstance* {
+                for (EntitySimulation::Script& candidate : raw->scripts) {
                     if (candidate.entity == other) {
                         return candidate.instance.get();
                     }
                 }
                 return nullptr;
             });
-        const Blueprint::CompileResultUVE compiled = Blueprint::CompileUVScriptSourceUVE(*text, *script.host);
-        if (!compiled.IsSuccessUVE()) {
+        const Blueprint::CompileResult compiled = Blueprint::CompileUVScriptSource(*text, *script.host);
+        if (!compiled.IsSuccess()) {
             ++failed;
             continue;
         }
-        script.instance = std::make_unique<Blueprint::ScriptInstanceUVE>(compiled.program, *script.host);
-        for (const Blueprint::FieldInfoUVE& field : Blueprint::GetProgramFieldsUVE(*compiled.program)) {
+        script.instance = std::make_unique<Blueprint::ScriptInstance>(compiled.program, *script.host);
+        for (const Blueprint::FieldInfo& field : Blueprint::GetProgramFields(*compiled.program)) {
             const auto stored = component.exportValues.find(field.name);
-            if (field.kind != Blueprint::FieldKindUVE::Export || stored == component.exportValues.end()) {
+            if (field.kind != Blueprint::FieldKind::Export || stored == component.exportValues.end()) {
                 continue;
             }
-            if (const std::optional<Blueprint::ValueUVE> value = Blueprint::ParseValueTextUVE(stored->second, field.type)) {
-                static_cast<void>(script.instance->SetFieldUVE(field.name, *value));
+            if (const std::optional<Blueprint::Value> value = Blueprint::ParseValueText(stored->second, field.type)) {
+                static_cast<void>(script.instance->SetField(field.name, *value));
             }
         }
         simulation->scripts.push_back(std::move(script));
@@ -893,67 +893,67 @@ bool EditorUVE::PlayEntitySimulationUVE() {
     return true;
 }
 
-void EditorUVE::PauseEntitySimulationUVE() {
+void Editor::PauseEntitySimulation() {
     if (m_entityEditSession.has_value() && m_entityEditSession->simulation != nullptr) {
         m_entityEditSession->simulation->paused = true;
     }
 }
 
-bool EditorUVE::StopEntitySimulationUVE() {
+bool Editor::StopEntitySimulation() {
     if (!m_entityEditSession.has_value() || m_entityEditSession->simulation == nullptr) {
         return false;
     }
-    const EntityDocumentScopeUVE scope(*this);
-    const std::shared_ptr<EntitySimulationUVE> simulation = std::move(m_entityEditSession->simulation);
+    const EntityDocumentScope scope(*this);
+    const std::shared_ptr<EntitySimulation> simulation = std::move(m_entityEditSession->simulation);
     m_entityEditSession->simulation.reset();
     // The scripts go first: they hold the objects about to be replaced.
-    const Scene::SceneSnapshotUVE snapshot = simulation->snapshot;
+    const Scene::SceneSnapshot snapshot = simulation->snapshot;
     const bool dirtyBefore = simulation->dirtyBefore;
     simulation->scripts.clear();
     m_componentPropertyPreview.reset();
-    ClearDocumentSceneUVE();
-    const std::vector<Scene::EntityUVE> restored =
-        m_services->GetSceneSerializerUVE().RestoreUVE(m_services->GetEntityManagerUVE(), snapshot);
+    ClearDocumentScene();
+    const std::vector<Scene::Entity> restored =
+        m_services->GetSceneSerializer().Restore(m_services->GetEntityManager(), snapshot);
     if (restored.empty()) {
         m_contentStatusMessage = "Could not put the entity back; Revert reads it from its file.";
         return false;
     }
     m_entityEditSession->rootEntity = restored.front();
     // The objects are new: what undo remembered named the old ones.
-    ClearHistoryUVE();
+    ClearHistory();
     m_sceneDirty = dirtyBefore;
-    InvalidateHierarchyFilterCacheUVE();
-    SelectEntityUVE(restored.front());
+    InvalidateHierarchyFilterCache();
+    SelectEntity(restored.front());
     m_contentStatusMessage = "Simulation stopped: the entity is as it was.";
     return true;
 }
 
-EditorUVE::EntitySimulationStateUVE EditorUVE::GetEntitySimulationStateUVE() const noexcept {
+Editor::EntitySimulationState Editor::GetEntitySimulationState() const noexcept {
     if (!m_entityEditSession.has_value() || m_entityEditSession->simulation == nullptr) {
-        return EntitySimulationStateUVE::Stopped;
+        return EntitySimulationState::Stopped;
     }
-    return m_entityEditSession->simulation->paused ? EntitySimulationStateUVE::Paused : EntitySimulationStateUVE::Running;
+    return m_entityEditSession->simulation->paused ? EntitySimulationState::Paused : EntitySimulationState::Running;
 }
 
-void EditorUVE::TickEntitySimulationUVE(const double deltaSeconds) {
+void Editor::TickEntitySimulation(const double deltaSeconds) {
     if (!m_entityEditSession.has_value() || m_entityEditSession->simulation == nullptr ||
         m_entityEditSession->simulation->paused || !(deltaSeconds >= 0.0)) {
         return;
     }
-    const EntityDocumentScopeUVE scope(*this);
-    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    const EntityDocumentScope scope(*this);
+    Scene::IEntityManager& entityManager = m_services->GetEntityManager();
     const double dt = std::min(deltaSeconds, 0.1);
-    for (EntitySimulationUVE::ScriptUVE& script : m_entityEditSession->simulation->scripts) {
-        if (script.instance == nullptr || !entityManager.IsAliveUVE(script.entity)) {
+    for (EntitySimulation::Script& script : m_entityEditSession->simulation->scripts) {
+        if (script.instance == nullptr || !entityManager.IsAlive(script.entity)) {
             continue;
         }
         if (!script.ready) {
             script.ready = true;
-            static_cast<void>(script.instance->RaiseEventUVE("ready"));
+            static_cast<void>(script.instance->RaiseEvent("ready"));
         }
-        const Blueprint::ValueUVE args[] = {dt};
-        static_cast<void>(script.instance->RaiseEventUVE("tick", args));
-        script.instance->AdvanceUVE(dt);
+        const Blueprint::Value args[] = {dt};
+        static_cast<void>(script.instance->RaiseEvent("tick", args));
+        script.instance->Advance(dt);
     }
 }
 

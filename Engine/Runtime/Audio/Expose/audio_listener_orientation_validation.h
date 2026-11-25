@@ -5,10 +5,10 @@
 
 namespace UVE::Audio {
 
-/// Validates the copied listener basis inputs used by AudioSystemUVE. Both vectors must be finite
+/// Validates the copied listener basis inputs used by AudioSystem. Both vectors must be finite
 /// and have a finite, strictly positive squared length. This does not normalize the basis, enforce
 /// orthogonality, or select an audio backend.
-[[nodiscard]] bool IsAudioListenerOrientationValidUVE(Math::Vector3UVE forward,
-                                                       Math::Vector3UVE up) noexcept;
+[[nodiscard]] bool IsAudioListenerOrientationValid(Math::Vector3 forward,
+                                                       Math::Vector3 up) noexcept;
 
 } // namespace UVE::Audio

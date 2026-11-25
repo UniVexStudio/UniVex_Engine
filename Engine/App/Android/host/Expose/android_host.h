@@ -18,24 +18,24 @@ struct android_app;
 struct AAssetManager;
 
 namespace UVE::Window {
-class AndroidWindowManagerUVE;
+class AndroidWindowManager;
 }
 namespace UVE::Core {
-class EngineCoreUVE;
+class EngineCore;
 }
 
 namespace UVE::AndroidHost {
 
 /// Log tag every UniVex app on Android writes under (logcat -s UniVex).
-inline constexpr const char* kLogTagUVE = "UniVex";
+inline constexpr const char* kLogTag = "UniVex";
 /// Written by build_apk.py: every file under the APK's assets/, one relative path per line.
-inline constexpr const char* kAssetIndexUVE = "asset-index.txt";
+inline constexpr const char* kAssetIndex = "asset-index.txt";
 
 /// Touch gestures, turned into what the editor and PRISM read from a mouse: one finger presses the
 /// left button immediately on ACTION_DOWN for instant UI press feedback (cancelled cleanly if held
 /// still into a long-press right click or joined by a second finger), two+ fingers drag with the
 /// middle button (Pan) while pinching smoothly sends continuous wheel deltas (Dolly Zoom).
-struct TouchGestureUVE final {
+struct TouchGesture final {
     int fingers = 0;
     /// GLFW mouse button the gesture holds down (-1: none yet).
     int button = -1;
@@ -56,16 +56,16 @@ struct TouchGestureUVE final {
 };
 
 /// What the attached app knows about its activity.
-struct ActivityStateUVE final {
+struct ActivityState final {
     android_app* app = nullptr;
     bool resumed = false;
     /// The running engine's window manager, once its loop has started.
-    Window::AndroidWindowManagerUVE* windowManager = nullptr;
+    Window::AndroidWindowManager* windowManager = nullptr;
     /// The screen edges display cutouts cover, read again whenever the window or its layout changes.
-    Window::AndroidSafeAreaUVE safeArea;
+    Window::AndroidSafeArea safeArea;
     /// Frames started since attaching; the first is on screen once the second starts.
     std::uint64_t framesStarted = 0;
-    TouchGestureUVE touch;
+    TouchGesture touch;
     /// The system Back key acts as Escape (the editor: it closes menus and dialogs) instead of
     /// leaving the app (the Hub).
     bool backIsEscape = false;
@@ -79,62 +79,62 @@ struct ActivityStateUVE final {
     std::int64_t lastInteractionMs = 0;
     /// Surface pixels per density-independent pixel (density / 160 dpi).
     float pixelsPerDp = 1.0F;
-    /// A system file pick in progress (StartFilePickUVE): what to call with the file, what to call
+    /// A system file pick in progress (StartFilePick): what to call with the file, what to call
     /// when a pick fails or is rejected, and the name endings it accepts.
     std::function<void(const std::filesystem::path&)> pendingPick;
     std::function<void(const std::string&)> pendingPickError;
     std::vector<std::string> pickSuffixes;
-    /// A multi-file or folder pick in progress (StartMultiFilePickUVE / StartFolderPickUVE).
+    /// A multi-file or folder pick in progress (StartMultiFilePick / StartFolderPick).
     std::function<void(const std::vector<std::filesystem::path>&)> pendingMultiPick;
     std::function<void(const std::string&)> pendingMultiPickError;
     std::vector<std::string> multiPickSuffixes;
     bool multiPickFolders = false;
 };
 
-/// Opens Android's file picker; `onPicked` runs (from BeforeFrameUVE) with the chosen file, copied
+/// Opens Android's file picker; `onPicked` runs (from BeforeFrame) with the chosen file, copied
 /// into the app's cache, when it matches `suffixes` (or `onError` when the pick fails or the file
 /// is not an accepted package). False when no picker opened.
-[[nodiscard]] bool StartFilePickUVE(ActivityStateUVE& state, const std::vector<std::string>& suffixes,
+[[nodiscard]] bool StartFilePick(ActivityState& state, const std::vector<std::string>& suffixes,
                                     std::function<void(const std::filesystem::path&)> onPicked,
                                     std::function<void(const std::string&)> onError = {});
 /// Opens Android's native multi-select file manager (ACTION_OPEN_DOCUMENT + EXTRA_ALLOW_MULTIPLE).
-[[nodiscard]] bool StartMultiFilePickUVE(ActivityStateUVE& state, const std::vector<std::string>& suffixes,
+[[nodiscard]] bool StartMultiFilePick(ActivityState& state, const std::vector<std::string>& suffixes,
                                          std::function<void(const std::vector<std::filesystem::path>&)> onPicked,
                                          std::function<void(const std::string&)> onError = {});
 /// Opens Android's native folder tree picker (ACTION_OPEN_DOCUMENT_TREE), staging subfolders into cache.
-[[nodiscard]] bool StartFolderPickUVE(ActivityStateUVE& state,
+[[nodiscard]] bool StartFolderPick(ActivityState& state,
                                       std::function<void(const std::vector<std::filesystem::path>&)> onPicked,
                                       std::function<void(const std::string&)> onError = {});
 
 /// Takes over the activity's callbacks for `state`, and tells this library's copies of the GLFW
 /// stand-in and the HTTP client about the activity (Java VM, screen density, current surface).
-void AttachUVE(ActivityStateUVE& state, android_app* app);
+void Attach(ActivityState& state, android_app* app);
 
 /// Waits until the activity has a surface. False once the activity is closing.
-[[nodiscard]] bool WaitForWindowUVE(ActivityStateUVE& state);
+[[nodiscard]] bool WaitForWindow(ActivityState& state);
 
 /// Handles pending events; blocks while the app is in the background. When `idleWaitMs > 0` and
 /// no recent interaction is active, waits up to `idleWaitMs` ms for the next event (waking
 /// immediately on any touch, key, or lifecycle event). False once the activity is closing.
-[[nodiscard]] bool PumpEventsUVE(ActivityStateUVE& state, int idleWaitMs = 0);
+[[nodiscard]] bool PumpEvents(ActivityState& state, int idleWaitMs = 0);
 
-/// A per-frame step for LauncherWindowDescUVE::beforeFrame and the editor's loop: picks up the
+/// A per-frame step for LauncherWindowDesc::beforeFrame and the editor's loop: picks up the
 /// engine's window manager, pumps events and reports the first drawn frame as `renderedMarker` in
 /// logcat. False when the app should stop.
-[[nodiscard]] bool BeforeFrameUVE(ActivityStateUVE& state, Core::EngineCoreUVE& core, const char* renderedMarker,
+[[nodiscard]] bool BeforeFrame(ActivityState& state, Core::EngineCore& core, const char* renderedMarker,
                                   int idleWaitMs = 0);
 
 /// Lets go of the surface before the engine that drew to it shuts down.
-void DetachEngineUVE(ActivityStateUVE& state);
+void DetachEngine(ActivityState& state);
 
 /// Sets HOME and the working directory to the app's private storage, where the engine's relative
 /// paths (settings, caches, logs) and the user's projects and engines live.
-void EnterDataDirectoryUVE(const android_app* app);
+void EnterDataDirectory(const android_app* app);
 
 /// Copies every asset the APK's index lists into `destination`, replacing what an older APK left.
-[[nodiscard]] bool UnpackAssetsUVE(AAssetManager* assets, const std::filesystem::path& destination);
+[[nodiscard]] bool UnpackAssets(AAssetManager* assets, const std::filesystem::path& destination);
 
 /// Keeps the activity alive until Android destroys it (after ANativeActivity_finish).
-void DrainUntilDestroyedUVE(android_app* app);
+void DrainUntilDestroyed(android_app* app);
 
 } // namespace UVE::AndroidHost

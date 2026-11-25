@@ -22,10 +22,10 @@ class TextInput;
 
 namespace UVE::Editor {
 
-class EditorUVE;
-class EditorHostUVE;
-class DocumentTabUVE;
-class RetargetSkeletonDiagramUVE;
+class Editor;
+class EditorHost;
+class DocumentTab;
+class RetargetSkeletonDiagram;
 
 /// The Retarget window, in a window of its own beside the level (which stays open and editable):
 ///
@@ -41,34 +41,34 @@ class RetargetSkeletonDiagramUVE;
 /// Picking a joint in the source box, a row of the bones, or the bone in the preview is the same
 /// pick: all three follow it.
 ///
-/// Everything it shows and does is EditorUVE's Retarget window state (OpenRetargetWindowUVE ...).
-class EditorRetargetWindowUVE final {
+/// Everything it shows and does is Editor's Retarget window state (OpenRetargetWindow ...).
+class EditorRetargetWindow final {
 public:
-    EditorRetargetWindowUVE(EditorUVE& editor, EditorHostUVE& host);
-    ~EditorRetargetWindowUVE();
-    EditorRetargetWindowUVE(const EditorRetargetWindowUVE&) = delete;
-    EditorRetargetWindowUVE& operator=(const EditorRetargetWindowUVE&) = delete;
+    EditorRetargetWindow(Editor& editor, EditorHost& host);
+    ~EditorRetargetWindow();
+    EditorRetargetWindow(const EditorRetargetWindow&) = delete;
+    EditorRetargetWindow& operator=(const EditorRetargetWindow&) = delete;
 
     /// Opens the window while the Retarget window is open and closes it after; runs its work and
     /// refreshes the panels. Main context current, before BeginFrame.
-    void SyncUVE();
+    void Sync();
     /// Renders the preview and presents the window (after BeginFrame).
-    void RenderUVE();
-    [[nodiscard]] int WindowIdUVE() const noexcept { return m_window; }
+    void Render();
+    [[nodiscard]] int WindowId() const noexcept { return m_window; }
 
 private:
-    [[nodiscard]] prism::Ref<prism::Widget> BuildUVE();
-    [[nodiscard]] prism::Ref<prism::Widget> BuildTitleBarUVE();
-    [[nodiscard]] prism::Ref<prism::Widget> BuildToolbarUVE();
-    void RefreshUVE();
-    void RebuildRowsUVE();
+    [[nodiscard]] prism::Ref<prism::Widget> Build();
+    [[nodiscard]] prism::Ref<prism::Widget> BuildTitleBar();
+    [[nodiscard]] prism::Ref<prism::Widget> BuildToolbar();
+    void Refresh();
+    void RebuildRows();
     /// The source box: the humanoid's skeleton or the animations' own, coloured by the plan.
-    void RebuildSourceUVE(bool refit);
+    void RebuildSource(bool refit);
     /// One humanoid bone picked (from the box or the list): the others follow.
-    void PickReferenceBoneUVE(int reference, bool fromList);
+    void PickReferenceBone(int reference, bool fromList);
 
-    EditorUVE& m_editor;
-    EditorHostUVE& m_host;
+    Editor& m_editor;
+    EditorHost& m_host;
     int m_window = 0;
     std::size_t m_shownPlan = static_cast<std::size_t>(-1);
     std::string m_shownFilter;
@@ -86,7 +86,7 @@ private:
     std::shared_ptr<prism::TextInput> m_filter;
     std::shared_ptr<prism::CheckBox> m_problemsOnly;
     std::shared_ptr<prism::EngineView> m_viewport;
-    std::shared_ptr<RetargetSkeletonDiagramUVE> m_source;
+    std::shared_ptr<RetargetSkeletonDiagram> m_source;
     std::shared_ptr<prism::ComboBox> m_sourceMode;
     std::shared_ptr<prism::Label> m_sourceCaption;
     int m_shownSourceMode = -1;
@@ -96,7 +96,7 @@ private:
     int m_pickedReference = -1;
     std::shared_ptr<prism::Label> m_status;
     std::shared_ptr<prism::ProgressBar> m_progress;
-    std::shared_ptr<DocumentTabUVE> m_tab;
+    std::shared_ptr<DocumentTab> m_tab;
 };
 
 } // namespace UVE::Editor

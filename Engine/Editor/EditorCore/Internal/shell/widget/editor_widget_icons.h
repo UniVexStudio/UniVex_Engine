@@ -8,13 +8,13 @@
 #include <optional>
 
 namespace UVE::Scene {
-class IEntityManagerUVE;
+class IEntityManager;
 }
 
 namespace UVE::Editor {
 
 /// What a widget of a Widget Blueprint is, as the Palette, the Hierarchy and the Designer name it.
-enum class WidgetKindUVE : std::uint8_t {
+enum class WidgetKind : std::uint8_t {
     Canvas,
     Text,
     Button,
@@ -34,13 +34,13 @@ enum class WidgetKindUVE : std::uint8_t {
 };
 
 /// Its name ("Combo Box", "Vertical Box" ...).
-[[nodiscard]] const char* WidgetKindLabelUVE(WidgetKindUVE kind) noexcept;
+[[nodiscard]] const char* WidgetKindLabel(WidgetKind kind) noexcept;
 
 /// The widget an object is, read from its components: a Combo Box is a dropdown, a Border an image
 /// drawn nine-sliced, a Spacer an image that draws nothing, a Wrap Box a layout that wraps.
-[[nodiscard]] std::optional<WidgetKindUVE> ClassifyWidgetUVE(const Scene::IEntityManagerUVE& em, Scene::EntityUVE entity);
+[[nodiscard]] std::optional<WidgetKind> ClassifyWidget(const Scene::IEntityManager& em, Scene::Entity entity);
 
 /// The engine's own icon of each widget, drawn in code at `size` (0xAARRGGBB, straight alpha) and kept.
-[[nodiscard]] EditorIconsUVE::ImageUVE WidgetIconUVE(WidgetKindUVE kind, int size);
+[[nodiscard]] EditorIcons::Image WidgetIcon(WidgetKind kind, int size);
 
 } // namespace UVE::Editor

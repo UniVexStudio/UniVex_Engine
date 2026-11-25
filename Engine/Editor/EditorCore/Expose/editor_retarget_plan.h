@@ -19,12 +19,12 @@ namespace UVE::Editor {
 
 /// One bone of the humanoid as the Retarget window lists it: where it stands in the humanoid's
 /// hierarchy and how the character's rig answers it.
-struct RetargetJointRowUVE final {
+struct RetargetJointRow final {
     /// Index into the humanoid reference.
     std::int32_t referenceBone = -1;
     /// How deep in the hierarchy, for the tree's indent.
     std::int32_t depth = 0;
-    Retarget::JointStatusUVE status = Retarget::JointStatusUVE::Missing;
+    Retarget::JointStatus status = Retarget::JointStatus::Missing;
     /// Why, in a line, for anything but Good.
     std::string reason;
     /// The character's own name for it, empty when it has none.
@@ -38,15 +38,15 @@ struct RetargetJointRowUVE final {
     float confidence = 1.0F;
 };
 
-struct RetargetAnimationRowUVE final {
+struct RetargetAnimationRow final {
     std::filesystem::path file;
-    Retarget::RetargetAnimationStateUVE state = Retarget::RetargetAnimationStateUVE::Unreadable;
+    Retarget::RetargetAnimationState state = Retarget::RetargetAnimationState::Unreadable;
     std::string note;
 };
 
 /// What conforming a character and some animations would do, worked out without touching a file.
 /// The Retarget window shows it; Generate carries it out.
-struct RetargetPlanUVE final {
+struct RetargetPlan final {
     /// Core bones the character lacks: what Generate adds (optional correctives are not made).
     std::size_t missingCore = 0U;
     /// The Rig Brain helped find the bones (it trains in the background when the window opens).
@@ -66,44 +66,44 @@ struct RetargetPlanUVE final {
     /// Nothing to add: Generate only gives the bones the engine's names.
     bool renameOnly = false;
     /// One row per humanoid bone, parents first.
-    std::vector<RetargetJointRowUVE> joints;
+    std::vector<RetargetJointRow> joints;
     /// The character's bones the humanoid has no place for: kept as they are.
     std::vector<std::string> keptBones;
     /// How tall the character stands against the humanoid.
     float heightScale = 1.0F;
-    std::array<std::size_t, Retarget::kJointStatusCountUVE> counts{};
-    std::vector<RetargetAnimationRowUVE> animations;
+    std::array<std::size_t, Retarget::kJointStatusCount> counts{};
+    std::vector<RetargetAnimationRow> animations;
 
-    [[nodiscard]] std::size_t CountUVE(const Retarget::JointStatusUVE status) const noexcept {
+    [[nodiscard]] std::size_t Count(const Retarget::JointStatus status) const noexcept {
         return counts[static_cast<std::size_t>(status)];
     }
     /// How many of the animations Generate will conform.
-    [[nodiscard]] std::size_t ReadyAnimationsUVE() const noexcept;
+    [[nodiscard]] std::size_t ReadyAnimations() const noexcept;
     /// Generate needs a character it can conform and something to do.
-    [[nodiscard]] bool CanGenerateUVE() const noexcept {
-        return modelReadable && (ReadyAnimationsUVE() > 0U || (!model.empty() && !CharacterDoneUVE()));
+    [[nodiscard]] bool CanGenerate() const noexcept {
+        return modelReadable && (ReadyAnimations() > 0U || (!model.empty() && !CharacterDone()));
     }
     /// The character needs nothing more (named as the engine's, or retargeted already).
-    [[nodiscard]] bool CharacterDoneUVE() const noexcept {
+    [[nodiscard]] bool CharacterDone() const noexcept {
         return modelAlreadyConformed || alreadyRetargeted;
     }
 };
 
 /// Optional progress callback while scanning a batch of animations: (done, total, label).
-using RetargetPlanProgressUVE = std::function<void(std::size_t done, std::size_t total, const std::string& what)>;
+using RetargetPlanProgress = std::function<void(std::size_t done, std::size_t total, const std::string& what)>;
 
 /// Reads the character (a `.uvmodel` with a skin) and the animations (plus any takes embedded in
 /// `modelFile`) and works out the plan without touching a file.
-[[nodiscard]] RetargetPlanUVE PlanRetargetUVE(const std::filesystem::path& modelFile,
+[[nodiscard]] RetargetPlan PlanRetarget(const std::filesystem::path& modelFile,
                                               std::span<const std::filesystem::path> animations,
-                                              const RetargetPlanProgressUVE& progress = {},
+                                              const RetargetPlanProgress& progress = {},
                                               const std::atomic<bool>* cancel = nullptr);
 
 /// The joint colour as red, green, blue in 0..1: green good, yellow check, red broken, grey missing.
 /// One place, so the window's dots and the viewport's bones always agree.
-[[nodiscard]] std::array<float, 3> GetRetargetStatusColourUVE(Retarget::JointStatusUVE status) noexcept;
+[[nodiscard]] std::array<float, 3> GetRetargetStatusColour(Retarget::JointStatus status) noexcept;
 
 /// A joint colour's name for the window: "good", "check", "broken" or "missing" (grey).
-[[nodiscard]] const char* GetRetargetStatusLabelUVE(Retarget::JointStatusUVE status) noexcept;
+[[nodiscard]] const char* GetRetargetStatusLabel(Retarget::JointStatus status) noexcept;
 
 } // namespace UVE::Editor

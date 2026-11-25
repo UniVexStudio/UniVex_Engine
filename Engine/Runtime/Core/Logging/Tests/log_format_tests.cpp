@@ -8,20 +8,20 @@
 namespace UVE::Debug::Tests {
 namespace {
 
-TEST(LogFormatUVETest, NoArguments_ReturnsLiteralString) {
-    EXPECT_EQ(FormatLogMessageUVE("hello world"), "hello world");
+TEST(LogFormatTest, NoArguments_ReturnsLiteralString) {
+    EXPECT_EQ(FormatLogMessage("hello world"), "hello world");
 }
 
-TEST(LogFormatUVETest, SingleIntegerArgument_Substituted) {
-    EXPECT_EQ(FormatLogMessageUVE("value={}", 42), "value=42");
+TEST(LogFormatTest, SingleIntegerArgument_Substituted) {
+    EXPECT_EQ(FormatLogMessage("value={}", 42), "value=42");
 }
 
-TEST(LogFormatUVETest, MultipleMixedArguments_SubstitutedInOrder) {
-    EXPECT_EQ(FormatLogMessageUVE("{} and {} and {}", 1, "two", 3.5), "1 and two and 3.5");
+TEST(LogFormatTest, MultipleMixedArguments_SubstitutedInOrder) {
+    EXPECT_EQ(FormatLogMessage("{} and {} and {}", 1, "two", 3.5), "1 and two and 3.5");
 }
 
-TEST(LogFormatUVETest, FloatingPointPrecisionSpec_Formatted) {
-    EXPECT_EQ(FormatLogMessageUVE("pi={:.2f}", 3.14159), "pi=3.14");
+TEST(LogFormatTest, FloatingPointPrecisionSpec_Formatted) {
+    EXPECT_EQ(FormatLogMessage("pi={:.2f}", 3.14159), "pi=3.14");
 }
 
 } // namespace

@@ -11,11 +11,11 @@
 
 namespace UVE::Plugins {
 
-struct NativePluginCapabilityPolicyUVE;
+struct NativePluginCapabilityPolicy;
 
-inline constexpr std::uint32_t kNativePluginProtocolVersionUVE = 1U;
+inline constexpr std::uint32_t kNativePluginProtocolVersion = 1U;
 
-enum class NativePluginRegistryCodeUVE : std::uint8_t {
+enum class NativePluginRegistryCode : std::uint8_t {
     Accepted = 0,
     Rejected,
     NotFound,
@@ -23,70 +23,70 @@ enum class NativePluginRegistryCodeUVE : std::uint8_t {
     InvalidScope,
 };
 
-struct NativePluginVersionUVE final {
+struct NativePluginVersion final {
     std::uint16_t major = 0U;
     std::uint16_t minor = 0U;
     std::uint16_t patch = 0U;
 
-    [[nodiscard]] constexpr bool operator==(const NativePluginVersionUVE&) const noexcept = default;
+    [[nodiscard]] constexpr bool operator==(const NativePluginVersion&) const noexcept = default;
 };
 
-struct NativePluginManifestUVE final {
+struct NativePluginManifest final {
     std::string pluginId;
     std::string displayName;
-    NativePluginVersionUVE version;
-    std::uint32_t requiredEngineProtocol = kNativePluginProtocolVersionUVE;
+    NativePluginVersion version;
+    std::uint32_t requiredEngineProtocol = kNativePluginProtocolVersion;
     std::vector<std::string> capabilityIds;
 
-    [[nodiscard]] bool operator==(const NativePluginManifestUVE&) const = default;
+    [[nodiscard]] bool operator==(const NativePluginManifest&) const = default;
 };
 
-struct NativePluginRegistrationScopeUVE final {
+struct NativePluginRegistrationScope final {
     std::string pluginId;
     std::uint64_t generation = 0U;
 
-    [[nodiscard]] bool IsValidUVE() const noexcept {
+    [[nodiscard]] bool IsValid() const noexcept {
         return !pluginId.empty() && generation != 0U;
     }
 };
 
-struct NativePluginRegistryResultUVE final {
-    NativePluginRegistryCodeUVE code = NativePluginRegistryCodeUVE::Rejected;
+struct NativePluginRegistryResult final {
+    NativePluginRegistryCode code = NativePluginRegistryCode::Rejected;
     std::string message;
 
-    [[nodiscard]] bool IsAcceptedUVE() const noexcept {
-        return code == NativePluginRegistryCodeUVE::Accepted;
+    [[nodiscard]] bool IsAccepted() const noexcept {
+        return code == NativePluginRegistryCode::Accepted;
     }
 };
 
-class NativePluginRegistryUVE final {
+class NativePluginRegistry final {
 public:
-    static constexpr std::size_t kMaximumPluginsUVE = 64U;
-    static constexpr std::size_t kMaximumCapabilitiesPerPluginUVE = 32U;
+    static constexpr std::size_t kMaximumPlugins = 64U;
+    static constexpr std::size_t kMaximumCapabilitiesPerPlugin = 32U;
 
-    NativePluginRegistryUVE() = default;
-    NativePluginRegistryUVE(const NativePluginRegistryUVE&) = delete;
-    NativePluginRegistryUVE& operator=(const NativePluginRegistryUVE&) = delete;
+    NativePluginRegistry() = default;
+    NativePluginRegistry(const NativePluginRegistry&) = delete;
+    NativePluginRegistry& operator=(const NativePluginRegistry&) = delete;
 
-    [[nodiscard]] NativePluginRegistryResultUVE RegisterManifestUVE(NativePluginManifestUVE manifest);
-    [[nodiscard]] NativePluginRegistryResultUVE RegisterManifestUVE(
-        NativePluginManifestUVE manifest, const NativePluginCapabilityPolicyUVE& policy);
-    [[nodiscard]] std::optional<NativePluginRegistrationScopeUVE> OpenScopeUVE(std::string_view pluginId);
-    [[nodiscard]] NativePluginRegistryResultUVE CloseScopeUVE(const NativePluginRegistrationScopeUVE& scope);
-    [[nodiscard]] NativePluginRegistryResultUVE UnregisterManifestUVE(std::string_view pluginId);
-    [[nodiscard]] const NativePluginManifestUVE* FindManifestUVE(std::string_view pluginId) const noexcept;
-    [[nodiscard]] bool IsScopeOpenUVE(std::string_view pluginId) const noexcept;
-    [[nodiscard]] std::size_t GetManifestCountUVE() const noexcept;
-    [[nodiscard]] std::size_t GetOpenScopeCountUVE() const noexcept;
+    [[nodiscard]] NativePluginRegistryResult RegisterManifest(NativePluginManifest manifest);
+    [[nodiscard]] NativePluginRegistryResult RegisterManifest(
+        NativePluginManifest manifest, const NativePluginCapabilityPolicy& policy);
+    [[nodiscard]] std::optional<NativePluginRegistrationScope> OpenScope(std::string_view pluginId);
+    [[nodiscard]] NativePluginRegistryResult CloseScope(const NativePluginRegistrationScope& scope);
+    [[nodiscard]] NativePluginRegistryResult UnregisterManifest(std::string_view pluginId);
+    [[nodiscard]] const NativePluginManifest* FindManifest(std::string_view pluginId) const noexcept;
+    [[nodiscard]] bool IsScopeOpen(std::string_view pluginId) const noexcept;
+    [[nodiscard]] std::size_t GetManifestCount() const noexcept;
+    [[nodiscard]] std::size_t GetOpenScopeCount() const noexcept;
 
 private:
-    struct EntryUVE final {
-        NativePluginManifestUVE manifest;
+    struct Entry final {
+        NativePluginManifest manifest;
         std::uint64_t generation = 0U;
         bool scopeOpen = false;
     };
 
-    std::unordered_map<std::string, EntryUVE> m_entries;
+    std::unordered_map<std::string, Entry> m_entries;
     std::uint64_t m_nextGeneration = 1U;
 };
 

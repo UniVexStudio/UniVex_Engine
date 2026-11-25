@@ -26,30 +26,30 @@
 namespace UVE::Network {
 
 /// Identifies one lobby client on the server; 0 is invalid. Monotonic, never reused.
-using LobbyClientIdUVE = std::uint32_t;
-inline constexpr LobbyClientIdUVE kInvalidLobbyClientIdUVE = 0U;
+using LobbyClientId = std::uint32_t;
+inline constexpr LobbyClientId kInvalidLobbyClientId = 0U;
 /// Identifies one room; 0 means no room. Monotonic, never reused.
-using LobbyRoomIdUVE = std::uint32_t;
-inline constexpr LobbyRoomIdUVE kInvalidLobbyRoomIdUVE = 0U;
+using LobbyRoomId = std::uint32_t;
+inline constexpr LobbyRoomId kInvalidLobbyRoomId = 0U;
 
-inline constexpr const char* kLobbyListMethodUVE = "lobby.list";
-inline constexpr const char* kLobbyCreateMethodUVE = "lobby.create";
-inline constexpr const char* kLobbyJoinMethodUVE = "lobby.join";
-inline constexpr const char* kLobbyLeaveMethodUVE = "lobby.leave";
-inline constexpr const char* kLobbyRosterMethodUVE = "lobby.roster";
-inline constexpr const char* kLobbyRosterChangedMethodUVE = "lobby.rosterChanged";
+inline constexpr const char* kLobbyListMethod = "lobby.list";
+inline constexpr const char* kLobbyCreateMethod = "lobby.create";
+inline constexpr const char* kLobbyJoinMethod = "lobby.join";
+inline constexpr const char* kLobbyLeaveMethod = "lobby.leave";
+inline constexpr const char* kLobbyRosterMethod = "lobby.roster";
+inline constexpr const char* kLobbyRosterChangedMethod = "lobby.rosterChanged";
 
 /// One room as the list sees it: identity, name, and how full it is.
-struct LobbyRoomInfoUVE final {
-    LobbyRoomIdUVE id = kInvalidLobbyRoomIdUVE;
+struct LobbyRoomInfo final {
+    LobbyRoomId id = kInvalidLobbyRoomId;
     std::string name;
     std::uint32_t players = 0U;
     std::uint32_t maxPlayers = 0U;
 
-    [[nodiscard]] bool operator==(const LobbyRoomInfoUVE&) const noexcept = default;
+    [[nodiscard]] bool operator==(const LobbyRoomInfo&) const noexcept = default;
 };
 
-struct LobbyStatsUVE final {
+struct LobbyStats final {
     std::uint64_t roomsCreated = 0U;
     std::uint64_t roomsRemoved = 0U;
     std::uint64_t createsRejected = 0U;
@@ -60,145 +60,145 @@ struct LobbyStatsUVE final {
     std::uint64_t notificationsSent = 0U;
     std::uint64_t notificationsDropped = 0U;
 
-    [[nodiscard]] bool operator==(const LobbyStatsUVE&) const noexcept = default;
+    [[nodiscard]] bool operator==(const LobbyStats&) const noexcept = default;
 };
 
 /// Authoritative room registry behind per-client RPC peers. Owns its server sessions (they
-/// join by move); UpdateUVE pumps every peer, and each peer serves the five lobby methods
+/// join by move); Update pumps every peer, and each peer serves the five lobby methods
 /// out of the shared registry. Roster changes push to survivors through lobby.rosterChanged
 /// calls, fire-and-forget - a client without the handler still joins and leaves fine, it
 /// just never hears the news. Move-only (it owns its peers), and moves rebind every
 /// peer's handlers to the new home; single-threaded like everything below it.
-class NetworkLobbyUVE final {
+class NetworkLobby final {
 public:
-    NetworkLobbyUVE() noexcept = default;
-    NetworkLobbyUVE(const NetworkLobbyUVE&) = delete;
-    NetworkLobbyUVE& operator=(const NetworkLobbyUVE&) = delete;
+    NetworkLobby() noexcept = default;
+    NetworkLobby(const NetworkLobby&) = delete;
+    NetworkLobby& operator=(const NetworkLobby&) = delete;
     // Moves rebind every peer's handlers to the new home: the handlers call into the
     // registry, so a stale capture would serve a moved-from husk.
-    NetworkLobbyUVE(NetworkLobbyUVE&& other);
-    NetworkLobbyUVE& operator=(NetworkLobbyUVE&& other);
+    NetworkLobby(NetworkLobby&& other);
+    NetworkLobby& operator=(NetworkLobby&& other);
 
     /// Adds a server-role session bound to its client endpoint, returning its client id.
     /// Anything else idles: the lobby pumps what it is given, and only a server session
     /// answers a client's Hello. Hands out ids from 1, monotonically, never reused.
-    [[nodiscard]] LobbyClientIdUVE AddClientUVE(NetworkSessionUVE&& session);
+    [[nodiscard]] LobbyClientId AddClient(NetworkSession&& session);
     /// Drops a client: leaves its room first (survivors are notified, counts as a leave),
     /// then forgets the session. Returns false when the id is unknown (or already removed -
     /// ids never come back, so a second removal always fails).
-    [[nodiscard]] bool RemoveClientUVE(LobbyClientIdUVE id) noexcept;
-    /// Pumps every client's RPC peer in client-id order. The app polls ClientRpcUVE for dead
+    [[nodiscard]] bool RemoveClient(LobbyClientId id) noexcept;
+    /// Pumps every client's RPC peer in client-id order. The app polls ClientRpc for dead
     /// sessions and removes them - the lobby never drops a peer by surprise.
-    void UpdateUVE(std::uint64_t nowMs);
+    void Update(std::uint64_t nowMs);
 
     /// The client's RPC peer for state checks and hang-ups, or nullptr when unknown. The
     /// lobby keeps ownership - borrow, never move out.
-    [[nodiscard]] NetworkRpcUVE* ClientRpcUVE(LobbyClientIdUVE id) noexcept;
-    [[nodiscard]] const NetworkRpcUVE* ClientRpcUVE(LobbyClientIdUVE id) const noexcept;
+    [[nodiscard]] NetworkRpc* ClientRpc(LobbyClientId id) noexcept;
+    [[nodiscard]] const NetworkRpc* ClientRpc(LobbyClientId id) const noexcept;
     /// The room a client is in, or 0 when the id is unknown or the client roams roomless.
     /// The relay binding reads this to tag peers with their lobby room.
-    [[nodiscard]] LobbyRoomIdUVE ClientRoomUVE(LobbyClientIdUVE id) const noexcept;
-    [[nodiscard]] LobbyStatsUVE StatsUVE() const noexcept { return m_stats; }
-    [[nodiscard]] std::size_t PeerCountUVE() const noexcept { return m_clients.size(); }
-    [[nodiscard]] std::size_t RoomCountUVE() const noexcept { return m_rooms.size(); }
+    [[nodiscard]] LobbyRoomId ClientRoom(LobbyClientId id) const noexcept;
+    [[nodiscard]] LobbyStats Stats() const noexcept { return m_stats; }
+    [[nodiscard]] std::size_t PeerCount() const noexcept { return m_clients.size(); }
+    [[nodiscard]] std::size_t RoomCount() const noexcept { return m_rooms.size(); }
 
 private:
-    struct LobbyRoomUVE final {
-        LobbyRoomIdUVE id = kInvalidLobbyRoomIdUVE;
+    struct LobbyRoom final {
+        LobbyRoomId id = kInvalidLobbyRoomId;
         std::string name;
         std::uint32_t maxPlayers = 0U;
         // Member client ids to player names, in member-id order (which is join order: ids
         // are monotonic, so the roster reads oldest member first).
-        std::map<LobbyClientIdUVE, std::string> members;
+        std::map<LobbyClientId, std::string> members;
     };
 
-    [[nodiscard]] RpcOutcomeUVE HandleListUVE(
-        std::span<const Blueprint::ValueUVE> args) const;
-    [[nodiscard]] RpcOutcomeUVE HandleCreateUVE(LobbyClientIdUVE caller,
-                                                std::span<const Blueprint::ValueUVE> args);
-    [[nodiscard]] RpcOutcomeUVE HandleJoinUVE(LobbyClientIdUVE caller,
-                                              std::span<const Blueprint::ValueUVE> args);
-    [[nodiscard]] RpcOutcomeUVE HandleLeaveUVE(LobbyClientIdUVE caller,
-                                               std::span<const Blueprint::ValueUVE> args);
-    [[nodiscard]] RpcOutcomeUVE HandleRosterUVE(
-        std::span<const Blueprint::ValueUVE> args) const;
+    [[nodiscard]] RpcOutcome HandleList(
+        std::span<const Blueprint::Value> args) const;
+    [[nodiscard]] RpcOutcome HandleCreate(LobbyClientId caller,
+                                                std::span<const Blueprint::Value> args);
+    [[nodiscard]] RpcOutcome HandleJoin(LobbyClientId caller,
+                                              std::span<const Blueprint::Value> args);
+    [[nodiscard]] RpcOutcome HandleLeave(LobbyClientId caller,
+                                               std::span<const Blueprint::Value> args);
+    [[nodiscard]] RpcOutcome HandleRoster(
+        std::span<const Blueprint::Value> args) const;
     /// Leaves the caller's room, notifying survivors and removing the room when emptied.
     /// False when the caller was in no room.
-    bool LeaveRoomUVE(LobbyClientIdUVE caller);
+    bool LeaveRoom(LobbyClientId caller);
     /// Calls lobby.rosterChanged on every member of `roomId` except `exceptClient`.
-    void NotifyRoomUVE(LobbyRoomIdUVE roomId, LobbyClientIdUVE exceptClient);
+    void NotifyRoom(LobbyRoomId roomId, LobbyClientId exceptClient);
     /// (Re)binds the five lobby handlers on `peer`, unregistering first so moves rebind.
-    void RegisterPeerHandlersUVE(NetworkRpcUVE& peer, LobbyClientIdUVE id);
+    void RegisterPeerHandlers(NetworkRpc& peer, LobbyClientId id);
     /// Rebinds every peer's handlers after a move.
-    void RebindPeerHandlersUVE();
+    void RebindPeerHandlers();
 
     // Registry first, peers last: peers die first, so no handler outlives the registry.
-    std::map<LobbyRoomIdUVE, LobbyRoomUVE> m_rooms;
-    std::map<LobbyClientIdUVE, LobbyRoomIdUVE> m_clientRoom;
-    LobbyClientIdUVE m_nextClientId = kInvalidLobbyClientIdUVE + 1U;
-    LobbyRoomIdUVE m_nextRoomId = kInvalidLobbyRoomIdUVE + 1U;
-    LobbyStatsUVE m_stats;
-    std::map<LobbyClientIdUVE, NetworkRpcUVE> m_clients;
+    std::map<LobbyRoomId, LobbyRoom> m_rooms;
+    std::map<LobbyClientId, LobbyRoomId> m_clientRoom;
+    LobbyClientId m_nextClientId = kInvalidLobbyClientId + 1U;
+    LobbyRoomId m_nextRoomId = kInvalidLobbyRoomId + 1U;
+    LobbyStats m_stats;
+    std::map<LobbyClientId, NetworkRpc> m_clients;
 };
 
 /// Typed lobby call completions: the value plus an error string, empty on success. Server
 /// errors pass through verbatim; transport failures and malformed replies read as errors
 /// too, so a callback always fires exactly once - the facade never strands one.
-using LobbyRoomsCallbackUVE =
-    std::function<void(std::vector<LobbyRoomInfoUVE>, const std::string&)>;
-using LobbyRoomCallbackUVE = std::function<void(LobbyRoomIdUVE, const std::string&)>;
-using LobbyRosterCallbackUVE = std::function<void(std::vector<std::string>, const std::string&)>;
-using LobbyLeaveCallbackUVE = std::function<void(bool, const std::string&)>;
+using LobbyRoomsCallback =
+    std::function<void(std::vector<LobbyRoomInfo>, const std::string&)>;
+using LobbyRoomCallback = std::function<void(LobbyRoomId, const std::string&)>;
+using LobbyRosterCallback = std::function<void(std::vector<std::string>, const std::string&)>;
+using LobbyLeaveCallback = std::function<void(bool, const std::string&)>;
 /// Roster pushes: the room plus its member names in member-id order.
-using LobbyRosterHandlerUVE =
-    std::function<void(LobbyRoomIdUVE, const std::vector<std::string>&)>;
+using LobbyRosterHandler =
+    std::function<void(LobbyRoomId, const std::vector<std::string>&)>;
 
 /// The client's typed view of the lobby: list, create, join, leave, and roster queries as
 /// plain calls, with the current room and roster cached locally. Owns its session (lobby
-/// rides direct sessions, so multiplexing buys nothing here); UpdateUVE pumps the RPC peer.
+/// rides direct sessions, so multiplexing buys nothing here); Update pumps the RPC peer.
 /// Move-only (it owns its peer), and safe to move: the handler state lives behind a
 /// stable address that moves with the facade. Single-threaded like everything below it.
-class NetworkLobbyClientUVE final {
+class NetworkLobbyClient final {
 public:
-    explicit NetworkLobbyClientUVE(NetworkSessionUVE&& session);
+    explicit NetworkLobbyClient(NetworkSession&& session);
 
     /// Lists every room. Empty callbacks are dropped - there is nowhere to deliver to.
-    void ListRoomsUVE(LobbyRoomsCallbackUVE callback);
+    void ListRooms(LobbyRoomsCallback callback);
     /// Creates `roomName` (up to `maxPlayers`) and joins it as `playerName`, leaving any
     /// current room first. Answers the new room id.
-    void CreateRoomUVE(const std::string& roomName, const std::string& playerName,
-                       std::uint32_t maxPlayers, LobbyRoomCallbackUVE callback);
+    void CreateRoom(const std::string& roomName, const std::string& playerName,
+                       std::uint32_t maxPlayers, LobbyRoomCallback callback);
     /// Joins `roomId` as `playerName`, leaving any current room first. Answers the room's
     /// roster, newcomer included.
-    void JoinRoomUVE(LobbyRoomIdUVE roomId, const std::string& playerName,
-                     LobbyRosterCallbackUVE callback);
+    void JoinRoom(LobbyRoomId roomId, const std::string& playerName,
+                     LobbyRosterCallback callback);
     /// Leaves the current room. Answers true; errors when in no room.
-    void LeaveRoomUVE(LobbyLeaveCallbackUVE callback);
+    void LeaveRoom(LobbyLeaveCallback callback);
     /// Queries any room's roster without joining it.
-    void QueryRosterUVE(LobbyRoomIdUVE roomId, LobbyRosterCallbackUVE callback);
+    void QueryRoster(LobbyRoomId roomId, LobbyRosterCallback callback);
     /// Gives up on every in-flight call: their callbacks never fire (a late response lands
     /// stale instead), and the roster handler is untouched. Answers how many were
     /// abandoned. Teardown semantics: scene changes call this rather than strand calls on a
     /// dying listener.
-    [[nodiscard]] std::size_t CancelPendingUVE();
+    [[nodiscard]] std::size_t CancelPending();
     /// Sets the roster-push handler; empty clears it. Fires on every rosterChanged for the
     /// current room - pushes for other rooms are impossible from an honest server (it only
     /// notifies members), and ignored when they arrive anyway.
-    void SetRosterHandlerUVE(LobbyRosterHandlerUVE handler);
+    void SetRosterHandler(LobbyRosterHandler handler);
     /// Pumps the RPC peer (and the session under it).
-    void UpdateUVE(std::uint64_t nowMs);
+    void Update(std::uint64_t nowMs);
 
     /// The owned session: handshake, disconnect, and state live here, not duplicated.
-    [[nodiscard]] NetworkSessionUVE& SessionUVE() noexcept { return m_rpc.SessionUVE(); }
-    [[nodiscard]] const NetworkSessionUVE& SessionUVE() const noexcept {
-        return m_rpc.SessionUVE();
+    [[nodiscard]] NetworkSession& Session() noexcept { return m_rpc.Session(); }
+    [[nodiscard]] const NetworkSession& Session() const noexcept {
+        return m_rpc.Session();
     }
-    [[nodiscard]] RpcStatsUVE StatsUVE() const noexcept { return m_rpc.StatsUVE(); }
+    [[nodiscard]] RpcStats Stats() const noexcept { return m_rpc.Stats(); }
     /// The room the last create/join landed in, or 0 when in none.
-    [[nodiscard]] LobbyRoomIdUVE CurrentRoomUVE() const noexcept {
+    [[nodiscard]] LobbyRoomId CurrentRoom() const noexcept {
         return m_state->currentRoom;
     }
-    [[nodiscard]] std::vector<std::string> CachedRosterUVE() const {
+    [[nodiscard]] std::vector<std::string> CachedRoster() const {
         return m_state->cachedRoster;
     }
 
@@ -207,18 +207,18 @@ private:
     // response callbacks hold this, so moves (a vector growing under live facades) never
     // strand an update on a moved-from husk. Never actually shared - one state per facade,
     // moved along with it.
-    struct ClientStateUVE final {
-        LobbyRosterHandlerUVE handler;
-        LobbyRoomIdUVE currentRoom = kInvalidLobbyRoomIdUVE;
+    struct ClientState final {
+        LobbyRosterHandler handler;
+        LobbyRoomId currentRoom = kInvalidLobbyRoomId;
         std::vector<std::string> cachedRoster;
-        std::set<RpcCallIdUVE> pending;
+        std::set<RpcCallId> pending;
     };
 
-    [[nodiscard]] static RpcOutcomeUVE
-    HandleRosterChangedUVE(ClientStateUVE& state, std::span<const Blueprint::ValueUVE> args);
+    [[nodiscard]] static RpcOutcome
+    HandleRosterChanged(ClientState& state, std::span<const Blueprint::Value> args);
 
-    NetworkRpcUVE m_rpc;
-    std::shared_ptr<ClientStateUVE> m_state;
+    NetworkRpc m_rpc;
+    std::shared_ptr<ClientState> m_state;
 };
 
 } // namespace UVE::Network

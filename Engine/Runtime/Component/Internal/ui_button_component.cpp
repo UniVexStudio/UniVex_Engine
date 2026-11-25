@@ -6,19 +6,19 @@
 
 namespace UVE::Scene {
 
-[[nodiscard]] bool IsUIButtonComponentValidUVE(const UIButtonComponentUVE& component) noexcept {
-    return Math::IsFiniteUVE(component.rect) &&
-           component.rect.size.x >= kMinimumUIButtonSizePixelsUVE &&
-           component.rect.size.x <= kMaximumUIButtonSizePixelsUVE &&
-           component.rect.size.y >= kMinimumUIButtonSizePixelsUVE &&
-           component.rect.size.y <= kMaximumUIButtonSizePixelsUVE && std::isfinite(component.normalColor.x) &&
+[[nodiscard]] bool IsUIButtonComponentValid(const UIButtonComponent& component) noexcept {
+    return Math::IsFinite(component.rect) &&
+           component.rect.size.x >= kMinimumUIButtonSizePixels &&
+           component.rect.size.x <= kMaximumUIButtonSizePixels &&
+           component.rect.size.y >= kMinimumUIButtonSizePixels &&
+           component.rect.size.y <= kMaximumUIButtonSizePixels && std::isfinite(component.normalColor.x) &&
            std::isfinite(component.normalColor.y) && std::isfinite(component.normalColor.z) &&
            std::isfinite(component.hoverColor.x) && std::isfinite(component.hoverColor.y) &&
            std::isfinite(component.hoverColor.z) && std::isfinite(component.pressedColor.x) &&
            std::isfinite(component.pressedColor.y) && std::isfinite(component.pressedColor.z);
 }
 
-Math::Vector3UVE ResolveUIButtonActiveColorUVE(const UIButtonComponentUVE& component,
+Math::Vector3 ResolveUIButtonActiveColor(const UIButtonComponent& component,
                                                const bool isMouseButtonDown) noexcept {
     if (!component.isHovered) {
         return component.normalColor;
@@ -26,21 +26,21 @@ Math::Vector3UVE ResolveUIButtonActiveColorUVE(const UIButtonComponentUVE& compo
     return isMouseButtonDown ? component.pressedColor : component.hoverColor;
 }
 
-bool HitTestUIButtonUVE(const UIButtonComponentUVE& component,
-                        const Math::Vector2UVE& pointPixels) noexcept {
-    return IsUIButtonComponentValidUVE(component) && Math::IsFiniteUVE(pointPixels) &&
-           Math::ContainsUVE(component.rect, pointPixels);
+bool HitTestUIButton(const UIButtonComponent& component,
+                        const Math::Vector2& pointPixels) noexcept {
+    return IsUIButtonComponentValid(component) && Math::IsFinite(pointPixels) &&
+           Math::Contains(component.rect, pointPixels);
 }
 
-void ResetUIButtonRuntimeStateUVE(UIButtonComponentUVE& component) noexcept {
+void ResetUIButtonRuntimeState(UIButtonComponent& component) noexcept {
     component.isHovered = false;
     component.wasClickedThisFrame = false;
 }
 
-bool StepUIButtonInteractionUVE(UIButtonComponentUVE& component,
-                                const Math::Vector2UVE& pointerPixels,
+bool StepUIButtonInteraction(UIButtonComponent& component,
+                                const Math::Vector2& pointerPixels,
                                 const bool mouseJustPressed) noexcept {
-    component.isHovered = HitTestUIButtonUVE(component, pointerPixels);
+    component.isHovered = HitTestUIButton(component, pointerPixels);
     component.wasClickedThisFrame = component.isHovered && mouseJustPressed;
     return component.wasClickedThisFrame;
 }

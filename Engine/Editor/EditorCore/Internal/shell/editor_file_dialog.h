@@ -20,10 +20,10 @@ class TextInput;
 
 namespace UVE::Editor {
 
-class EditorHostUVE;
+class EditorHost;
 
 /// The editor's file window, drawn with PRISM in a window of its own: every Load... / Browse... /
-/// Import... of the editor (EditorUVE::OpenFilePickerUVE) opens here.
+/// Import... of the editor (Editor::OpenFilePicker) opens here.
 ///
 ///   [title                                               - [] x]
 ///   [ up | path                                      | search  ]
@@ -37,45 +37,45 @@ class EditorHostUVE;
 ///
 /// Load picks a file where it is (anywhere on disk; the editor brings it into the project when it
 /// must). Import copies the file into the chosen Content folder first and picks the copy.
-class EditorFileDialogUVE final {
+class EditorFileDialog final {
 public:
-    EditorFileDialogUVE(EditorUVE& editor, EditorHostUVE& host);
-    ~EditorFileDialogUVE();
-    EditorFileDialogUVE(const EditorFileDialogUVE&) = delete;
-    EditorFileDialogUVE& operator=(const EditorFileDialogUVE&) = delete;
+    EditorFileDialog(Editor& editor, EditorHost& host);
+    ~EditorFileDialog();
+    EditorFileDialog(const EditorFileDialog&) = delete;
+    EditorFileDialog& operator=(const EditorFileDialog&) = delete;
 
     /// Opens the window for `request` (replacing one already open, whose pick never fires).
-    void OpenUVE(FilePickerRequestUVE request);
+    void Open(FilePickerRequest request);
     /// Closes a window asked to close, and presents the open one. Main context current.
-    void FrameUVE();
-    [[nodiscard]] bool IsOpenUVE() const noexcept { return m_window != 0; }
-    [[nodiscard]] int WindowIdUVE() const noexcept { return m_window; }
+    void Frame();
+    [[nodiscard]] bool IsOpen() const noexcept { return m_window != 0; }
+    [[nodiscard]] int WindowId() const noexcept { return m_window; }
 
 private:
-    struct EntryUVE final {
+    struct Entry final {
         std::filesystem::path path;
         bool directory = false;
         std::uintmax_t size = 0U;
         std::filesystem::file_time_type modified{};
     };
 
-    [[nodiscard]] prism::Ref<prism::Widget> BuildUVE();
-    void GoToUVE(const std::filesystem::path& directory);
-    void RebuildListUVE();
-    void ConfirmUVE();
-    void CancelUVE();
-    void ShowImportTargetMenuUVE();
-    [[nodiscard]] bool MatchesKindUVE(const std::filesystem::path& file) const;
-    [[nodiscard]] std::filesystem::path ContentRootUVE() const;
+    [[nodiscard]] prism::Ref<prism::Widget> Build();
+    void GoTo(const std::filesystem::path& directory);
+    void RebuildList();
+    void Confirm();
+    void Cancel();
+    void ShowImportTargetMenu();
+    [[nodiscard]] bool MatchesKind(const std::filesystem::path& file) const;
+    [[nodiscard]] std::filesystem::path ContentRoot() const;
 
-    EditorUVE& m_editor;
-    EditorHostUVE& m_host;
-    FilePickerRequestUVE m_request;
+    Editor& m_editor;
+    EditorHost& m_host;
+    FilePickerRequest m_request;
     int m_window = 0;
     bool m_closePending = false;
 
     std::filesystem::path m_directory;
-    std::vector<EntryUVE> m_entries;
+    std::vector<Entry> m_entries;
     std::filesystem::path m_importInto;   ///< Content-relative folder Import copies into
     bool m_allKinds = false;
 

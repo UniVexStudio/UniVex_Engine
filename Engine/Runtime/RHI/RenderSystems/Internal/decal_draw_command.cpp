@@ -13,16 +13,16 @@ namespace {
 /// The material a draw paints with, or nullptr when the handle is gone or not loaded. Both are
 /// ordinary outcomes between the projection pass and the plan: the asset manager collects handles
 /// it no longer sees, and a decal spawned this frame names a material that may still be in flight.
-[[nodiscard]] const Asset::MaterialAssetUVE* TryResolveMaterialUVE(const DecalDrawListUVE& drawList,
+[[nodiscard]] const Asset::MaterialAsset* TryResolveMaterial(const DecalDrawList& drawList,
                                                                    const std::size_t materialIndex) noexcept {
-    const Asset::AssetHandleUVE<Asset::MaterialAssetUVE>* const handle =
-        drawList.TryGetMaterialHandleUVE(materialIndex);
-    return handle != nullptr ? handle->TryGetUVE() : nullptr;
+    const Asset::AssetHandle<Asset::MaterialAsset>* const handle =
+        drawList.TryGetMaterialHandle(materialIndex);
+    return handle != nullptr ? handle->TryGet() : nullptr;
 }
 
 } // namespace
 
-void DecalDrawPlanUVE::ClearUVE() noexcept {
+void DecalDrawPlan::Clear() noexcept {
     vertices.clear();
     indices.clear();
     commands.clear();
@@ -33,20 +33,20 @@ void DecalDrawPlanUVE::ClearUVE() noexcept {
     drawsWithoutPaint = 0U;
 }
 
-void BuildDecalDrawPlanUVE(const DecalDrawListUVE& drawList, DecalDrawPlanUVE& outPlan,
+void BuildDecalDrawPlan(const DecalDrawList& drawList, DecalDrawPlan& outPlan,
                            const std::size_t maximumCommands, const std::size_t maximumVertices) {
-    outPlan.ClearUVE();
+    outPlan.Clear();
     // The plan's own capacity follows the cap, so a frame that hits it has already stopped growing
     // rather than allocating up to the cap and discarding the overflow afterwards.
     outPlan.commands.reserve(std::min(maximumCommands, drawList.draws.size()));
 
-    for (const DecalDrawUVE& draw : drawList.draws) {
+    for (const DecalDraw& draw : drawList.draws) {
         if (outPlan.commands.size() >= maximumCommands) {
             ++outPlan.drawsTruncated;
             continue;
         }
 
-        const Asset::MaterialAssetUVE* const material = TryResolveMaterialUVE(drawList, draw.materialIndex);
+        const Asset::MaterialAsset* const material = TryResolveMaterial(drawList, draw.materialIndex);
         if (material == nullptr) {
             ++outPlan.drawsWithoutMaterial;
             continue;
@@ -62,15 +62,15 @@ void BuildDecalDrawPlanUVE(const DecalDrawListUVE& drawList, DecalDrawPlanUVE& o
         }
 
         // The volume's own unit space, inverted once per decal rather than per vertex. This is the
-        // same transform Scene::Decal3DWorldToUnitUVE() applies, built from the same three pieces
+        // same transform Scene::Decal3DWorldToUnit() applies, built from the same three pieces
         // (position, rotation, half extents) that function uses, so the CPU's clipping space and the
         // fragment program's coordinate space are one space and not two that happen to agree today.
-        const Math::Matrix4x4UVE unitToWorld =
-            Math::Matrix4x4UVE::ComposeTrsUVE(draw.projection.worldPosition, draw.projection.worldRotation,
+        const Math::Matrix4x4 unitToWorld =
+            Math::Matrix4x4::ComposeTrs(draw.projection.worldPosition, draw.projection.worldRotation,
                                               draw.projection.halfExtents);
-        Math::Matrix4x4UVE worldToUnit{};
-        if (!Math::TryInverseUVE(unitToWorld, worldToUnit)) {
-            // `TryMakeDecal3DProjectionUVE()` already refused a degenerate volume, so this is the
+        Math::Matrix4x4 worldToUnit{};
+        if (!Math::TryInverse(unitToWorld, worldToUnit)) {
+            // `TryMakeDecal3DProjection()` already refused a degenerate volume, so this is the
             // float-precision edge of a volume a thousand units wide and a thousandth across; a
             // smear mapped through a singular basis is worse than no decal.
             ++outPlan.drawsWithoutInverse;
@@ -81,8 +81,8 @@ void BuildDecalDrawPlanUVE(const DecalDrawListUVE& drawList, DecalDrawPlanUVE& o
         // itself in the streams for the next decal to be drawn with.
         std::size_t vertexCount = 0U;
         std::size_t indexCount = 0U;
-        for (const DecalPatchUVE& patch : draw.patches) {
-            if (!patch.IsValidUVE()) {
+        for (const DecalPatch& patch : draw.patches) {
+            if (!patch.IsValid()) {
                 continue;
             }
             vertexCount += patch.vertexCount;
@@ -99,11 +99,11 @@ void BuildDecalDrawPlanUVE(const DecalDrawListUVE& drawList, DecalDrawPlanUVE& o
 
         const std::size_t firstVertex = outPlan.vertices.size();
         const std::size_t firstIndex = outPlan.indices.size();
-        for (const DecalPatchUVE& patch : draw.patches) {
-            AppendDecalPatchUVE(patch, draw.projection.projectionDirection, outPlan.vertices, outPlan.indices);
+        for (const DecalPatch& patch : draw.patches) {
+            AppendDecalPatch(patch, draw.projection.projectionDirection, outPlan.vertices, outPlan.indices);
         }
 
-        DecalDrawCommandUVE command{};
+        DecalDrawCommand command{};
         command.decal = draw.decal;
         command.firstVertex = static_cast<std::uint32_t>(firstVertex);
         command.vertexCount = static_cast<std::uint32_t>(vertexCount);
@@ -112,8 +112,8 @@ void BuildDecalDrawPlanUVE(const DecalDrawListUVE& drawList, DecalDrawPlanUVE& o
         command.worldToUnit = worldToUnit;
         command.projectionDirection = draw.projection.projectionDirection;
         command.albedoTextureGuid = material->albedoTexture;
-        command.baseColor = Math::ToVector3UVE(material->albedoColor) * draw.modulate;
-        command.emissionColor = Math::ToVector3UVE(material->emissiveColor) * draw.emissionEnergy;
+        command.baseColor = Math::ToVector3(material->albedoColor) * draw.modulate;
+        command.emissionColor = Math::ToVector3(material->emissiveColor) * draw.emissionEnergy;
         command.alphaScale = draw.albedoMix;
         command.normalFade = draw.projection.normalFade;
         command.upperFade = draw.projection.upperFade;

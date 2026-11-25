@@ -23,84 +23,84 @@
 namespace UVE::Asset::Tests {
 namespace {
 
-void WriteFixtureFileUVE(const std::filesystem::path& path, std::string_view contents) {
+void WriteFixtureFile(const std::filesystem::path& path, std::string_view contents) {
     std::ofstream file(path, std::ios::binary);
     ASSERT_TRUE(file.is_open());
     file << contents;
 }
 
-[[nodiscard]] std::string ReadFileUVE(const std::filesystem::path& path) {
+[[nodiscard]] std::string ReadFile(const std::filesystem::path& path) {
     std::ifstream file(path, std::ios::binary);
     return std::string((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
 }
 
-class AssetImporterUVETest : public ::testing::Test {
+class AssetImporterTest : public ::testing::Test {
 protected:
-    AssetImporterUVE importer;
-    AssetDatabaseUVE assetDatabase;
+    AssetImporter importer;
+    AssetDatabase assetDatabase;
 };
 
-class RejectingAssetDatabaseUVE final : public IAssetDatabaseUVE {
+class RejectingAssetDatabase final : public IAssetDatabase {
 public:
-    bool LoadUVE(const std::filesystem::path&) override { return false; }
-    bool SaveUVE() override { return false; }
-    bool SaveUVE(const std::filesystem::path&) override { return false; }
-    [[nodiscard]] AssetGuidUVE RegisterUVE(const std::filesystem::path&) override {
+    bool Load(const std::filesystem::path&) override { return false; }
+    bool Save() override { return false; }
+    bool Save(const std::filesystem::path&) override { return false; }
+    [[nodiscard]] AssetGuid Register(const std::filesystem::path&) override {
         ++registerCount;
-        return kInvalidAssetGuidUVE;
+        return kInvalidAssetGuid;
     }
-    [[nodiscard]] std::filesystem::path ResolveUVE(AssetGuidUVE) const override { return {}; }
-    [[nodiscard]] bool HasGuidUVE(AssetGuidUVE) const override { return false; }
-    [[nodiscard]] std::vector<AssetRecordUVE> GetRegisteredAssetsUVE() const override { return {}; }
+    [[nodiscard]] std::filesystem::path Resolve(AssetGuid) const override { return {}; }
+    [[nodiscard]] bool HasGuid(AssetGuid) const override { return false; }
+    [[nodiscard]] std::vector<AssetRecord> GetRegisteredAssets() const override { return {}; }
 
     int registerCount = 0;
 };
 
-TEST_F(AssetImporterUVETest, ClassifySourceUVE_ReportsAuthorityAndRawParserBoundary) {
-    struct ClassificationCaseUVE {
+TEST_F(AssetImporterTest, ClassifySource_ReportsAuthorityAndRawParserBoundary) {
+    struct ClassificationCase {
         std::string_view path;
-        AssetImportSourceKindUVE kind;
+        AssetImportSourceKind kind;
         std::string_view normalizedExtension;
         bool importerRegistered;
         bool requiresFormatSpecificParser;
         std::string_view diagnostic;
     };
 
-    constexpr std::array<ClassificationCaseUVE, 15> kCases = {{
-        {"Readme.TXT", AssetImportSourceKindUVE::PlainText, "txt", true, false,
+    constexpr std::array<ClassificationCase, 15> kCases = {{
+        {"Readme.TXT", AssetImportSourceKind::PlainText, "txt", true, false,
          "built-in text parser is registered"},
-        {"Character.UVMODEL", AssetImportSourceKindUVE::MeshEnvelope, "uvmodel", true, false,
+        {"Character.UVMODEL", AssetImportSourceKind::MeshEnvelope, "uvmodel", true, false,
          "built-in generic copy importer is registered"},
-        {"Walk.UVANIM", AssetImportSourceKindUVE::AnimationEnvelope, "uvanim", true, false,
+        {"Walk.UVANIM", AssetImportSourceKind::AnimationEnvelope, "uvanim", true, false,
          "built-in generic copy importer is registered"},
-        {"Character.FBX", AssetImportSourceKindUVE::RawModel, "fbx", true, true,
+        {"Character.FBX", AssetImportSourceKind::RawModel, "fbx", true, true,
          "format-specific parser is registered"},
-        {"Character.DAE", AssetImportSourceKindUVE::RawModel, "dae", false, true,
+        {"Character.DAE", AssetImportSourceKind::RawModel, "dae", false, true,
          "format-specific parser is not registered"},
-        {"Character.OBJ", AssetImportSourceKindUVE::RawModel, "obj", true, true,
+        {"Character.OBJ", AssetImportSourceKind::RawModel, "obj", true, true,
          "format-specific parser is registered"},
-        {"Albedo.PNG", AssetImportSourceKindUVE::RawTexture, "png", true, true,
+        {"Albedo.PNG", AssetImportSourceKind::RawTexture, "png", true, true,
          "format-specific parser is registered"},
-        {"Albedo.BMP", AssetImportSourceKindUVE::RawTexture, "bmp", true, true,
+        {"Albedo.BMP", AssetImportSourceKind::RawTexture, "bmp", true, true,
          "format-specific parser is registered"},
-        {"Albedo.TGA", AssetImportSourceKindUVE::RawTexture, "tga", true, true,
+        {"Albedo.TGA", AssetImportSourceKind::RawTexture, "tga", true, true,
          "format-specific parser is registered"},
-        {"Surface.MTL", AssetImportSourceKindUVE::RawMaterial, "mtl", true, true,
+        {"Surface.MTL", AssetImportSourceKind::RawMaterial, "mtl", true, true,
          "format-specific parser is registered"},
-        {"Main.VERT", AssetImportSourceKindUVE::RawShader, "vert", true, true,
+        {"Main.VERT", AssetImportSourceKind::RawShader, "vert", true, true,
          "format-specific parser is registered"},
-        {"Main.FRAG", AssetImportSourceKindUVE::RawShader, "frag", true, true,
+        {"Main.FRAG", AssetImportSourceKind::RawShader, "frag", true, true,
          "format-specific parser is registered"},
-        {"Compute.COMP", AssetImportSourceKindUVE::RawShader, "comp", true, true,
+        {"Compute.COMP", AssetImportSourceKind::RawShader, "comp", true, true,
          "format-specific parser is registered"},
-        {"Music.OGG", AssetImportSourceKindUVE::RawAudio, "ogg", false, true,
+        {"Music.OGG", AssetImportSourceKind::RawAudio, "ogg", false, true,
          "format-specific parser is not registered"},
-        {"Notes.UNKNOWN", AssetImportSourceKindUVE::Unknown, "unknown", false, false,
+        {"Notes.UNKNOWN", AssetImportSourceKind::Unknown, "unknown", false, false,
          "unsupported source extension"},
     }};
 
-    for (const ClassificationCaseUVE& expected : kCases) {
-        const AssetImportSourceClassificationUVE actual = importer.ClassifySourceUVE(expected.path);
+    for (const ClassificationCase& expected : kCases) {
+        const AssetImportSourceClassification actual = importer.ClassifySource(expected.path);
         EXPECT_EQ(actual.kind, expected.kind) << expected.path;
         EXPECT_EQ(actual.normalizedExtension, expected.normalizedExtension) << expected.path;
         EXPECT_EQ(actual.importerRegistered, expected.importerRegistered) << expected.path;
@@ -108,238 +108,238 @@ TEST_F(AssetImporterUVETest, ClassifySourceUVE_ReportsAuthorityAndRawParserBound
         EXPECT_EQ(actual.diagnostic, expected.diagnostic) << expected.path;
     }
 
-    importer.RegisterImporterUVE("custom", [](const std::filesystem::path&, const std::filesystem::path&,
-                                               const AssetImportSettingsUVE&) { return true; });
-    const AssetImportSourceClassificationUVE custom = importer.ClassifySourceUVE("asset.custom");
-    EXPECT_EQ(custom.kind, AssetImportSourceKindUVE::Unknown);
+    importer.RegisterImporter("custom", [](const std::filesystem::path&, const std::filesystem::path&,
+                                               const AssetImportSettings&) { return true; });
+    const AssetImportSourceClassification custom = importer.ClassifySource("asset.custom");
+    EXPECT_EQ(custom.kind, AssetImportSourceKind::Unknown);
     EXPECT_TRUE(custom.importerRegistered);
     EXPECT_FALSE(custom.requiresFormatSpecificParser);
     EXPECT_EQ(custom.diagnostic, "custom importer is registered without built-in classification");
 }
 
-TEST_F(AssetImporterUVETest, RegisterDatabaseAwareImporterUVE_ReceivesTheDatabaseAndSharesTheKeySpace) {
+TEST_F(AssetImporterTest, RegisterDatabaseAwareImporter_ReceivesTheDatabaseAndSharesTheKeySpace) {
     // Foundation WP7: a database-aware importer gets the same database the destination is
     // registered in afterwards, and the two registration kinds replace each other per extension.
     const std::filesystem::path source = "uve_asset_importer_tests_aware.custom";
     const std::filesystem::path destination = "uve_asset_importer_tests_aware.out";
     std::filesystem::remove(source);
     std::filesystem::remove(destination);
-    WriteFixtureFileUVE(source, "payload");
+    WriteFixtureFile(source, "payload");
 
-    IAssetDatabaseUVE* seenDatabase = nullptr;
-    importer.RegisterDatabaseAwareImporterUVE(
+    IAssetDatabase* seenDatabase = nullptr;
+    importer.RegisterDatabaseAwareImporter(
         "custom", [&seenDatabase](const std::filesystem::path& sourcePath, const std::filesystem::path& destinationPath,
-                                  IAssetDatabaseUVE& db, const AssetImportSettingsUVE&) {
+                                  IAssetDatabase& db, const AssetImportSettings&) {
             seenDatabase = &db;
             std::filesystem::copy_file(sourcePath, destinationPath, std::filesystem::copy_options::overwrite_existing);
             return true;
         });
-    EXPECT_TRUE(importer.ClassifySourceUVE(source).importerRegistered);
-    const AssetGuidUVE guid = importer.ImportUVE(source, destination, assetDatabase);
-    ASSERT_NE(guid, kInvalidAssetGuidUVE);
+    EXPECT_TRUE(importer.ClassifySource(source).importerRegistered);
+    const AssetGuid guid = importer.Import(source, destination, assetDatabase);
+    ASSERT_NE(guid, kInvalidAssetGuid);
     EXPECT_EQ(seenDatabase, &assetDatabase);
-    EXPECT_EQ(assetDatabase.ResolveUVE(guid), destination);
+    EXPECT_EQ(assetDatabase.Resolve(guid), destination);
 
     // A plain registration for the same extension replaces the aware one.
     bool plainCalled = false;
-    importer.RegisterImporterUVE("custom", [&plainCalled](const std::filesystem::path&, const std::filesystem::path&,
-                                                          const AssetImportSettingsUVE&) {
+    importer.RegisterImporter("custom", [&plainCalled](const std::filesystem::path&, const std::filesystem::path&,
+                                                          const AssetImportSettings&) {
         plainCalled = true;
         return true;
     });
     seenDatabase = nullptr;
-    ASSERT_NE(importer.ImportUVE(source, destination, assetDatabase), kInvalidAssetGuidUVE);
+    ASSERT_NE(importer.Import(source, destination, assetDatabase), kInvalidAssetGuid);
     EXPECT_TRUE(plainCalled);
     EXPECT_EQ(seenDatabase, nullptr);
 
     // Invalid aware registrations are refused without disturbing the existing importer.
-    importer.RegisterDatabaseAwareImporterUVE("custom", nullptr);
-    importer.RegisterDatabaseAwareImporterUVE("", [](const std::filesystem::path&, const std::filesystem::path&,
-                                                     IAssetDatabaseUVE&, const AssetImportSettingsUVE&) { return true; });
+    importer.RegisterDatabaseAwareImporter("custom", nullptr);
+    importer.RegisterDatabaseAwareImporter("", [](const std::filesystem::path&, const std::filesystem::path&,
+                                                     IAssetDatabase&, const AssetImportSettings&) { return true; });
     plainCalled = false;
-    ASSERT_NE(importer.ImportUVE(source, destination, assetDatabase), kInvalidAssetGuidUVE);
+    ASSERT_NE(importer.Import(source, destination, assetDatabase), kInvalidAssetGuid);
     EXPECT_TRUE(plainCalled);
 
     std::filesystem::remove(source);
     std::filesystem::remove(destination);
 }
 
-TEST_F(AssetImporterUVETest, ImportUVE_RegistrationFailureReturnsInvalidAfterSuccessfulConversion) {
+TEST_F(AssetImporterTest, Import_RegistrationFailureReturnsInvalidAfterSuccessfulConversion) {
     const std::filesystem::path sourcePath = "uve_asset_importer_registration_failure_source.custom";
     const std::filesystem::path destinationPath = "uve_asset_importer_registration_failure_dest.custom";
     std::filesystem::remove(sourcePath);
     std::filesystem::remove(destinationPath);
-    WriteFixtureFileUVE(sourcePath, "converted before registration failure");
+    WriteFixtureFile(sourcePath, "converted before registration failure");
 
-    importer.RegisterImporterUVE("custom", [](const std::filesystem::path& source,
+    importer.RegisterImporter("custom", [](const std::filesystem::path& source,
                                                 const std::filesystem::path& destination,
-                                                const AssetImportSettingsUVE&) {
+                                                const AssetImportSettings&) {
         std::ifstream input(source, std::ios::binary);
         std::ofstream output(destination, std::ios::binary | std::ios::trunc);
         output << input.rdbuf();
         return input.good() && output.good();
     });
-    RejectingAssetDatabaseUVE rejectingDatabase;
+    RejectingAssetDatabase rejectingDatabase;
 
-    const AssetGuidUVE guid = importer.ImportUVE(sourcePath, destinationPath, rejectingDatabase);
+    const AssetGuid guid = importer.Import(sourcePath, destinationPath, rejectingDatabase);
 
-    EXPECT_EQ(guid, kInvalidAssetGuidUVE);
+    EXPECT_EQ(guid, kInvalidAssetGuid);
     EXPECT_EQ(rejectingDatabase.registerCount, 1);
     EXPECT_TRUE(std::filesystem::exists(destinationPath));
-    EXPECT_EQ(ReadFileUVE(destinationPath), "converted before registration failure");
+    EXPECT_EQ(ReadFile(destinationPath), "converted before registration failure");
 
     std::filesystem::remove(sourcePath);
     std::filesystem::remove(destinationPath);
 }
 
-TEST_F(AssetImporterUVETest, ImportUVE_GenericImporter_CopiesFileAndRegistersGuid) {
+TEST_F(AssetImporterTest, Import_GenericImporter_CopiesFileAndRegistersGuid) {
     const std::filesystem::path sourcePath = "uve_asset_importer_tests_source.txt";
     const std::filesystem::path destinationPath = "uve_asset_importer_tests_dest.txt";
     std::filesystem::remove(sourcePath);
     std::filesystem::remove(destinationPath);
-    WriteFixtureFileUVE(sourcePath, "hello importer");
+    WriteFixtureFile(sourcePath, "hello importer");
 
-    const AssetGuidUVE guid = importer.ImportUVE(sourcePath, destinationPath, assetDatabase);
-    ASSERT_NE(guid, kInvalidAssetGuidUVE);
+    const AssetGuid guid = importer.Import(sourcePath, destinationPath, assetDatabase);
+    ASSERT_NE(guid, kInvalidAssetGuid);
     EXPECT_TRUE(std::filesystem::exists(destinationPath));
-    EXPECT_EQ(ReadFileUVE(destinationPath), "hello importer");
-    EXPECT_EQ(assetDatabase.ResolveUVE(guid), destinationPath);
+    EXPECT_EQ(ReadFile(destinationPath), "hello importer");
+    EXPECT_EQ(assetDatabase.Resolve(guid), destinationPath);
 
     std::filesystem::remove(sourcePath);
     std::filesystem::remove(destinationPath);
 }
 
-TEST_F(AssetImporterUVETest, ImportUVE_GenericImporter_CreatesMissingDestinationDirectories) {
+TEST_F(AssetImporterTest, Import_GenericImporter_CreatesMissingDestinationDirectories) {
     const std::filesystem::path sourcePath = "uve_asset_importer_nested_source.uvmodel";
     const std::filesystem::path destinationDirectory = "uve_asset_importer_nested_destination";
     const std::filesystem::path destinationPath = destinationDirectory / "nested" / "asset.uvmodel";
     std::filesystem::remove(sourcePath);
     std::filesystem::remove_all(destinationDirectory);
-    WriteFixtureFileUVE(sourcePath, "typed UVE envelope import");
+    WriteFixtureFile(sourcePath, "typed UVE envelope import");
 
-    const AssetGuidUVE guid = importer.ImportUVE(sourcePath, destinationPath, assetDatabase);
+    const AssetGuid guid = importer.Import(sourcePath, destinationPath, assetDatabase);
 
-    ASSERT_NE(guid, kInvalidAssetGuidUVE);
-    EXPECT_EQ(ReadFileUVE(destinationPath), "typed UVE envelope import");
-    EXPECT_EQ(assetDatabase.ResolveUVE(guid), destinationPath);
+    ASSERT_NE(guid, kInvalidAssetGuid);
+    EXPECT_EQ(ReadFile(destinationPath), "typed UVE envelope import");
+    EXPECT_EQ(assetDatabase.Resolve(guid), destinationPath);
 
     std::filesystem::remove(sourcePath);
     std::filesystem::remove_all(destinationDirectory);
 }
 
-TEST_F(AssetImporterUVETest, TextImportUVE_PreservesTextVerbatim) {
+TEST_F(AssetImporterTest, TextImport_PreservesTextVerbatim) {
     const std::filesystem::path sourcePath = "uve_text_parser_preserve_source.txt";
     const std::filesystem::path destinationPath = "uve_text_parser_preserve_destination.txt";
     std::filesystem::remove(sourcePath);
     std::filesystem::remove(destinationPath);
     const std::string source = "first\r\nsecond\rthird\nfourth";
-    WriteFixtureFileUVE(sourcePath, source);
+    WriteFixtureFile(sourcePath, source);
 
-    const AssetGuidUVE guid = importer.ImportUVE(sourcePath, destinationPath, assetDatabase);
+    const AssetGuid guid = importer.Import(sourcePath, destinationPath, assetDatabase);
 
-    ASSERT_NE(guid, kInvalidAssetGuidUVE);
-    EXPECT_EQ(ReadFileUVE(destinationPath), source);
+    ASSERT_NE(guid, kInvalidAssetGuid);
+    EXPECT_EQ(ReadFile(destinationPath), source);
     std::filesystem::remove(sourcePath);
     std::filesystem::remove(destinationPath);
 }
 
-TEST_F(AssetImporterUVETest, TextImportUVE_RejectsNulByte) {
+TEST_F(AssetImporterTest, TextImport_RejectsNulByte) {
     const std::filesystem::path sourcePath = "uve_text_parser_nul_source.txt";
     const std::filesystem::path destinationPath = "uve_text_parser_nul_destination.txt";
     std::filesystem::remove(sourcePath);
     std::filesystem::remove(destinationPath);
-    WriteFixtureFileUVE(sourcePath, std::string{"prefix\0suffix", 13U});
+    WriteFixtureFile(sourcePath, std::string{"prefix\0suffix", 13U});
 
-    const AssetGuidUVE guid = importer.ImportUVE(sourcePath, destinationPath, assetDatabase);
+    const AssetGuid guid = importer.Import(sourcePath, destinationPath, assetDatabase);
 
-    EXPECT_EQ(guid, kInvalidAssetGuidUVE);
+    EXPECT_EQ(guid, kInvalidAssetGuid);
     EXPECT_FALSE(std::filesystem::exists(destinationPath));
     std::filesystem::remove(sourcePath);
     std::filesystem::remove(destinationPath);
 }
 
-TEST_F(AssetImporterUVETest, TextImportUVE_NormalizesLineEndingsToLF) {
+TEST_F(AssetImporterTest, TextImport_NormalizesLineEndingsToLF) {
     const std::filesystem::path sourcePath = "uve_text_parser_lf_source.txt";
     const std::filesystem::path destinationPath = "uve_text_parser_lf_destination.txt";
     std::filesystem::remove(sourcePath);
     std::filesystem::remove(destinationPath);
-    WriteFixtureFileUVE(sourcePath, "first\r\nsecond\rthird\nfourth");
-    TextImportSettingsUVE settings;
-    settings.lineEnding = TextImportLineEndingUVE::LineFeed;
+    WriteFixtureFile(sourcePath, "first\r\nsecond\rthird\nfourth");
+    TextImportSettings settings;
+    settings.lineEnding = TextImportLineEnding::LineFeed;
 
-    const AssetGuidUVE guid = importer.ImportUVE(sourcePath, destinationPath, assetDatabase, settings);
+    const AssetGuid guid = importer.Import(sourcePath, destinationPath, assetDatabase, settings);
 
-    ASSERT_NE(guid, kInvalidAssetGuidUVE);
-    EXPECT_EQ(ReadFileUVE(destinationPath), "first\nsecond\nthird\nfourth");
+    ASSERT_NE(guid, kInvalidAssetGuid);
+    EXPECT_EQ(ReadFile(destinationPath), "first\nsecond\nthird\nfourth");
     std::filesystem::remove(sourcePath);
     std::filesystem::remove(destinationPath);
 }
 
-TEST_F(AssetImporterUVETest, TextImportUVE_NormalizesLineEndingsToCRLF) {
+TEST_F(AssetImporterTest, TextImport_NormalizesLineEndingsToCRLF) {
     const std::filesystem::path sourcePath = "uve_text_parser_crlf_source.txt";
     const std::filesystem::path destinationPath = "uve_text_parser_crlf_destination.txt";
     std::filesystem::remove(sourcePath);
     std::filesystem::remove(destinationPath);
-    WriteFixtureFileUVE(sourcePath, "first\nsecond\rthird\r\nfourth");
-    TextImportSettingsUVE settings;
-    settings.lineEnding = TextImportLineEndingUVE::CarriageReturnLineFeed;
+    WriteFixtureFile(sourcePath, "first\nsecond\rthird\r\nfourth");
+    TextImportSettings settings;
+    settings.lineEnding = TextImportLineEnding::CarriageReturnLineFeed;
 
-    const AssetGuidUVE guid = importer.ImportUVE(sourcePath, destinationPath, assetDatabase, settings);
+    const AssetGuid guid = importer.Import(sourcePath, destinationPath, assetDatabase, settings);
 
-    ASSERT_NE(guid, kInvalidAssetGuidUVE);
-    EXPECT_EQ(ReadFileUVE(destinationPath), "first\r\nsecond\r\nthird\r\nfourth");
+    ASSERT_NE(guid, kInvalidAssetGuid);
+    EXPECT_EQ(ReadFile(destinationPath), "first\r\nsecond\r\nthird\r\nfourth");
     std::filesystem::remove(sourcePath);
     std::filesystem::remove(destinationPath);
 }
 
-TEST_F(AssetImporterUVETest, TextImportUVE_EnsuresTrailingNewline) {
+TEST_F(AssetImporterTest, TextImport_EnsuresTrailingNewline) {
     const std::filesystem::path sourcePath = "uve_text_parser_trailing_source.txt";
     const std::filesystem::path destinationPath = "uve_text_parser_trailing_destination.txt";
     std::filesystem::remove(sourcePath);
     std::filesystem::remove(destinationPath);
-    WriteFixtureFileUVE(sourcePath, "text without final newline");
-    TextImportSettingsUVE settings;
-    settings.lineEnding = TextImportLineEndingUVE::LineFeed;
+    WriteFixtureFile(sourcePath, "text without final newline");
+    TextImportSettings settings;
+    settings.lineEnding = TextImportLineEnding::LineFeed;
     settings.ensureTrailingLineEnding = true;
 
-    const AssetGuidUVE guid = importer.ImportUVE(sourcePath, destinationPath, assetDatabase, settings);
+    const AssetGuid guid = importer.Import(sourcePath, destinationPath, assetDatabase, settings);
 
-    ASSERT_NE(guid, kInvalidAssetGuidUVE);
-    EXPECT_EQ(ReadFileUVE(destinationPath), "text without final newline\n");
+    ASSERT_NE(guid, kInvalidAssetGuid);
+    EXPECT_EQ(ReadFile(destinationPath), "text without final newline\n");
     std::filesystem::remove(sourcePath);
     std::filesystem::remove(destinationPath);
 }
 
-TEST_F(AssetImporterUVETest, TextImportUVE_RejectsOverCapSourceBeforePublish) {
+TEST_F(AssetImporterTest, TextImport_RejectsOverCapSourceBeforePublish) {
     const std::filesystem::path sourcePath = "uve_text_parser_oversized_source.txt";
     const std::filesystem::path destinationPath = "uve_text_parser_oversized_destination.txt";
     std::filesystem::remove(sourcePath);
     std::filesystem::remove(destinationPath);
-    const std::string oversized(kMaximumTextImportBytesUVE + 1U, 'T');
-    WriteFixtureFileUVE(sourcePath, oversized);
+    const std::string oversized(kMaximumTextImportBytes + 1U, 'T');
+    WriteFixtureFile(sourcePath, oversized);
 
-    EXPECT_EQ(importer.ImportUVE(sourcePath, destinationPath, assetDatabase), kInvalidAssetGuidUVE);
+    EXPECT_EQ(importer.Import(sourcePath, destinationPath, assetDatabase), kInvalidAssetGuid);
     EXPECT_FALSE(std::filesystem::exists(destinationPath));
 
     std::filesystem::remove(sourcePath);
     std::filesystem::remove(destinationPath);
 }
 
-TEST(AssetImportSettingsUVETest, TextImportSettingsUVE_CacheVersionIsStable) {
-    TextImportSettingsUVE preserve;
-    TextImportSettingsUVE same = preserve;
-    TextImportSettingsUVE normalized = preserve;
-    normalized.lineEnding = TextImportLineEndingUVE::LineFeed;
-    TextImportSettingsUVE trailing = normalized;
+TEST(AssetImportSettingsTest, TextImportSettings_CacheVersionIsStable) {
+    TextImportSettings preserve;
+    TextImportSettings same = preserve;
+    TextImportSettings normalized = preserve;
+    normalized.lineEnding = TextImportLineEnding::LineFeed;
+    TextImportSettings trailing = normalized;
     trailing.ensureTrailingLineEnding = true;
 
-    EXPECT_EQ(preserve.GetCacheVersionUVE(), "text-v1;line-ending=preserve;trailing-newline=false");
-    EXPECT_EQ(preserve.GetCacheVersionUVE(), same.GetCacheVersionUVE());
-    EXPECT_NE(preserve.GetCacheVersionUVE(), normalized.GetCacheVersionUVE());
-    EXPECT_NE(normalized.GetCacheVersionUVE(), trailing.GetCacheVersionUVE());
+    EXPECT_EQ(preserve.GetCacheVersion(), "text-v1;line-ending=preserve;trailing-newline=false");
+    EXPECT_EQ(preserve.GetCacheVersion(), same.GetCacheVersion());
+    EXPECT_NE(preserve.GetCacheVersion(), normalized.GetCacheVersion());
+    EXPECT_NE(normalized.GetCacheVersion(), trailing.GetCacheVersion());
 }
 
-TEST_F(AssetImporterUVETest, ImportUVE_TypedUVEEnvelopeExtensions_CopyAndRegisterGuid) {
+TEST_F(AssetImporterTest, Import_TypedUVEEnvelopeExtensions_CopyAndRegisterGuid) {
     constexpr std::array<std::string_view, 4> kTypedEnvelopeExtensions = {
         ".uvmodel", ".uvtex", ".uvshader", ".uvmat"};
 
@@ -350,44 +350,44 @@ TEST_F(AssetImporterUVETest, ImportUVE_TypedUVEEnvelopeExtensions_CopyAndRegiste
             std::string("uve_asset_importer_typed_dest") + std::string(extension);
         std::filesystem::remove(sourcePath);
         std::filesystem::remove(destinationPath);
-        WriteFixtureFileUVE(sourcePath, "typed UVE envelope import");
+        WriteFixtureFile(sourcePath, "typed UVE envelope import");
 
-        const AssetGuidUVE guid = importer.ImportUVE(sourcePath, destinationPath, assetDatabase);
-        ASSERT_NE(guid, kInvalidAssetGuidUVE) << extension;
+        const AssetGuid guid = importer.Import(sourcePath, destinationPath, assetDatabase);
+        ASSERT_NE(guid, kInvalidAssetGuid) << extension;
         EXPECT_TRUE(std::filesystem::exists(destinationPath));
-        EXPECT_EQ(ReadFileUVE(destinationPath), "typed UVE envelope import");
-        EXPECT_EQ(assetDatabase.ResolveUVE(guid), destinationPath);
+        EXPECT_EQ(ReadFile(destinationPath), "typed UVE envelope import");
+        EXPECT_EQ(assetDatabase.Resolve(guid), destinationPath);
 
         std::filesystem::remove(sourcePath);
         std::filesystem::remove(destinationPath);
     }
 }
 
-TEST_F(AssetImporterUVETest, ImportUVE_RawShaderSource_InfersStageAndPublishesTypedEnvelope) {
-    struct ShaderCaseUVE {
+TEST_F(AssetImporterTest, Import_RawShaderSource_InfersStageAndPublishesTypedEnvelope) {
+    struct ShaderCase {
         std::string_view extension;
-        ShaderStageKindUVE stage;
+        ShaderStageKind stage;
     };
-    constexpr std::array<ShaderCaseUVE, 3> kCases = {{
-        {".vert", ShaderStageKindUVE::Vertex},
-        {".frag", ShaderStageKindUVE::Fragment},
-        {".comp", ShaderStageKindUVE::Compute},
+    constexpr std::array<ShaderCase, 3> kCases = {{
+        {".vert", ShaderStageKind::Vertex},
+        {".frag", ShaderStageKind::Fragment},
+        {".comp", ShaderStageKind::Compute},
     }};
 
-    for (const ShaderCaseUVE& expected : kCases) {
+    for (const ShaderCase& expected : kCases) {
         const std::filesystem::path sourcePath =
             std::string("uve_asset_importer_raw_shader_source") + std::string(expected.extension);
         const std::filesystem::path destinationPath =
             std::string("uve_asset_importer_raw_shader_destination") + std::string(expected.extension) + ".uvshader";
         std::filesystem::remove(sourcePath);
         std::filesystem::remove(destinationPath);
-        WriteFixtureFileUVE(sourcePath, "#version 450\nvoid main() {}\n");
+        WriteFixtureFile(sourcePath, "#version 450\nvoid main() {}\n");
 
-        const AssetGuidUVE guid = importer.ImportUVE(sourcePath, destinationPath, assetDatabase);
+        const AssetGuid guid = importer.Import(sourcePath, destinationPath, assetDatabase);
 
-        ASSERT_NE(guid, kInvalidAssetGuidUVE) << expected.extension;
-        ShaderAssetUVE shader;
-        ASSERT_TRUE(LoadShaderAssetUVE(destinationPath, shader)) << expected.extension;
+        ASSERT_NE(guid, kInvalidAssetGuid) << expected.extension;
+        ShaderAsset shader;
+        ASSERT_TRUE(LoadShaderAsset(destinationPath, shader)) << expected.extension;
         EXPECT_EQ(shader.stage, expected.stage);
         EXPECT_EQ(shader.sourceCode, "#version 450\nvoid main() {}\n");
         EXPECT_EQ(shader.entryPointName, "main");
@@ -397,39 +397,39 @@ TEST_F(AssetImporterUVETest, ImportUVE_RawShaderSource_InfersStageAndPublishesTy
     }
 }
 
-TEST_F(AssetImporterUVETest, ImportUVE_RawShaderSource_RejectsEmptySourceAndPreservesDestination) {
+TEST_F(AssetImporterTest, Import_RawShaderSource_RejectsEmptySourceAndPreservesDestination) {
     const std::filesystem::path sourcePath = "uve_asset_importer_raw_shader_empty.vert";
     const std::filesystem::path destinationPath = "uve_asset_importer_raw_shader_empty.uvshader";
     std::filesystem::remove(sourcePath);
     std::filesystem::remove(destinationPath);
-    WriteFixtureFileUVE(destinationPath, "prior typed shader");
-    WriteFixtureFileUVE(sourcePath, "");
+    WriteFixtureFile(destinationPath, "prior typed shader");
+    WriteFixtureFile(sourcePath, "");
 
-    EXPECT_EQ(importer.ImportUVE(sourcePath, destinationPath, assetDatabase), kInvalidAssetGuidUVE);
-    EXPECT_EQ(ReadFileUVE(destinationPath), "prior typed shader");
+    EXPECT_EQ(importer.Import(sourcePath, destinationPath, assetDatabase), kInvalidAssetGuid);
+    EXPECT_EQ(ReadFile(destinationPath), "prior typed shader");
 
     std::filesystem::remove(sourcePath);
     std::filesystem::remove(destinationPath);
 }
 
-TEST_F(AssetImporterUVETest, ImportUVE_UnregisteredExtension_ReturnsInvalidAndLogsError) {
+TEST_F(AssetImporterTest, Import_UnregisteredExtension_ReturnsInvalidAndLogsError) {
     const std::filesystem::path sourcePath = "uve_asset_importer_tests_source.unknownext";
     std::filesystem::remove(sourcePath);
-    WriteFixtureFileUVE(sourcePath, "data");
+    WriteFixtureFile(sourcePath, "data");
 
-    Debug::LoggerUVE logger;
-    logger.Init(Debug::LogLevelUVE::Trace);
-    auto memorySink = std::make_unique<Debug::MemorySinkUVE>();
-    Debug::MemorySinkUVE* const memorySinkPtr = memorySink.get();
+    Debug::Logger logger;
+    logger.Init(Debug::LogLevel::Trace);
+    auto memorySink = std::make_unique<Debug::MemorySink>();
+    Debug::MemorySink* const memorySinkPtr = memorySink.get();
     logger.AddSink(std::move(memorySink));
 
-    const AssetGuidUVE guid = importer.ImportUVE(sourcePath, "uve_asset_importer_tests_dest.unknownext", assetDatabase);
-    EXPECT_EQ(guid, kInvalidAssetGuidUVE);
+    const AssetGuid guid = importer.Import(sourcePath, "uve_asset_importer_tests_dest.unknownext", assetDatabase);
+    EXPECT_EQ(guid, kInvalidAssetGuid);
 
-    const std::vector<Debug::LogMessageUVE> messages = memorySinkPtr->GetMessagesUVE();
+    const std::vector<Debug::LogMessage> messages = memorySinkPtr->GetMessages();
     const bool foundError =
-        std::any_of(messages.begin(), messages.end(), [](const Debug::LogMessageUVE& message) {
-            return message.level == Debug::LogLevelUVE::Error &&
+        std::any_of(messages.begin(), messages.end(), [](const Debug::LogMessage& message) {
+            return message.level == Debug::LogLevel::Error &&
                    message.message.contains("no importer registered");
         });
     EXPECT_TRUE(foundError);
@@ -438,90 +438,90 @@ TEST_F(AssetImporterUVETest, ImportUVE_UnregisteredExtension_ReturnsInvalidAndLo
     std::filesystem::remove(sourcePath);
 }
 
-TEST_F(AssetImporterUVETest, RegisterImporterUVE_InvalidRegistrationPreservesExistingImporter) {
+TEST_F(AssetImporterTest, RegisterImporter_InvalidRegistrationPreservesExistingImporter) {
     const std::filesystem::path sourcePath = "uve_asset_importer_tests_invalid_registration.custom";
     const std::filesystem::path destinationPath = "uve_asset_importer_tests_invalid_registration_dest.custom";
     std::filesystem::remove(sourcePath);
     std::filesystem::remove(destinationPath);
-    WriteFixtureFileUVE(sourcePath, "source");
+    WriteFixtureFile(sourcePath, "source");
 
     bool validImporterRan = false;
     const auto validImporter = [&validImporterRan](const std::filesystem::path&,
                                                      const std::filesystem::path& destination,
-                                                     const AssetImportSettingsUVE&) {
+                                                     const AssetImportSettings&) {
         validImporterRan = true;
         std::ofstream file(destination, std::ios::binary);
         file << "valid importer";
         return file.good();
     };
-    importer.RegisterImporterUVE("custom", validImporter);
-    importer.RegisterImporterUVE("", {});
-    importer.RegisterImporterUVE("custom", {});
+    importer.RegisterImporter("custom", validImporter);
+    importer.RegisterImporter("", {});
+    importer.RegisterImporter("custom", {});
 
-    const AssetImportSourceClassificationUVE noExtension = importer.ClassifySourceUVE("asset");
+    const AssetImportSourceClassification noExtension = importer.ClassifySource("asset");
     EXPECT_FALSE(noExtension.importerRegistered);
-    const AssetGuidUVE guid = importer.ImportUVE(sourcePath, destinationPath, assetDatabase);
-    ASSERT_NE(guid, kInvalidAssetGuidUVE);
+    const AssetGuid guid = importer.Import(sourcePath, destinationPath, assetDatabase);
+    ASSERT_NE(guid, kInvalidAssetGuid);
     EXPECT_TRUE(validImporterRan);
-    EXPECT_EQ(ReadFileUVE(destinationPath), "valid importer");
+    EXPECT_EQ(ReadFile(destinationPath), "valid importer");
 
     std::filesystem::remove(sourcePath);
     std::filesystem::remove(destinationPath);
 }
 
-TEST_F(AssetImporterUVETest, RegisterImporterUVE_CustomExtension_IsPickedOverGeneric) {
+TEST_F(AssetImporterTest, RegisterImporter_CustomExtension_IsPickedOverGeneric) {
     const std::filesystem::path sourcePath = "uve_asset_importer_tests_source.custom";
     const std::filesystem::path destinationPath = "uve_asset_importer_tests_dest.custom";
     std::filesystem::remove(sourcePath);
     std::filesystem::remove(destinationPath);
-    WriteFixtureFileUVE(sourcePath, "ignored by custom importer");
+    WriteFixtureFile(sourcePath, "ignored by custom importer");
 
     bool customImporterRan = false;
-    importer.RegisterImporterUVE("custom", [&customImporterRan](const std::filesystem::path&,
+    importer.RegisterImporter("custom", [&customImporterRan](const std::filesystem::path&,
                                                                   const std::filesystem::path& destination,
-                                                                  const AssetImportSettingsUVE&) {
+                                                                  const AssetImportSettings&) {
         customImporterRan = true;
         std::ofstream file(destination, std::ios::binary);
         file << "written by custom importer";
         return file.good();
     });
 
-    const AssetGuidUVE guid = importer.ImportUVE(sourcePath, destinationPath, assetDatabase);
-    ASSERT_NE(guid, kInvalidAssetGuidUVE);
+    const AssetGuid guid = importer.Import(sourcePath, destinationPath, assetDatabase);
+    ASSERT_NE(guid, kInvalidAssetGuid);
     EXPECT_TRUE(customImporterRan);
-    EXPECT_EQ(ReadFileUVE(destinationPath), "written by custom importer");
+    EXPECT_EQ(ReadFile(destinationPath), "written by custom importer");
 
     std::filesystem::remove(sourcePath);
     std::filesystem::remove(destinationPath);
 }
 
-TEST_F(AssetImporterUVETest, ImportUVE_ImporterExceptionReturnsInvalidWithoutDatabaseRegistration) {
+TEST_F(AssetImporterTest, Import_ImporterExceptionReturnsInvalidWithoutDatabaseRegistration) {
     const std::filesystem::path sourcePath = "uve_asset_importer_tests_source.throwing";
     const std::filesystem::path destinationPath = "uve_asset_importer_tests_dest.throwing";
     std::filesystem::remove(sourcePath);
     std::filesystem::remove(destinationPath);
-    WriteFixtureFileUVE(sourcePath, "source");
+    WriteFixtureFile(sourcePath, "source");
 
-    class ThrowingAssetDatabaseUVE final : public IAssetDatabaseUVE {
+    class ThrowingAssetDatabase final : public IAssetDatabase {
     public:
-        bool LoadUVE(const std::filesystem::path&) override { return false; }
-        bool SaveUVE() override { return false; }
-        bool SaveUVE(const std::filesystem::path&) override { return false; }
-        [[nodiscard]] AssetGuidUVE RegisterUVE(const std::filesystem::path&) override {
+        bool Load(const std::filesystem::path&) override { return false; }
+        bool Save() override { return false; }
+        bool Save(const std::filesystem::path&) override { return false; }
+        [[nodiscard]] AssetGuid Register(const std::filesystem::path&) override {
             registered = true;
-            return AssetGuidUVE{777U};
+            return AssetGuid{777U};
         }
-        [[nodiscard]] std::filesystem::path ResolveUVE(AssetGuidUVE) const override { return {}; }
-        [[nodiscard]] bool HasGuidUVE(AssetGuidUVE) const override { return false; }
-        [[nodiscard]] std::vector<AssetRecordUVE> GetRegisteredAssetsUVE() const override { return {}; }
+        [[nodiscard]] std::filesystem::path Resolve(AssetGuid) const override { return {}; }
+        [[nodiscard]] bool HasGuid(AssetGuid) const override { return false; }
+        [[nodiscard]] std::vector<AssetRecord> GetRegisteredAssets() const override { return {}; }
         bool registered = false;
     } database;
 
-    importer.RegisterImporterUVE("throwing", [](const std::filesystem::path&, const std::filesystem::path&,
-                                                  const AssetImportSettingsUVE&) -> bool {
+    importer.RegisterImporter("throwing", [](const std::filesystem::path&, const std::filesystem::path&,
+                                                  const AssetImportSettings&) -> bool {
         throw std::runtime_error("injected importer exception");
     });
-    EXPECT_EQ(importer.ImportUVE(sourcePath, destinationPath, database), kInvalidAssetGuidUVE);
+    EXPECT_EQ(importer.Import(sourcePath, destinationPath, database), kInvalidAssetGuid);
     EXPECT_FALSE(database.registered);
     EXPECT_FALSE(std::filesystem::exists(destinationPath));
 
@@ -529,65 +529,65 @@ TEST_F(AssetImporterUVETest, ImportUVE_ImporterExceptionReturnsInvalidWithoutDat
     std::filesystem::remove(destinationPath);
 }
 
-TEST_F(AssetImporterUVETest, ImportUVE_DatabaseRegistrationExceptionReturnsInvalidWithoutEscaping) {
+TEST_F(AssetImporterTest, Import_DatabaseRegistrationExceptionReturnsInvalidWithoutEscaping) {
     const std::filesystem::path sourcePath = "uve_asset_importer_tests_source.database_throwing";
     const std::filesystem::path destinationPath = "uve_asset_importer_tests_dest.database_throwing";
     std::filesystem::remove(sourcePath);
     std::filesystem::remove(destinationPath);
-    WriteFixtureFileUVE(sourcePath, "source");
+    WriteFixtureFile(sourcePath, "source");
 
-    class ThrowingRegistrationDatabaseUVE final : public IAssetDatabaseUVE {
+    class ThrowingRegistrationDatabase final : public IAssetDatabase {
     public:
-        bool LoadUVE(const std::filesystem::path&) override { return false; }
-        bool SaveUVE() override { return false; }
-        bool SaveUVE(const std::filesystem::path&) override { return false; }
-        [[nodiscard]] AssetGuidUVE RegisterUVE(const std::filesystem::path&) override {
+        bool Load(const std::filesystem::path&) override { return false; }
+        bool Save() override { return false; }
+        bool Save(const std::filesystem::path&) override { return false; }
+        [[nodiscard]] AssetGuid Register(const std::filesystem::path&) override {
             throw std::runtime_error("injected registration exception");
         }
-        [[nodiscard]] std::filesystem::path ResolveUVE(AssetGuidUVE) const override { return {}; }
-        [[nodiscard]] bool HasGuidUVE(AssetGuidUVE) const override { return false; }
-        [[nodiscard]] std::vector<AssetRecordUVE> GetRegisteredAssetsUVE() const override { return {}; }
+        [[nodiscard]] std::filesystem::path Resolve(AssetGuid) const override { return {}; }
+        [[nodiscard]] bool HasGuid(AssetGuid) const override { return false; }
+        [[nodiscard]] std::vector<AssetRecord> GetRegisteredAssets() const override { return {}; }
     } database;
 
-    importer.RegisterImporterUVE("database_throwing", [](const std::filesystem::path&,
+    importer.RegisterImporter("database_throwing", [](const std::filesystem::path&,
                                                            const std::filesystem::path& destination,
-                                                           const AssetImportSettingsUVE&) -> bool {
+                                                           const AssetImportSettings&) -> bool {
         std::ofstream file(destination, std::ios::binary | std::ios::trunc);
         file << "converted before registration failure";
         return file.good();
     });
 
-    AssetGuidUVE guid = kInvalidAssetGuidUVE;
-    EXPECT_NO_THROW(guid = importer.ImportUVE(sourcePath, destinationPath, database));
-    EXPECT_EQ(guid, kInvalidAssetGuidUVE);
+    AssetGuid guid = kInvalidAssetGuid;
+    EXPECT_NO_THROW(guid = importer.Import(sourcePath, destinationPath, database));
+    EXPECT_EQ(guid, kInvalidAssetGuid);
     EXPECT_TRUE(std::filesystem::exists(destinationPath));
 
     std::filesystem::remove(sourcePath);
     std::filesystem::remove(destinationPath);
 }
 
-TEST_F(AssetImporterUVETest, ImportUVE_ImporterReportsFailure_ReturnsInvalidAndLogsError) {
+TEST_F(AssetImporterTest, Import_ImporterReportsFailure_ReturnsInvalidAndLogsError) {
     const std::filesystem::path sourcePath = "uve_asset_importer_tests_source.failing";
     std::filesystem::remove(sourcePath);
-    WriteFixtureFileUVE(sourcePath, "data");
+    WriteFixtureFile(sourcePath, "data");
 
-    importer.RegisterImporterUVE("failing", [](const std::filesystem::path&, const std::filesystem::path&,
-                                                 const AssetImportSettingsUVE&) { return false; });
+    importer.RegisterImporter("failing", [](const std::filesystem::path&, const std::filesystem::path&,
+                                                 const AssetImportSettings&) { return false; });
 
-    Debug::LoggerUVE logger;
-    logger.Init(Debug::LogLevelUVE::Trace);
-    auto memorySink = std::make_unique<Debug::MemorySinkUVE>();
-    Debug::MemorySinkUVE* const memorySinkPtr = memorySink.get();
+    Debug::Logger logger;
+    logger.Init(Debug::LogLevel::Trace);
+    auto memorySink = std::make_unique<Debug::MemorySink>();
+    Debug::MemorySink* const memorySinkPtr = memorySink.get();
     logger.AddSink(std::move(memorySink));
 
-    const AssetGuidUVE guid =
-        importer.ImportUVE(sourcePath, "uve_asset_importer_tests_dest.failing", assetDatabase);
-    EXPECT_EQ(guid, kInvalidAssetGuidUVE);
+    const AssetGuid guid =
+        importer.Import(sourcePath, "uve_asset_importer_tests_dest.failing", assetDatabase);
+    EXPECT_EQ(guid, kInvalidAssetGuid);
 
-    const std::vector<Debug::LogMessageUVE> messages = memorySinkPtr->GetMessagesUVE();
+    const std::vector<Debug::LogMessage> messages = memorySinkPtr->GetMessages();
     const bool foundError =
-        std::any_of(messages.begin(), messages.end(), [](const Debug::LogMessageUVE& message) {
-            return message.level == Debug::LogLevelUVE::Error &&
+        std::any_of(messages.begin(), messages.end(), [](const Debug::LogMessage& message) {
+            return message.level == Debug::LogLevel::Error &&
                    message.message.contains("import failed");
         });
     EXPECT_TRUE(foundError);

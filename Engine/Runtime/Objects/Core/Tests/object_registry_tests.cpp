@@ -10,153 +10,153 @@
 
 namespace {
 using namespace UVE::Core;
-static_assert(!std::is_move_constructible_v<ObjectUVE>);
-static_assert(!std::is_copy_constructible_v<ObjectUVE>);
-static_assert(!std::is_move_constructible_v<ObjectRegistryUVE>);
-struct CountedUVE final : ObjectUVE {
-    explicit CountedUVE(int &count) : deaths(count) {}
-    ~CountedUVE() override { ++deaths; }
+static_assert(!std::is_move_constructible_v<Object>);
+static_assert(!std::is_copy_constructible_v<Object>);
+static_assert(!std::is_move_constructible_v<ObjectRegistry>);
+struct Counted final : Object {
+    explicit Counted(int &count) : deaths(count) {}
+    ~Counted() override { ++deaths; }
     int &deaths;
 };
-TEST(ObjectRegistryUVETest, IdentityAndConstLookup) {
-    ObjectRegistryUVE registry;
-    ObjectUVE a, b;
-    ObjectHandleUVE ha, hb;
-    ASSERT_TRUE(registry.RegisterUVE(a, ha));
-    ASSERT_TRUE(registry.RegisterUVE(b, hb));
-    EXPECT_TRUE(ha.IsValidUVE());
-    EXPECT_EQ(a.GetHandleUVE(), ha);
+TEST(ObjectRegistryTest, IdentityAndConstLookup) {
+    ObjectRegistry registry;
+    Object a, b;
+    ObjectHandle ha, hb;
+    ASSERT_TRUE(registry.Register(a, ha));
+    ASSERT_TRUE(registry.Register(b, hb));
+    EXPECT_TRUE(ha.IsValid());
+    EXPECT_EQ(a.GetHandle(), ha);
     EXPECT_NE(ha, hb);
-    EXPECT_EQ(registry.FindUVE(ha), &a);
-    EXPECT_EQ(std::as_const(registry).FindUVE(hb), &b);
-    EXPECT_EQ(registry.FindUVE({}), nullptr);
-    EXPECT_EQ(registry.GetLiveCountUVE(), 2U);
+    EXPECT_EQ(registry.Find(ha), &a);
+    EXPECT_EQ(std::as_const(registry).Find(hb), &b);
+    EXPECT_EQ(registry.Find({}), nullptr);
+    EXPECT_EQ(registry.GetLiveCount(), 2U);
 }
-TEST(ObjectRegistryUVETest, DuplicateAndForeignRegistrationFailAtomically) {
-    ObjectRegistryUVE first, second;
-    ObjectUVE a, b;
-    ObjectHandleUVE ha, hb, output;
-    ASSERT_TRUE(first.RegisterUVE(a, ha));
-    ASSERT_TRUE(second.RegisterUVE(b, hb));
-    EXPECT_FALSE(first.RegisterUVE(a, output));
-    EXPECT_FALSE(second.RegisterUVE(a, output));
-    EXPECT_EQ(output, ObjectHandleUVE{});
+TEST(ObjectRegistryTest, DuplicateAndForeignRegistrationFailAtomically) {
+    ObjectRegistry first, second;
+    Object a, b;
+    ObjectHandle ha, hb, output;
+    ASSERT_TRUE(first.Register(a, ha));
+    ASSERT_TRUE(second.Register(b, hb));
+    EXPECT_FALSE(first.Register(a, output));
+    EXPECT_FALSE(second.Register(a, output));
+    EXPECT_EQ(output, ObjectHandle{});
     EXPECT_EQ(ha.index, hb.index);
     EXPECT_EQ(ha.generation, hb.generation);
     EXPECT_NE(ha.registry, hb.registry);
-    EXPECT_EQ(first.FindUVE(hb), nullptr);
-    EXPECT_FALSE(second.UnregisterUVE(ha));
-    EXPECT_EQ(a.GetHandleUVE(), ha);
+    EXPECT_EQ(first.Find(hb), nullptr);
+    EXPECT_FALSE(second.Unregister(ha));
+    EXPECT_EQ(a.GetHandle(), ha);
 }
-TEST(ObjectRegistryUVETest, DestructionRejectsStaleHandleAcrossSlotReuse) {
-    ObjectRegistryUVE registry;
-    ObjectHandleUVE stale, live;
+TEST(ObjectRegistryTest, DestructionRejectsStaleHandleAcrossSlotReuse) {
+    ObjectRegistry registry;
+    ObjectHandle stale, live;
     int deaths = 0;
     {
-        CountedUVE object{deaths};
-        ASSERT_TRUE(registry.RegisterUVE(object, stale));
+        Counted object{deaths};
+        ASSERT_TRUE(registry.Register(object, stale));
     }
     EXPECT_EQ(deaths, 1);
-    EXPECT_EQ(registry.GetLiveCountUVE(), 0U);
-    ObjectUVE next;
-    ASSERT_TRUE(registry.RegisterUVE(next, live));
+    EXPECT_EQ(registry.GetLiveCount(), 0U);
+    Object next;
+    ASSERT_TRUE(registry.Register(next, live));
     EXPECT_EQ(stale.index, live.index);
     EXPECT_NE(stale.generation, live.generation);
-    EXPECT_EQ(registry.FindUVE(stale), nullptr);
-    EXPECT_FALSE(registry.UnregisterUVE(stale));
+    EXPECT_EQ(registry.Find(stale), nullptr);
+    EXPECT_FALSE(registry.Unregister(stale));
 }
-TEST(ObjectRegistryUVETest, DetachTransfersRegistrationNotOwnership) {
-    ObjectRegistryUVE first, second;
+TEST(ObjectRegistryTest, DetachTransfersRegistrationNotOwnership) {
+    ObjectRegistry first, second;
     int deaths = 0;
-    CountedUVE object{deaths};
-    ObjectHandleUVE handle;
-    ASSERT_TRUE(first.RegisterUVE(object, handle));
-    ASSERT_TRUE(first.UnregisterUVE(handle));
-    EXPECT_FALSE(first.UnregisterUVE(handle));
-    EXPECT_FALSE(object.GetHandleUVE().IsValidUVE());
+    Counted object{deaths};
+    ObjectHandle handle;
+    ASSERT_TRUE(first.Register(object, handle));
+    ASSERT_TRUE(first.Unregister(handle));
+    EXPECT_FALSE(first.Unregister(handle));
+    EXPECT_FALSE(object.GetHandle().IsValid());
     EXPECT_EQ(deaths, 0);
-    EXPECT_TRUE(second.RegisterUVE(object, handle));
+    EXPECT_TRUE(second.Register(object, handle));
 }
-TEST(ObjectRegistryUVETest, ClearNeverResurrectsIssuedHandles) {
-    ObjectRegistryUVE registry;
-    ObjectUVE object;
-    std::vector<ObjectHandleUVE> old;
+TEST(ObjectRegistryTest, ClearNeverResurrectsIssuedHandles) {
+    ObjectRegistry registry;
+    Object object;
+    std::vector<ObjectHandle> old;
     for (int i = 0; i < 128; ++i) {
-        ObjectHandleUVE handle;
-        ASSERT_TRUE(registry.RegisterUVE(object, handle));
+        ObjectHandle handle;
+        ASSERT_TRUE(registry.Register(object, handle));
         for (auto stale : old)
-            EXPECT_EQ(registry.FindUVE(stale), nullptr);
+            EXPECT_EQ(registry.Find(stale), nullptr);
         old.push_back(handle);
-        registry.ClearUVE();
-        EXPECT_FALSE(object.GetHandleUVE().IsValidUVE());
+        registry.Clear();
+        EXPECT_FALSE(object.GetHandle().IsValid());
     }
 }
-TEST(ObjectRegistryUVETest, ShutdownIsPermanentAndDoesNotDeleteObjects) {
+TEST(ObjectRegistryTest, ShutdownIsPermanentAndDoesNotDeleteObjects) {
     int deaths = 0;
-    CountedUVE object{deaths};
-    ObjectHandleUVE handle;
+    Counted object{deaths};
+    ObjectHandle handle;
     {
-        ObjectRegistryUVE registry;
-        ASSERT_TRUE(registry.RegisterUVE(object, handle));
-        registry.ShutdownUVE();
-        registry.ShutdownUVE();
-        EXPECT_TRUE(registry.IsShutdownUVE());
+        ObjectRegistry registry;
+        ASSERT_TRUE(registry.Register(object, handle));
+        registry.Shutdown();
+        registry.Shutdown();
+        EXPECT_TRUE(registry.IsShutdown());
         auto output = handle;
-        EXPECT_FALSE(registry.RegisterUVE(object, output));
+        EXPECT_FALSE(registry.Register(object, output));
         EXPECT_EQ(output, handle);
-        EXPECT_EQ(registry.FindUVE(handle), nullptr);
+        EXPECT_EQ(registry.Find(handle), nullptr);
     }
-    EXPECT_FALSE(object.GetHandleUVE().IsValidUVE());
+    EXPECT_FALSE(object.GetHandle().IsValid());
     EXPECT_EQ(deaths, 0);
-    ObjectRegistryUVE replacement;
-    EXPECT_TRUE(replacement.RegisterUVE(object, handle));
+    ObjectRegistry replacement;
+    EXPECT_TRUE(replacement.Register(object, handle));
 }
-TEST(ObjectRegistryUVETest, DestructorDetachesWithoutExplicitShutdown) {
-    ObjectUVE object;
+TEST(ObjectRegistryTest, DestructorDetachesWithoutExplicitShutdown) {
+    Object object;
     {
-        ObjectRegistryUVE registry;
-        ObjectHandleUVE handle;
-        ASSERT_TRUE(registry.RegisterUVE(object, handle));
+        ObjectRegistry registry;
+        ObjectHandle handle;
+        ASSERT_TRUE(registry.Register(object, handle));
     }
-    EXPECT_FALSE(object.GetHandleUVE().IsValidUVE());
+    EXPECT_FALSE(object.GetHandle().IsValid());
 }
-TEST(ObjectRegistryUVETest, GrowthKeepsObjectAddressesStable) {
-    ObjectRegistryUVE registry;
-    std::vector<std::unique_ptr<ObjectUVE>> objects;
-    std::vector<ObjectHandleUVE> handles;
+TEST(ObjectRegistryTest, GrowthKeepsObjectAddressesStable) {
+    ObjectRegistry registry;
+    std::vector<std::unique_ptr<Object>> objects;
+    std::vector<ObjectHandle> handles;
     for (int i = 0; i < 512; ++i) {
-        objects.push_back(std::make_unique<ObjectUVE>());
-        ObjectHandleUVE handle;
-        ASSERT_TRUE(registry.RegisterUVE(*objects.back(), handle));
+        objects.push_back(std::make_unique<Object>());
+        ObjectHandle handle;
+        ASSERT_TRUE(registry.Register(*objects.back(), handle));
         handles.push_back(handle);
     }
     for (std::size_t i = 0; i < objects.size(); ++i)
-        EXPECT_EQ(registry.FindUVE(handles[i]), objects[i].get());
+        EXPECT_EQ(registry.Find(handles[i]), objects[i].get());
     objects.clear();
-    EXPECT_EQ(registry.GetLiveCountUVE(), 0U);
+    EXPECT_EQ(registry.GetLiveCount(), 0U);
     for (auto handle : handles)
-        EXPECT_EQ(registry.FindUVE(handle), nullptr);
+        EXPECT_EQ(registry.Find(handle), nullptr);
 }
-TEST(ObjectRegistryUVETest, ExternalLockProtectsLookupAndDestructionAcrossThreads) {
-    ObjectRegistryUVE registry;
-    auto object = std::make_unique<ObjectUVE>();
-    ObjectHandleUVE handle;
-    ASSERT_TRUE(registry.RegisterUVE(*object, handle));
+TEST(ObjectRegistryTest, ExternalLockProtectsLookupAndDestructionAcrossThreads) {
+    ObjectRegistry registry;
+    auto object = std::make_unique<Object>();
+    ObjectHandle handle;
+    ASSERT_TRUE(registry.Register(*object, handle));
     std::mutex mutex;
     std::thread destroyer([&] {
         const std::lock_guard lock(mutex);
-        EXPECT_EQ(registry.FindUVE(handle), object.get());
+        EXPECT_EQ(registry.Find(handle), object.get());
         object.reset();
     });
     {
         const std::lock_guard lock(mutex);
         if (object)
-            EXPECT_EQ(registry.FindUVE(handle), object.get());
+            EXPECT_EQ(registry.Find(handle), object.get());
         else
-            EXPECT_EQ(registry.FindUVE(handle), nullptr);
+            EXPECT_EQ(registry.Find(handle), nullptr);
     }
     destroyer.join();
-    EXPECT_EQ(registry.FindUVE(handle), nullptr);
-    EXPECT_EQ(registry.GetLiveCountUVE(), 0U);
+    EXPECT_EQ(registry.Find(handle), nullptr);
+    EXPECT_EQ(registry.GetLiveCount(), 0U);
 }
 } // namespace

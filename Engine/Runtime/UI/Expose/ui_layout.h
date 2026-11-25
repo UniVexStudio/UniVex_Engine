@@ -3,12 +3,12 @@
 #pragma once
 
 namespace UVE::Scene {
-class IEntityManagerUVE;
+class IEntityManager;
 }
 
 namespace UVE::UI {
 
-class UIFontAtlasUVE;
+class UIFontAtlas;
 
 /// Positions every stack container's direct hierarchy children inside the container rect: padding
 /// insets all four sides, spacing separates consecutive children along the direction axis, and
@@ -41,6 +41,6 @@ class UIFontAtlasUVE;
 /// anchor pass wrote for that axis - anchors contribute position, content contributes size - and
 /// there is no iteration between them, so an anchored stretch child inside an auto-sized parent
 /// settles in one shot from the pre-layout size.
-void LayoutUIContainersUVE(Scene::IEntityManagerUVE& entityManager, const UIFontAtlasUVE& fontAtlas);
+void LayoutUIContainers(Scene::IEntityManager& entityManager, const UIFontAtlas& fontAtlas);
 
 } // namespace UVE::UI

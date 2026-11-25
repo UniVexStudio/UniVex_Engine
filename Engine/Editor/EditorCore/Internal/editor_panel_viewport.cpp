@@ -33,62 +33,62 @@
 
 namespace UVE::Editor {
 
-void EditorUVE::ReleaseGameMouseOnFocusLossUVE() {
+void Editor::ReleaseGameMouseOnFocusLoss() {
     // A game holding the mouse lets go when its window loses focus (Escape is the shell's key
     // hook), so the editor's own controls can be reached again.
-    if (m_gameMouseCaptured && m_services != nullptr && m_services->GetWindowManagerUVE().IsValidUVE() &&
-        !m_services->GetWindowManagerUVE().IsFocusedUVE()) {
-        SetGameMouseCapturedUVE(false);
+    if (m_gameMouseCaptured && m_services != nullptr && m_services->GetWindowManager().IsValid() &&
+        !m_services->GetWindowManager().IsFocused()) {
+        SetGameMouseCaptured(false);
     }
 }
 
-void EditorUVE::RenderOverlayUVE() {
-    if (m_state != EditorStateUVE::Running || !m_uiInitialized) {
+void Editor::RenderOverlay() {
+    if (m_state != EditorState::Running || !m_uiInitialized) {
         return;
     }
-    ReleaseGameMouseOnFocusLossUVE();
+    ReleaseGameMouseOnFocusLoss();
     if (m_levelShell != nullptr) {
-        m_levelShell->FrameUVE();
+        m_levelShell->Frame();
     }
 }
 
-void EditorUVE::SetEditorViewportsUVE(EditorViewportsUVE viewports) {
+void Editor::SetEditorViewports(EditorViewports viewports) {
     m_viewports = std::move(viewports);
 }
 
-void EditorUVE::ClearEditorViewportsUVE() {
-    m_viewports = EditorViewportsUVE{};
+void Editor::ClearEditorViewports() {
+    m_viewports = EditorViewports{};
 }
 
-void EditorUVE::SetLevelViewportRendererUVE(ViewportRenderCallbackUVE renderer) {
+void Editor::SetLevelViewportRenderer(ViewportRenderCallback renderer) {
     m_viewports.level = std::move(renderer);
 }
 
-void EditorUVE::SetCameraPreviewViewportRendererUVE(ViewportRenderCallbackUVE renderer) {
+void Editor::SetCameraPreviewViewportRenderer(ViewportRenderCallback renderer) {
     m_viewports.cameraPreview = std::move(renderer);
 }
 
-void EditorUVE::SetEntityViewportRendererUVE(ViewportRenderCallbackUVE renderer) {
+void Editor::SetEntityViewportRenderer(ViewportRenderCallback renderer) {
     m_viewports.entity = std::move(renderer);
 }
 
-void EditorUVE::SetWidgetPreviewViewportRendererUVE(ViewportRenderCallbackUVE renderer) {
+void Editor::SetWidgetPreviewViewportRenderer(ViewportRenderCallback renderer) {
     m_viewports.widgetPreview = std::move(renderer);
 }
 
-void EditorUVE::SetRetargetViewportRendererUVE(ViewportRenderCallbackUVE renderer) {
+void Editor::SetRetargetViewportRenderer(ViewportRenderCallback renderer) {
     m_viewports.retarget = std::move(renderer);
 }
 
-void EditorUVE::SetMontageViewportRendererUVE(ViewportRenderCallbackUVE renderer) {
+void Editor::SetMontageViewportRenderer(ViewportRenderCallback renderer) {
     m_viewports.montage = std::move(renderer);
 }
 
-void EditorUVE::SetVfxViewportRendererUVE(ViewportRenderCallbackUVE renderer) {
+void Editor::SetVfxViewportRenderer(ViewportRenderCallback renderer) {
     m_viewports.vfx = std::move(renderer);
 }
 
-void EditorUVE::SetEntityContextToolbarAnchorUVE(const Scene::EntityUVE entity, const float pixelX,
+void Editor::SetEntityContextToolbarAnchor(const Scene::Entity entity, const float pixelX,
                                                  const float pixelY) {
     m_viewportOverlayState.entityContextToolbarOpen = true;
     m_viewportOverlayState.entityContextToolbarEntity = entity;
@@ -96,14 +96,14 @@ void EditorUVE::SetEntityContextToolbarAnchorUVE(const Scene::EntityUVE entity, 
     m_viewportOverlayState.entityContextToolbarPixelY = pixelY;
 }
 
-void EditorUVE::ClearEntityContextToolbarUVE() noexcept {
+void Editor::ClearEntityContextToolbar() noexcept {
     m_viewportOverlayState.entityContextToolbarOpen = false;
-    m_viewportOverlayState.entityContextToolbarEntity = Scene::kInvalidEntityUVE;
+    m_viewportOverlayState.entityContextToolbarEntity = Scene::kInvalidEntity;
 }
 
 namespace {
 
-[[nodiscard]] bool IsViewportAxisColorValidUVE(const EditorUVE::ViewportAxisColorUVE& color) {
+[[nodiscard]] bool IsViewportAxisColorValid(const Editor::ViewportAxisColor& color) {
     const auto channelValid = [](const float channel) {
         // NaN fails both comparisons, so it is refused here rather than surviving as a colour.
         return channel >= 0.0F && channel <= 1.0F;
@@ -113,18 +113,18 @@ namespace {
 
 } // namespace
 
-void EditorUVE::SetViewportOrthographicUVE(const bool orthographic) noexcept {
+void Editor::SetViewportOrthographic(const bool orthographic) noexcept {
     m_viewportOverlayState.orthographic = orthographic;
     m_viewportOrthographicIsAutomatic = false;
 }
 
-bool EditorUVE::CanFocusEntityInViewportUVE(const Scene::EntityUVE entity) const {
-    return IsDocumentEntityUVE(entity) && (ComposeMarker3DFocusBookmarkUVE(entity).has_value() ||
-                                           ResolveEntityFocusTargetUVE(entity).has_value());
+bool Editor::CanFocusEntityInViewport(const Scene::Entity entity) const {
+    return IsDocumentEntity(entity) && (ComposeMarker3DFocusBookmark(entity).has_value() ||
+                                           ResolveEntityFocusTarget(entity).has_value());
 }
 
-bool EditorUVE::RequestViewportFocusUVE(const Scene::EntityUVE entity) {
-    if (!CanFocusEntityInViewportUVE(entity)) {
+bool Editor::RequestViewportFocus(const Scene::Entity entity) {
+    if (!CanFocusEntityInViewport(entity)) {
         return false;
     }
     m_viewportOverlayState.focusEntity = entity;
@@ -132,118 +132,118 @@ bool EditorUVE::RequestViewportFocusUVE(const Scene::EntityUVE entity) {
     return true;
 }
 
-void EditorUVE::RequestViewportViewUVE(const ViewportViewUVE view) noexcept {
+void Editor::RequestViewportView(const ViewportView view) noexcept {
     m_viewportOverlayState.view = view;
     ++m_viewportOverlayState.viewRequestSerial;
     // An axis view reads best flat; switch to orthographic unless the author already chose it.
-    if (view != ViewportViewUVE::User && !m_viewportOverlayState.orthographic) {
+    if (view != ViewportView::User && !m_viewportOverlayState.orthographic) {
         m_viewportOverlayState.orthographic = true;
         m_viewportOrthographicIsAutomatic = true;
     }
 }
 
-void EditorUVE::NotifyViewportOrbitedUVE() noexcept {
-    if (m_viewportOverlayState.view == ViewportViewUVE::User) {
+void Editor::NotifyViewportOrbited() noexcept {
+    if (m_viewportOverlayState.view == ViewportView::User) {
         return;
     }
-    m_viewportOverlayState.view = ViewportViewUVE::User;
+    m_viewportOverlayState.view = ViewportView::User;
     if (m_viewportOrthographicIsAutomatic) {
         m_viewportOverlayState.orthographic = false;
         m_viewportOrthographicIsAutomatic = false;
     }
 }
 
-const char* EditorUVE::GetViewportViewNameUVE(const ViewportViewUVE view) noexcept {
+const char* Editor::GetViewportViewName(const ViewportView view) noexcept {
     switch (view) {
-        case ViewportViewUVE::Top: return "Top";
-        case ViewportViewUVE::Bottom: return "Bottom";
-        case ViewportViewUVE::Front: return "Front";
-        case ViewportViewUVE::Back: return "Back";
-        case ViewportViewUVE::Right: return "Right";
-        case ViewportViewUVE::Left: return "Left";
-        case ViewportViewUVE::User: break;
+        case ViewportView::Top: return "Top";
+        case ViewportView::Bottom: return "Bottom";
+        case ViewportView::Front: return "Front";
+        case ViewportView::Back: return "Back";
+        case ViewportView::Right: return "Right";
+        case ViewportView::Left: return "Left";
+        case ViewportView::User: break;
     }
     return "User";
 }
 
-std::optional<EditorUVE::ViewportViewUVE> EditorUVE::GetViewportViewForKeypadDigitUVE(const int digit,
+std::optional<Editor::ViewportView> Editor::GetViewportViewForKeypadDigit(const int digit,
                                                                                     const bool opposite) noexcept {
     switch (digit) {
-        case 7: return opposite ? ViewportViewUVE::Bottom : ViewportViewUVE::Top;
-        case 1: return opposite ? ViewportViewUVE::Back : ViewportViewUVE::Front;
-        case 3: return opposite ? ViewportViewUVE::Left : ViewportViewUVE::Right;
+        case 7: return opposite ? ViewportView::Bottom : ViewportView::Top;
+        case 1: return opposite ? ViewportView::Back : ViewportView::Front;
+        case 3: return opposite ? ViewportView::Left : ViewportView::Right;
         default: return std::nullopt;
     }
 }
 
-const char* EditorUVE::GetViewportViewShortcutUVE(const ViewportViewUVE view) noexcept {
+const char* Editor::GetViewportViewShortcut(const ViewportView view) noexcept {
     switch (view) {
-        case ViewportViewUVE::Top: return "Numpad 7  /  Alt+7";
-        case ViewportViewUVE::Bottom: return "Ctrl+Numpad 7  /  Ctrl+Alt+7";
-        case ViewportViewUVE::Front: return "Numpad 1  /  Alt+1";
-        case ViewportViewUVE::Back: return "Ctrl+Numpad 1  /  Ctrl+Alt+1";
-        case ViewportViewUVE::Right: return "Numpad 3  /  Alt+3";
-        case ViewportViewUVE::Left: return "Ctrl+Numpad 3  /  Ctrl+Alt+3";
-        case ViewportViewUVE::User: break;
+        case ViewportView::Top: return "Numpad 7  /  Alt+7";
+        case ViewportView::Bottom: return "Ctrl+Numpad 7  /  Ctrl+Alt+7";
+        case ViewportView::Front: return "Numpad 1  /  Alt+1";
+        case ViewportView::Back: return "Ctrl+Numpad 1  /  Ctrl+Alt+1";
+        case ViewportView::Right: return "Numpad 3  /  Alt+3";
+        case ViewportView::Left: return "Ctrl+Numpad 3  /  Ctrl+Alt+3";
+        case ViewportView::User: break;
     }
     return "";
 }
 
-bool EditorUVE::SetViewportGridUVE(const bool visible, const float opacity) {
-    if (!std::isfinite(opacity) || opacity < kMinimumViewportGridOpacityUVE || opacity > 1.0F) {
+bool Editor::SetViewportGrid(const bool visible, const float opacity) {
+    if (!std::isfinite(opacity) || opacity < kMinimumViewportGridOpacity || opacity > 1.0F) {
         return false;
     }
     const bool previousVisible = m_viewportOverlayState.gridVisible;
     const float previousOpacity = m_viewportOverlayState.gridOpacity;
     m_viewportOverlayState.gridVisible = visible;
     m_viewportOverlayState.gridOpacity = opacity;
-    namespace Id = EditorSettingIdUVE;
-    NotifyEditorSettingChangedUVE(Id::kGridVisibleUVE, previousVisible, visible);
-    NotifyEditorSettingChangedUVE(Id::kGridOpacityUVE, static_cast<double>(previousOpacity),
+    namespace Id = EditorSettingId;
+    NotifyEditorSettingChanged(Id::kGridVisible, previousVisible, visible);
+    NotifyEditorSettingChanged(Id::kGridOpacity, static_cast<double>(previousOpacity),
                                   static_cast<double>(opacity));
     return true;
 }
 
-bool EditorUVE::SetViewportGridCellSizeUVE(const float cellSize) {
-    if (!std::isfinite(cellSize) || cellSize < kMinimumViewportGridCellSizeUVE ||
-        cellSize > kMaximumViewportGridCellSizeUVE) {
+bool Editor::SetViewportGridCellSize(const float cellSize) {
+    if (!std::isfinite(cellSize) || cellSize < kMinimumViewportGridCellSize ||
+        cellSize > kMaximumViewportGridCellSize) {
         return false;
     }
     const float previousCellSize = m_viewportOverlayState.gridCellSize;
     m_viewportOverlayState.gridCellSize = cellSize;
-    NotifyEditorSettingChangedUVE(EditorSettingIdUVE::kGridCellSizeUVE,
+    NotifyEditorSettingChanged(EditorSettingId::kGridCellSize,
                                   static_cast<double>(previousCellSize), static_cast<double>(cellSize));
     return true;
 }
 
-bool EditorUVE::SetViewportSelectionOutlineUVE(const bool visible, const ViewportAxisColorUVE color,
+bool Editor::SetViewportSelectionOutline(const bool visible, const ViewportAxisColor color,
                                                const float thickness) {
-    if (!IsViewportAxisColorValidUVE(color) || !std::isfinite(thickness) ||
-        thickness < kMinimumSelectionOutlineThicknessUVE || thickness > kMaximumSelectionOutlineThicknessUVE) {
+    if (!IsViewportAxisColorValid(color) || !std::isfinite(thickness) ||
+        thickness < kMinimumSelectionOutlineThickness || thickness > kMaximumSelectionOutlineThickness) {
         return false;
     }
     const bool previousVisible = m_viewportOverlayState.selectionOutlineVisible;
-    const ViewportAxisColorUVE previousColor = m_viewportOverlayState.selectionOutlineColor;
+    const ViewportAxisColor previousColor = m_viewportOverlayState.selectionOutlineColor;
     const float previousThickness = m_viewportOverlayState.selectionOutlineThickness;
     m_viewportOverlayState.selectionOutlineVisible = visible;
     m_viewportOverlayState.selectionOutlineColor = color;
     m_viewportOverlayState.selectionOutlineThickness = thickness;
-    namespace Id = EditorSettingIdUVE;
-    NotifyEditorSettingChangedUVE(Id::kSelectionOutlineVisibleUVE, previousVisible, visible);
-    NotifyEditorSettingChangedUVE(Id::kSelectionOutlineColorUVE,
-                                  Config::SettingColorUVE{previousColor.r, previousColor.g, previousColor.b},
-                                  Config::SettingColorUVE{color.r, color.g, color.b});
-    NotifyEditorSettingChangedUVE(Id::kSelectionOutlineThicknessUVE, static_cast<double>(previousThickness),
+    namespace Id = EditorSettingId;
+    NotifyEditorSettingChanged(Id::kSelectionOutlineVisible, previousVisible, visible);
+    NotifyEditorSettingChanged(Id::kSelectionOutlineColor,
+                                  Config::SettingColor{previousColor.r, previousColor.g, previousColor.b},
+                                  Config::SettingColor{color.r, color.g, color.b});
+    NotifyEditorSettingChanged(Id::kSelectionOutlineThickness, static_cast<double>(previousThickness),
                                   static_cast<double>(thickness));
     return true;
 }
 
-bool EditorUVE::SetViewportAxisColorsUVE(const ViewportAxisColorUVE x, const ViewportAxisColorUVE y,
-                                         const ViewportAxisColorUVE z) {
+bool Editor::SetViewportAxisColors(const ViewportAxisColor x, const ViewportAxisColor y,
+                                         const ViewportAxisColor z) {
     // All three or none: a half-applied palette would leave one axis in a colour the author never
     // chose, which is worse than refusing the whole change.
-    if (!IsViewportAxisColorValidUVE(x) || !IsViewportAxisColorValidUVE(y) ||
-        !IsViewportAxisColorValidUVE(z)) {
+    if (!IsViewportAxisColorValid(x) || !IsViewportAxisColorValid(y) ||
+        !IsViewportAxisColorValid(z)) {
         return false;
     }
     m_viewportOverlayState.axisColorX = x;
@@ -253,23 +253,23 @@ bool EditorUVE::SetViewportAxisColorsUVE(const ViewportAxisColorUVE x, const Vie
     return true;
 }
 
-bool EditorUVE::AreViewportAxisColorsSetUVE() const noexcept {
+bool Editor::AreViewportAxisColorsSet() const noexcept {
     return m_viewportOverlayState.axisColorsValid;
 }
 
-void EditorUVE::ResetViewportAxisColorsUVE() noexcept {
+void Editor::ResetViewportAxisColors() noexcept {
     m_viewportOverlayState.axisColorsValid = false;
-    m_viewportOverlayState.axisColorX = ViewportAxisColorUVE{};
-    m_viewportOverlayState.axisColorY = ViewportAxisColorUVE{};
-    m_viewportOverlayState.axisColorZ = ViewportAxisColorUVE{};
+    m_viewportOverlayState.axisColorX = ViewportAxisColor{};
+    m_viewportOverlayState.axisColorY = ViewportAxisColor{};
+    m_viewportOverlayState.axisColorZ = ViewportAxisColor{};
 }
 
-EditorUVE::ViewportAxisColorUVE EditorUVE::GetViewportAxisColorUVE(const int axisIndex) const {
+Editor::ViewportAxisColor Editor::GetViewportAxisColor(const int axisIndex) const {
     switch (axisIndex) {
         case 0: return m_viewportOverlayState.axisColorX;
         case 1: return m_viewportOverlayState.axisColorY;
         case 2: return m_viewportOverlayState.axisColorZ;
-        default: return ViewportAxisColorUVE{};
+        default: return ViewportAxisColor{};
     }
 }
 

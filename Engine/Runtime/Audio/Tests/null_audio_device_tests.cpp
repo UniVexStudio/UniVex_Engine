@@ -17,250 +17,250 @@
 namespace UVE::Audio::Tests {
 namespace {
 
-[[nodiscard]] bool LoggedAnErrorUVE(const Debug::MemorySinkUVE& sink) {
-    const std::vector<Debug::LogMessageUVE> messages = sink.GetMessagesUVE();
+[[nodiscard]] bool LoggedAnError(const Debug::MemorySink& sink) {
+    const std::vector<Debug::LogMessage> messages = sink.GetMessages();
     return std::any_of(messages.begin(), messages.end(),
-                        [](const Debug::LogMessageUVE& message) { return message.level == Debug::LogLevelUVE::Error; });
+                        [](const Debug::LogMessage& message) { return message.level == Debug::LogLevel::Error; });
 }
 
-TEST(NullAudioDeviceUVETest, CreateVoiceUVE_ReturnsUniqueHandles) {
-    NullAudioDeviceUVE device;
-    const VoiceHandleUVE first = device.CreateVoiceUVE(AudioVoiceDescUVE{});
-    const VoiceHandleUVE second = device.CreateVoiceUVE(AudioVoiceDescUVE{});
+TEST(NullAudioDeviceTest, CreateVoice_ReturnsUniqueHandles) {
+    NullAudioDevice device;
+    const VoiceHandle first = device.CreateVoice(AudioVoiceDesc{});
+    const VoiceHandle second = device.CreateVoice(AudioVoiceDesc{});
 
-    EXPECT_NE(first, kInvalidVoiceHandleUVE);
-    EXPECT_NE(second, kInvalidVoiceHandleUVE);
+    EXPECT_NE(first, kInvalidVoiceHandle);
+    EXPECT_NE(second, kInvalidVoiceHandle);
     EXPECT_NE(first, second);
 }
 
-TEST(NullAudioDeviceUVETest, DestroyVoiceUVE_UnknownHandle_LogsErrorSafely) {
-    Debug::LoggerUVE logger;
-    logger.Init(Debug::LogLevelUVE::Trace);
-    auto memorySink = std::make_unique<Debug::MemorySinkUVE>();
-    Debug::MemorySinkUVE* const memorySinkPtr = memorySink.get();
+TEST(NullAudioDeviceTest, DestroyVoice_UnknownHandle_LogsErrorSafely) {
+    Debug::Logger logger;
+    logger.Init(Debug::LogLevel::Trace);
+    auto memorySink = std::make_unique<Debug::MemorySink>();
+    Debug::MemorySink* const memorySinkPtr = memorySink.get();
     logger.AddSink(std::move(memorySink));
 
-    NullAudioDeviceUVE device;
-    device.DestroyVoiceUVE(VoiceHandleUVE{999});
+    NullAudioDevice device;
+    device.DestroyVoice(VoiceHandle{999});
 
-    EXPECT_TRUE(LoggedAnErrorUVE(*memorySinkPtr));
+    EXPECT_TRUE(LoggedAnError(*memorySinkPtr));
     logger.Shutdown();
 }
 
-TEST(NullAudioDeviceUVETest, PlayUVE_UnknownHandle_ReturnsFalseAndLogsError) {
-    Debug::LoggerUVE logger;
-    logger.Init(Debug::LogLevelUVE::Trace);
-    auto memorySink = std::make_unique<Debug::MemorySinkUVE>();
-    Debug::MemorySinkUVE* const memorySinkPtr = memorySink.get();
+TEST(NullAudioDeviceTest, Play_UnknownHandle_ReturnsFalseAndLogsError) {
+    Debug::Logger logger;
+    logger.Init(Debug::LogLevel::Trace);
+    auto memorySink = std::make_unique<Debug::MemorySink>();
+    Debug::MemorySink* const memorySinkPtr = memorySink.get();
     logger.AddSink(std::move(memorySink));
 
-    NullAudioDeviceUVE device;
-    EXPECT_FALSE(device.PlayUVE(VoiceHandleUVE{999}));
+    NullAudioDevice device;
+    EXPECT_FALSE(device.Play(VoiceHandle{999}));
 
-    EXPECT_TRUE(LoggedAnErrorUVE(*memorySinkPtr));
+    EXPECT_TRUE(LoggedAnError(*memorySinkPtr));
     logger.Shutdown();
 }
 
-TEST(NullAudioDeviceUVETest, StopUVE_UnknownHandle_ReturnsFalseAndLogsError) {
-    Debug::LoggerUVE logger;
-    logger.Init(Debug::LogLevelUVE::Trace);
-    auto memorySink = std::make_unique<Debug::MemorySinkUVE>();
-    Debug::MemorySinkUVE* const memorySinkPtr = memorySink.get();
+TEST(NullAudioDeviceTest, Stop_UnknownHandle_ReturnsFalseAndLogsError) {
+    Debug::Logger logger;
+    logger.Init(Debug::LogLevel::Trace);
+    auto memorySink = std::make_unique<Debug::MemorySink>();
+    Debug::MemorySink* const memorySinkPtr = memorySink.get();
     logger.AddSink(std::move(memorySink));
 
-    NullAudioDeviceUVE device;
-    EXPECT_FALSE(device.StopUVE(VoiceHandleUVE{999}));
+    NullAudioDevice device;
+    EXPECT_FALSE(device.Stop(VoiceHandle{999}));
 
-    EXPECT_TRUE(LoggedAnErrorUVE(*memorySinkPtr));
+    EXPECT_TRUE(LoggedAnError(*memorySinkPtr));
     logger.Shutdown();
 }
 
-TEST(NullAudioDeviceUVETest, SetVoiceParamsUVE_UnknownHandle_ReturnsFalseAndLogsError) {
-    Debug::LoggerUVE logger;
-    logger.Init(Debug::LogLevelUVE::Trace);
-    auto memorySink = std::make_unique<Debug::MemorySinkUVE>();
-    Debug::MemorySinkUVE* const memorySinkPtr = memorySink.get();
+TEST(NullAudioDeviceTest, SetVoiceParams_UnknownHandle_ReturnsFalseAndLogsError) {
+    Debug::Logger logger;
+    logger.Init(Debug::LogLevel::Trace);
+    auto memorySink = std::make_unique<Debug::MemorySink>();
+    Debug::MemorySink* const memorySinkPtr = memorySink.get();
     logger.AddSink(std::move(memorySink));
 
-    NullAudioDeviceUVE device;
-    EXPECT_FALSE(device.SetVoiceParamsUVE(VoiceHandleUVE{999}, AudioVoiceParamsUVE{}));
+    NullAudioDevice device;
+    EXPECT_FALSE(device.SetVoiceParams(VoiceHandle{999}, AudioVoiceParams{}));
 
-    EXPECT_TRUE(LoggedAnErrorUVE(*memorySinkPtr));
+    EXPECT_TRUE(LoggedAnError(*memorySinkPtr));
     logger.Shutdown();
 }
 
-TEST(NullAudioDeviceUVETest, SetVoiceParamsUVE_RejectsInvalidParametersWithoutRecording) {
-    NullAudioDeviceUVE device;
-    const VoiceHandleUVE voice = device.CreateVoiceUVE(AudioVoiceDescUVE{});
-    const AudioVoiceParamsUVE original{Math::Vector3UVE{1.0F, 2.0F, 3.0F}, 0.5F, 1.0F};
-    EXPECT_TRUE(device.SetVoiceParamsUVE(voice, original));
-    ASSERT_EQ(device.GetRecordedCallsUVE().size(), 1U);
-    const AudioVoiceParamsUVE invalidPosition{
-        Math::Vector3UVE{std::numeric_limits<float>::quiet_NaN(), 0.0F, 0.0F}, 0.5F, 1.0F};
-    EXPECT_FALSE(device.SetVoiceParamsUVE(voice, invalidPosition));
-    EXPECT_FALSE(device.SetVoiceParamsUVE(voice, AudioVoiceParamsUVE{Math::Vector3UVE{}, 1.1F, 1.0F}));
-    EXPECT_FALSE(device.SetVoiceParamsUVE(voice, AudioVoiceParamsUVE{Math::Vector3UVE{}, 0.5F, -1.0F}));
+TEST(NullAudioDeviceTest, SetVoiceParams_RejectsInvalidParametersWithoutRecording) {
+    NullAudioDevice device;
+    const VoiceHandle voice = device.CreateVoice(AudioVoiceDesc{});
+    const AudioVoiceParams original{Math::Vector3{1.0F, 2.0F, 3.0F}, 0.5F, 1.0F};
+    EXPECT_TRUE(device.SetVoiceParams(voice, original));
+    ASSERT_EQ(device.GetRecordedCalls().size(), 1U);
+    const AudioVoiceParams invalidPosition{
+        Math::Vector3{std::numeric_limits<float>::quiet_NaN(), 0.0F, 0.0F}, 0.5F, 1.0F};
+    EXPECT_FALSE(device.SetVoiceParams(voice, invalidPosition));
+    EXPECT_FALSE(device.SetVoiceParams(voice, AudioVoiceParams{Math::Vector3{}, 1.1F, 1.0F}));
+    EXPECT_FALSE(device.SetVoiceParams(voice, AudioVoiceParams{Math::Vector3{}, 0.5F, -1.0F}));
     // Pan is a finished multiplier in [-1, 1]; anything outside that would drive one channel louder
     // than the mix ever asked for, so the device refuses it like any other bad parameter.
-    EXPECT_FALSE(device.SetVoiceParamsUVE(voice, AudioVoiceParamsUVE{Math::Vector3UVE{}, 0.5F, 1.0F, 1.5F}));
-    EXPECT_FALSE(device.SetVoiceParamsUVE(voice, AudioVoiceParamsUVE{Math::Vector3UVE{}, 0.5F, 1.0F, -2.0F}));
-    EXPECT_TRUE(device.SetVoiceParamsUVE(voice, AudioVoiceParamsUVE{Math::Vector3UVE{}, 0.5F, 1.0F, -1.0F}));
+    EXPECT_FALSE(device.SetVoiceParams(voice, AudioVoiceParams{Math::Vector3{}, 0.5F, 1.0F, 1.5F}));
+    EXPECT_FALSE(device.SetVoiceParams(voice, AudioVoiceParams{Math::Vector3{}, 0.5F, 1.0F, -2.0F}));
+    EXPECT_TRUE(device.SetVoiceParams(voice, AudioVoiceParams{Math::Vector3{}, 0.5F, 1.0F, -1.0F}));
     // The low-pass corner is either the 0 bypass sentinel or a real, audible corner.
-    EXPECT_FALSE(device.SetVoiceParamsUVE(voice, AudioVoiceParamsUVE{Math::Vector3UVE{}, 0.5F, 1.0F, 0.0F, -5.0F}));
-    EXPECT_FALSE(device.SetVoiceParamsUVE(voice, AudioVoiceParamsUVE{Math::Vector3UVE{}, 0.5F, 1.0F, 0.0F, 30000.0F}));
-    EXPECT_TRUE(device.SetVoiceParamsUVE(voice, AudioVoiceParamsUVE{Math::Vector3UVE{}, 0.5F, 1.0F, 0.0F, 700.0F}));
-    EXPECT_EQ(device.GetRecordedCallsUVE().size(), 3U);
+    EXPECT_FALSE(device.SetVoiceParams(voice, AudioVoiceParams{Math::Vector3{}, 0.5F, 1.0F, 0.0F, -5.0F}));
+    EXPECT_FALSE(device.SetVoiceParams(voice, AudioVoiceParams{Math::Vector3{}, 0.5F, 1.0F, 0.0F, 30000.0F}));
+    EXPECT_TRUE(device.SetVoiceParams(voice, AudioVoiceParams{Math::Vector3{}, 0.5F, 1.0F, 0.0F, 700.0F}));
+    EXPECT_EQ(device.GetRecordedCalls().size(), 3U);
 }
 
-TEST(NullAudioDeviceUVETest, GetVoiceStateUVE_UnknownHandle_ReturnsStoppedAndLogsError) {
-    Debug::LoggerUVE logger;
-    logger.Init(Debug::LogLevelUVE::Trace);
-    auto memorySink = std::make_unique<Debug::MemorySinkUVE>();
-    Debug::MemorySinkUVE* const memorySinkPtr = memorySink.get();
+TEST(NullAudioDeviceTest, GetVoiceState_UnknownHandle_ReturnsStoppedAndLogsError) {
+    Debug::Logger logger;
+    logger.Init(Debug::LogLevel::Trace);
+    auto memorySink = std::make_unique<Debug::MemorySink>();
+    Debug::MemorySink* const memorySinkPtr = memorySink.get();
     logger.AddSink(std::move(memorySink));
 
-    NullAudioDeviceUVE device;
-    EXPECT_EQ(device.GetVoiceStateUVE(VoiceHandleUVE{999}), VoicePlaybackStateUVE::Stopped);
+    NullAudioDevice device;
+    EXPECT_EQ(device.GetVoiceState(VoiceHandle{999}), VoicePlaybackState::Stopped);
 
-    EXPECT_TRUE(LoggedAnErrorUVE(*memorySinkPtr));
+    EXPECT_TRUE(LoggedAnError(*memorySinkPtr));
     logger.Shutdown();
 }
 
-TEST(NullAudioDeviceUVETest, GetVoiceStateUVE_TracksPlayAndStop) {
-    NullAudioDeviceUVE device;
-    const VoiceHandleUVE voice = device.CreateVoiceUVE(AudioVoiceDescUVE{});
+TEST(NullAudioDeviceTest, GetVoiceState_TracksPlayAndStop) {
+    NullAudioDevice device;
+    const VoiceHandle voice = device.CreateVoice(AudioVoiceDesc{});
 
-    EXPECT_EQ(device.GetVoiceStateUVE(voice), VoicePlaybackStateUVE::Stopped);
-    EXPECT_TRUE(device.PlayUVE(voice));
-    EXPECT_EQ(device.GetVoiceStateUVE(voice), VoicePlaybackStateUVE::Playing);
-    EXPECT_TRUE(device.StopUVE(voice));
-    EXPECT_EQ(device.GetVoiceStateUVE(voice), VoicePlaybackStateUVE::Stopped);
+    EXPECT_EQ(device.GetVoiceState(voice), VoicePlaybackState::Stopped);
+    EXPECT_TRUE(device.Play(voice));
+    EXPECT_EQ(device.GetVoiceState(voice), VoicePlaybackState::Playing);
+    EXPECT_TRUE(device.Stop(voice));
+    EXPECT_EQ(device.GetVoiceState(voice), VoicePlaybackState::Stopped);
 }
 
-TEST(NullAudioDeviceUVETest, GetLiveVoiceCountUVE_TracksCreateAndDestroy) {
-    NullAudioDeviceUVE device;
-    EXPECT_EQ(device.GetLiveVoiceCountUVE(), 0U);
+TEST(NullAudioDeviceTest, GetLiveVoiceCount_TracksCreateAndDestroy) {
+    NullAudioDevice device;
+    EXPECT_EQ(device.GetLiveVoiceCount(), 0U);
 
-    const VoiceHandleUVE voice = device.CreateVoiceUVE(AudioVoiceDescUVE{});
-    EXPECT_EQ(device.GetLiveVoiceCountUVE(), 1U);
+    const VoiceHandle voice = device.CreateVoice(AudioVoiceDesc{});
+    EXPECT_EQ(device.GetLiveVoiceCount(), 1U);
 
-    device.DestroyVoiceUVE(voice);
-    EXPECT_EQ(device.GetLiveVoiceCountUVE(), 0U);
+    device.DestroyVoice(voice);
+    EXPECT_EQ(device.GetLiveVoiceCount(), 0U);
 }
 
-TEST(NullAudioDeviceUVETest, GetBackendNameUVE_ReturnsNull) {
-    NullAudioDeviceUVE device;
-    EXPECT_EQ(device.GetBackendNameUVE(), "Null");
+TEST(NullAudioDeviceTest, GetBackendName_ReturnsNull) {
+    NullAudioDevice device;
+    EXPECT_EQ(device.GetBackendName(), "Null");
 }
 
-TEST(NullAudioDeviceUVETest, GetRecordedCallsUVE_RecordsPlaySetParamsStopInOrder) {
-    NullAudioDeviceUVE device;
-    const VoiceHandleUVE voice = device.CreateVoiceUVE(AudioVoiceDescUVE{});
+TEST(NullAudioDeviceTest, GetRecordedCalls_RecordsPlaySetParamsStopInOrder) {
+    NullAudioDevice device;
+    const VoiceHandle voice = device.CreateVoice(AudioVoiceDesc{});
 
-    EXPECT_TRUE(device.PlayUVE(voice));
-    const AudioVoiceParamsUVE params{Math::Vector3UVE{1.0F, 2.0F, 3.0F}, 0.5F, 1.0F};
-    EXPECT_TRUE(device.SetVoiceParamsUVE(voice, params));
-    EXPECT_TRUE(device.StopUVE(voice));
+    EXPECT_TRUE(device.Play(voice));
+    const AudioVoiceParams params{Math::Vector3{1.0F, 2.0F, 3.0F}, 0.5F, 1.0F};
+    EXPECT_TRUE(device.SetVoiceParams(voice, params));
+    EXPECT_TRUE(device.Stop(voice));
 
-    const std::vector<RecordedAudioCallUVE>& recorded = device.GetRecordedCallsUVE();
+    const std::vector<RecordedAudioCall>& recorded = device.GetRecordedCalls();
     ASSERT_EQ(recorded.size(), 3U);
-    EXPECT_TRUE(std::holds_alternative<PlayVoiceCallUVE>(recorded[0]));
-    EXPECT_TRUE(std::holds_alternative<SetVoiceParamsCallUVE>(recorded[1]));
-    EXPECT_TRUE(std::holds_alternative<StopVoiceCallUVE>(recorded[2]));
+    EXPECT_TRUE(std::holds_alternative<PlayVoiceCall>(recorded[0]));
+    EXPECT_TRUE(std::holds_alternative<SetVoiceParamsCall>(recorded[1]));
+    EXPECT_TRUE(std::holds_alternative<StopVoiceCall>(recorded[2]));
 
-    EXPECT_EQ(std::get<PlayVoiceCallUVE>(recorded[0]).voice, voice);
-    EXPECT_EQ(std::get<SetVoiceParamsCallUVE>(recorded[1]).voice, voice);
-    EXPECT_EQ(std::get<SetVoiceParamsCallUVE>(recorded[1]).params.gain, 0.5F);
-    EXPECT_EQ(std::get<StopVoiceCallUVE>(recorded[2]).voice, voice);
+    EXPECT_EQ(std::get<PlayVoiceCall>(recorded[0]).voice, voice);
+    EXPECT_EQ(std::get<SetVoiceParamsCall>(recorded[1]).voice, voice);
+    EXPECT_EQ(std::get<SetVoiceParamsCall>(recorded[1]).params.gain, 0.5F);
+    EXPECT_EQ(std::get<StopVoiceCall>(recorded[2]).voice, voice);
 }
 
-TEST(NullAudioDeviceUVETest, ClearRecordedCallsUVE_EmptiesLogWithoutAffectingLiveVoiceCount) {
-    NullAudioDeviceUVE device;
-    const VoiceHandleUVE voice = device.CreateVoiceUVE(AudioVoiceDescUVE{});
-    EXPECT_TRUE(device.PlayUVE(voice));
-    ASSERT_FALSE(device.GetRecordedCallsUVE().empty());
+TEST(NullAudioDeviceTest, ClearRecordedCalls_EmptiesLogWithoutAffectingLiveVoiceCount) {
+    NullAudioDevice device;
+    const VoiceHandle voice = device.CreateVoice(AudioVoiceDesc{});
+    EXPECT_TRUE(device.Play(voice));
+    ASSERT_FALSE(device.GetRecordedCalls().empty());
 
-    device.ClearRecordedCallsUVE();
+    device.ClearRecordedCalls();
 
-    EXPECT_TRUE(device.GetRecordedCallsUVE().empty());
-    EXPECT_EQ(device.GetLiveVoiceCountUVE(), 1U);
+    EXPECT_TRUE(device.GetRecordedCalls().empty());
+    EXPECT_EQ(device.GetLiveVoiceCount(), 1U);
 }
 
 // --- Streaming voices: a bounded ring instead of a fully decoded clip. ---
 
-TEST(NullAudioDeviceStreamUVETest, CreateStreamVoiceUVE_RejectsAnInvalidFormat) {
-    NullAudioDeviceUVE device;
-    EXPECT_EQ(device.CreateStreamVoiceUVE(AudioStreamFormatUVE{0U, 1U}), kInvalidVoiceHandleUVE);
-    EXPECT_EQ(device.CreateStreamVoiceUVE(AudioStreamFormatUVE{48000U, 0U}), kInvalidVoiceHandleUVE);
-    EXPECT_EQ(device.CreateStreamVoiceUVE(AudioStreamFormatUVE{48000U, 3U}), kInvalidVoiceHandleUVE);
-    EXPECT_EQ(device.GetLiveVoiceCountUVE(), 0U);
+TEST(NullAudioDeviceStreamTest, CreateStreamVoice_RejectsAnInvalidFormat) {
+    NullAudioDevice device;
+    EXPECT_EQ(device.CreateStreamVoice(AudioStreamFormat{0U, 1U}), kInvalidVoiceHandle);
+    EXPECT_EQ(device.CreateStreamVoice(AudioStreamFormat{48000U, 0U}), kInvalidVoiceHandle);
+    EXPECT_EQ(device.CreateStreamVoice(AudioStreamFormat{48000U, 3U}), kInvalidVoiceHandle);
+    EXPECT_EQ(device.GetLiveVoiceCount(), 0U);
 }
 
-TEST(NullAudioDeviceStreamUVETest, PushFillsTheRingAndReportsExactFreeSpace) {
-    NullAudioDeviceUVE device;
-    const VoiceHandleUVE voice = device.CreateStreamVoiceUVE(AudioStreamFormatUVE{48000U, 2U});
-    ASSERT_NE(voice, kInvalidVoiceHandleUVE);
-    EXPECT_EQ(device.GetStreamBufferedFramesUVE(voice), 0U);
-    EXPECT_EQ(device.GetStreamFreeFramesUVE(voice), kAudioStreamRingFramesUVE);
+TEST(NullAudioDeviceStreamTest, PushFillsTheRingAndReportsExactFreeSpace) {
+    NullAudioDevice device;
+    const VoiceHandle voice = device.CreateStreamVoice(AudioStreamFormat{48000U, 2U});
+    ASSERT_NE(voice, kInvalidVoiceHandle);
+    EXPECT_EQ(device.GetStreamBufferedFrames(voice), 0U);
+    EXPECT_EQ(device.GetStreamFreeFrames(voice), kAudioStreamRingFrames);
 
     const std::vector<float> frames(6U, 0.25F); // three stereo frames
-    EXPECT_EQ(device.PushStreamFramesUVE(voice, frames), 3U);
-    EXPECT_EQ(device.GetStreamBufferedFramesUVE(voice), 3U);
-    EXPECT_EQ(device.GetStreamFreeFramesUVE(voice), kAudioStreamRingFramesUVE - 3U);
+    EXPECT_EQ(device.PushStreamFrames(voice, frames), 3U);
+    EXPECT_EQ(device.GetStreamBufferedFrames(voice), 3U);
+    EXPECT_EQ(device.GetStreamFreeFrames(voice), kAudioStreamRingFrames - 3U);
 }
 
-TEST(NullAudioDeviceStreamUVETest, PushRefusesAPartialFrameAndAClipVoice) {
-    NullAudioDeviceUVE device;
-    const VoiceHandleUVE stream = device.CreateStreamVoiceUVE(AudioStreamFormatUVE{48000U, 2U});
-    ASSERT_NE(stream, kInvalidVoiceHandleUVE);
+TEST(NullAudioDeviceStreamTest, PushRefusesAPartialFrameAndAClipVoice) {
+    NullAudioDevice device;
+    const VoiceHandle stream = device.CreateStreamVoice(AudioStreamFormat{48000U, 2U});
+    ASSERT_NE(stream, kInvalidVoiceHandle);
     const std::vector<float> odd(3U, 0.1F); // one and a half stereo frames
-    EXPECT_EQ(device.PushStreamFramesUVE(stream, odd), 0U);
-    EXPECT_EQ(device.GetStreamBufferedFramesUVE(stream), 0U);
+    EXPECT_EQ(device.PushStreamFrames(stream, odd), 0U);
+    EXPECT_EQ(device.GetStreamBufferedFrames(stream), 0U);
 
-    const VoiceHandleUVE clip = device.CreateVoiceUVE(AudioVoiceDescUVE{});
+    const VoiceHandle clip = device.CreateVoice(AudioVoiceDesc{});
     const std::vector<float> frames(4U, 0.0F);
-    EXPECT_EQ(device.PushStreamFramesUVE(clip, frames), 0U);
-    EXPECT_EQ(device.GetStreamFreeFramesUVE(clip), 0U);
-    EXPECT_FALSE(device.EndStreamUVE(clip));
+    EXPECT_EQ(device.PushStreamFrames(clip, frames), 0U);
+    EXPECT_EQ(device.GetStreamFreeFrames(clip), 0U);
+    EXPECT_FALSE(device.EndStream(clip));
 }
 
-TEST(NullAudioDeviceStreamUVETest, EndStreamStopsOnlyAfterTheRingDrains) {
-    NullAudioDeviceUVE device;
-    const VoiceHandleUVE voice = device.CreateStreamVoiceUVE(AudioStreamFormatUVE{48000U, 1U});
-    ASSERT_NE(voice, kInvalidVoiceHandleUVE);
+TEST(NullAudioDeviceStreamTest, EndStreamStopsOnlyAfterTheRingDrains) {
+    NullAudioDevice device;
+    const VoiceHandle voice = device.CreateStreamVoice(AudioStreamFormat{48000U, 1U});
+    ASSERT_NE(voice, kInvalidVoiceHandle);
     const std::vector<float> frames(4U, 0.5F);
-    ASSERT_EQ(device.PushStreamFramesUVE(voice, frames), 4U);
-    ASSERT_TRUE(device.PlayUVE(voice));
-    ASSERT_TRUE(device.EndStreamUVE(voice));
+    ASSERT_EQ(device.PushStreamFrames(voice, frames), 4U);
+    ASSERT_TRUE(device.Play(voice));
+    ASSERT_TRUE(device.EndStream(voice));
 
     // Still playing: the ring still holds audio the caller asked us to finish.
-    EXPECT_EQ(device.GetVoiceStateUVE(voice), VoicePlaybackStateUVE::Playing);
-    device.ConsumeStreamFramesUVE(voice, 2U);
-    EXPECT_EQ(device.GetVoiceStateUVE(voice), VoicePlaybackStateUVE::Playing);
-    device.ConsumeStreamFramesUVE(voice, 2U);
-    EXPECT_EQ(device.GetVoiceStateUVE(voice), VoicePlaybackStateUVE::Stopped);
+    EXPECT_EQ(device.GetVoiceState(voice), VoicePlaybackState::Playing);
+    device.ConsumeStreamFrames(voice, 2U);
+    EXPECT_EQ(device.GetVoiceState(voice), VoicePlaybackState::Playing);
+    device.ConsumeStreamFrames(voice, 2U);
+    EXPECT_EQ(device.GetVoiceState(voice), VoicePlaybackState::Stopped);
     // Nothing may be pushed after the end was declared.
-    EXPECT_EQ(device.PushStreamFramesUVE(voice, frames), 0U);
+    EXPECT_EQ(device.PushStreamFrames(voice, frames), 0U);
 }
 
-TEST(NullAudioDeviceStreamUVETest, EndStreamOnAnEmptyRingStopsImmediately) {
-    NullAudioDeviceUVE device;
-    const VoiceHandleUVE voice = device.CreateStreamVoiceUVE(AudioStreamFormatUVE{48000U, 2U});
-    ASSERT_NE(voice, kInvalidVoiceHandleUVE);
-    ASSERT_TRUE(device.PlayUVE(voice));
-    ASSERT_TRUE(device.EndStreamUVE(voice));
-    EXPECT_EQ(device.GetVoiceStateUVE(voice), VoicePlaybackStateUVE::Stopped);
+TEST(NullAudioDeviceStreamTest, EndStreamOnAnEmptyRingStopsImmediately) {
+    NullAudioDevice device;
+    const VoiceHandle voice = device.CreateStreamVoice(AudioStreamFormat{48000U, 2U});
+    ASSERT_NE(voice, kInvalidVoiceHandle);
+    ASSERT_TRUE(device.Play(voice));
+    ASSERT_TRUE(device.EndStream(voice));
+    EXPECT_EQ(device.GetVoiceState(voice), VoicePlaybackState::Stopped);
 }
 
-TEST(NullAudioDeviceStreamUVETest, UnknownHandlesAreRefusedWithoutTouchingBookkeeping) {
-    NullAudioDeviceUVE device;
-    const VoiceHandleUVE unknown{1234U};
+TEST(NullAudioDeviceStreamTest, UnknownHandlesAreRefusedWithoutTouchingBookkeeping) {
+    NullAudioDevice device;
+    const VoiceHandle unknown{1234U};
     const std::vector<float> frames(2U, 0.0F);
-    EXPECT_EQ(device.PushStreamFramesUVE(unknown, frames), 0U);
-    EXPECT_EQ(device.GetStreamBufferedFramesUVE(unknown), 0U);
-    EXPECT_EQ(device.GetStreamFreeFramesUVE(unknown), 0U);
-    EXPECT_FALSE(device.EndStreamUVE(unknown));
-    EXPECT_EQ(device.GetLiveVoiceCountUVE(), 0U);
+    EXPECT_EQ(device.PushStreamFrames(unknown, frames), 0U);
+    EXPECT_EQ(device.GetStreamBufferedFrames(unknown), 0U);
+    EXPECT_EQ(device.GetStreamFreeFrames(unknown), 0U);
+    EXPECT_FALSE(device.EndStream(unknown));
+    EXPECT_EQ(device.GetLiveVoiceCount(), 0U);
 }
 
 

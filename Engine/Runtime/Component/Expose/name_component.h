@@ -8,35 +8,35 @@
 
 namespace UVE::Scene {
 
-inline constexpr std::size_t kMaximumEntityNameBytesUVE = 128U;
+inline constexpr std::size_t kMaximumEntityNameBytes = 128U;
 
 /// Persistent, human-readable authored metadata for a scene entity. Names are intentionally not
 /// required to be globally unique: the editor gives newly created entities deterministic defaults,
 /// while callers remain free to assign duplicate names when that better describes a scene. The
 /// component is optional so legacy documents and runtime-created entities remain valid without it.
 /// Thread-safety: value type; safe to copy and move freely with no shared state.
-struct NameComponentUVE final {
+struct NameComponent final {
     std::string name;
 };
 
-/// True when `name` is at most `kMaximumEntityNameBytesUVE` bytes and contains no embedded NULs.
-[[nodiscard]] bool IsEntityNameStringValidUVE(std::string_view name) noexcept;
+/// True when `name` is at most `kMaximumEntityNameBytes` bytes and contains no embedded NULs.
+[[nodiscard]] bool IsEntityNameStringValid(std::string_view name) noexcept;
 
-[[nodiscard]] bool IsNameComponentValidUVE(const NameComponentUVE& component) noexcept;
+[[nodiscard]] bool IsNameComponentValid(const NameComponent& component) noexcept;
 
 /// True when `component` is non-null and holds a non-empty, valid entity name.
-[[nodiscard]] bool HasNonEmptyEntityNameUVE(const NameComponentUVE* component) noexcept;
+[[nodiscard]] bool HasNonEmptyEntityName(const NameComponent* component) noexcept;
 
-/// Strips embedded NUL bytes, truncates to `kMaximumEntityNameBytesUVE`, and applies `fallbackName` when empty.
-[[nodiscard]] std::string SanitizeEntityNameStringUVE(
+/// Strips embedded NUL bytes, truncates to `kMaximumEntityNameBytes`, and applies `fallbackName` when empty.
+[[nodiscard]] std::string SanitizeEntityNameString(
     std::string_view rawName, std::string_view fallbackName = {});
 
-/// Returns a sanitized `NameComponentUVE` guaranteed to pass `IsNameComponentValidUVE`.
-[[nodiscard]] NameComponentUVE SanitizeNameComponentUVE(
-    const NameComponentUVE& component, std::string_view fallbackName = {});
+/// Returns a sanitized `NameComponent` guaranteed to pass `IsNameComponentValid`.
+[[nodiscard]] NameComponent SanitizeNameComponent(
+    const NameComponent& component, std::string_view fallbackName = {});
 
 /// Returns `component->name` when present and non-empty, or `fallbackName` otherwise.
-[[nodiscard]] std::string_view ResolveEntityDisplayNameOrFallbackUVE(
-    const NameComponentUVE* component, std::string_view fallbackName) noexcept;
+[[nodiscard]] std::string_view ResolveEntityDisplayNameOrFallback(
+    const NameComponent* component, std::string_view fallbackName) noexcept;
 
 } // namespace UVE::Scene

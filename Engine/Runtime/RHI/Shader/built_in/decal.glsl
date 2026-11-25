@@ -1,15 +1,15 @@
 #version 450 core
 
 // Decal3D's paint pass. The geometry arrives already in world space and already clipped to the
-// decal's volume by the CPU projection pass (see DecalPatchUVE), so the vertex stage only projects
+// decal's volume by the CPU projection pass (see DecalPatch), so the vertex stage only projects
 // it and the fragment stage only asks how much of the decal reaches this pixel.
 //
 // The fades are re-evaluated here, per pixel, from the authored fields: the CPU evaluates the same
 // three fades at each patch's centre to decide whether the patch paints at all, but a patch is one
 // receiving face and a wall's face can span the whole volume - a weight flat across it would end in
 // a hard rectangle where the artist asked for a fade. The rules below mirror
-// Scene::SampleDecal3DUVE() exactly; the coordinate space they read is not mirrored, it is the same
-// matrix the CPU clipped in (DecalDrawCommandUVE::worldToUnit).
+// Scene::SampleDecal3D() exactly; the coordinate space they read is not mirrored, it is the same
+// matrix the CPU clipped in (DecalDrawCommand::worldToUnit).
 
 #ifdef VERTEX_SHADER
 layout(location = 0) in vec3 aPosition;
@@ -51,7 +51,7 @@ uniform float uDistanceFadeEnabled;
 uniform float uDistanceFadeBegin;
 uniform float uDistanceFadeLength;
 
-// Scene::SampleDecal3DUVE()'s helper of the same name: 0 leaves the axis unfaded, 1 fades the whole
+// Scene::SampleDecal3D()'s helper of the same name: 0 leaves the axis unfaded, 1 fades the whole
 // half of the volume, and anything between fades the outer band of it.
 float AxisFadeWeight(float unitCoordinate, float band) {
     if (!(band > 0.0)) {

@@ -1,7 +1,7 @@
 #version 430 core
 
-// GPU twin of Math::FrustumUVE::IntersectsUVE (CS5) - the conservative centre/extents AABB test
-// against six inward-facing planes that Renderer3DUVE and MeshRenderEligibilityUVE already use on
+// GPU twin of Math::Frustum::Intersects (CS5) - the conservative centre/extents AABB test
+// against six inward-facing planes that Renderer3D and MeshRenderEligibility already use on
 // the CPU:
 //
 //     radius = extents.x*|n.x| + extents.y*|n.y| + extents.z*|n.z|;
@@ -17,17 +17,17 @@
 // borderline decision.
 //
 // The host computes each box's centre and extents and uploads those rather than min/max, so the
-// halving in AabbUVE::GetCenterUVE (including its double-precision fallback for boxes whose
+// halving in Aabb::GetCenter (including its double-precision fallback for boxes whose
 // min+max overflows) happens once, on the CPU, in the CPU's own arithmetic. Recomputing it here
 // would introduce a second place for the two paths to disagree, for no benefit.
 //
 // Deliberately NOT done here: the plane extraction itself. Six planes per frustum is not work
-// worth a dispatch, and keeping FrustumUVE::FromViewProjectionUVE as the single authority means
+// worth a dispatch, and keeping Frustum::FromViewProjection as the single authority means
 // there is exactly one plane-extraction implementation in the engine to be correct.
 
 layout(local_size_x = 64) in;
 
-// std430, 8 floats, no padding - mirrored by CullBoxGpuUVE on the host. Spelled out as scalars
+// std430, 8 floats, no padding - mirrored by CullBoxGpu on the host. Spelled out as scalars
 // for the same reason the particle kernel does: a vec3 here would be 16-byte aligned and silently
 // introduce padding the host struct does not have.
 struct CullBox {
@@ -41,7 +41,7 @@ struct CullBox {
     float padding1;
 };
 
-// A plane as normal + distance: exactly Math::PlaneUVE's layout, four floats.
+// A plane as normal + distance: exactly Math::Plane's layout, four floats.
 struct CullPlane {
     float normalX;
     float normalY;
@@ -83,7 +83,7 @@ void main() {
     CullBox box = boxes[index];
     uint result = 1u;
 
-    // Plane order is fixed by FrustumUVE (left, right, bottom, top, near, far) and the loop is
+    // Plane order is fixed by Frustum (left, right, bottom, top, near, far) and the loop is
     // unrolled over exactly six - a dynamic count would be a different contract, and the CPU side
     // has no such thing.
     for (int planeIndex = 0; planeIndex < 6; ++planeIndex) {

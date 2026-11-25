@@ -20,144 +20,144 @@
 namespace UVE::Audio::Tests {
 namespace {
 
-class UVScriptAudioBindingsUVETest : public ::testing::Test {
+class UVScriptAudioBindingsTest : public ::testing::Test {
 protected:
-    Memory::MemoryManagerUVE memoryManager;
-    Events::EventSystemUVE eventSystem;
-    Scene::EntityManagerUVE entityManager{memoryManager.GetDefaultAllocatorUVE(), eventSystem};
-    NullAudioDeviceUVE device;
-    AudioSystemUVE audioSystem{device};
-    AudioSourceSystemUVE audioSources;
+    Memory::MemoryManager memoryManager;
+    Events::EventSystem eventSystem;
+    Scene::EntityManager entityManager{memoryManager.GetDefaultAllocator(), eventSystem};
+    NullAudioDevice device;
+    AudioSystem audioSystem{device};
+    AudioSourceSystem audioSources;
 
-    Scene::EntityUVE MakeSourceUVE(const bool playOnAwake) {
-        const Scene::EntityUVE entity = entityManager.CreateEntityUVE();
-        entityManager.AddComponentUVE<Scene::WorldTransformComponentUVE>(
-            entity, Scene::WorldTransformComponentUVE{});
-        Scene::AudioSourceComponentUVE source;
+    Scene::Entity MakeSource(const bool playOnAwake) {
+        const Scene::Entity entity = entityManager.CreateEntity();
+        entityManager.AddComponent<Scene::WorldTransformComponent>(
+            entity, Scene::WorldTransformComponent{});
+        Scene::AudioSourceComponent source;
         source.audioAssetPath = "sfx.wav";
         source.playOnAwake = playOnAwake;
-        entityManager.AddComponentUVE<Scene::AudioSourceComponentUVE>(entity, source);
+        entityManager.AddComponent<Scene::AudioSourceComponent>(entity, source);
         return entity;
     }
 
-    static bool CallBoolUVE(Core::BlueprintObjectHostUVE& host, const std::string_view name) {
-        return std::get<bool>(host.CallFunctionUVE(name, std::span<const Blueprint::ValueUVE>{}));
+    static bool CallBool(Core::BlueprintObjectHost& host, const std::string_view name) {
+        return std::get<bool>(host.CallFunction(name, std::span<const Blueprint::Value>{}));
     }
 };
 
-TEST_F(UVScriptAudioBindingsUVETest, Host_DescribesAudioSurfaceOnlyOnAudioSources) {
-    const Scene::EntityUVE source = MakeSourceUVE(false);
-    const Core::BlueprintObjectHostUVE host{entityManager, nullptr, source, &audioSources, &audioSystem};
+TEST_F(UVScriptAudioBindingsTest, Host_DescribesAudioSurfaceOnlyOnAudioSources) {
+    const Scene::Entity source = MakeSource(false);
+    const Core::BlueprintObjectHost host{entityManager, nullptr, source, &audioSources, &audioSystem};
     for (const char* name : {"audio.play", "audio.stop", "audio.is_playing"}) {
-        const std::optional<Blueprint::HostFunctionUVE> described = host.DescribeFunctionUVE(name);
+        const std::optional<Blueprint::HostFunction> described = host.DescribeFunction(name);
         ASSERT_TRUE(described.has_value()) << name;
         EXPECT_TRUE(described->params.empty());
-        EXPECT_EQ(described->result.kind, Blueprint::TypeUVE::KindUVE::Bool);
+        EXPECT_EQ(described->result.kind, Blueprint::Type::Kind::Bool);
     }
     for (const char* name : {"volume", "pitch"}) {
-        const std::optional<Blueprint::HostPropertyUVE> described = host.DescribePropertyUVE(name);
+        const std::optional<Blueprint::HostProperty> described = host.DescribeProperty(name);
         ASSERT_TRUE(described.has_value()) << name;
-        EXPECT_EQ(described->type.kind, Blueprint::TypeUVE::KindUVE::Float);
+        EXPECT_EQ(described->type.kind, Blueprint::Type::Kind::Float);
         EXPECT_TRUE(described->writable);
     }
 
-    const Core::BlueprintObjectHostUVE bare{entityManager, nullptr, entityManager.CreateEntityUVE(),
+    const Core::BlueprintObjectHost bare{entityManager, nullptr, entityManager.CreateEntity(),
                                            &audioSources, &audioSystem};
-    EXPECT_FALSE(bare.DescribeFunctionUVE("audio.play").has_value());
-    EXPECT_FALSE(bare.DescribePropertyUVE("volume").has_value());
+    EXPECT_FALSE(bare.DescribeFunction("audio.play").has_value());
+    EXPECT_FALSE(bare.DescribeProperty("volume").has_value());
 }
 
-TEST_F(UVScriptAudioBindingsUVETest, Host_VolumeAndPitch_ReadAndWriteThrough) {
-    const Scene::EntityUVE source = MakeSourceUVE(false);
-    Core::BlueprintObjectHostUVE host{entityManager, nullptr, source, &audioSources, &audioSystem};
+TEST_F(UVScriptAudioBindingsTest, Host_VolumeAndPitch_ReadAndWriteThrough) {
+    const Scene::Entity source = MakeSource(false);
+    Core::BlueprintObjectHost host{entityManager, nullptr, source, &audioSources, &audioSystem};
 
-    EXPECT_DOUBLE_EQ(std::get<double>(host.GetPropertyUVE("volume")), 1.0);
-    host.SetPropertyUVE("volume", Blueprint::ValueUVE{0.5});
-    host.SetPropertyUVE("pitch", Blueprint::ValueUVE{2.0});
-    EXPECT_FLOAT_EQ(entityManager.GetComponentUVE<Scene::AudioSourceComponentUVE>(source).volume, 0.5F);
-    EXPECT_FLOAT_EQ(entityManager.GetComponentUVE<Scene::AudioSourceComponentUVE>(source).pitch, 2.0F);
+    EXPECT_DOUBLE_EQ(std::get<double>(host.GetProperty("volume")), 1.0);
+    host.SetProperty("volume", Blueprint::Value{0.5});
+    host.SetProperty("pitch", Blueprint::Value{2.0});
+    EXPECT_FLOAT_EQ(entityManager.GetComponent<Scene::AudioSourceComponent>(source).volume, 0.5F);
+    EXPECT_FLOAT_EQ(entityManager.GetComponent<Scene::AudioSourceComponent>(source).pitch, 2.0F);
 
     // Invalid writes are ignored, never stored: NaN would make Sync skip the source.
     const float nan = std::numeric_limits<float>::quiet_NaN();
-    host.SetPropertyUVE("volume", Blueprint::ValueUVE{static_cast<double>(nan)});
-    host.SetPropertyUVE("pitch", Blueprint::ValueUVE{0.0});
-    EXPECT_FLOAT_EQ(entityManager.GetComponentUVE<Scene::AudioSourceComponentUVE>(source).volume, 0.5F);
-    EXPECT_FLOAT_EQ(entityManager.GetComponentUVE<Scene::AudioSourceComponentUVE>(source).pitch, 2.0F);
+    host.SetProperty("volume", Blueprint::Value{static_cast<double>(nan)});
+    host.SetProperty("pitch", Blueprint::Value{0.0});
+    EXPECT_FLOAT_EQ(entityManager.GetComponent<Scene::AudioSourceComponent>(source).volume, 0.5F);
+    EXPECT_FLOAT_EQ(entityManager.GetComponent<Scene::AudioSourceComponent>(source).pitch, 2.0F);
 }
 
-TEST_F(UVScriptAudioBindingsUVETest, Host_PlayCreatesVoiceOnDemand_StopAndReplay) {
-    const Scene::EntityUVE source = MakeSourceUVE(false);
-    Core::BlueprintObjectHostUVE host{entityManager, nullptr, source, &audioSources, &audioSystem};
+TEST_F(UVScriptAudioBindingsTest, Host_PlayCreatesVoiceOnDemand_StopAndReplay) {
+    const Scene::Entity source = MakeSource(false);
+    Core::BlueprintObjectHost host{entityManager, nullptr, source, &audioSources, &audioSystem};
 
     // No Sync ran: play births the voice mid-frame, so `ready` never depends on frame order.
-    EXPECT_TRUE(CallBoolUVE(host, "audio.play"));
-    EXPECT_TRUE(CallBoolUVE(host, "audio.is_playing"));
-    EXPECT_TRUE(audioSources.IsEntityPlayingUVE(source, audioSystem));
+    EXPECT_TRUE(CallBool(host, "audio.play"));
+    EXPECT_TRUE(CallBool(host, "audio.is_playing"));
+    EXPECT_TRUE(audioSources.IsEntityPlaying(source, audioSystem));
 
-    EXPECT_TRUE(CallBoolUVE(host, "audio.stop"));
-    EXPECT_FALSE(CallBoolUVE(host, "audio.is_playing"));
+    EXPECT_TRUE(CallBool(host, "audio.stop"));
+    EXPECT_FALSE(CallBool(host, "audio.is_playing"));
 
-    EXPECT_TRUE(CallBoolUVE(host, "audio.play"));
-    EXPECT_TRUE(CallBoolUVE(host, "audio.is_playing"));
+    EXPECT_TRUE(CallBool(host, "audio.play"));
+    EXPECT_TRUE(CallBool(host, "audio.is_playing"));
 }
 
-TEST_F(UVScriptAudioBindingsUVETest, Host_AudioFailsClosed) {
-    Core::BlueprintObjectHostUVE bare{entityManager, nullptr, entityManager.CreateEntityUVE(), &audioSources,
+TEST_F(UVScriptAudioBindingsTest, Host_AudioFailsClosed) {
+    Core::BlueprintObjectHost bare{entityManager, nullptr, entityManager.CreateEntity(), &audioSources,
                                      &audioSystem};
-    EXPECT_FALSE(CallBoolUVE(bare, "audio.play"));
-    EXPECT_FALSE(CallBoolUVE(bare, "audio.stop"));
-    EXPECT_FALSE(CallBoolUVE(bare, "audio.is_playing"));
+    EXPECT_FALSE(CallBool(bare, "audio.play"));
+    EXPECT_FALSE(CallBool(bare, "audio.stop"));
+    EXPECT_FALSE(CallBool(bare, "audio.is_playing"));
 
     // A real source behind a check-only host: no backend, every call reads false.
-    const Scene::EntityUVE source = MakeSourceUVE(false);
-    Core::BlueprintObjectHostUVE backendless{entityManager, nullptr, source};
-    EXPECT_FALSE(CallBoolUVE(backendless, "audio.play"));
-    EXPECT_FALSE(CallBoolUVE(backendless, "audio.is_playing"));
+    const Scene::Entity source = MakeSource(false);
+    Core::BlueprintObjectHost backendless{entityManager, nullptr, source};
+    EXPECT_FALSE(CallBool(backendless, "audio.play"));
+    EXPECT_FALSE(CallBool(backendless, "audio.is_playing"));
 
     // Stopping a voice Sync never created is a no-op false, not an error.
-    Core::BlueprintObjectHostUVE host{entityManager, nullptr, source, &audioSources, &audioSystem};
-    EXPECT_FALSE(CallBoolUVE(host, "audio.stop"));
-    EXPECT_FALSE(CallBoolUVE(host, "audio.is_playing"));
+    Core::BlueprintObjectHost host{entityManager, nullptr, source, &audioSources, &audioSystem};
+    EXPECT_FALSE(CallBool(host, "audio.stop"));
+    EXPECT_FALSE(CallBool(host, "audio.is_playing"));
 }
 
-TEST_F(UVScriptAudioBindingsUVETest, Sync_PlayOnAwakePlays_StopPersistsAcrossSync) {
-    const Scene::EntityUVE source = MakeSourceUVE(true);
-    Core::BlueprintObjectHostUVE host{entityManager, nullptr, source, &audioSources, &audioSystem};
+TEST_F(UVScriptAudioBindingsTest, Sync_PlayOnAwakePlays_StopPersistsAcrossSync) {
+    const Scene::Entity source = MakeSource(true);
+    Core::BlueprintObjectHost host{entityManager, nullptr, source, &audioSources, &audioSystem};
 
-    audioSources.SyncUVE(entityManager, audioSystem);
-    EXPECT_TRUE(CallBoolUVE(host, "audio.is_playing"));
+    audioSources.Sync(entityManager, audioSystem);
+    EXPECT_TRUE(CallBool(host, "audio.is_playing"));
 
-    EXPECT_TRUE(CallBoolUVE(host, "audio.stop"));
-    audioSources.SyncUVE(entityManager, audioSystem);
-    EXPECT_FALSE(CallBoolUVE(host, "audio.is_playing"));
+    EXPECT_TRUE(CallBool(host, "audio.stop"));
+    audioSources.Sync(entityManager, audioSystem);
+    EXPECT_FALSE(CallBool(host, "audio.is_playing"));
 
-    EXPECT_TRUE(CallBoolUVE(host, "audio.play"));
-    audioSources.SyncUVE(entityManager, audioSystem);
-    EXPECT_TRUE(CallBoolUVE(host, "audio.is_playing"));
+    EXPECT_TRUE(CallBool(host, "audio.play"));
+    audioSources.Sync(entityManager, audioSystem);
+    EXPECT_TRUE(CallBool(host, "audio.is_playing"));
 }
 
-TEST_F(UVScriptAudioBindingsUVETest, Sync_CreatesStoppedVoiceWhenPlayOnAwakeIsFalse) {
-    const Scene::EntityUVE source = MakeSourceUVE(false);
-    Core::BlueprintObjectHostUVE host{entityManager, nullptr, source, &audioSources, &audioSystem};
+TEST_F(UVScriptAudioBindingsTest, Sync_CreatesStoppedVoiceWhenPlayOnAwakeIsFalse) {
+    const Scene::Entity source = MakeSource(false);
+    Core::BlueprintObjectHost host{entityManager, nullptr, source, &audioSources, &audioSystem};
 
-    audioSources.SyncUVE(entityManager, audioSystem);
-    EXPECT_FALSE(CallBoolUVE(host, "audio.is_playing"));
+    audioSources.Sync(entityManager, audioSystem);
+    EXPECT_FALSE(CallBool(host, "audio.is_playing"));
     // ...but the voice exists: stopping it succeeds.
-    EXPECT_TRUE(CallBoolUVE(host, "audio.stop"));
+    EXPECT_TRUE(CallBool(host, "audio.stop"));
 }
 
-TEST_F(UVScriptAudioBindingsUVETest, PlayEntity_RejectsInvalidSourceThenRecovers) {
-    const Scene::EntityUVE source = MakeSourceUVE(false);
-    entityManager.GetComponentUVE<Scene::AudioSourceComponentUVE>(source).volume =
+TEST_F(UVScriptAudioBindingsTest, PlayEntity_RejectsInvalidSourceThenRecovers) {
+    const Scene::Entity source = MakeSource(false);
+    entityManager.GetComponent<Scene::AudioSourceComponent>(source).volume =
         std::numeric_limits<float>::quiet_NaN();
-    Core::BlueprintObjectHostUVE host{entityManager, nullptr, source, &audioSources, &audioSystem};
+    Core::BlueprintObjectHost host{entityManager, nullptr, source, &audioSources, &audioSystem};
 
-    EXPECT_FALSE(CallBoolUVE(host, "audio.play"));
-    EXPECT_FALSE(CallBoolUVE(host, "audio.is_playing"));
+    EXPECT_FALSE(CallBool(host, "audio.play"));
+    EXPECT_FALSE(CallBool(host, "audio.is_playing"));
 
-    entityManager.GetComponentUVE<Scene::AudioSourceComponentUVE>(source).volume = 0.75F;
-    EXPECT_TRUE(CallBoolUVE(host, "audio.play"));
-    EXPECT_TRUE(CallBoolUVE(host, "audio.is_playing"));
+    entityManager.GetComponent<Scene::AudioSourceComponent>(source).volume = 0.75F;
+    EXPECT_TRUE(CallBool(host, "audio.play"));
+    EXPECT_TRUE(CallBool(host, "audio.is_playing"));
 }
 
 } // namespace

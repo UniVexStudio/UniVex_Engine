@@ -14,9 +14,9 @@
 
 namespace UVE::Scene {
 
-class IEntityManagerUVE;
+class IEntityManager;
 
-enum class Joint3DKindUVE : std::uint8_t {
+enum class Joint3DKind : std::uint8_t {
     Pin = 0,
     Hinge = 1,
     Slider = 2,
@@ -26,15 +26,15 @@ enum class Joint3DKindUVE : std::uint8_t {
 
 /// Unified 3D physics joint/constraint component (`Pin`, `Hinge`, `Slider`, `ConeTwist`,
 /// `Generic6DOF`) connecting `nodeA` and `nodeB` at world/local anchors `anchorA` and `anchorB`
-/// along `axis`. Synced with `Physics::PhysicsConstraintSystemUVE` and
-/// `Physics::EvaluateHingeMotorLimitUVE`.
-struct Joint3DComponentUVE final {
-    Joint3DKindUVE kind = Joint3DKindUVE::Pin;
-    EntityUVE nodeA = kInvalidEntityUVE;
-    EntityUVE nodeB = kInvalidEntityUVE;
-    Math::Vector3UVE anchorA{0.0F, 0.0F, 0.0F};
-    Math::Vector3UVE anchorB{0.0F, 0.0F, 0.0F};
-    Math::Vector3UVE axis{0.0F, 1.0F, 0.0F};
+/// along `axis`. Synced with `Physics::PhysicsConstraintSystem` and
+/// `Physics::EvaluateHingeMotorLimit`.
+struct Joint3DComponent final {
+    Joint3DKind kind = Joint3DKind::Pin;
+    Entity nodeA = kInvalidEntity;
+    Entity nodeB = kInvalidEntity;
+    Math::Vector3 anchorA{0.0F, 0.0F, 0.0F};
+    Math::Vector3 anchorB{0.0F, 0.0F, 0.0F};
+    Math::Vector3 axis{0.0F, 1.0F, 0.0F};
     float restLength = 0.0F;
     bool limitsEnabled = false;
     float lowerLimit = -1.0F;
@@ -49,7 +49,7 @@ struct Joint3DComponentUVE final {
     float lastAppliedAngularSpeedDeltaRadians = 0.0F;
     bool solvedLastStep = false;
 
-    [[nodiscard]] bool operator==(const Joint3DComponentUVE& other) const noexcept {
+    [[nodiscard]] bool operator==(const Joint3DComponent& other) const noexcept {
         return kind == other.kind && nodeA == other.nodeA && nodeB == other.nodeB &&
                anchorA == other.anchorA && anchorB == other.anchorB && axis == other.axis &&
                restLength == other.restLength && limitsEnabled == other.limitsEnabled &&
@@ -60,69 +60,69 @@ struct Joint3DComponentUVE final {
     }
 };
 
-[[nodiscard]] bool IsJoint3DComponentValidUVE(const Joint3DComponentUVE& value) noexcept;
+[[nodiscard]] bool IsJoint3DComponentValid(const Joint3DComponent& value) noexcept;
 
-[[nodiscard]] Joint3DComponentUVE SanitizeJoint3DComponentUVE(
-    const Joint3DComponentUVE& value) noexcept;
+[[nodiscard]] Joint3DComponent SanitizeJoint3DComponent(
+    const Joint3DComponent& value) noexcept;
 
-struct PinJoint3DObjectDefinitionUVE final {
+struct PinJoint3DObjectDefinition final {
     static constexpr std::string_view defaultName = "PinJoint3D";
-    Joint3DComponentUVE joint{Joint3DKindUVE::Pin};
+    Joint3DComponent joint{Joint3DKind::Pin};
 };
 
-struct HingeJoint3DObjectDefinitionUVE final {
+struct HingeJoint3DObjectDefinition final {
     static constexpr std::string_view defaultName = "HingeJoint3D";
-    Joint3DComponentUVE joint{Joint3DKindUVE::Hinge};
+    Joint3DComponent joint{Joint3DKind::Hinge};
 };
 
-struct SliderJoint3DObjectDefinitionUVE final {
+struct SliderJoint3DObjectDefinition final {
     static constexpr std::string_view defaultName = "SliderJoint3D";
-    Joint3DComponentUVE joint{Joint3DKindUVE::Slider};
+    Joint3DComponent joint{Joint3DKind::Slider};
 };
 
-struct ConeTwistJoint3DObjectDefinitionUVE final {
+struct ConeTwistJoint3DObjectDefinition final {
     static constexpr std::string_view defaultName = "ConeTwistJoint3D";
-    Joint3DComponentUVE joint{Joint3DKindUVE::ConeTwist};
+    Joint3DComponent joint{Joint3DKind::ConeTwist};
 };
 
-struct Generic6DOFJoint3DObjectDefinitionUVE final {
+struct Generic6DOFJoint3DObjectDefinition final {
     static constexpr std::string_view defaultName = "Generic6DOFJoint3D";
-    Joint3DComponentUVE joint{Joint3DKindUVE::Generic6DOF};
+    Joint3DComponent joint{Joint3DKind::Generic6DOF};
 };
 
-[[nodiscard]] bool IsPinJoint3DObjectDefinitionValidUVE(
-    const PinJoint3DObjectDefinitionUVE& value) noexcept;
-[[nodiscard]] bool IsHingeJoint3DObjectDefinitionValidUVE(
-    const HingeJoint3DObjectDefinitionUVE& value) noexcept;
-[[nodiscard]] bool IsSliderJoint3DObjectDefinitionValidUVE(
-    const SliderJoint3DObjectDefinitionUVE& value) noexcept;
-[[nodiscard]] bool IsConeTwistJoint3DObjectDefinitionValidUVE(
-    const ConeTwistJoint3DObjectDefinitionUVE& value) noexcept;
-[[nodiscard]] bool IsGeneric6DOFJoint3DObjectDefinitionValidUVE(
-    const Generic6DOFJoint3DObjectDefinitionUVE& value) noexcept;
+[[nodiscard]] bool IsPinJoint3DObjectDefinitionValid(
+    const PinJoint3DObjectDefinition& value) noexcept;
+[[nodiscard]] bool IsHingeJoint3DObjectDefinitionValid(
+    const HingeJoint3DObjectDefinition& value) noexcept;
+[[nodiscard]] bool IsSliderJoint3DObjectDefinitionValid(
+    const SliderJoint3DObjectDefinition& value) noexcept;
+[[nodiscard]] bool IsConeTwistJoint3DObjectDefinitionValid(
+    const ConeTwistJoint3DObjectDefinition& value) noexcept;
+[[nodiscard]] bool IsGeneric6DOFJoint3DObjectDefinitionValid(
+    const Generic6DOFJoint3DObjectDefinition& value) noexcept;
 
-void ApplyPinJoint3DObjectDefinitionUVE(IEntityManagerUVE& entityManager, EntityUVE entity,
-                                        const PinJoint3DObjectDefinitionUVE& value);
-void ApplyHingeJoint3DObjectDefinitionUVE(IEntityManagerUVE& entityManager, EntityUVE entity,
-                                          const HingeJoint3DObjectDefinitionUVE& value);
-void ApplySliderJoint3DObjectDefinitionUVE(IEntityManagerUVE& entityManager, EntityUVE entity,
-                                           const SliderJoint3DObjectDefinitionUVE& value);
-void ApplyConeTwistJoint3DObjectDefinitionUVE(IEntityManagerUVE& entityManager, EntityUVE entity,
-                                              const ConeTwistJoint3DObjectDefinitionUVE& value);
-void ApplyGeneric6DOFJoint3DObjectDefinitionUVE(IEntityManagerUVE& entityManager, EntityUVE entity,
-                                                const Generic6DOFJoint3DObjectDefinitionUVE& value);
+void ApplyPinJoint3DObjectDefinition(IEntityManager& entityManager, Entity entity,
+                                        const PinJoint3DObjectDefinition& value);
+void ApplyHingeJoint3DObjectDefinition(IEntityManager& entityManager, Entity entity,
+                                          const HingeJoint3DObjectDefinition& value);
+void ApplySliderJoint3DObjectDefinition(IEntityManager& entityManager, Entity entity,
+                                           const SliderJoint3DObjectDefinition& value);
+void ApplyConeTwistJoint3DObjectDefinition(IEntityManager& entityManager, Entity entity,
+                                              const ConeTwistJoint3DObjectDefinition& value);
+void ApplyGeneric6DOFJoint3DObjectDefinition(IEntityManager& entityManager, Entity entity,
+                                                const Generic6DOFJoint3DObjectDefinition& value);
 
-/// Evaluates hinge motor/limit response for a `Joint3DComponentUVE` using
-/// `Physics::EvaluateHingeMotorLimitUVE` and records the runtime correction fields on `joint`.
-[[nodiscard]] bool EvaluateJoint3DHingeMotorLimitStepUVE(
-    Joint3DComponentUVE& joint, float currentAngleRadians, float currentRelativeSpeedRadians,
+/// Evaluates hinge motor/limit response for a `Joint3DComponent` using
+/// `Physics::EvaluateHingeMotorLimit` and records the runtime correction fields on `joint`.
+[[nodiscard]] bool EvaluateJoint3DHingeMotorLimitStep(
+    Joint3DComponent& joint, float currentAngleRadians, float currentRelativeSpeedRadians,
     float effectiveInverseInertia, float deltaTimeSeconds,
-    Physics::HingeMotorLimitResultUVE& outResult) noexcept;
+    Physics::HingeMotorLimitResult& outResult) noexcept;
 
-/// Populates a `Physics::PhysicsConstraintSystemUVE` from all enabled `Joint3DComponentUVE`
-/// entities, solves positional constraints via `constraintSystem.SolveUVE(entityManager, sceneGraph)`,
+/// Populates a `Physics::PhysicsConstraintSystem` from all enabled `Joint3DComponent`
+/// entities, solves positional constraints via `constraintSystem.Solve(entityManager, sceneGraph)`,
 /// and steps linear/hinge limits. Returns the number of active joints solved.
-std::size_t UpdateJoint3DObjectsUVE(IEntityManagerUVE& entityManager, ISceneGraphUVE& sceneGraph,
+std::size_t UpdateJoint3DObjects(IEntityManager& entityManager, ISceneGraph& sceneGraph,
                                     float deltaTimeSeconds);
 
 } // namespace UVE::Scene

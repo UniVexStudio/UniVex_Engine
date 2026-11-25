@@ -7,12 +7,12 @@
 
 namespace UVE::Scene {
 
-[[nodiscard]] bool IsUIProgressBarComponentValidUVE(const UIProgressBarComponentUVE& component) noexcept {
-    return Math::IsFiniteUVE(component.rect) &&
-           component.rect.size.x >= kMinimumUIProgressBarSizePixelsUVE &&
-           component.rect.size.x <= kMaximumUIProgressBarSizePixelsUVE &&
-           component.rect.size.y >= kMinimumUIProgressBarSizePixelsUVE &&
-           component.rect.size.y <= kMaximumUIProgressBarSizePixelsUVE && std::isfinite(component.value) &&
+[[nodiscard]] bool IsUIProgressBarComponentValid(const UIProgressBarComponent& component) noexcept {
+    return Math::IsFinite(component.rect) &&
+           component.rect.size.x >= kMinimumUIProgressBarSizePixels &&
+           component.rect.size.x <= kMaximumUIProgressBarSizePixels &&
+           component.rect.size.y >= kMinimumUIProgressBarSizePixels &&
+           component.rect.size.y <= kMaximumUIProgressBarSizePixels && std::isfinite(component.value) &&
            std::isfinite(component.minValue) && std::isfinite(component.maxValue) &&
            component.minValue <= component.maxValue && std::isfinite(component.backgroundColor.x) &&
            std::isfinite(component.backgroundColor.y) && std::isfinite(component.backgroundColor.z) &&
@@ -20,16 +20,16 @@ namespace UVE::Scene {
            std::isfinite(component.fillColor.z);
 }
 
-UIProgressBarComponentUVE SanitizeUIProgressBarComponentUVE(
-    const UIProgressBarComponentUVE& component) noexcept {
-    UIProgressBarComponentUVE out = component;
-    if (!Math::IsFiniteUVE(out.rect)) {
-        out.rect = Math::RectUVE{{0.0F, 0.0F}, {200.0F, 20.0F}};
+UIProgressBarComponent SanitizeUIProgressBarComponent(
+    const UIProgressBarComponent& component) noexcept {
+    UIProgressBarComponent out = component;
+    if (!Math::IsFinite(out.rect)) {
+        out.rect = Math::Rect{{0.0F, 0.0F}, {200.0F, 20.0F}};
     } else {
-        out.rect.size.x = std::clamp(out.rect.size.x, kMinimumUIProgressBarSizePixelsUVE,
-                                     kMaximumUIProgressBarSizePixelsUVE);
-        out.rect.size.y = std::clamp(out.rect.size.y, kMinimumUIProgressBarSizePixelsUVE,
-                                     kMaximumUIProgressBarSizePixelsUVE);
+        out.rect.size.x = std::clamp(out.rect.size.x, kMinimumUIProgressBarSizePixels,
+                                     kMaximumUIProgressBarSizePixels);
+        out.rect.size.y = std::clamp(out.rect.size.y, kMinimumUIProgressBarSizePixels,
+                                     kMaximumUIProgressBarSizePixels);
     }
     if (!std::isfinite(out.minValue)) {
         out.minValue = 0.0F;
@@ -42,8 +42,8 @@ UIProgressBarComponentUVE SanitizeUIProgressBarComponentUVE(
     return out;
 }
 
-float ResolveUIProgressRatioUVE(const UIProgressBarComponentUVE& component) noexcept {
-    if (!IsUIProgressBarComponentValidUVE(component)) {
+float ResolveUIProgressRatio(const UIProgressBarComponent& component) noexcept {
+    if (!IsUIProgressBarComponentValid(component)) {
         return 0.0F;
     }
     const float span = component.maxValue - component.minValue;
@@ -53,14 +53,14 @@ float ResolveUIProgressRatioUVE(const UIProgressBarComponentUVE& component) noex
     return std::clamp((component.value - component.minValue) / span, 0.0F, 1.0F);
 }
 
-Math::RectUVE ResolveUIProgressFillRectUVE(const UIProgressBarComponentUVE& component) noexcept {
-    if (!IsUIProgressBarComponentValidUVE(component)) {
-        return Math::RectUVE{};
+Math::Rect ResolveUIProgressFillRect(const UIProgressBarComponent& component) noexcept {
+    if (!IsUIProgressBarComponentValid(component)) {
+        return Math::Rect{};
     }
-    const float ratio = ResolveUIProgressRatioUVE(component);
-    return Math::RectUVE{
+    const float ratio = ResolveUIProgressRatio(component);
+    return Math::Rect{
         .position = component.rect.position,
-        .size = Math::Vector2UVE{component.rect.size.x * ratio, component.rect.size.y},
+        .size = Math::Vector2{component.rect.size.x * ratio, component.rect.size.y},
     };
 }
 

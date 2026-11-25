@@ -17,144 +17,144 @@ namespace UVE::Editor {
 /// (a cycle, a second Output, deleting the Output) rather than repairing afterwards.
 
 /// A graph the editor shows: the top tree (machine 0), or the graph of a State Machine's state.
-struct AnimationGraphScopeUVE final {
+struct AnimationGraphScope final {
     std::uint32_t machine = 0U;
     std::uint32_t state = 0U;
-    [[nodiscard]] bool operator==(const AnimationGraphScopeUVE&) const = default;
+    [[nodiscard]] bool operator==(const AnimationGraphScope&) const = default;
 };
 
 /// Where a node is shown: the state its wires lead into (up to the first State Machine), else
 /// where it was put (`owner`), else the top tree.
-[[nodiscard]] AnimationGraphScopeUVE AnimationGraphScopeOfUVE(const std::vector<Scene::AnimationGraphNodeUVE>& nodes,
+[[nodiscard]] AnimationGraphScope AnimationGraphScopeOf(const std::vector<Scene::AnimationGraphNode>& nodes,
                                                               std::uint32_t id);
 
 /// The nodes shown in `scope`, in graph order.
-[[nodiscard]] std::vector<std::uint32_t> AnimationGraphScopeNodesUVE(const std::vector<Scene::AnimationGraphNodeUVE>& nodes,
-                                                                     AnimationGraphScopeUVE scope);
+[[nodiscard]] std::vector<std::uint32_t> AnimationGraphScopeNodes(const std::vector<Scene::AnimationGraphNode>& nodes,
+                                                                     AnimationGraphScope scope);
 
 /// Everything inside a node: a State Machine's states' nodes, and theirs (nested machines). Empty
 /// for other kinds.
-[[nodiscard]] std::vector<std::uint32_t> AnimationGraphNodesInsideUVE(const std::vector<Scene::AnimationGraphNodeUVE>& nodes,
+[[nodiscard]] std::vector<std::uint32_t> AnimationGraphNodesInside(const std::vector<Scene::AnimationGraphNode>& nodes,
                                                                       std::uint32_t id);
 
 /// A state's name: its own, else what it plays, else "State N".
-[[nodiscard]] std::string AnimationStateNameUVE(const std::vector<Scene::AnimationGraphNodeUVE>& nodes,
-                                                const Scene::AnimationGraphNodeUVE& machine, std::size_t slot);
+[[nodiscard]] std::string AnimationStateName(const std::vector<Scene::AnimationGraphNode>& nodes,
+                                                const Scene::AnimationGraphNode& machine, std::size_t slot);
 
 /// What a kind is called in the editor ("Blend Space" for BlendSpace1D...).
-[[nodiscard]] const char* AnimationGraphKindLabelUVE(Scene::AnimationGraphNodeKindUVE kind) noexcept;
+[[nodiscard]] const char* AnimationGraphKindLabel(Scene::AnimationGraphNodeKind kind) noexcept;
 
 /// One line on what a kind does, for tooltips and the Add Object search.
-[[nodiscard]] const char* AnimationGraphKindHelpUVE(Scene::AnimationGraphNodeKindUVE kind) noexcept;
+[[nodiscard]] const char* AnimationGraphKindHelp(Scene::AnimationGraphNodeKind kind) noexcept;
 
 /// What input `slot` of a kind means: "A"/"B", "Base"/"Layer", "State 2"...
-[[nodiscard]] std::string AnimationGraphSlotLabelUVE(Scene::AnimationGraphNodeKindUVE kind, std::size_t slot);
+[[nodiscard]] std::string AnimationGraphSlotLabel(Scene::AnimationGraphNodeKind kind, std::size_t slot);
 
 /// Adds a node of `kind` at `position` with the empty input slots the kind needs (two for Blend,
 /// Additive, One Shot, Select and Layered Blend; one for Time Scale, Time Seek and State Machine).
 /// A Blend Space starts with no points and no inputs: its editor adds them. Returns its id, or 0
 /// for Output (a graph has exactly one) or a full graph.
-std::uint32_t AddAnimationGraphNodeUVE(std::vector<Scene::AnimationGraphNodeUVE>& nodes,
-                                       Scene::AnimationGraphNodeKindUVE kind, Math::Vector2UVE position);
+std::uint32_t AddAnimationGraphNode(std::vector<Scene::AnimationGraphNode>& nodes,
+                                       Scene::AnimationGraphNodeKind kind, Math::Vector2 position);
 
 /// True when `source` can feed input `slot` of `target`: both exist, the slot exists, the source is
 /// not the Output nor the target itself, and the target is not already upstream of the source (the
 /// wire would close a cycle).
-[[nodiscard]] bool CanConnectAnimationGraphNodesUVE(const std::vector<Scene::AnimationGraphNodeUVE>& nodes,
+[[nodiscard]] bool CanConnectAnimationGraphNodes(const std::vector<Scene::AnimationGraphNode>& nodes,
                                                     std::uint32_t target, std::size_t slot, std::uint32_t source);
 
 /// Wires `source` into input `slot` of `target`. A node feeds one slot only, so a source already
 /// wired elsewhere moves here. Returns false, changing nothing, when CanConnect says no.
-bool ConnectAnimationGraphNodesUVE(std::vector<Scene::AnimationGraphNodeUVE>& nodes, std::uint32_t target,
+bool ConnectAnimationGraphNodes(std::vector<Scene::AnimationGraphNode>& nodes, std::uint32_t target,
                                    std::size_t slot, std::uint32_t source);
 
 /// Empties input `slot` of `target`. False when there is no such slot or it is already empty.
-bool DisconnectAnimationGraphInputUVE(std::vector<Scene::AnimationGraphNodeUVE>& nodes, std::uint32_t target,
+bool DisconnectAnimationGraphInput(std::vector<Scene::AnimationGraphNode>& nodes, std::uint32_t target,
                                       std::size_t slot);
 
 /// Removes the nodes (never the Output), emptying every slot that read them. Returns how many went.
-std::size_t DeleteAnimationGraphNodesUVE(std::vector<Scene::AnimationGraphNodeUVE>& nodes,
+std::size_t DeleteAnimationGraphNodes(std::vector<Scene::AnimationGraphNode>& nodes,
                                          const std::vector<std::uint32_t>& ids);
 
 /// Copies the nodes (never the Output) with new ids, offset by `offset`. Wires between copied
 /// nodes follow the copies; wires to nodes outside the set are left empty, since a node feeds one
 /// slot only. Returns the new ids, in the order given.
-std::vector<std::uint32_t> DuplicateAnimationGraphNodesUVE(std::vector<Scene::AnimationGraphNodeUVE>& nodes,
+std::vector<std::uint32_t> DuplicateAnimationGraphNodes(std::vector<Scene::AnimationGraphNode>& nodes,
                                                            const std::vector<std::uint32_t>& ids,
-                                                           Math::Vector2UVE offset);
+                                                           Math::Vector2 offset);
 
 /// Adds an empty input slot to a Select or a State Machine.
 /// False for other kinds or at the input limit.
-bool AddAnimationGraphInputSlotUVE(std::vector<Scene::AnimationGraphNodeUVE>& nodes, std::uint32_t target);
+bool AddAnimationGraphInputSlot(std::vector<Scene::AnimationGraphNode>& nodes, std::uint32_t target);
 
 /// Removes input `slot` of a Select or State Machine, keeping one. A State Machine's
 /// transitions touching that state go, later states shift down, and the entry state stays in range.
-bool RemoveAnimationGraphInputSlotUVE(std::vector<Scene::AnimationGraphNodeUVE>& nodes, std::uint32_t target,
+bool RemoveAnimationGraphInputSlot(std::vector<Scene::AnimationGraphNode>& nodes, std::uint32_t target,
                                       std::size_t slot);
 
 // ---- State Machines: states, their places in the state view, and transitions ------------------------
 
 /// Where the state view draws state `slot`: where it was put, or a grid place when it never was.
-[[nodiscard]] Math::Vector2UVE AnimationStatePositionUVE(const Scene::AnimationGraphNodeUVE& machine, std::size_t slot);
+[[nodiscard]] Math::Vector2 AnimationStatePosition(const Scene::AnimationGraphNode& machine, std::size_t slot);
 
 /// Puts state `slot` at `position` in the state view. False for a bad machine or slot.
-bool SetAnimationStatePositionUVE(std::vector<Scene::AnimationGraphNodeUVE>& nodes, std::uint32_t machine,
-                                  std::size_t slot, Math::Vector2UVE position);
+bool SetAnimationStatePosition(std::vector<Scene::AnimationGraphNode>& nodes, std::uint32_t machine,
+                                  std::size_t slot, Math::Vector2 position);
 
 /// Adds a state at `position` in the view, played by a new Clip node wired into it (a new machine's
 /// empty first state is used instead of adding one). Returns its slot, or nothing when full.
-std::optional<std::size_t> AddAnimationStateUVE(std::vector<Scene::AnimationGraphNodeUVE>& nodes, std::uint32_t machine,
-                                                Math::Vector2UVE position);
+std::optional<std::size_t> AddAnimationState(std::vector<Scene::AnimationGraphNode>& nodes, std::uint32_t machine,
+                                                Math::Vector2 position);
 
-/// Adds a transition `from` (a state, or kAnyAnimationStateUVE) `to` a state, last in priority and
+/// Adds a transition `from` (a state, or kAnyAnimationState) `to` a state, last in priority and
 /// with no conditions. Refuses a state to itself. Returns its index.
-std::optional<std::size_t> AddAnimationTransitionUVE(std::vector<Scene::AnimationGraphNodeUVE>& nodes,
+std::optional<std::size_t> AddAnimationTransition(std::vector<Scene::AnimationGraphNode>& nodes,
                                                      std::uint32_t machine, std::uint32_t from, std::uint32_t to);
 
-bool RemoveAnimationTransitionUVE(std::vector<Scene::AnimationGraphNodeUVE>& nodes, std::uint32_t machine,
+bool RemoveAnimationTransition(std::vector<Scene::AnimationGraphNode>& nodes, std::uint32_t machine,
                                   std::size_t index);
 
 /// Moves transition `index` to `newIndex` in the list: earlier is tried first.
-bool MoveAnimationTransitionUVE(std::vector<Scene::AnimationGraphNodeUVE>& nodes, std::uint32_t machine,
+bool MoveAnimationTransition(std::vector<Scene::AnimationGraphNode>& nodes, std::uint32_t machine,
                                 std::size_t index, std::size_t newIndex);
 
 /// One line on what a transition waits for: "speed > 0.5 and grounded", "state finished, after 75%",
 /// "always". "(off)" when it is switched off.
-[[nodiscard]] std::string DescribeAnimationTransitionUVE(const Scene::AnimationGraphTransitionUVE& transition);
+[[nodiscard]] std::string DescribeAnimationTransition(const Scene::AnimationGraphTransition& transition);
 
 // ---- Blend Spaces hold their animations as points, not graph inputs ----------------------------
 
 /// Adds a point at `position` playing `clip` (empty: pick it later). A 1D space uses x only and
 /// keeps its points rising, so the point lands in order. Returns its index, or nothing when
 /// `space` is not a blend space, is full, or a point is already there.
-std::optional<std::size_t> AddBlendSpacePointUVE(std::vector<Scene::AnimationGraphNodeUVE>& nodes, std::uint32_t space,
-                                                 Math::Vector2UVE position, Asset::AssetGuidUVE clip);
+std::optional<std::size_t> AddBlendSpacePoint(std::vector<Scene::AnimationGraphNode>& nodes, std::uint32_t space,
+                                                 Math::Vector2 position, Asset::AssetGuid clip);
 
 /// Removes point `slot`. False for a bad slot.
-bool RemoveBlendSpacePointUVE(std::vector<Scene::AnimationGraphNodeUVE>& nodes, std::uint32_t space, std::size_t slot);
+bool RemoveBlendSpacePoint(std::vector<Scene::AnimationGraphNode>& nodes, std::uint32_t space, std::size_t slot);
 
 /// Moves point `slot` to `position`. A 1D point stays between its neighbours; a 2D point may not
 /// land on another. Returns false, changing nothing, when it cannot move there.
-bool MoveBlendSpacePointUVE(std::vector<Scene::AnimationGraphNodeUVE>& nodes, std::uint32_t space, std::size_t slot,
-                            Math::Vector2UVE position);
+bool MoveBlendSpacePoint(std::vector<Scene::AnimationGraphNode>& nodes, std::uint32_t space, std::size_t slot,
+                            Math::Vector2 position);
 
 /// The parameter a node is driven by: which field holds its name, and its type. Every node but
 /// Output and Slot has one (Godot's `parameters/<node>`): the gameplay (a Blueprint Class, a script)
 /// sets the node by that name.
-struct AnimationNodeParameterUVE final {
-    std::string Scene::AnimationGraphNodeUVE::*field = nullptr;
-    Scene::AnimationParameterTypeUVE type = Scene::AnimationParameterTypeUVE::Float;
+struct AnimationNodeParameter final {
+    std::string Scene::AnimationGraphNode::*field = nullptr;
+    Scene::AnimationParameterType type = Scene::AnimationParameterType::Float;
 };
-[[nodiscard]] std::optional<AnimationNodeParameterUVE> NodeParameterOfUVE(Scene::AnimationGraphNodeKindUVE kind);
+[[nodiscard]] std::optional<AnimationNodeParameter> NodeParameterOf(Scene::AnimationGraphNodeKind kind);
 /// A node's name as a parameter name: its words run together ("Blend Space 2D" -> "BlendSpace2D").
-[[nodiscard]] std::string ParameterNameForNodeUVE(const std::string& nodeName);
+[[nodiscard]] std::string ParameterNameForNode(const std::string& nodeName);
 /// `base`, or base2, base3 ... whichever no parameter of `graph` has.
-[[nodiscard]] std::string UniqueParameterNameUVE(const Scene::AnimationGraphComponentUVE& graph, const std::string& base);
+[[nodiscard]] std::string UniqueParameterName(const Scene::AnimationGraphComponent& graph, const std::string& base);
 /// Renames a parameter and every use of it (the nodes it drives, the transition conditions that read
 /// it; a Slot's name is not a parameter). False when `to` is empty or taken.
-bool RenameGraphParameterUVE(Scene::AnimationGraphComponentUVE& graph, const std::string& from, const std::string& to);
+bool RenameGraphParameter(Scene::AnimationGraphComponent& graph, const std::string& from, const std::string& to);
 /// Gives node `id` its parameter, named after the node, of the node's type, set to its current value
 /// and bound to it. Nothing for a node that has none or is already bound.
-void BindNewNodeParametersUVE(Scene::AnimationGraphComponentUVE& graph, std::uint32_t id);
+void BindNewNodeParameters(Scene::AnimationGraphComponent& graph, std::uint32_t id);
 
 } // namespace UVE::Editor

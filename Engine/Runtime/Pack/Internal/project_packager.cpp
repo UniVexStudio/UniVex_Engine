@@ -10,36 +10,36 @@
 namespace UVE::Pack {
 namespace {
 
-[[nodiscard]] ProjectPackResultUVE MakeResultUVE(const ProjectPackCodeUVE code, std::string message) {
+[[nodiscard]] ProjectPackResult MakeResult(const ProjectPackCode code, std::string message) {
     return {code, std::move(message)};
 }
 
 } // namespace
 
-ProjectPackResultUVE ProjectPackagerUVE::PackUVE(const ProjectPackOptionsUVE& options) {
-    const Platform::EditorProjectPackageLoadResultUVE loaded =
-        Platform::EditorProjectPackageCodecUVE::LoadUVE(options.projectFile);
-    if (!loaded.IsAcceptedUVE()) {
-        return MakeResultUVE(ProjectPackCodeUVE::InvalidProjectFile,
+ProjectPackResult ProjectPackager::Pack(const ProjectPackOptions& options) {
+    const Platform::EditorProjectPackageLoadResult loaded =
+        Platform::EditorProjectPackageCodec::Load(options.projectFile);
+    if (!loaded.IsAccepted()) {
+        return MakeResult(ProjectPackCode::InvalidProjectFile,
                              "Unable to load the .uvproject project file: " + loaded.result.message);
     }
-    const Platform::EditorProjectPackageUVE& package = *loaded.package;
+    const Platform::EditorProjectPackage& package = *loaded.package;
     if (package.startupScenePath.empty()) {
-        return MakeResultUVE(ProjectPackCodeUVE::NoStartupSceneConfigured,
+        return MakeResult(ProjectPackCode::NoStartupSceneConfigured,
                              "Cannot package a project with no startup scene configured "
-                             "(EditorProjectPackageUVE::startupScenePath is empty).");
+                             "(EditorProjectPackage::startupScenePath is empty).");
     }
 
     std::error_code error;
     if (!std::filesystem::is_regular_file(options.runtimeExecutablePath, error) || error) {
-        return MakeResultUVE(ProjectPackCodeUVE::RuntimeExecutableNotFound,
+        return MakeResult(ProjectPackCode::RuntimeExecutableNotFound,
                              "The runtime executable was not found: " + options.runtimeExecutablePath.string());
     }
 
     const std::filesystem::path projectRoot = options.projectFile.parent_path();
     const std::filesystem::path contentRoot = projectRoot / package.contentRoot;
     if (!std::filesystem::is_directory(contentRoot, error) || error) {
-        return MakeResultUVE(ProjectPackCodeUVE::ContentRootNotFound,
+        return MakeResult(ProjectPackCode::ContentRootNotFound,
                              "The project's content root was not found: " + contentRoot.string());
     }
 
@@ -51,7 +51,7 @@ ProjectPackResultUVE ProjectPackagerUVE::PackUVE(const ProjectPackOptionsUVE& op
         return std::filesystem::is_regular_file(contentRoot / relativePath, resourceError) && !resourceError;
     };
     if (!referencedResourceExists(package.applicationSettings.splashImagePath)) {
-        return MakeResultUVE(ProjectPackCodeUVE::ApplicationResourceNotFound,
+        return MakeResult(ProjectPackCode::ApplicationResourceNotFound,
                              "The configured splash image was not found under the content root.");
     }
     for (const auto& [target, icons] : package.applicationSettings.iconPathsByTarget) {
@@ -59,7 +59,7 @@ ProjectPackResultUVE ProjectPackagerUVE::PackUVE(const ProjectPackOptionsUVE& op
         for (const auto& [pixelSize, iconPath] : icons) {
             static_cast<void>(pixelSize);
             if (!referencedResourceExists(iconPath)) {
-                return MakeResultUVE(ProjectPackCodeUVE::ApplicationResourceNotFound,
+                return MakeResult(ProjectPackCode::ApplicationResourceNotFound,
                                      "A configured application icon was not found under the content root: " +
                                          iconPath.string());
             }
@@ -69,19 +69,19 @@ ProjectPackResultUVE ProjectPackagerUVE::PackUVE(const ProjectPackOptionsUVE& op
     error.clear();
     if (std::filesystem::exists(options.outputDirectory, error) &&
         !std::filesystem::is_empty(options.outputDirectory, error)) {
-        return MakeResultUVE(ProjectPackCodeUVE::OutputDirectoryNotEmpty,
+        return MakeResult(ProjectPackCode::OutputDirectoryNotEmpty,
                              "The output directory already exists and is not empty: " +
                                  options.outputDirectory.string());
     }
     if (error) {
-        return MakeResultUVE(ProjectPackCodeUVE::CopyFailed,
+        return MakeResult(ProjectPackCode::CopyFailed,
                              "Unable to inspect the output directory: " + options.outputDirectory.string());
     }
 
     error.clear();
     std::filesystem::create_directories(options.outputDirectory, error);
     if (error) {
-        return MakeResultUVE(ProjectPackCodeUVE::CopyFailed,
+        return MakeResult(ProjectPackCode::CopyFailed,
                              "Unable to create the output directory: " + options.outputDirectory.string());
     }
 
@@ -89,11 +89,11 @@ ProjectPackResultUVE ProjectPackagerUVE::PackUVE(const ProjectPackOptionsUVE& op
         // The cooker publishes a fresh directory atomically; remove only our newly-created,
         // still-empty destination before handing publication to it.
         std::filesystem::remove(options.outputDirectory, error);
-        const auto cooked = CookProjectAssetsUVE(options.projectFile, options.outputDirectory, *options.cookTarget);
-        if (!cooked.success) return MakeResultUVE(ProjectPackCodeUVE::CopyFailed, cooked.message);
+        const auto cooked = CookProjectAssets(options.projectFile, options.outputDirectory, *options.cookTarget);
+        if (!cooked.success) return MakeResult(ProjectPackCode::CopyFailed, cooked.message);
         std::filesystem::copy_file(options.runtimeExecutablePath,
             options.outputDirectory/options.runtimeExecutablePath.filename(), error);
-        if (error) return MakeResultUVE(ProjectPackCodeUVE::CopyFailed, error.message());
+        if (error) return MakeResult(ProjectPackCode::CopyFailed, error.message());
 #if defined(_WIN32)
         // Portable tool distributions keep the runtime's dependent DLLs beside its executable.
         // Carry that runtime set into the game export; otherwise it only runs on the build PC.
@@ -104,9 +104,9 @@ ProjectPackResultUVE ProjectPackagerUVE::PackUVE(const ProjectPackOptionsUVE& op
                 std::filesystem::copy_file(it->path(),options.outputDirectory/it->path().filename(),error);
             if (error) break;
         }
-        if (error) return MakeResultUVE(ProjectPackCodeUVE::CopyFailed,"Cannot copy runtime DLLs: " + error.message());
+        if (error) return MakeResult(ProjectPackCode::CopyFailed,"Cannot copy runtime DLLs: " + error.message());
 #endif
-        return MakeResultUVE(ProjectPackCodeUVE::Success, cooked.message);
+        return MakeResult(ProjectPackCode::Success, cooked.message);
     }
 
     // Copy the runtime binary in, preserving its executable permission bits - copy_file alone
@@ -117,7 +117,7 @@ ProjectPackResultUVE ProjectPackagerUVE::PackUVE(const ProjectPackOptionsUVE& op
     std::filesystem::copy_file(options.runtimeExecutablePath, copiedRuntimePath,
                                std::filesystem::copy_options::overwrite_existing, error);
     if (error) {
-        return MakeResultUVE(ProjectPackCodeUVE::CopyFailed,
+        return MakeResult(ProjectPackCode::CopyFailed,
                              "Unable to copy the runtime executable into the output directory.");
     }
     const std::filesystem::perms sourcePermissions = std::filesystem::status(options.runtimeExecutablePath, error).permissions();
@@ -132,7 +132,7 @@ ProjectPackResultUVE ProjectPackagerUVE::PackUVE(const ProjectPackOptionsUVE& op
     std::filesystem::copy_file(options.projectFile, options.outputDirectory / options.projectFile.filename(),
                                std::filesystem::copy_options::overwrite_existing, error);
     if (error) {
-        return MakeResultUVE(ProjectPackCodeUVE::CopyFailed,
+        return MakeResult(ProjectPackCode::CopyFailed,
                              "Unable to copy the .uvproject project file into the output directory.");
     }
 
@@ -142,7 +142,7 @@ ProjectPackResultUVE ProjectPackagerUVE::PackUVE(const ProjectPackOptionsUVE& op
     std::filesystem::copy(contentRoot, options.outputDirectory / package.contentRoot,
                           std::filesystem::copy_options::recursive, error);
     if (error) {
-        return MakeResultUVE(ProjectPackCodeUVE::CopyFailed,
+        return MakeResult(ProjectPackCode::CopyFailed,
                              "Unable to copy the project's content root into the output directory: " +
                                  error.message());
     }
@@ -160,7 +160,7 @@ ProjectPackResultUVE ProjectPackagerUVE::PackUVE(const ProjectPackOptionsUVE& op
     if (!package.applicationSettings.copyrightLine.empty()) {
         message += " - " + package.applicationSettings.copyrightLine;
     }
-    return MakeResultUVE(ProjectPackCodeUVE::Success, std::move(message));
+    return MakeResult(ProjectPackCode::Success, std::move(message));
 }
 
 } // namespace UVE::Pack

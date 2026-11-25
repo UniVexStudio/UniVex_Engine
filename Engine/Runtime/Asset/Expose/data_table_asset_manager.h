@@ -4,11 +4,11 @@
 
 namespace UVE::Asset {
 
-class IAssetManagerUVE;
+class IAssetManager;
 
-/// Registers the existing envelope-backed DataTableUVE loader with the supplied asset manager.
-/// Registration is synchronous; individual loads retain AssetManagerUVE's asynchronous and
+/// Registers the existing envelope-backed DataTable loader with the supplied asset manager.
+/// Registration is synchronous; individual loads retain AssetManager's asynchronous and
 /// reference-counted ownership semantics.
-void RegisterDataTableAssetLoaderUVE(IAssetManagerUVE& assetManager);
+void RegisterDataTableAssetLoader(IAssetManager& assetManager);
 
 } // namespace UVE::Asset

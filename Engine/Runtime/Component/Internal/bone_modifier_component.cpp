@@ -7,43 +7,43 @@
 
 namespace UVE::Scene {
 
-bool IsBoneModifierComponentValidUVE(const BoneModifierComponentUVE& component) noexcept {
+bool IsBoneModifierComponentValid(const BoneModifierComponent& component) noexcept {
     return std::isfinite(component.influence) &&
-           component.influence >= kMinimumBoneModifierInfluenceUVE &&
-           component.influence <= kMaximumBoneModifierInfluenceUVE;
+           component.influence >= kMinimumBoneModifierInfluence &&
+           component.influence <= kMaximumBoneModifierInfluence;
 }
 
-float ClampBoneModifierInfluenceUVE(const float influence) noexcept {
+float ClampBoneModifierInfluence(const float influence) noexcept {
     if (!std::isfinite(influence)) {
-        return kMinimumBoneModifierInfluenceUVE;
+        return kMinimumBoneModifierInfluence;
     }
-    return std::clamp(influence, kMinimumBoneModifierInfluenceUVE, kMaximumBoneModifierInfluenceUVE);
+    return std::clamp(influence, kMinimumBoneModifierInfluence, kMaximumBoneModifierInfluence);
 }
 
-BoneModifierComponentUVE SanitizeBoneModifierComponentUVE(
-    const BoneModifierComponentUVE& component) noexcept {
-    return BoneModifierComponentUVE{
+BoneModifierComponent SanitizeBoneModifierComponent(
+    const BoneModifierComponent& component) noexcept {
+    return BoneModifierComponent{
         .active = component.active,
-        .influence = ClampBoneModifierInfluenceUVE(component.influence),
+        .influence = ClampBoneModifierInfluence(component.influence),
     };
 }
 
-bool IsBoneModifierEffectiveUVE(const BoneModifierComponentUVE& component) noexcept {
+bool IsBoneModifierEffective(const BoneModifierComponent& component) noexcept {
     return component.active && std::isfinite(component.influence) && component.influence > 0.0F;
 }
 
-float ResolveEffectiveBoneModifierWeightUVE(
-    const BoneModifierComponentUVE* const component) noexcept {
+float ResolveEffectiveBoneModifierWeight(
+    const BoneModifierComponent* const component) noexcept {
     if (component == nullptr || !component->active) {
         return 0.0F;
     }
-    return ClampBoneModifierInfluenceUVE(component->influence);
+    return ClampBoneModifierInfluence(component->influence);
 }
 
-Math::Vector3UVE BlendBoneModifierPositionUVE(const BoneModifierComponentUVE& component,
-                                              const Math::Vector3UVE& basePosition,
-                                              const Math::Vector3UVE& targetPosition) noexcept {
-    const float weight = ResolveEffectiveBoneModifierWeightUVE(&component);
+Math::Vector3 BlendBoneModifierPosition(const BoneModifierComponent& component,
+                                              const Math::Vector3& basePosition,
+                                              const Math::Vector3& targetPosition) noexcept {
+    const float weight = ResolveEffectiveBoneModifierWeight(&component);
     if (weight <= 0.0F) {
         return basePosition;
     }
@@ -53,18 +53,18 @@ Math::Vector3UVE BlendBoneModifierPositionUVE(const BoneModifierComponentUVE& co
     return basePosition + (targetPosition - basePosition) * weight;
 }
 
-Math::QuaternionUVE BlendBoneModifierRotationUVE(const BoneModifierComponentUVE& component,
-                                                 const Math::QuaternionUVE& baseRotation,
-                                                 const Math::QuaternionUVE& targetRotation) noexcept {
-    const float weight = ResolveEffectiveBoneModifierWeightUVE(&component);
+Math::Quaternion BlendBoneModifierRotation(const BoneModifierComponent& component,
+                                                 const Math::Quaternion& baseRotation,
+                                                 const Math::Quaternion& targetRotation) noexcept {
+    const float weight = ResolveEffectiveBoneModifierWeight(&component);
     if (weight <= 0.0F) {
         return baseRotation;
     }
     if (weight >= 1.0F) {
         return targetRotation;
     }
-    Math::QuaternionUVE blended = baseRotation;
-    return Math::TrySlerpUVE(baseRotation, targetRotation, weight, blended) ? blended
+    Math::Quaternion blended = baseRotation;
+    return Math::TrySlerp(baseRotation, targetRotation, weight, blended) ? blended
                                                                             : baseRotation;
 }
 

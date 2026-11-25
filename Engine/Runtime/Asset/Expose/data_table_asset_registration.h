@@ -9,12 +9,12 @@
 
 namespace UVE::Asset {
 
-class IAssetDatabaseUVE;
+class IAssetDatabase;
 
 /// Validates one envelope-backed `.uvtable` file and registers its lexical path in the supplied
 /// asset database. Returns the existing or newly generated GUID; returns nullopt without changing
 /// the database when the extension, envelope, asset kind, or table payload is invalid.
-[[nodiscard]] std::optional<AssetGuidUVE> RegisterDataTableAssetUVE(IAssetDatabaseUVE& database,
+[[nodiscard]] std::optional<AssetGuid> RegisterDataTableAsset(IAssetDatabase& database,
                                                                      const std::filesystem::path& path);
 
 } // namespace UVE::Asset

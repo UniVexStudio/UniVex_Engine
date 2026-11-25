@@ -13,182 +13,182 @@
 namespace UVE::Window::Tests {
 namespace {
 
-TEST(NullWindowManagerUVETest, IsValidUVE_AlwaysTrue) {
-    NullWindowManagerUVE windowManager;
-    EXPECT_TRUE(windowManager.IsValidUVE());
+TEST(NullWindowManagerTest, IsValid_AlwaysTrue) {
+    NullWindowManager windowManager;
+    EXPECT_TRUE(windowManager.IsValid());
 }
 
-TEST(NullWindowManagerUVETest, Construction_BookkeepsWidthHeightVSyncFromDesc) {
-    WindowDescUVE desc;
+TEST(NullWindowManagerTest, Construction_BookkeepsWidthHeightVSyncFromDesc) {
+    WindowDesc desc;
     desc.width = 1920;
     desc.height = 1080;
     desc.vsyncEnabled = false;
-    NullWindowManagerUVE windowManager(desc);
+    NullWindowManager windowManager(desc);
 
-    EXPECT_EQ(windowManager.GetWidthUVE(), 1920U);
-    EXPECT_EQ(windowManager.GetHeightUVE(), 1080U);
-    EXPECT_FALSE(windowManager.IsVSyncEnabledUVE());
+    EXPECT_EQ(windowManager.GetWidth(), 1920U);
+    EXPECT_EQ(windowManager.GetHeight(), 1080U);
+    EXPECT_FALSE(windowManager.IsVSyncEnabled());
 }
 
-TEST(NullWindowManagerUVETest, Construction_UsesTypedDisplayPolicyAndContentScaleOverride) {
-    WindowDescUVE desc;
-    desc.mode = Platform::WindowModeUVE::Maximized;
+TEST(NullWindowManagerTest, Construction_UsesTypedDisplayPolicyAndContentScaleOverride) {
+    WindowDesc desc;
+    desc.mode = Platform::WindowMode::Maximized;
     desc.vsyncModeExplicit = true;
-    desc.vsyncMode = Platform::VSyncModeUVE::Mailbox;
+    desc.vsyncMode = Platform::VSyncMode::Mailbox;
     desc.contentScaleOverride = 1.75;
-    NullWindowManagerUVE windowManager(desc);
+    NullWindowManager windowManager(desc);
 
-    EXPECT_EQ(windowManager.GetWindowModeUVE(), Platform::WindowModeUVE::Maximized);
-    EXPECT_FALSE(windowManager.IsFullscreenUVE());
-    EXPECT_EQ(windowManager.GetVSyncModeUVE(), Platform::VSyncModeUVE::Mailbox);
-    EXPECT_TRUE(windowManager.IsVSyncEnabledUVE());
+    EXPECT_EQ(windowManager.GetWindowMode(), Platform::WindowMode::Maximized);
+    EXPECT_FALSE(windowManager.IsFullscreen());
+    EXPECT_EQ(windowManager.GetVSyncMode(), Platform::VSyncMode::Mailbox);
+    EXPECT_TRUE(windowManager.IsVSyncEnabled());
     float scaleX = 0.0F;
     float scaleY = 0.0F;
-    windowManager.GetContentScaleUVE(scaleX, scaleY);
+    windowManager.GetContentScale(scaleX, scaleY);
     EXPECT_FLOAT_EQ(scaleX, 1.75F);
     EXPECT_FLOAT_EQ(scaleY, 1.75F);
 }
 
-TEST(NullWindowManagerUVETest, InvalidContentScaleOverrideFallsBackToDefaultScale) {
-    WindowDescUVE desc;
+TEST(NullWindowManagerTest, InvalidContentScaleOverrideFallsBackToDefaultScale) {
+    WindowDesc desc;
     desc.contentScaleOverride = std::numeric_limits<double>::infinity();
-    NullWindowManagerUVE windowManager(desc);
+    NullWindowManager windowManager(desc);
 
     float scaleX = 0.0F;
     float scaleY = 0.0F;
-    windowManager.GetContentScaleUVE(scaleX, scaleY);
+    windowManager.GetContentScale(scaleX, scaleY);
     EXPECT_FLOAT_EQ(scaleX, 1.0F);
     EXPECT_FLOAT_EQ(scaleY, 1.0F);
 }
 
-TEST(NullWindowManagerUVETest, DefaultDesc_MatchesWindowDescUVEDefaults) {
-    NullWindowManagerUVE windowManager;
-    EXPECT_EQ(windowManager.GetWidthUVE(), WindowDescUVE{}.width);
-    EXPECT_EQ(windowManager.GetHeightUVE(), WindowDescUVE{}.height);
-    EXPECT_TRUE(windowManager.IsVSyncEnabledUVE());
-    EXPECT_TRUE(WindowDescUVE{}.cursorVisible);
-    EXPECT_FALSE(WindowDescUVE{}.cursorConfinedToWindow);
-    EXPECT_TRUE(windowManager.IsDisplaySleepAllowedUVE());
+TEST(NullWindowManagerTest, DefaultDesc_MatchesWindowDescDefaults) {
+    NullWindowManager windowManager;
+    EXPECT_EQ(windowManager.GetWidth(), WindowDesc{}.width);
+    EXPECT_EQ(windowManager.GetHeight(), WindowDesc{}.height);
+    EXPECT_TRUE(windowManager.IsVSyncEnabled());
+    EXPECT_TRUE(WindowDesc{}.cursorVisible);
+    EXPECT_FALSE(WindowDesc{}.cursorConfinedToWindow);
+    EXPECT_TRUE(windowManager.IsDisplaySleepAllowed());
 }
 
-TEST(NullWindowManagerUVETest, WindowTitle_PreservesInitialTitleAndRejectsInvalidUpdates) {
-    WindowDescUVE desc;
+TEST(NullWindowManagerTest, WindowTitle_PreservesInitialTitleAndRejectsInvalidUpdates) {
+    WindowDesc desc;
     desc.title = "Initial title";
-    NullWindowManagerUVE windowManager(desc);
-    EXPECT_EQ(windowManager.GetWindowTitleUVE(), "Initial title");
+    NullWindowManager windowManager(desc);
+    EXPECT_EQ(windowManager.GetWindowTitle(), "Initial title");
 
-    windowManager.SetWindowTitleUVE("Editor Play - MainHall");
-    EXPECT_EQ(windowManager.GetWindowTitleUVE(), "Editor Play - MainHall");
+    windowManager.SetWindowTitle("Editor Play - MainHall");
+    EXPECT_EQ(windowManager.GetWindowTitle(), "Editor Play - MainHall");
 
-    const std::string previousTitle{windowManager.GetWindowTitleUVE()};
-    windowManager.SetWindowTitleUVE("");
-    windowManager.SetWindowTitleUVE(std::string(kMaximumWindowTitleBytesUVE + 1U, 'x'));
+    const std::string previousTitle{windowManager.GetWindowTitle()};
+    windowManager.SetWindowTitle("");
+    windowManager.SetWindowTitle(std::string(kMaximumWindowTitleBytes + 1U, 'x'));
     std::string embeddedNullTitle{"invalid"};
     embeddedNullTitle.push_back('\0');
     embeddedNullTitle += "title";
-    windowManager.SetWindowTitleUVE(embeddedNullTitle);
-    EXPECT_EQ(windowManager.GetWindowTitleUVE(), previousTitle);
+    windowManager.SetWindowTitle(embeddedNullTitle);
+    EXPECT_EQ(windowManager.GetWindowTitle(), previousTitle);
 }
 
-TEST(NullWindowManagerUVETest, DisplaySleepPolicy_RetainsDescriptorAndRuntimeRequestsWithoutOSEffects) {
-    NullWindowManagerUVE defaultWindowManager;
-    EXPECT_TRUE(defaultWindowManager.IsDisplaySleepAllowedUVE());
+TEST(NullWindowManagerTest, DisplaySleepPolicy_RetainsDescriptorAndRuntimeRequestsWithoutOSEffects) {
+    NullWindowManager defaultWindowManager;
+    EXPECT_TRUE(defaultWindowManager.IsDisplaySleepAllowed());
 
-    WindowDescUVE desc;
+    WindowDesc desc;
     desc.allowDisplaySleep = false;
-    NullWindowManagerUVE windowManager(desc);
-    EXPECT_FALSE(windowManager.IsDisplaySleepAllowedUVE());
-    windowManager.SetDisplaySleepAllowedUVE(true);
-    EXPECT_TRUE(windowManager.IsDisplaySleepAllowedUVE());
-    windowManager.SetDisplaySleepAllowedUVE(false);
-    EXPECT_FALSE(windowManager.IsDisplaySleepAllowedUVE());
+    NullWindowManager windowManager(desc);
+    EXPECT_FALSE(windowManager.IsDisplaySleepAllowed());
+    windowManager.SetDisplaySleepAllowed(true);
+    EXPECT_TRUE(windowManager.IsDisplaySleepAllowed());
+    windowManager.SetDisplaySleepAllowed(false);
+    EXPECT_FALSE(windowManager.IsDisplaySleepAllowed());
 }
 
-TEST(NullWindowManagerUVETest, PollEventsAndSwapBuffers_NeverCrash) {
-    NullWindowManagerUVE windowManager;
-    windowManager.PollEventsUVE();
-    windowManager.SwapBuffersUVE();
-    windowManager.PollEventsUVE();
+TEST(NullWindowManagerTest, PollEventsAndSwapBuffers_NeverCrash) {
+    NullWindowManager windowManager;
+    windowManager.PollEvents();
+    windowManager.SwapBuffers();
+    windowManager.PollEvents();
     SUCCEED();
 }
 
-TEST(NullWindowManagerUVETest, IsCloseRequestedUVE_AlwaysFalse) {
-    NullWindowManagerUVE windowManager;
-    EXPECT_FALSE(windowManager.IsCloseRequestedUVE());
-    windowManager.PollEventsUVE();
-    EXPECT_FALSE(windowManager.IsCloseRequestedUVE());
+TEST(NullWindowManagerTest, IsCloseRequested_AlwaysFalse) {
+    NullWindowManager windowManager;
+    EXPECT_FALSE(windowManager.IsCloseRequested());
+    windowManager.PollEvents();
+    EXPECT_FALSE(windowManager.IsCloseRequested());
 }
 
-TEST(NullWindowManagerUVETest, SetVSyncEnabledUVE_RoundTrips) {
-    NullWindowManagerUVE windowManager;
-    windowManager.SetVSyncEnabledUVE(false);
-    EXPECT_FALSE(windowManager.IsVSyncEnabledUVE());
-    windowManager.SetVSyncEnabledUVE(true);
-    EXPECT_TRUE(windowManager.IsVSyncEnabledUVE());
+TEST(NullWindowManagerTest, SetVSyncEnabled_RoundTrips) {
+    NullWindowManager windowManager;
+    windowManager.SetVSyncEnabled(false);
+    EXPECT_FALSE(windowManager.IsVSyncEnabled());
+    windowManager.SetVSyncEnabled(true);
+    EXPECT_TRUE(windowManager.IsVSyncEnabled());
 }
 
-TEST(NullWindowManagerUVETest, SetVSyncModeUVE_RoundTripsAllModesAndIgnoresInvalidValues) {
-    NullWindowManagerUVE windowManager;
-    for (const Platform::VSyncModeUVE mode : {Platform::VSyncModeUVE::Off,
-                                              Platform::VSyncModeUVE::On,
-                                              Platform::VSyncModeUVE::Adaptive,
-                                              Platform::VSyncModeUVE::Mailbox}) {
-        windowManager.SetVSyncModeUVE(mode);
-        EXPECT_EQ(windowManager.GetVSyncModeUVE(), mode);
-        EXPECT_EQ(windowManager.IsVSyncEnabledUVE(), mode != Platform::VSyncModeUVE::Off);
+TEST(NullWindowManagerTest, SetVSyncMode_RoundTripsAllModesAndIgnoresInvalidValues) {
+    NullWindowManager windowManager;
+    for (const Platform::VSyncMode mode : {Platform::VSyncMode::Off,
+                                              Platform::VSyncMode::On,
+                                              Platform::VSyncMode::Adaptive,
+                                              Platform::VSyncMode::Mailbox}) {
+        windowManager.SetVSyncMode(mode);
+        EXPECT_EQ(windowManager.GetVSyncMode(), mode);
+        EXPECT_EQ(windowManager.IsVSyncEnabled(), mode != Platform::VSyncMode::Off);
     }
 
-    const Platform::VSyncModeUVE previousMode = windowManager.GetVSyncModeUVE();
-    windowManager.SetVSyncModeUVE(static_cast<Platform::VSyncModeUVE>(255U));
-    EXPECT_EQ(windowManager.GetVSyncModeUVE(), previousMode);
+    const Platform::VSyncMode previousMode = windowManager.GetVSyncMode();
+    windowManager.SetVSyncMode(static_cast<Platform::VSyncMode>(255U));
+    EXPECT_EQ(windowManager.GetVSyncMode(), previousMode);
 }
 
 
-TEST(NullWindowManagerUVETest, SetFullscreenUVE_RoundTrips) {
-    NullWindowManagerUVE windowManager;
-    EXPECT_FALSE(windowManager.IsFullscreenUVE());
-    windowManager.SetFullscreenUVE(true);
-    EXPECT_TRUE(windowManager.IsFullscreenUVE());
-    EXPECT_EQ(windowManager.GetWindowModeUVE(), Platform::WindowModeUVE::Fullscreen);
-    windowManager.SetFullscreenUVE(false);
-    EXPECT_FALSE(windowManager.IsFullscreenUVE());
-    EXPECT_EQ(windowManager.GetWindowModeUVE(), Platform::WindowModeUVE::Windowed);
+TEST(NullWindowManagerTest, SetFullscreen_RoundTrips) {
+    NullWindowManager windowManager;
+    EXPECT_FALSE(windowManager.IsFullscreen());
+    windowManager.SetFullscreen(true);
+    EXPECT_TRUE(windowManager.IsFullscreen());
+    EXPECT_EQ(windowManager.GetWindowMode(), Platform::WindowMode::Fullscreen);
+    windowManager.SetFullscreen(false);
+    EXPECT_FALSE(windowManager.IsFullscreen());
+    EXPECT_EQ(windowManager.GetWindowMode(), Platform::WindowMode::Windowed);
 }
 
-TEST(NullWindowManagerUVETest, SetWindowModeUVE_RoundTripsAllModesAndIgnoresInvalidValues) {
-    NullWindowManagerUVE windowManager;
-    for (const Platform::WindowModeUVE mode : {Platform::WindowModeUVE::Windowed,
-                                               Platform::WindowModeUVE::Maximized,
-                                               Platform::WindowModeUVE::Fullscreen,
-                                               Platform::WindowModeUVE::ExclusiveFullscreen,
-                                               Platform::WindowModeUVE::Borderless}) {
-        windowManager.SetWindowModeUVE(mode);
-        EXPECT_EQ(windowManager.GetWindowModeUVE(), mode);
-        EXPECT_EQ(windowManager.IsFullscreenUVE(),
-                  mode == Platform::WindowModeUVE::Fullscreen ||
-                      mode == Platform::WindowModeUVE::ExclusiveFullscreen);
+TEST(NullWindowManagerTest, SetWindowMode_RoundTripsAllModesAndIgnoresInvalidValues) {
+    NullWindowManager windowManager;
+    for (const Platform::WindowMode mode : {Platform::WindowMode::Windowed,
+                                               Platform::WindowMode::Maximized,
+                                               Platform::WindowMode::Fullscreen,
+                                               Platform::WindowMode::ExclusiveFullscreen,
+                                               Platform::WindowMode::Borderless}) {
+        windowManager.SetWindowMode(mode);
+        EXPECT_EQ(windowManager.GetWindowMode(), mode);
+        EXPECT_EQ(windowManager.IsFullscreen(),
+                  mode == Platform::WindowMode::Fullscreen ||
+                      mode == Platform::WindowMode::ExclusiveFullscreen);
     }
 
-    const Platform::WindowModeUVE previousMode = windowManager.GetWindowModeUVE();
-    const bool previousFullscreen = windowManager.IsFullscreenUVE();
-    windowManager.SetWindowModeUVE(static_cast<Platform::WindowModeUVE>(255U));
-    EXPECT_EQ(windowManager.GetWindowModeUVE(), previousMode);
-    EXPECT_EQ(windowManager.IsFullscreenUVE(), previousFullscreen);
+    const Platform::WindowMode previousMode = windowManager.GetWindowMode();
+    const bool previousFullscreen = windowManager.IsFullscreen();
+    windowManager.SetWindowMode(static_cast<Platform::WindowMode>(255U));
+    EXPECT_EQ(windowManager.GetWindowMode(), previousMode);
+    EXPECT_EQ(windowManager.IsFullscreen(), previousFullscreen);
 }
 
-TEST(NullWindowManagerUVETest, EnumerateMonitorsUVE_ReturnsEmpty) {
-    NullWindowManagerUVE windowManager;
-    EXPECT_TRUE(windowManager.EnumerateMonitorsUVE().empty());
+TEST(NullWindowManagerTest, EnumerateMonitors_ReturnsEmpty) {
+    NullWindowManager windowManager;
+    EXPECT_TRUE(windowManager.EnumerateMonitors().empty());
 }
 
-TEST(NullWindowManagerUVETest, GetNativeWindowHandleUVE_ReturnsNullptr) {
-    NullWindowManagerUVE windowManager;
-    EXPECT_EQ(windowManager.GetNativeWindowHandleUVE(), nullptr);
+TEST(NullWindowManagerTest, GetNativeWindowHandle_ReturnsNullptr) {
+    NullWindowManager windowManager;
+    EXPECT_EQ(windowManager.GetNativeWindowHandle(), nullptr);
 }
 
-TEST(NullWindowManagerUVETest, GetBackendNameUVE_ReturnsNull) {
-    NullWindowManagerUVE windowManager;
-    EXPECT_EQ(windowManager.GetBackendNameUVE(), "Null");
+TEST(NullWindowManagerTest, GetBackendName_ReturnsNull) {
+    NullWindowManager windowManager;
+    EXPECT_EQ(windowManager.GetBackendName(), "Null");
 }
 
 } // namespace

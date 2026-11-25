@@ -15,7 +15,7 @@ namespace UVE::Asset {
 
 /// The source-kind vocabulary is intentionally explicit; format-specific importers extend this
 /// classification rather than hiding parser authority inside generic copy behavior.
-enum class AssetImportSourceKindUVE {
+enum class AssetImportSourceKind {
     Unknown,
     PlainText,
     SceneEnvelope,
@@ -44,8 +44,8 @@ enum class AssetImportSourceKindUVE {
 
 /// Value-only classification of an import source. It describes the source format and current
 /// importer/parser authority; it does not perform conversion or transfer filesystem ownership.
-struct AssetImportSourceClassificationUVE final {
-    AssetImportSourceKindUVE kind = AssetImportSourceKindUVE::Unknown;
+struct AssetImportSourceClassification final {
+    AssetImportSourceKind kind = AssetImportSourceKind::Unknown;
     std::string normalizedExtension;
     bool importerRegistered = false;
     bool requiresFormatSpecificParser = false;
@@ -54,17 +54,17 @@ struct AssetImportSourceClassificationUVE final {
 
 /// Base for per-asset-type import settings. Format-specific importers derive from this and add
 /// only settings that affect conversion; the bounded text parser below is the first such importer.
-/// ImportUVE() therefore keeps one stable settings parameter as future formats add their own policy.
-struct AssetImportSettingsUVE {
-    virtual ~AssetImportSettingsUVE() = default;
+/// Import() therefore keeps one stable settings parameter as future formats add their own policy.
+struct AssetImportSettings {
+    virtual ~AssetImportSettings() = default;
 
     /// Stable cache discriminator for all import behavior represented by this settings object.
     /// Future format-specific settings override this when a conversion option changes derived
     /// output. The default keeps the current generic copy-and-register importer deterministic.
-    [[nodiscard]] virtual std::string GetCacheVersionUVE() const { return "generic-v1"; }
+    [[nodiscard]] virtual std::string GetCacheVersion() const { return "generic-v1"; }
 };
 
-enum class TextImportLineEndingUVE : std::uint8_t {
+enum class TextImportLineEnding : std::uint8_t {
     Preserve,
     LineFeed,
     CarriageReturnLineFeed,
@@ -73,63 +73,63 @@ enum class TextImportLineEndingUVE : std::uint8_t {
 /// Settings for the bounded text-source parser. The parser rejects NUL bytes, normalizes CR/CRLF
 /// according to this policy, and can add one terminal line ending. It does not infer encodings,
 /// rewrite arbitrary Unicode, or become a general-purpose text-processing runtime.
-struct TextImportSettingsUVE final : AssetImportSettingsUVE {
-    TextImportLineEndingUVE lineEnding = TextImportLineEndingUVE::Preserve;
+struct TextImportSettings final : AssetImportSettings {
+    TextImportLineEnding lineEnding = TextImportLineEnding::Preserve;
     bool ensureTrailingLineEnding = false;
 
-    [[nodiscard]] std::string GetCacheVersionUVE() const override;
+    [[nodiscard]] std::string GetCacheVersion() const override;
 };
 
 /// Settings for raw 3D model importers (FBX/glTF/OBJ), bounding embedded texture size according
 /// to the project's active renderer profile so 4K maps do not OOM-crash low-RAM mobile devices.
-struct ModelImportSettingsUVE final : AssetImportSettingsUVE {
+struct ModelImportSettings final : AssetImportSettings {
     std::uint32_t maxEmbeddedTextureResolution = 2048U;
 
-    [[nodiscard]] std::string GetCacheVersionUVE() const override {
+    [[nodiscard]] std::string GetCacheVersion() const override {
         return "model-v1-tex" + std::to_string(maxEmbeddedTextureResolution);
     }
 };
 
-/// IAssetImporterUVE is the spec's "import pipeline with settings per asset type" (Part 7.4):
-/// register an import function per source file extension, then ImportUVE() any source file
+/// IAssetImporter is the spec's "import pipeline with settings per asset type" (Part 7.4):
+/// register an import function per source file extension, then Import() any source file
 /// through whichever one matches. Built-in registrations include the bounded text parser for `.txt`,
 /// deterministic generic envelope copying for UVE-owned formats, including `.uvanim`, and bounded PNG/BMP/TGA-to-`.uvtex`,
 /// OBJ-to-`.uvmodel` (publishing the MTL materials and textures the OBJ uses), MTL-to-`.uvmat`,
 /// glTF/GLB-to-`.uvmodel` (publishing the primitive's material and every texture it samples), and
 /// JPEG-to-`.uvtex` bridges. FBX conversion, raw animation decoding, multi-primitive glTF scenes and
-/// dynamic material variants remain independently registered through RegisterImporterUVE().
+/// dynamic material variants remain independently registered through RegisterImporter().
 
 /// Thread-safety: thread-safe. Every method is guarded by an internal mutex, matching
-/// ConfigManagerUVE's/AssetDatabaseUVE's contract.
-class IAssetImporterUVE {
+/// ConfigManager's/AssetDatabase's contract.
+class IAssetImporter {
 public:
-    virtual ~IAssetImporterUVE() = default;
+    virtual ~IAssetImporter() = default;
 
     /// Registers `importFunc` for `sourceExtension` (matched case-insensitively, with or without
     /// a leading dot — ".png" and "png" register the same key): `importFunc(source, destination,
     /// settings)` should copy/convert `source` to `destination` and return true on success.
     /// Replaces any importer already registered for that extension, including a built-in one. Empty
     /// normalized extensions and empty callbacks are rejected without changing an existing importer.
-    virtual void RegisterImporterUVE(
+    virtual void RegisterImporter(
         std::string sourceExtension,
         std::function<bool(const std::filesystem::path&, const std::filesystem::path&,
-                            const AssetImportSettingsUVE&)>
+                            const AssetImportSettings&)>
             importFunc) = 0;
 
     /// Importer callback that also receives the asset database (Foundation WP7). Importers that
     /// publish MORE than the destination file - the FBX importer writes one `.uvmat` per material
     /// and must know those GUIDs before it writes the `.uvmodel` that references them - register
-    /// through this overload; `ImportUVE` hands them the same database it registers the
-    /// destination in afterwards. Everything else about the contract matches `RegisterImporterUVE`.
-    using DatabaseAwareImportFuncUVE =
+    /// through this overload; `Import` hands them the same database it registers the
+    /// destination in afterwards. Everything else about the contract matches `RegisterImporter`.
+    using DatabaseAwareImportFunc =
         std::function<bool(const std::filesystem::path& sourcePath, const std::filesystem::path& destinationPath,
-                           IAssetDatabaseUVE& assetDatabase, const AssetImportSettingsUVE& settings)>;
+                           IAssetDatabase& assetDatabase, const AssetImportSettings& settings)>;
 
     /// Registers a database-aware importer for `sourceExtension` (same key normalisation and
-    /// replacement rules as `RegisterImporterUVE`; the two registrations share one key space, so
+    /// replacement rules as `RegisterImporter`; the two registrations share one key space, so
     /// the latest registration of either kind wins). The default refuses: a double that cannot
     /// pass a database to an importer must not pretend to have registered one.
-    virtual void RegisterDatabaseAwareImporterUVE(std::string sourceExtension, DatabaseAwareImportFuncUVE importFunc) {
+    virtual void RegisterDatabaseAwareImporter(std::string sourceExtension, DatabaseAwareImportFunc importFunc) {
         static_cast<void>(sourceExtension);
         static_cast<void>(importFunc);
     }
@@ -138,7 +138,7 @@ public:
     /// explicitly report that a format-specific parser is required; current built-in UVE envelope
     /// kinds report deterministic generic copy authority, while PlainText reports the
     /// bounded text parser authority.
-    [[nodiscard]] virtual AssetImportSourceClassificationUVE ClassifySourceUVE(
+    [[nodiscard]] virtual AssetImportSourceClassification ClassifySource(
         const std::filesystem::path& sourcePath) const {
         static_cast<void>(sourcePath);
         return {};
@@ -146,12 +146,12 @@ public:
 
     /// Imports `sourcePath` to `destinationPath` using whichever importer is registered for
     /// `sourcePath`'s extension, registers `destinationPath` in `assetDatabase`, and returns its
-    /// GUID. Returns `kInvalidAssetGuidUVE` (logging the reason) if no importer is registered for
+    /// GUID. Returns `kInvalidAssetGuid` (logging the reason) if no importer is registered for
     /// that extension, or if the registered importer itself reports failure.
-    [[nodiscard]] virtual AssetGuidUVE ImportUVE(const std::filesystem::path& sourcePath,
+    [[nodiscard]] virtual AssetGuid Import(const std::filesystem::path& sourcePath,
                                                   const std::filesystem::path& destinationPath,
-                                                  IAssetDatabaseUVE& assetDatabase,
-                                                  const AssetImportSettingsUVE& settings = {}) = 0;
+                                                  IAssetDatabase& assetDatabase,
+                                                  const AssetImportSettings& settings = {}) = 0;
 };
 
 } // namespace UVE::Asset

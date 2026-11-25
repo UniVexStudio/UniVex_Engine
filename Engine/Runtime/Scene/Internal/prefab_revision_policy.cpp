@@ -1,18 +1,18 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 #include "prefab_revision_policy.h"
 namespace UVE::Scene {
-PrefabRevisionStatusUVE EvaluatePrefabRevisionUVE(const std::uint64_t sourceRevision,
+PrefabRevisionStatus EvaluatePrefabRevision(const std::uint64_t sourceRevision,
                                                   const std::uint64_t instanceRevision) noexcept {
     if (sourceRevision == 0U || instanceRevision == 0U) {
-        return PrefabRevisionStatusUVE::Invalid;
+        return PrefabRevisionStatus::Invalid;
     }
-    return sourceRevision == instanceRevision ? PrefabRevisionStatusUVE::Current
-                                               : PrefabRevisionStatusUVE::Stale;
+    return sourceRevision == instanceRevision ? PrefabRevisionStatus::Current
+                                               : PrefabRevisionStatus::Stale;
 }
 
-bool RefreshPrefabInstanceRevisionUVE(PrefabInstanceComponentUVE& instance,
+bool RefreshPrefabInstanceRevision(PrefabInstanceComponent& instance,
                                       const std::uint64_t observedSourceRevision) noexcept {
-    if (!IsPrefabInstanceComponentValidUVE(instance) || observedSourceRevision == 0U ||
+    if (!IsPrefabInstanceComponentValid(instance) || observedSourceRevision == 0U ||
         observedSourceRevision < instance.sourceRevision || !instance.overrides.empty()) {
         return false;
     }
@@ -21,17 +21,17 @@ bool RefreshPrefabInstanceRevisionUVE(PrefabInstanceComponentUVE& instance,
     return true;
 }
 
-PrefabRevisionRefreshDecisionUVE EvaluatePrefabRevisionRefreshDecisionUVE(
+PrefabRevisionRefreshDecision EvaluatePrefabRevisionRefreshDecision(
     const std::uint64_t observedSourceRevision, const std::uint64_t instanceRevision,
     const bool hasLocalOverrides) noexcept {
     if (observedSourceRevision == 0U || instanceRevision == 0U ||
         observedSourceRevision < instanceRevision) {
-        return PrefabRevisionRefreshDecisionUVE::Invalid;
+        return PrefabRevisionRefreshDecision::Invalid;
     }
     if (observedSourceRevision == instanceRevision) {
-        return PrefabRevisionRefreshDecisionUVE::NoOp;
+        return PrefabRevisionRefreshDecision::NoOp;
     }
-    return hasLocalOverrides ? PrefabRevisionRefreshDecisionUVE::MergeRequired
-                             : PrefabRevisionRefreshDecisionUVE::Refresh;
+    return hasLocalOverrides ? PrefabRevisionRefreshDecision::MergeRequired
+                             : PrefabRevisionRefreshDecision::Refresh;
 }
 } // namespace UVE::Scene

@@ -9,171 +9,171 @@
 namespace UVE::Physics::Tests {
 namespace {
 
-using Scene::CharacterControllerComponentUVE;
-using Scene::CharacterMotionModeUVE;
+using Scene::CharacterControllerComponent;
+using Scene::CharacterMotionMode;
 
-constexpr float kGravityUVE = -9.8F;
-constexpr float kStepUVE = 1.0F / 60.0F;
+constexpr float kGravity = -9.8F;
+constexpr float kStep = 1.0F / 60.0F;
 
-[[nodiscard]] CharacterControllerComponentUVE OnFloorUVE() {
-    CharacterControllerComponentUVE c{};
+[[nodiscard]] CharacterControllerComponent OnFloor() {
+    CharacterControllerComponent c{};
     c.grounded = true;
     return c;
 }
 
-[[nodiscard]] CharacterMoveOutcomeUVE AirUVE() {
-    return CharacterMoveOutcomeUVE{false, {0.0F, 1.0F, 0.0F}, false};
+[[nodiscard]] CharacterMoveOutcome Air() {
+    return CharacterMoveOutcome{false, {0.0F, 1.0F, 0.0F}, false};
 }
 
-TEST(CharacterBodyMotionUVETest, AJumpReachesItsHeightWhateverTheGravity) {
+TEST(CharacterBodyMotionTest, AJumpReachesItsHeightWhateverTheGravity) {
     for (const float gravityScale : {0.5F, 1.0F, 3.0F}) {
-        CharacterControllerComponentUVE c = OnFloorUVE();
+        CharacterControllerComponent c = OnFloor();
         c.gravityScale = gravityScale;
         c.jumpHeight = 2.0F;
-        ASSERT_TRUE(StepCharacterIntentUVE(c, {{}, 0.0F, true}, kGravityUVE, kStepUVE));
+        ASSERT_TRUE(StepCharacterIntent(c, {{}, 0.0F, true}, kGravity, kStep));
         // v^2 = 2 g h: the apex of v under g is exactly jumpHeight.
-        const float g = -kGravityUVE * gravityScale;
+        const float g = -kGravity * gravityScale;
         EXPECT_NEAR((c.velocity.y * c.velocity.y) / (2.0F * g), 2.0F, 1.0e-4F);
         EXPECT_FALSE(c.grounded);
     }
 }
 
-TEST(CharacterBodyMotionUVETest, CoyoteTimeAllowsOneLateJumpAfterWalkingOffALedge) {
-    CharacterControllerComponentUVE c = OnFloorUVE();
+TEST(CharacterBodyMotionTest, CoyoteTimeAllowsOneLateJumpAfterWalkingOffALedge) {
+    CharacterControllerComponent c = OnFloor();
     c.coyoteTimeSeconds = 0.1F;
     // Walks off: two steps in the air, still inside the window.
     for (int step = 0; step < 2; ++step) {
-        EXPECT_FALSE(StepCharacterIntentUVE(c, {}, kGravityUVE, kStepUVE));
-        FinishCharacterStepUVE(c, AirUVE(), false, kStepUVE);
+        EXPECT_FALSE(StepCharacterIntent(c, {}, kGravity, kStep));
+        FinishCharacterStep(c, Air(), false, kStep);
     }
-    EXPECT_TRUE(StepCharacterIntentUVE(c, {{}, 0.0F, true}, kGravityUVE, kStepUVE));
-    FinishCharacterStepUVE(c, AirUVE(), true, kStepUVE);
+    EXPECT_TRUE(StepCharacterIntent(c, {{}, 0.0F, true}, kGravity, kStep));
+    FinishCharacterStep(c, Air(), true, kStep);
     // Spent: pressing again in the same fall does nothing.
-    EXPECT_FALSE(StepCharacterIntentUVE(c, {{}, 0.0F, true}, kGravityUVE, kStepUVE));
+    EXPECT_FALSE(StepCharacterIntent(c, {{}, 0.0F, true}, kGravity, kStep));
 
     // Past the window, a press is only remembered, not acted on.
-    CharacterControllerComponentUVE late = OnFloorUVE();
+    CharacterControllerComponent late = OnFloor();
     late.coyoteTimeSeconds = 0.05F;
     late.jumpBufferSeconds = 0.0F;
     for (int step = 0; step < 6; ++step) {
-        static_cast<void>(StepCharacterIntentUVE(late, {}, kGravityUVE, kStepUVE));
-        FinishCharacterStepUVE(late, AirUVE(), false, kStepUVE);
+        static_cast<void>(StepCharacterIntent(late, {}, kGravity, kStep));
+        FinishCharacterStep(late, Air(), false, kStep);
     }
-    EXPECT_FALSE(StepCharacterIntentUVE(late, {{}, 0.0F, true}, kGravityUVE, kStepUVE));
+    EXPECT_FALSE(StepCharacterIntent(late, {{}, 0.0F, true}, kGravity, kStep));
 }
 
-TEST(CharacterBodyMotionUVETest, AJumpPressedJustBeforeLandingHappensOnLanding) {
-    CharacterControllerComponentUVE c{};
+TEST(CharacterBodyMotionTest, AJumpPressedJustBeforeLandingHappensOnLanding) {
+    CharacterControllerComponent c{};
     c.coyoteTimeSeconds = 0.0F;
     c.timeSinceOnFloor = 1.0F; // Well into a fall.
     c.jumpBufferSeconds = 0.1F;
-    EXPECT_FALSE(StepCharacterIntentUVE(c, {{}, 0.0F, true}, kGravityUVE, kStepUVE));
-    FinishCharacterStepUVE(c, AirUVE(), false, kStepUVE);
+    EXPECT_FALSE(StepCharacterIntent(c, {{}, 0.0F, true}, kGravity, kStep));
+    FinishCharacterStep(c, Air(), false, kStep);
     // Lands two steps later, with no new press.
-    FinishCharacterStepUVE(c, CharacterMoveOutcomeUVE{true, {0.0F, 1.0F, 0.0F}, false}, false, kStepUVE);
-    EXPECT_TRUE(StepCharacterIntentUVE(c, {}, kGravityUVE, kStepUVE));
+    FinishCharacterStep(c, CharacterMoveOutcome{true, {0.0F, 1.0F, 0.0F}, false}, false, kStep);
+    EXPECT_TRUE(StepCharacterIntent(c, {}, kGravity, kStep));
 
     // Without a buffer the early press is simply lost.
-    CharacterControllerComponentUVE unbuffered{};
+    CharacterControllerComponent unbuffered{};
     unbuffered.coyoteTimeSeconds = 0.0F;
     unbuffered.timeSinceOnFloor = 1.0F;
     unbuffered.jumpBufferSeconds = 0.0F;
-    static_cast<void>(StepCharacterIntentUVE(unbuffered, {{}, 0.0F, true}, kGravityUVE, kStepUVE));
-    FinishCharacterStepUVE(unbuffered, AirUVE(), false, kStepUVE);
-    FinishCharacterStepUVE(unbuffered, CharacterMoveOutcomeUVE{true, {0.0F, 1.0F, 0.0F}, false}, false, kStepUVE);
-    EXPECT_FALSE(StepCharacterIntentUVE(unbuffered, {}, kGravityUVE, kStepUVE));
+    static_cast<void>(StepCharacterIntent(unbuffered, {{}, 0.0F, true}, kGravity, kStep));
+    FinishCharacterStep(unbuffered, Air(), false, kStep);
+    FinishCharacterStep(unbuffered, CharacterMoveOutcome{true, {0.0F, 1.0F, 0.0F}, false}, false, kStep);
+    EXPECT_FALSE(StepCharacterIntent(unbuffered, {}, kGravity, kStep));
 }
 
-TEST(CharacterBodyMotionUVETest, AirControlScalesSteeringOnlyOffTheFloor) {
+TEST(CharacterBodyMotionTest, AirControlScalesSteeringOnlyOffTheFloor) {
     // Built-in movement ramps velocity toward the input target instead of snapping to it: one
     // frame of the ground acceleration rate (14/s) moves a resting body to moveSpeed * 14 * step.
-    constexpr float kGroundAccelerationRateUVE = 14.0F;
+    constexpr float kGroundAccelerationRate = 14.0F;
 
-    CharacterControllerComponentUVE ground = OnFloorUVE();
+    CharacterControllerComponent ground = OnFloor();
     ground.airControl = 0.0F;
-    static_cast<void>(StepCharacterIntentUVE(ground, {{1.0F, 0.0F, 0.0F}}, kGravityUVE, kStepUVE));
-    EXPECT_FLOAT_EQ(ground.velocity.x, ground.moveSpeed * kGroundAccelerationRateUVE * kStepUVE);
+    static_cast<void>(StepCharacterIntent(ground, {{1.0F, 0.0F, 0.0F}}, kGravity, kStep));
+    EXPECT_FLOAT_EQ(ground.velocity.x, ground.moveSpeed * kGroundAccelerationRate * kStep);
 
-    CharacterControllerComponentUVE air{};
+    CharacterControllerComponent air{};
     air.timeSinceOnFloor = 1.0F;
     air.airControl = 0.25F;
     air.velocity.x = 0.0F;
-    static_cast<void>(StepCharacterIntentUVE(air, {{1.0F, 0.0F, 0.0F}}, kGravityUVE, kStepUVE));
+    static_cast<void>(StepCharacterIntent(air, {{1.0F, 0.0F, 0.0F}}, kGravity, kStep));
     EXPECT_FLOAT_EQ(air.velocity.x,
-                    air.moveSpeed * air.airControl * kGroundAccelerationRateUVE * kStepUVE);
+                    air.moveSpeed * air.airControl * kGroundAccelerationRate * kStep);
 
-    CharacterControllerComponentUVE committed{};
+    CharacterControllerComponent committed{};
     committed.timeSinceOnFloor = 1.0F;
     committed.airControl = 0.0F;
     committed.velocity.x = 3.0F;
-    static_cast<void>(StepCharacterIntentUVE(committed, {{-1.0F, 0.0F, 0.0F}}, kGravityUVE, kStepUVE));
+    static_cast<void>(StepCharacterIntent(committed, {{-1.0F, 0.0F, 0.0F}}, kGravity, kStep));
     EXPECT_FLOAT_EQ(committed.velocity.x, 3.0F); // Keeps the jump's direction.
 }
 
-TEST(CharacterBodyMotionUVETest, FloatingIgnoresGravityAndRisesOnRequest) {
-    CharacterControllerComponentUVE c{};
-    c.motionMode = CharacterMotionModeUVE::Floating;
-    static_cast<void>(StepCharacterIntentUVE(c, {}, kGravityUVE, kStepUVE));
+TEST(CharacterBodyMotionTest, FloatingIgnoresGravityAndRisesOnRequest) {
+    CharacterControllerComponent c{};
+    c.motionMode = CharacterMotionMode::Floating;
+    static_cast<void>(StepCharacterIntent(c, {}, kGravity, kStep));
     EXPECT_FLOAT_EQ(c.velocity.y, 0.0F);
-    static_cast<void>(StepCharacterIntentUVE(c, {{}, 1.0F, false}, kGravityUVE, kStepUVE));
+    static_cast<void>(StepCharacterIntent(c, {{}, 1.0F, false}, kGravity, kStep));
     EXPECT_FLOAT_EQ(c.velocity.y, c.moveSpeed);
     // A jump press means nothing while floating.
-    EXPECT_FALSE(StepCharacterIntentUVE(c, {{}, 0.0F, true}, kGravityUVE, kStepUVE));
+    EXPECT_FALSE(StepCharacterIntent(c, {{}, 0.0F, true}, kGravity, kStep));
 }
 
-TEST(CharacterBodyMotionUVETest, WithoutBuiltInMovementOnlyGravityTouchesTheVelocity) {
-    CharacterControllerComponentUVE c{};
+TEST(CharacterBodyMotionTest, WithoutBuiltInMovementOnlyGravityTouchesTheVelocity) {
+    CharacterControllerComponent c{};
     c.builtInMovement = false;
     c.timeSinceOnFloor = 1.0F;
-    c.velocity = Math::Vector3UVE{2.0F, 0.0F, -1.0F};
-    EXPECT_FALSE(StepCharacterIntentUVE(c, {{1.0F, 0.0F, 1.0F}, 0.0F, true}, kGravityUVE, kStepUVE));
+    c.velocity = Math::Vector3{2.0F, 0.0F, -1.0F};
+    EXPECT_FALSE(StepCharacterIntent(c, {{1.0F, 0.0F, 1.0F}, 0.0F, true}, kGravity, kStep));
     EXPECT_FLOAT_EQ(c.velocity.x, 2.0F);
     EXPECT_FLOAT_EQ(c.velocity.z, -1.0F);
-    EXPECT_FLOAT_EQ(c.velocity.y, kGravityUVE * kStepUVE);
+    EXPECT_FLOAT_EQ(c.velocity.y, kGravity * kStep);
 }
 
-TEST(CharacterBodyMotionUVETest, StandingOnTheFloorDoesNotBuildUpFallSpeed) {
-    CharacterControllerComponentUVE c = OnFloorUVE();
+TEST(CharacterBodyMotionTest, StandingOnTheFloorDoesNotBuildUpFallSpeed) {
+    CharacterControllerComponent c = OnFloor();
     for (int step = 0; step < 120; ++step) {
-        static_cast<void>(StepCharacterIntentUVE(c, {}, kGravityUVE, kStepUVE));
-        FinishCharacterStepUVE(c, CharacterMoveOutcomeUVE{true, {0.0F, 1.0F, 0.0F}, false}, false, kStepUVE);
+        static_cast<void>(StepCharacterIntent(c, {}, kGravity, kStep));
+        FinishCharacterStep(c, CharacterMoveOutcome{true, {0.0F, 1.0F, 0.0F}, false}, false, kStep);
     }
     EXPECT_FLOAT_EQ(c.velocity.y, 0.0F);
     EXPECT_FLOAT_EQ(c.timeSinceOnFloor, 0.0F);
 }
 
-TEST(CharacterBodyMotionUVETest, AJumpAndGravityFollowTheBodyUpNotWorldY) {
-    CharacterControllerComponentUVE c = OnFloorUVE();
+TEST(CharacterBodyMotionTest, AJumpAndGravityFollowTheBodyUpNotWorldY) {
+    CharacterControllerComponent c = OnFloor();
     c.upDirection = {0.0F, 0.0F, 1.0F};
     c.jumpHeight = 2.0F;
-    ASSERT_TRUE(StepCharacterIntentUVE(c, {{}, 0.0F, true}, kGravityUVE, kStepUVE));
-    const float g = -kGravityUVE;
+    ASSERT_TRUE(StepCharacterIntent(c, {{}, 0.0F, true}, kGravity, kStep));
+    const float g = -kGravity;
     EXPECT_NEAR((c.velocity.z * c.velocity.z) / (2.0F * g), 2.0F, 1.0e-4F);
     EXPECT_NEAR(c.velocity.y, 0.0F, 1.0e-6F);
     EXPECT_FALSE(c.grounded);
 
-    CharacterControllerComponentUVE falling{};
+    CharacterControllerComponent falling{};
     falling.upDirection = {0.0F, 0.0F, 1.0F};
     falling.timeSinceOnFloor = 1.0F;
     falling.builtInMovement = false;
-    EXPECT_FALSE(StepCharacterIntentUVE(falling, {}, kGravityUVE, kStepUVE));
-    EXPECT_NEAR(falling.velocity.z, kGravityUVE * kStepUVE, 1.0e-6F);
+    EXPECT_FALSE(StepCharacterIntent(falling, {}, kGravity, kStep));
+    EXPECT_NEAR(falling.velocity.z, kGravity * kStep, 1.0e-6F);
     EXPECT_NEAR(falling.velocity.y, 0.0F, 1.0e-6F);
 }
 
-TEST(CharacterBodyMotionUVETest, ACeilingStopsTheRiseAndOptionallyTheWholeMove) {
-    CharacterControllerComponentUVE sliding{};
-    sliding.velocity = Math::Vector3UVE{3.0F, 4.0F, 0.0F};
-    FinishCharacterStepUVE(sliding, CharacterMoveOutcomeUVE{false, {0.0F, 1.0F, 0.0F}, true}, false, kStepUVE);
+TEST(CharacterBodyMotionTest, ACeilingStopsTheRiseAndOptionallyTheWholeMove) {
+    CharacterControllerComponent sliding{};
+    sliding.velocity = Math::Vector3{3.0F, 4.0F, 0.0F};
+    FinishCharacterStep(sliding, CharacterMoveOutcome{false, {0.0F, 1.0F, 0.0F}, true}, false, kStep);
     EXPECT_TRUE(sliding.isOnCeiling);
     EXPECT_FLOAT_EQ(sliding.velocity.y, 0.0F);
     EXPECT_FLOAT_EQ(sliding.velocity.x, 3.0F);
 
-    CharacterControllerComponentUVE stopping{};
+    CharacterControllerComponent stopping{};
     stopping.slideOnCeiling = false;
-    stopping.velocity = Math::Vector3UVE{3.0F, 4.0F, 1.0F};
-    FinishCharacterStepUVE(stopping, CharacterMoveOutcomeUVE{false, {0.0F, 1.0F, 0.0F}, true}, false, kStepUVE);
-    EXPECT_EQ(stopping.velocity, (Math::Vector3UVE{0.0F, 0.0F, 0.0F}));
+    stopping.velocity = Math::Vector3{3.0F, 4.0F, 1.0F};
+    FinishCharacterStep(stopping, CharacterMoveOutcome{false, {0.0F, 1.0F, 0.0F}, true}, false, kStep);
+    EXPECT_EQ(stopping.velocity, (Math::Vector3{0.0F, 0.0F, 0.0F}));
 }
 
 } // namespace

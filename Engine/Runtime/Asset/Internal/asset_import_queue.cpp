@@ -13,31 +13,31 @@
 namespace UVE::Asset {
 namespace {
 
-[[nodiscard]] std::filesystem::path NormalizePathUVE(const std::filesystem::path& path) {
+[[nodiscard]] std::filesystem::path NormalizePath(const std::filesystem::path& path) {
     std::error_code errorCode;
     const std::filesystem::path absolutePath = std::filesystem::absolute(path, errorCode);
     return errorCode ? path.lexically_normal() : absolutePath.lexically_normal();
 }
 
-[[nodiscard]] bool IsCacheRecordValidUVE(const DerivedArtifactCacheRecordUVE& record,
-                                         const AssetImportRequestUVE& request,
-                                         const AssetContentFingerprintUVE& sourceFingerprint,
-                                         IAssetDatabaseUVE& assetDatabase,
-                                         AssetContentFingerprintUVE& outDestinationFingerprint) {
-    if (record.schemaVersion != kDerivedArtifactCacheSchemaVersionUVE || record.stale ||
+[[nodiscard]] bool IsCacheRecordValid(const DerivedArtifactCacheRecord& record,
+                                         const AssetImportRequest& request,
+                                         const AssetContentFingerprint& sourceFingerprint,
+                                         IAssetDatabase& assetDatabase,
+                                         AssetContentFingerprint& outDestinationFingerprint) {
+    if (record.schemaVersion != kDerivedArtifactCacheSchemaVersion || record.stale ||
         record.sourcePath != request.sourcePath || record.destinationPath != request.destinationPath ||
         record.sourceFingerprint != sourceFingerprint || record.settingsVersion != request.settingsVersion ||
-        record.assetGuid == kInvalidAssetGuidUVE) {
+        record.assetGuid == kInvalidAssetGuid) {
         return false;
     }
 
-    const std::optional<AssetContentFingerprintUVE> destinationFingerprint =
-        ComputeAssetContentFingerprintUVE(request.destinationPath);
+    const std::optional<AssetContentFingerprint> destinationFingerprint =
+        ComputeAssetContentFingerprint(request.destinationPath);
     if (!destinationFingerprint.has_value() || *destinationFingerprint != record.destinationFingerprint) {
         return false;
     }
 
-    if (NormalizePathUVE(assetDatabase.ResolveUVE(record.assetGuid)) != request.destinationPath) {
+    if (NormalizePath(assetDatabase.Resolve(record.assetGuid)) != request.destinationPath) {
         return false;
     }
 
@@ -63,57 +63,57 @@ namespace {
 
 } // namespace
 
-struct AssetImportQueueUVE::ImplUVE final {
-    ImplUVE(IAssetImporterUVE& inImporter, IAssetDatabaseUVE& inAssetDatabase,
-            IDerivedArtifactCacheUVE& inDerivedArtifactCache)
+struct AssetImportQueue::Impl final {
+    Impl(IAssetImporter& inImporter, IAssetDatabase& inAssetDatabase,
+            IDerivedArtifactCache& inDerivedArtifactCache)
         : importer(inImporter), assetDatabase(inAssetDatabase), derivedArtifactCache(inDerivedArtifactCache) {}
 
-    [[nodiscard]] AssetImportJobUVE* FindJobUVE(const AssetImportJobIdUVE id) {
-        const auto it = std::find_if(jobs.begin(), jobs.end(), [id](const AssetImportJobUVE& job) {
+    [[nodiscard]] AssetImportJob* FindJob(const AssetImportJobId id) {
+        const auto it = std::find_if(jobs.begin(), jobs.end(), [id](const AssetImportJob& job) {
             return job.id == id;
         });
         return it == jobs.end() ? nullptr : &(*it);
     }
 
-    IAssetImporterUVE& importer;
-    IAssetDatabaseUVE& assetDatabase;
-    IDerivedArtifactCacheUVE& derivedArtifactCache;
+    IAssetImporter& importer;
+    IAssetDatabase& assetDatabase;
+    IDerivedArtifactCache& derivedArtifactCache;
     mutable std::mutex mutex;
-    std::vector<AssetImportJobUVE> jobs;
-    std::deque<AssetImportJobIdUVE> queuedIds;
+    std::vector<AssetImportJob> jobs;
+    std::deque<AssetImportJobId> queuedIds;
     std::uint64_t nextJobId = 1U;
 };
 
-AssetImportQueueUVE::AssetImportQueueUVE(IAssetImporterUVE& importer, IAssetDatabaseUVE& assetDatabase,
-                                         IDerivedArtifactCacheUVE& derivedArtifactCache)
-    : m_impl(std::make_unique<ImplUVE>(importer, assetDatabase, derivedArtifactCache)) {}
+AssetImportQueue::AssetImportQueue(IAssetImporter& importer, IAssetDatabase& assetDatabase,
+                                         IDerivedArtifactCache& derivedArtifactCache)
+    : m_impl(std::make_unique<Impl>(importer, assetDatabase, derivedArtifactCache)) {}
 
-AssetImportQueueUVE::~AssetImportQueueUVE() = default;
+AssetImportQueue::~AssetImportQueue() = default;
 
-std::optional<AssetImportJobIdUVE> AssetImportQueueUVE::EnqueueUVE(AssetImportRequestUVE request) {
+std::optional<AssetImportJobId> AssetImportQueue::Enqueue(AssetImportRequest request) {
     if (request.sourcePath.empty() || request.destinationPath.empty() || !request.settings) {
         return std::nullopt;
     }
 
-    request.sourcePath = NormalizePathUVE(request.sourcePath);
-    request.destinationPath = NormalizePathUVE(request.destinationPath);
+    request.sourcePath = NormalizePath(request.sourcePath);
+    request.destinationPath = NormalizePath(request.destinationPath);
     if (request.sourcePath.empty() || request.destinationPath.empty()) {
         return std::nullopt;
     }
     if (request.settingsVersion.empty()) {
-        request.settingsVersion = request.settings->GetCacheVersionUVE();
+        request.settingsVersion = request.settings->GetCacheVersion();
     }
     if (request.settingsVersion.empty()) {
         return std::nullopt;
     }
 
     std::lock_guard<std::mutex> lock(m_impl->mutex);
-    if (m_impl->nextJobId == kInvalidAssetImportJobIdUVE.value) {
+    if (m_impl->nextJobId == kInvalidAssetImportJobId.value) {
         return std::nullopt;
     }
 
-    const AssetImportJobIdUVE id{m_impl->nextJobId++};
-    AssetImportJobUVE job;
+    const AssetImportJobId id{m_impl->nextJobId++};
+    AssetImportJob job;
     job.id = id;
     job.request = std::move(request);
     m_impl->jobs.push_back(std::move(job));
@@ -121,9 +121,9 @@ std::optional<AssetImportJobIdUVE> AssetImportQueueUVE::EnqueueUVE(AssetImportRe
     return id;
 }
 
-bool AssetImportQueueUVE::TickUVE() {
-    AssetImportJobIdUVE id;
-    AssetImportRequestUVE request;
+bool AssetImportQueue::Tick() {
+    AssetImportJobId id;
+    AssetImportRequest request;
     std::uint32_t attempt = 0U;
     {
         std::lock_guard<std::mutex> lock(m_impl->mutex);
@@ -132,104 +132,104 @@ bool AssetImportQueueUVE::TickUVE() {
         }
         id = m_impl->queuedIds.front();
         m_impl->queuedIds.pop_front();
-        AssetImportJobUVE* const job = m_impl->FindJobUVE(id);
-        if (job == nullptr || job->state != AssetImportJobStateUVE::Queued) {
+        AssetImportJob* const job = m_impl->FindJob(id);
+        if (job == nullptr || job->state != AssetImportJobState::Queued) {
             return false;
         }
-        job->state = AssetImportJobStateUVE::Running;
+        job->state = AssetImportJobState::Running;
         ++job->attemptCount;
         attempt = job->attemptCount;
         request = job->request;
     }
 
-    const auto completeFailure = [this, id, attempt, &request](const AssetImportDiagnosticCodeUVE code,
+    const auto completeFailure = [this, id, attempt, &request](const AssetImportDiagnosticCode code,
                                                                  std::string message) {
         std::lock_guard<std::mutex> lock(m_impl->mutex);
-        AssetImportJobUVE* const job = m_impl->FindJobUVE(id);
+        AssetImportJob* const job = m_impl->FindJob(id);
         if (job == nullptr) {
             return;
         }
-        job->state = AssetImportJobStateUVE::Failed;
+        job->state = AssetImportJobState::Failed;
         job->cacheHit = false;
         job->resultGuid.reset();
-        job->diagnostics.push_back(AssetImportDiagnosticUVE{AssetImportDiagnosticSeverityUVE::Error, code,
+        job->diagnostics.push_back(AssetImportDiagnostic{AssetImportDiagnosticSeverity::Error, code,
                                                              std::move(message), request.sourcePath,
                                                              request.destinationPath, attempt});
     };
 
-    const std::optional<AssetContentFingerprintUVE> sourceFingerprint =
-        ComputeAssetContentFingerprintUVE(request.sourcePath);
+    const std::optional<AssetContentFingerprint> sourceFingerprint =
+        ComputeAssetContentFingerprint(request.sourcePath);
     if (!sourceFingerprint.has_value()) {
-        completeFailure(AssetImportDiagnosticCodeUVE::SourceFingerprintFailed,
+        completeFailure(AssetImportDiagnosticCode::SourceFingerprintFailed,
                         "Unable to fingerprint the queued import source.");
         return true;
     }
 
     {
         std::lock_guard<std::mutex> lock(m_impl->mutex);
-        if (AssetImportJobUVE* const job = m_impl->FindJobUVE(id); job != nullptr) {
+        if (AssetImportJob* const job = m_impl->FindJob(id); job != nullptr) {
             job->sourceFingerprint = *sourceFingerprint;
         }
     }
 
-    AssetContentFingerprintUVE cachedDestinationFingerprint;
-    std::optional<DerivedArtifactCacheRecordUVE> cachedRecord;
+    AssetContentFingerprint cachedDestinationFingerprint;
+    std::optional<DerivedArtifactCacheRecord> cachedRecord;
     try {
-        cachedRecord = m_impl->derivedArtifactCache.LoadImportRecordUVE(request.destinationPath);
+        cachedRecord = m_impl->derivedArtifactCache.LoadImportRecord(request.destinationPath);
         if (cachedRecord.has_value() &&
-            !IsCacheRecordValidUVE(*cachedRecord, request, *sourceFingerprint, m_impl->assetDatabase,
+            !IsCacheRecordValid(*cachedRecord, request, *sourceFingerprint, m_impl->assetDatabase,
                                    cachedDestinationFingerprint)) {
             cachedRecord.reset();
         }
     } catch (const std::exception& exception) {
-        completeFailure(AssetImportDiagnosticCodeUVE::CacheReadFailed,
+        completeFailure(AssetImportDiagnosticCode::CacheReadFailed,
                         std::string("The derived import cache threw an exception while reading: ") +
                             exception.what());
         return true;
     } catch (...) {
-        completeFailure(AssetImportDiagnosticCodeUVE::CacheReadFailed,
+        completeFailure(AssetImportDiagnosticCode::CacheReadFailed,
                         "The derived import cache threw an unknown exception while reading.");
         return true;
     }
     if (cachedRecord.has_value()) {
         std::lock_guard<std::mutex> lock(m_impl->mutex);
-        if (AssetImportJobUVE* const job = m_impl->FindJobUVE(id); job != nullptr) {
+        if (AssetImportJob* const job = m_impl->FindJob(id); job != nullptr) {
             job->destinationFingerprint = cachedDestinationFingerprint;
             job->resultGuid = cachedRecord->assetGuid;
             job->cacheHit = true;
-            job->state = AssetImportJobStateUVE::Succeeded;
+            job->state = AssetImportJobState::Succeeded;
         }
         return true;
     }
 
-    AssetGuidUVE assetGuid;
+    AssetGuid assetGuid;
     try {
-        assetGuid = m_impl->importer.ImportUVE(request.sourcePath, request.destinationPath,
+        assetGuid = m_impl->importer.Import(request.sourcePath, request.destinationPath,
                                                m_impl->assetDatabase, *request.settings);
     } catch (const std::exception& exception) {
-        completeFailure(AssetImportDiagnosticCodeUVE::ImporterFailed,
+        completeFailure(AssetImportDiagnosticCode::ImporterFailed,
                         std::string("The registered importer threw an exception: ") + exception.what());
         return true;
     } catch (...) {
-        completeFailure(AssetImportDiagnosticCodeUVE::ImporterFailed,
+        completeFailure(AssetImportDiagnosticCode::ImporterFailed,
                         "The registered importer threw an unknown exception.");
         return true;
     }
-    if (assetGuid == kInvalidAssetGuidUVE) {
-        completeFailure(AssetImportDiagnosticCodeUVE::ImporterFailed,
+    if (assetGuid == kInvalidAssetGuid) {
+        completeFailure(AssetImportDiagnosticCode::ImporterFailed,
                         "The registered importer failed or no importer accepted this source extension.");
         return true;
     }
 
-    const std::optional<AssetContentFingerprintUVE> destinationFingerprint =
-        ComputeAssetContentFingerprintUVE(request.destinationPath);
+    const std::optional<AssetContentFingerprint> destinationFingerprint =
+        ComputeAssetContentFingerprint(request.destinationPath);
     if (!destinationFingerprint.has_value()) {
-        completeFailure(AssetImportDiagnosticCodeUVE::DestinationFingerprintFailed,
+        completeFailure(AssetImportDiagnosticCode::DestinationFingerprintFailed,
                         "Importer returned a GUID but the destination file could not be fingerprinted.");
         return true;
     }
 
-    const DerivedArtifactCacheRecordUVE cacheRecord{kDerivedArtifactCacheSchemaVersionUVE,
+    const DerivedArtifactCacheRecord cacheRecord{kDerivedArtifactCacheSchemaVersion,
                                                      request.sourcePath,
                                                      request.destinationPath,
                                                      *sourceFingerprint,
@@ -239,7 +239,7 @@ bool AssetImportQueueUVE::TickUVE() {
     bool cacheStored = false;
     std::string cacheWriteDiagnostic;
     try {
-        cacheStored = m_impl->derivedArtifactCache.StoreImportRecordUVE(request.destinationPath, cacheRecord);
+        cacheStored = m_impl->derivedArtifactCache.StoreImportRecord(request.destinationPath, cacheRecord);
     } catch (const std::exception& exception) {
         cacheWriteDiagnostic =
             std::string("Import succeeded but derived cache metadata threw an exception: ") + exception.what();
@@ -248,37 +248,37 @@ bool AssetImportQueueUVE::TickUVE() {
     }
 
     std::lock_guard<std::mutex> lock(m_impl->mutex);
-    AssetImportJobUVE* const job = m_impl->FindJobUVE(id);
+    AssetImportJob* const job = m_impl->FindJob(id);
     if (job == nullptr) {
         return true;
     }
     job->destinationFingerprint = *destinationFingerprint;
     job->resultGuid = assetGuid;
     job->cacheHit = false;
-    job->state = AssetImportJobStateUVE::Succeeded;
+    job->state = AssetImportJobState::Succeeded;
     if (!cacheStored) {
         if (cacheWriteDiagnostic.empty()) {
             cacheWriteDiagnostic = "Import succeeded but derived cache metadata could not be written.";
         }
-        job->diagnostics.push_back(AssetImportDiagnosticUVE{AssetImportDiagnosticSeverityUVE::Warning,
-                                                             AssetImportDiagnosticCodeUVE::CacheWriteFailed,
+        job->diagnostics.push_back(AssetImportDiagnostic{AssetImportDiagnosticSeverity::Warning,
+                                                             AssetImportDiagnosticCode::CacheWriteFailed,
                                                              std::move(cacheWriteDiagnostic), request.sourcePath,
                                                              request.destinationPath, attempt});
     }
     return true;
 }
 
-bool AssetImportQueueUVE::RetryUVE(const AssetImportJobIdUVE id) {
-    if (id == kInvalidAssetImportJobIdUVE) {
+bool AssetImportQueue::Retry(const AssetImportJobId id) {
+    if (id == kInvalidAssetImportJobId) {
         return false;
     }
 
     std::lock_guard<std::mutex> lock(m_impl->mutex);
-    AssetImportJobUVE* const job = m_impl->FindJobUVE(id);
-    if (job == nullptr || job->state != AssetImportJobStateUVE::Failed) {
+    AssetImportJob* const job = m_impl->FindJob(id);
+    if (job == nullptr || job->state != AssetImportJobState::Failed) {
         return false;
     }
-    job->state = AssetImportJobStateUVE::Queued;
+    job->state = AssetImportJobState::Queued;
     job->sourceFingerprint.reset();
     job->destinationFingerprint.reset();
     job->resultGuid.reset();
@@ -288,7 +288,7 @@ bool AssetImportQueueUVE::RetryUVE(const AssetImportJobIdUVE id) {
     return true;
 }
 
-std::vector<AssetImportJobUVE> AssetImportQueueUVE::GetJobsUVE() const {
+std::vector<AssetImportJob> AssetImportQueue::GetJobs() const {
     std::lock_guard<std::mutex> lock(m_impl->mutex);
     return m_impl->jobs;
 }

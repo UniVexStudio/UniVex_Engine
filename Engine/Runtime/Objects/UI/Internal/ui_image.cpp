@@ -9,32 +9,32 @@
 
 namespace UVE::Scene {
 
-bool IsUIImageObjectDefinitionValidUVE(const UIImageObjectDefinitionUVE& value) noexcept {
-    return IsUIImageComponentValidUVE(value.image);
+bool IsUIImageObjectDefinitionValid(const UIImageObjectDefinition& value) noexcept {
+    return IsUIImageComponentValid(value.image);
 }
 
-void ApplyUIImageObjectDefinitionUVE(IEntityManagerUVE& entityManager, const EntityUVE entity,
-                                     const UIImageObjectDefinitionUVE& value) {
-    entityManager.AddComponentUVE<UIImageComponentUVE>(entity,
-                                                       SanitizeUIImageComponentUVE(value.image));
+void ApplyUIImageObjectDefinition(IEntityManager& entityManager, const Entity entity,
+                                     const UIImageObjectDefinition& value) {
+    entityManager.AddComponent<UIImageComponent>(entity,
+                                                       SanitizeUIImageComponent(value.image));
 }
 
-bool UIImageUVE::HasTextureUVE(const UIImageComponentUVE& image) noexcept {
-    return HasAssignedUIImageTextureUVE(image);
+bool UIImage::HasTexture(const UIImageComponent& image) noexcept {
+    return HasAssignedUIImageTexture(image);
 }
 
-bool UIImageUVE::UsesNineSliceUVE(const UIImageComponentUVE& image) noexcept {
-    return image.nineSliceEnabled && HasTextureUVE(image) &&
+bool UIImage::UsesNineSlice(const UIImageComponent& image) noexcept {
+    return image.nineSliceEnabled && HasTexture(image) &&
            std::isfinite(image.sliceMarginMin.x) && std::isfinite(image.sliceMarginMin.y) &&
            std::isfinite(image.sliceMarginMax.x) && std::isfinite(image.sliceMarginMax.y) &&
            std::isfinite(image.sliceUVMin.x) && std::isfinite(image.sliceUVMin.y) &&
            std::isfinite(image.sliceUVMax.x) && std::isfinite(image.sliceUVMax.y);
 }
 
-UIImageNineSliceSplitsUVE UIImageUVE::ResolveNineSliceSplitsUVE(
-    const UIImageComponentUVE& image) noexcept {
-    UIImageNineSliceSplitsUVE splits{};
-    if (!UsesNineSliceUVE(image)) {
+UIImageNineSliceSplits UIImage::ResolveNineSliceSplits(
+    const UIImageComponent& image) noexcept {
+    UIImageNineSliceSplits splits{};
+    if (!UsesNineSlice(image)) {
         return splits;
     }
     splits.marginLeft = std::max(0.0F, image.sliceMarginMin.x);

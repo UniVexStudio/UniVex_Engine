@@ -18,47 +18,47 @@
 #include "viewport_render_pass.h"
 
 namespace UVE::Core {
-class EngineServicesUVE;
+class EngineServices;
 }
 
 namespace UVE::Scene {
-class IEntityManagerUVE;
+class IEntityManager;
 }
 
 namespace UVE::App::Viewports {
 
-/// Owns the low-level OpenGL offscreen rendering surface bound to one `EngineServicesUVE` scene.
+/// Owns the low-level OpenGL offscreen rendering surface bound to one `EngineServices` scene.
 ///
 /// Manages lazy GLEW initialization, the `ViewportRenderPass`, MSAA + resolve framebuffers, the
-/// fullscreen mesh-blit pass that composites `EditorMeshLayerUVE` colour and depth into the shared
+/// fullscreen mesh-blit pass that composites `EditorMeshLayer` colour and depth into the shared
 /// framebuffer, lazy `StudioBackdropRenderer`, preview lighting/environment resolution, and axis
 /// palette seeding. Composed by every dedicated editor viewport without forcing any viewport to
 /// inherit unrelated camera, gizmo, or Play-in-Editor state.
-class ViewportSurfaceUVE final {
+class ViewportSurface final {
 public:
-    explicit ViewportSurfaceUVE(Core::EngineServicesUVE& services);
-    ~ViewportSurfaceUVE();
+    explicit ViewportSurface(Core::EngineServices& services);
+    ~ViewportSurface();
 
-    ViewportSurfaceUVE(const ViewportSurfaceUVE&) = delete;
-    ViewportSurfaceUVE& operator=(const ViewportSurfaceUVE&) = delete;
-    ViewportSurfaceUVE(ViewportSurfaceUVE&&) = delete;
-    ViewportSurfaceUVE& operator=(ViewportSurfaceUVE&&) = delete;
+    ViewportSurface(const ViewportSurface&) = delete;
+    ViewportSurface& operator=(const ViewportSurface&) = delete;
+    ViewportSurface(ViewportSurface&&) = delete;
+    ViewportSurface& operator=(ViewportSurface&&) = delete;
 
     /// Fullscreen-triangle vertex shader shared by fullscreen surface passes (mesh blit & depth).
-    static constexpr std::string_view kFullscreenTriangleVertexShaderUVE = R"(#version 330 core
+    static constexpr std::string_view kFullscreenTriangleVertexShader = R"(#version 330 core
 void main() {
     vec2 pos = vec2((gl_VertexID << 1) & 2, gl_VertexID & 2);
     gl_Position = vec4(pos * 2.0 - 1.0, 0.0, 1.0);
 }
 )";
 
-    [[nodiscard]] const Core::EngineServicesUVE* ServicesUVE() const noexcept { return &m_services; }
-    [[nodiscard]] Core::EngineServicesUVE& MutableServicesUVE() noexcept { return m_services; }
-    [[nodiscard]] Scene::IEntityManagerUVE& EntityManagerUVE() noexcept { return m_entityManager; }
-    [[nodiscard]] const Scene::IEntityManagerUVE& EntityManagerUVE() const noexcept { return m_entityManager; }
+    [[nodiscard]] const Core::EngineServices* Services() const noexcept { return &m_services; }
+    [[nodiscard]] Core::EngineServices& MutableServices() noexcept { return m_services; }
+    [[nodiscard]] Scene::IEntityManager& EntityManager() noexcept { return m_entityManager; }
+    [[nodiscard]] const Scene::IEntityManager& EntityManager() const noexcept { return m_entityManager; }
 
-    /// Resolved viewport surface settings derived from the active effective RendererProfileUVE.
-    struct QualityConfigUVE final {
+    /// Resolved viewport surface settings derived from the active effective RendererProfile.
+    struct QualityConfig final {
         float renderScale = 1.0F;
         int msaaSamples = 0;
         int fxaaQuality = 1;
@@ -72,80 +72,80 @@ void main() {
         bool bloomEnabled = false;
     };
 
-    /// Resolves viewport surface settings from the active effective RendererProfileUVE.
-    [[nodiscard]] QualityConfigUVE ResolveQualityConfigUVE(int qualityPreset);
+    /// Resolves viewport surface settings from the active effective RendererProfile.
+    [[nodiscard]] QualityConfig ResolveQualityConfig(int qualityPreset);
 
     /// Syncs this surface and `overlayState.resolvedRenderScale` to the renderer's effective profile.
-    void ApplyQualityPresetUVE(int qualityPreset,
-                               const Editor::EditorUVE::ViewportOverlayStateUVE& overlayState);
+    void ApplyQualityPreset(int qualityPreset,
+                               const Editor::Editor::ViewportOverlayState& overlayState);
 
     /// True when the active profile prefers GPU-side selection outlines (avoiding glReadPixels).
-    [[nodiscard]] bool PreferGpuSelectionOutlineUVE() const noexcept { return m_gpuOutlineOnly; }
+    [[nodiscard]] bool PreferGpuSelectionOutline() const noexcept { return m_gpuOutlineOnly; }
 
     /// True when the renderer is running the ultra-lightweight Compatibility profile.
-    [[nodiscard]] bool IsCompatibilityProfileUVE() const noexcept {
+    [[nodiscard]] bool IsCompatibilityProfile() const noexcept {
         return m_appliedEffectiveProfile == 0;
     }
 
     /// Ensures GLEW, `ViewportRenderPass`, and sized scene/MSAA/resolve framebuffers are ready.
-    [[nodiscard]] bool PrepareFrameUVE(int width, int height);
+    [[nodiscard]] bool PrepareFrame(int width, int height);
 
-    [[nodiscard]] univex::app::ViewportRenderPass& RenderPassUVE() noexcept { return *m_renderPass; }
-    [[nodiscard]] const univex::app::ViewportRenderPass& RenderPassUVE() const noexcept { return *m_renderPass; }
-    [[nodiscard]] univex::integration::EditorMeshLayerUVE& MeshLayerUVE() noexcept { return m_meshLayer; }
-    [[nodiscard]] const univex::render::StudioBackdropRenderer* StudioBackdropUVE();
+    [[nodiscard]] univex::app::ViewportRenderPass& RenderPass() noexcept { return *m_renderPass; }
+    [[nodiscard]] const univex::app::ViewportRenderPass& RenderPass() const noexcept { return *m_renderPass; }
+    [[nodiscard]] univex::integration::EditorMeshLayer& MeshLayer() noexcept { return m_meshLayer; }
+    [[nodiscard]] const univex::render::StudioBackdropRenderer* StudioBackdrop();
 
     /// Returns the active drawing framebuffer (MSAA FBO when multisampled, otherwise single-sample scene FBO).
-    [[nodiscard]] GLuint ActiveDrawFboUVE() const noexcept { return m_msaaFbo != 0U ? m_msaaFbo : m_sceneFbo; }
-    [[nodiscard]] GLuint MsaaFboUVE() const noexcept { return ActiveDrawFboUVE(); }
-    [[nodiscard]] GLuint ResolveFboUVE() const noexcept { return m_resolveFbo; }
-    [[nodiscard]] GLuint ResolveColorTextureUVE() const noexcept { return m_resolveColorTexture; }
-    [[nodiscard]] GLuint FullscreenVaoUVE();
+    [[nodiscard]] GLuint ActiveDrawFbo() const noexcept { return m_msaaFbo != 0U ? m_msaaFbo : m_sceneFbo; }
+    [[nodiscard]] GLuint MsaaFbo() const noexcept { return ActiveDrawFbo(); }
+    [[nodiscard]] GLuint ResolveFbo() const noexcept { return m_resolveFbo; }
+    [[nodiscard]] GLuint ResolveColorTexture() const noexcept { return m_resolveColorTexture; }
+    [[nodiscard]] GLuint FullscreenVao();
 
-    [[nodiscard]] bool HasActiveWorldEnvironmentUVE() const;
-    [[nodiscard]] bool HasAuthoredDirectionalLightUVE() const;
+    [[nodiscard]] bool HasActiveWorldEnvironment() const;
+    [[nodiscard]] bool HasAuthoredDirectionalLight() const;
 
-    void SetShadingModeUVE(std::int32_t mode);
-    void ApplyPreviewLightingUVE(const Editor::EditorUVE::ViewportOverlayStateUVE& overlayState,
+    void SetShadingMode(std::int32_t mode);
+    void ApplyPreviewLighting(const Editor::Editor::ViewportOverlayState& overlayState,
                                  bool previewAllowed);
-    void ApplyAxisPaletteUVE(Editor::EditorUVE& editor,
-                             const Editor::EditorUVE::ViewportOverlayStateUVE& overlayState);
-    void ApplyGridAppearanceUVE(const Editor::EditorUVE& editor,
-                                const Editor::EditorUVE::ViewportOverlayStateUVE& overlayState,
+    void ApplyAxisPalette(Editor::Editor& editor,
+                             const Editor::Editor::ViewportOverlayState& overlayState);
+    void ApplyGridAppearance(const Editor::Editor& editor,
+                                const Editor::Editor::ViewportOverlayState& overlayState,
                                 bool visible,
                                 univex::render::GridPlane plane);
 
-    [[nodiscard]] univex::integration::EditorMeshLayerResultUVE RenderSceneMeshLayerUVE(
+    [[nodiscard]] univex::integration::EditorMeshLayerResult RenderSceneMeshLayer(
         const univex::camera::OrbitCamera& camera,
         int width,
         int height,
-        std::optional<Scene::EntityUVE> lookThroughCamera = std::nullopt);
+        std::optional<Scene::Entity> lookThroughCamera = std::nullopt);
 
     /// Binds the active draw framebuffer, configures multisampling, clears it, and returns the previous FBO.
-    [[nodiscard]] GLint BeginPassUVE(int width, int height);
+    [[nodiscard]] GLint BeginPass(int width, int height);
 
-    /// Writes `EditorMeshLayerUVE` colour and real scene depth into the currently bound framebuffer.
-    void BlitMeshLayerUVE(const univex::integration::EditorMeshLayerResultUVE& meshResult,
+    /// Writes `EditorMeshLayer` colour and real scene depth into the currently bound framebuffer.
+    void BlitMeshLayer(const univex::integration::EditorMeshLayerResult& meshResult,
                           const univex::camera::OrbitCamera& camera,
                           int width,
                           int height);
 
     /// Resolves the scene framebuffer (directly returning `m_sceneColorTexture` when MSAA/FXAA/CAS
     /// are disabled in Compatibility mode), restores `previousFbo`, and returns the native GL texture id.
-    [[nodiscard]] std::uint64_t EndPassAndResolveUVE(int width, int height, GLint previousFbo);
+    [[nodiscard]] std::uint64_t EndPassAndResolve(int width, int height, GLint previousFbo);
 
 private:
-    [[nodiscard]] bool EnsureGlewInitializedUVE();
-    [[nodiscard]] bool EnsureRenderPassUVE();
-    [[nodiscard]] bool EnsureFramebuffersUVE(int width, int height);
-    void DestroyFramebuffersUVE();
-    [[nodiscard]] bool EnsureMeshBlitResourcesUVE();
-    [[nodiscard]] bool EnsurePostAaResourcesUVE();
-    void SeedEditorAxisColorsFromDefaultsUVE(Editor::EditorUVE& editor);
+    [[nodiscard]] bool EnsureGlewInitialized();
+    [[nodiscard]] bool EnsureRenderPass();
+    [[nodiscard]] bool EnsureFramebuffers(int width, int height);
+    void DestroyFramebuffers();
+    [[nodiscard]] bool EnsureMeshBlitResources();
+    [[nodiscard]] bool EnsurePostAaResources();
+    void SeedEditorAxisColorsFromDefaults(Editor::Editor& editor);
 
-    Core::EngineServicesUVE& m_services;
-    Scene::IEntityManagerUVE& m_entityManager;
-    univex::integration::EditorMeshLayerUVE m_meshLayer;
+    Core::EngineServices& m_services;
+    Scene::IEntityManager& m_entityManager;
+    univex::integration::EditorMeshLayer m_meshLayer;
     std::optional<univex::app::ViewportRenderPass> m_renderPass;
     std::optional<univex::render::StudioBackdropRenderer> m_studio;
     bool m_studioTried = false;
@@ -169,7 +169,7 @@ private:
     bool m_gpuOutlineOnly = true;
     int m_appliedEffectiveProfile = -1;
 
-    struct MeshBlitUniformsUVE final {
+    struct MeshBlitUniforms final {
         GLint meshColor = -1;
         GLint hasDepth = -1;
         GLint directSceneDepth = -1;
@@ -178,7 +178,7 @@ private:
         GLint viewProj = -1;
         GLint outSize = -1;
     };
-    struct PostAaUniformsUVE final {
+    struct PostAaUniforms final {
         GLint sceneColor = -1;
         GLint invSize = -1;
         GLint fxaaQuality = -1;
@@ -186,9 +186,9 @@ private:
     };
 
     std::optional<univex::render::ShaderProgram> m_meshBlitProgram;
-    MeshBlitUniformsUVE m_meshBlitUniforms{};
+    MeshBlitUniforms m_meshBlitUniforms{};
     std::optional<univex::render::ShaderProgram> m_postAaProgram;
-    PostAaUniformsUVE m_postAaUniforms{};
+    PostAaUniforms m_postAaUniforms{};
     bool m_postAaFailed = false;
     GLuint m_meshBlitVao = 0U;
     bool m_lastRenderUsedLookThroughCamera = false;

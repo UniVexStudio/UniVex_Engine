@@ -11,15 +11,15 @@ namespace UVE::Scene {
 namespace {
 
 /// Mirror of the replication sampler's seed: a live entity, a world transform, a finite pose.
-[[nodiscard]] std::optional<Math::Vector3UVE> TryReadWorldUVE(
-    const IEntityManagerUVE& entityManager, const EntityUVE entity) {
-    if (!entityManager.IsAliveUVE(entity) ||
-        !entityManager.HasComponentUVE<WorldTransformComponentUVE>(entity)) {
+[[nodiscard]] std::optional<Math::Vector3> TryReadWorld(
+    const IEntityManager& entityManager, const Entity entity) {
+    if (!entityManager.IsAlive(entity) ||
+        !entityManager.HasComponent<WorldTransformComponent>(entity)) {
         return std::nullopt;
     }
-    const Math::Vector3UVE position =
-        entityManager.GetComponentUVE<WorldTransformComponentUVE>(entity).worldPosition;
-    if (!Math::IsFiniteUVE(position)) {
+    const Math::Vector3 position =
+        entityManager.GetComponent<WorldTransformComponent>(entity).worldPosition;
+    if (!Math::IsFinite(position)) {
         return std::nullopt;
     }
     return position;
@@ -27,54 +27,54 @@ namespace {
 
 } // namespace
 
-Network::RelevancyCheckUVE MakeInterestRelevancyUVE(
-    Network::NetworkInterestUVE& interest, const Network::InterestViewerIdUVE viewer,
-    const Network::NetworkEntityIdUVE netId) {
-    return [&interest, viewer, netId] { return interest.IsRelevantUVE(viewer, netId); };
+Network::RelevancyCheck MakeInterestRelevancy(
+    Network::NetworkInterest& interest, const Network::InterestViewerId viewer,
+    const Network::NetworkEntityId netId) {
+    return [&interest, viewer, netId] { return interest.IsRelevant(viewer, netId); };
 }
 
-std::size_t BindInterestRelevancyUVE(Network::NetworkReplicatorUVE& replicator,
-                                     Network::NetworkInterestUVE& interest,
-                                     const ReplicatedEntityMapUVE& map,
-                                     const Network::InterestViewerIdUVE viewer) {
+std::size_t BindInterestRelevancy(Network::NetworkReplicator& replicator,
+                                     Network::NetworkInterest& interest,
+                                     const ReplicatedEntityMap& map,
+                                     const Network::InterestViewerId viewer) {
     std::size_t bound = 0U;
     for (const auto& entry : map) {
-        if (replicator.SetRelevancyUVE(
-                entry.first, MakeInterestRelevancyUVE(interest, viewer, entry.first))) {
+        if (replicator.SetRelevancy(
+                entry.first, MakeInterestRelevancy(interest, viewer, entry.first))) {
             ++bound;
         }
     }
     return bound;
 }
 
-std::size_t SyncInterestEntitiesUVE(const IEntityManagerUVE& entityManager,
-                                    Network::NetworkInterestUVE& interest,
-                                    const ReplicatedEntityMapUVE& map) {
+std::size_t SyncInterestEntities(const IEntityManager& entityManager,
+                                    Network::NetworkInterest& interest,
+                                    const ReplicatedEntityMap& map) {
     std::size_t synced = 0U;
     for (const auto& entry : map) {
-        const std::optional<Math::Vector3UVE> position =
-            TryReadWorldUVE(entityManager, entry.second);
+        const std::optional<Math::Vector3> position =
+            TryReadWorld(entityManager, entry.second);
         if (!position.has_value()) {
             continue;
         }
         // Upsert: first sightings join as distance-culled; the already-known (including the
         // app's always-relevant pre-adds, whose flags this never touches) just move.
-        if (interest.AddEntityUVE(entry.first, *position) ||
-            interest.UpdateEntityUVE(entry.first, *position)) {
+        if (interest.AddEntity(entry.first, *position) ||
+            interest.UpdateEntity(entry.first, *position)) {
             ++synced;
         }
     }
     return synced;
 }
 
-bool SyncInterestViewerUVE(const IEntityManagerUVE& entityManager,
-                           Network::NetworkInterestUVE& interest,
-                           const Network::InterestViewerIdUVE viewer, const EntityUVE entity) {
-    const std::optional<Math::Vector3UVE> position = TryReadWorldUVE(entityManager, entity);
+bool SyncInterestViewer(const IEntityManager& entityManager,
+                           Network::NetworkInterest& interest,
+                           const Network::InterestViewerId viewer, const Entity entity) {
+    const std::optional<Math::Vector3> position = TryReadWorld(entityManager, entity);
     if (!position.has_value()) {
         return false;
     }
-    return interest.UpdateViewerUVE(viewer, *position);
+    return interest.UpdateViewer(viewer, *position);
 }
 
 } // namespace UVE::Scene

@@ -41,22 +41,22 @@
 namespace UVE::App::Viewports {
 namespace {
 
-void AppendMeshUVE(univex::gizmo::GizmoMesh& target, const univex::gizmo::GizmoMesh& source) {
+void AppendMesh(univex::gizmo::GizmoMesh& target, const univex::gizmo::GizmoMesh& source) {
     target.lines.insert(target.lines.end(), source.lines.begin(), source.lines.end());
     target.triangles.insert(target.triangles.end(), source.triangles.begin(), source.triangles.end());
 }
 
-void AppendLightDirectionGizmoUVE(univex::gizmo::GizmoMesh& mesh, const Scene::LightDirectionGizmoUVE& gizmo) {
+void AppendLightDirectionGizmo(univex::gizmo::GizmoMesh& mesh, const Scene::LightDirectionGizmo& gizmo) {
     using univex::math::Cross;
     using univex::math::Dot;
     using univex::math::Normalize;
     using univex::math::Vec3;
-    const Vec3 origin = univex::integration::FromUveVector3UVE(gizmo.origin);
-    const Vec3 direction = Normalize(univex::integration::FromUveVector3UVE(gizmo.direction));
+    const Vec3 origin = univex::integration::FromUveVector3(gizmo.origin);
+    const Vec3 direction = Normalize(univex::integration::FromUveVector3(gizmo.direction));
     if (Dot(direction, direction) < 1.0e-8F) {
         return;
     }
-    const Vec3 color = univex::integration::FromUveVector3UVE(gizmo.color);
+    const Vec3 color = univex::integration::FromUveVector3(gizmo.color);
     constexpr float kLength = 2.4F;
     constexpr float kHead = 0.45F;
     constexpr float kRay = 0.9F;
@@ -81,19 +81,19 @@ void AppendLightDirectionGizmoUVE(univex::gizmo::GizmoMesh& mesh, const Scene::L
     }
 }
 
-[[nodiscard]] univex::math::Vec3 FogVolumeGizmoPointUVE(const Scene::FogVolume3DGizmoUVE& gizmo,
+[[nodiscard]] univex::math::Vec3 FogVolumeGizmoPoint(const Scene::FogVolume3DGizmo& gizmo,
                                                         const float x,
                                                         const float y,
                                                         const float z) {
-    const univex::math::Vec3 origin = univex::integration::FromUveVector3UVE(gizmo.origin);
-    const univex::math::Vec3 axisX = univex::integration::FromUveVector3UVE(gizmo.axisX);
-    const univex::math::Vec3 axisY = univex::integration::FromUveVector3UVE(gizmo.axisY);
-    const univex::math::Vec3 axisZ = univex::integration::FromUveVector3UVE(gizmo.axisZ);
+    const univex::math::Vec3 origin = univex::integration::FromUveVector3(gizmo.origin);
+    const univex::math::Vec3 axisX = univex::integration::FromUveVector3(gizmo.axisX);
+    const univex::math::Vec3 axisY = univex::integration::FromUveVector3(gizmo.axisY);
+    const univex::math::Vec3 axisZ = univex::integration::FromUveVector3(gizmo.axisZ);
     return origin + axisX * x + axisY * y + axisZ * z;
 }
 
-void AppendFogVolumeRingUVE(univex::gizmo::GizmoMesh& mesh,
-                            const Scene::FogVolume3DGizmoUVE& gizmo,
+void AppendFogVolumeRing(univex::gizmo::GizmoMesh& mesh,
+                            const Scene::FogVolume3DGizmo& gizmo,
                             const int axis,
                             const float along,
                             const float radiusA,
@@ -108,11 +108,11 @@ void AppendFogVolumeRingUVE(univex::gizmo::GizmoMesh& mesh,
         const float s = std::sin(angle);
         univex::math::Vec3 point;
         if (axis == 0) {
-            point = FogVolumeGizmoPointUVE(gizmo, along, c * radiusA, s * radiusB);
+            point = FogVolumeGizmoPoint(gizmo, along, c * radiusA, s * radiusB);
         } else if (axis == 1) {
-            point = FogVolumeGizmoPointUVE(gizmo, c * radiusA, along, s * radiusB);
+            point = FogVolumeGizmoPoint(gizmo, c * radiusA, along, s * radiusB);
         } else {
-            point = FogVolumeGizmoPointUVE(gizmo, c * radiusA, s * radiusB, along);
+            point = FogVolumeGizmoPoint(gizmo, c * radiusA, s * radiusB, along);
         }
         if (i > 0) {
             mesh.lines.push_back(univex::gizmo::GizmoLine{previous, point, color, 1.5F});
@@ -121,34 +121,34 @@ void AppendFogVolumeRingUVE(univex::gizmo::GizmoMesh& mesh,
     }
 }
 
-void AppendFogVolumeGizmoUVE(univex::gizmo::GizmoMesh& mesh, const Scene::FogVolume3DGizmoUVE& gizmo) {
+void AppendFogVolumeGizmo(univex::gizmo::GizmoMesh& mesh, const Scene::FogVolume3DGizmo& gizmo) {
     using univex::math::Vec3;
-    const Vec3 color = univex::integration::FromUveVector3UVE(gizmo.color);
+    const Vec3 color = univex::integration::FromUveVector3(gizmo.color);
     const float hx = gizmo.halfExtents.x;
     const float hy = gizmo.halfExtents.y;
     const float hz = gizmo.halfExtents.z;
     const auto addLine = [&](const float ax, const float ay, const float az, const float bx, const float by,
                              const float bz) {
-        mesh.lines.push_back(univex::gizmo::GizmoLine{FogVolumeGizmoPointUVE(gizmo, ax, ay, az),
-                                                      FogVolumeGizmoPointUVE(gizmo, bx, by, bz), color, 1.6F});
+        mesh.lines.push_back(univex::gizmo::GizmoLine{FogVolumeGizmoPoint(gizmo, ax, ay, az),
+                                                      FogVolumeGizmoPoint(gizmo, bx, by, bz), color, 1.6F});
     };
-    if (gizmo.shape == Scene::FogVolumeShapeUVE::Ellipsoid) {
-        AppendFogVolumeRingUVE(mesh, gizmo, 0, 0.0F, hy, hz, color);
-        AppendFogVolumeRingUVE(mesh, gizmo, 1, 0.0F, hx, hz, color);
-        AppendFogVolumeRingUVE(mesh, gizmo, 2, 0.0F, hx, hy, color);
+    if (gizmo.shape == Scene::FogVolumeShape::Ellipsoid) {
+        AppendFogVolumeRing(mesh, gizmo, 0, 0.0F, hy, hz, color);
+        AppendFogVolumeRing(mesh, gizmo, 1, 0.0F, hx, hz, color);
+        AppendFogVolumeRing(mesh, gizmo, 2, 0.0F, hx, hy, color);
         return;
     }
-    if (gizmo.shape == Scene::FogVolumeShapeUVE::Cylinder) {
-        AppendFogVolumeRingUVE(mesh, gizmo, 1, hy, hx, hz, color);
-        AppendFogVolumeRingUVE(mesh, gizmo, 1, -hy, hx, hz, color);
+    if (gizmo.shape == Scene::FogVolumeShape::Cylinder) {
+        AppendFogVolumeRing(mesh, gizmo, 1, hy, hx, hz, color);
+        AppendFogVolumeRing(mesh, gizmo, 1, -hy, hx, hz, color);
         addLine(hx, -hy, 0.0F, hx, hy, 0.0F);
         addLine(-hx, -hy, 0.0F, -hx, hy, 0.0F);
         addLine(0.0F, -hy, hz, 0.0F, hy, hz);
         addLine(0.0F, -hy, -hz, 0.0F, hy, -hz);
         return;
     }
-    if (gizmo.shape == Scene::FogVolumeShapeUVE::Cone) {
-        AppendFogVolumeRingUVE(mesh, gizmo, 1, -hy, hx, hz, color);
+    if (gizmo.shape == Scene::FogVolumeShape::Cone) {
+        AppendFogVolumeRing(mesh, gizmo, 1, -hy, hx, hz, color);
         addLine(hx, -hy, 0.0F, 0.0F, hy, 0.0F);
         addLine(-hx, -hy, 0.0F, 0.0F, hy, 0.0F);
         addLine(0.0F, -hy, hz, 0.0F, hy, 0.0F);
@@ -169,27 +169,27 @@ void AppendFogVolumeGizmoUVE(univex::gizmo::GizmoMesh& mesh, const Scene::FogVol
     addLine(-hx, -hy, hz, -hx, hy, hz);
 }
 
-[[nodiscard]] univex::math::Vec3 ReflectionProbeGizmoPointUVE(const Scene::ReflectionProbe3DGizmoUVE& gizmo,
+[[nodiscard]] univex::math::Vec3 ReflectionProbeGizmoPoint(const Scene::ReflectionProbe3DGizmo& gizmo,
                                                               const float x,
                                                               const float y,
                                                               const float z) {
-    const univex::math::Vec3 origin = univex::integration::FromUveVector3UVE(gizmo.origin);
-    const univex::math::Vec3 axisX = univex::integration::FromUveVector3UVE(gizmo.axisX);
-    const univex::math::Vec3 axisY = univex::integration::FromUveVector3UVE(gizmo.axisY);
-    const univex::math::Vec3 axisZ = univex::integration::FromUveVector3UVE(gizmo.axisZ);
+    const univex::math::Vec3 origin = univex::integration::FromUveVector3(gizmo.origin);
+    const univex::math::Vec3 axisX = univex::integration::FromUveVector3(gizmo.axisX);
+    const univex::math::Vec3 axisY = univex::integration::FromUveVector3(gizmo.axisY);
+    const univex::math::Vec3 axisZ = univex::integration::FromUveVector3(gizmo.axisZ);
     return origin + axisX * x + axisY * y + axisZ * z;
 }
 
-void AppendReflectionProbeGizmoUVE(univex::gizmo::GizmoMesh& mesh, const Scene::ReflectionProbe3DGizmoUVE& gizmo) {
+void AppendReflectionProbeGizmo(univex::gizmo::GizmoMesh& mesh, const Scene::ReflectionProbe3DGizmo& gizmo) {
     using univex::math::Vec3;
-    const Vec3 color = univex::integration::FromUveVector3UVE(gizmo.color);
+    const Vec3 color = univex::integration::FromUveVector3(gizmo.color);
     const float hx = gizmo.halfExtents.x;
     const float hy = gizmo.halfExtents.y;
     const float hz = gizmo.halfExtents.z;
     const auto addLine = [&](const float ax, const float ay, const float az, const float bx, const float by,
                              const float bz, const float width) {
-        mesh.lines.push_back(univex::gizmo::GizmoLine{ReflectionProbeGizmoPointUVE(gizmo, ax, ay, az),
-                                                      ReflectionProbeGizmoPointUVE(gizmo, bx, by, bz), color, width});
+        mesh.lines.push_back(univex::gizmo::GizmoLine{ReflectionProbeGizmoPoint(gizmo, ax, ay, az),
+                                                      ReflectionProbeGizmoPoint(gizmo, bx, by, bz), color, width});
     };
     addLine(-hx, -hy, -hz, hx, -hy, -hz, 1.6F);
     addLine(hx, -hy, -hz, hx, -hy, hz, 1.6F);
@@ -208,11 +208,11 @@ void AppendReflectionProbeGizmoUVE(univex::gizmo::GizmoMesh& mesh, const Scene::
     addLine(0.0F, 0.0F, -hz, 0.0F, 0.0F, hz, 1.2F);
 }
 
-void AppendWorldPartitionGizmoUVE(univex::gizmo::GizmoMesh& mesh, const Scene::WorldPartition3DGizmoUVE& gizmo) {
+void AppendWorldPartitionGizmo(univex::gizmo::GizmoMesh& mesh, const Scene::WorldPartition3DGizmo& gizmo) {
     using univex::math::Vec3;
-    const Vec3 origin = univex::integration::FromUveVector3UVE(gizmo.origin);
-    const Vec3 size = univex::integration::FromUveVector3UVE(gizmo.size);
-    const Vec3 color = univex::integration::FromUveVector3UVE(gizmo.color);
+    const Vec3 origin = univex::integration::FromUveVector3(gizmo.origin);
+    const Vec3 size = univex::integration::FromUveVector3(gizmo.size);
+    const Vec3 color = univex::integration::FromUveVector3(gizmo.color);
     const auto add = [&](const Vec3& a, const Vec3& b, const float width) {
         mesh.lines.push_back(univex::gizmo::GizmoLine{a, b, color, width});
     };
@@ -232,25 +232,25 @@ void AppendWorldPartitionGizmoUVE(univex::gizmo::GizmoMesh& mesh, const Scene::W
     add(origin + x + z, origin + y + x + z, 1.6F);
     add(origin + z, origin + y + z, 1.6F);
 
-    constexpr std::uint32_t kMaximumInteriorDivisionsUVE = 32U;
+    constexpr std::uint32_t kMaximumInteriorDivisions = 32U;
     const std::uint32_t countX = gizmo.cellCounts[0U];
     const std::uint32_t countY = gizmo.cellCounts[1U];
     const std::uint32_t countZ = gizmo.cellCounts[2U];
-    if (countX > 1U && countX <= kMaximumInteriorDivisionsUVE && size.x > 0.0F) {
+    if (countX > 1U && countX <= kMaximumInteriorDivisions && size.x > 0.0F) {
         for (std::uint32_t i = 1U; i < countX; ++i) {
             const float t = size.x * (static_cast<float>(i) / static_cast<float>(countX));
             add(origin + Vec3{t, 0.0F, 0.0F}, origin + Vec3{t, 0.0F, size.z}, 1.0F);
             add(origin + Vec3{t, size.y, 0.0F}, origin + Vec3{t, size.y, size.z}, 1.0F);
         }
     }
-    if (countZ > 1U && countZ <= kMaximumInteriorDivisionsUVE && size.z > 0.0F) {
+    if (countZ > 1U && countZ <= kMaximumInteriorDivisions && size.z > 0.0F) {
         for (std::uint32_t i = 1U; i < countZ; ++i) {
             const float t = size.z * (static_cast<float>(i) / static_cast<float>(countZ));
             add(origin + Vec3{0.0F, 0.0F, t}, origin + Vec3{size.x, 0.0F, t}, 1.0F);
             add(origin + Vec3{0.0F, size.y, t}, origin + Vec3{size.x, size.y, t}, 1.0F);
         }
     }
-    if (countY > 1U && countY <= kMaximumInteriorDivisionsUVE && size.y > 0.0F) {
+    if (countY > 1U && countY <= kMaximumInteriorDivisions && size.y > 0.0F) {
         for (std::uint32_t i = 1U; i < countY; ++i) {
             const float t = size.y * (static_cast<float>(i) / static_cast<float>(countY));
             add(origin + Vec3{0.0F, t, 0.0F}, origin + Vec3{size.x, t, 0.0F}, 1.0F);
@@ -261,13 +261,13 @@ void AppendWorldPartitionGizmoUVE(univex::gizmo::GizmoMesh& mesh, const Scene::W
     }
 }
 
-void AppendAxisAlignedBoxGizmoUVE(univex::gizmo::GizmoMesh& mesh,
-                                  const Math::Vector3UVE& originUve,
-                                  const Math::Vector3UVE& halfExtentsUve,
-                                  const Math::Vector3UVE& colorUve) {
+void AppendAxisAlignedBoxGizmo(univex::gizmo::GizmoMesh& mesh,
+                                  const Math::Vector3& originUve,
+                                  const Math::Vector3& halfExtentsUve,
+                                  const Math::Vector3& colorUve) {
     using univex::math::Vec3;
-    const Vec3 origin = univex::integration::FromUveVector3UVE(originUve);
-    const Vec3 color = univex::integration::FromUveVector3UVE(colorUve);
+    const Vec3 origin = univex::integration::FromUveVector3(originUve);
+    const Vec3 color = univex::integration::FromUveVector3(colorUve);
     const float hx = halfExtentsUve.x;
     const float hy = halfExtentsUve.y;
     const float hz = halfExtentsUve.z;
@@ -290,31 +290,31 @@ void AppendAxisAlignedBoxGizmoUVE(univex::gizmo::GizmoMesh& mesh,
     add(-hx, -hy, hz, -hx, hy, hz);
 }
 
-class ObjectGizmoBuilderUVE final {
+class ObjectGizmoBuilder final {
 public:
     using Vec3 = univex::math::Vec3;
 
-    explicit ObjectGizmoBuilderUVE(univex::gizmo::GizmoMesh& mesh) : m_mesh(mesh) {}
+    explicit ObjectGizmoBuilder(univex::gizmo::GizmoMesh& mesh) : m_mesh(mesh) {}
 
     void Line(const Vec3& a, const Vec3& b, const Vec3& color, const float width = 1.4F) {
         m_mesh.lines.push_back(univex::gizmo::GizmoLine{a, b, color, width});
     }
 
-    [[nodiscard]] static Vec3 Place(const Scene::WorldTransformComponentUVE& world, const Vec3& local) {
-        const Math::Vector3UVE scaled{local.x * world.worldScale.x, local.y * world.worldScale.y,
+    [[nodiscard]] static Vec3 Place(const Scene::WorldTransformComponent& world, const Vec3& local) {
+        const Math::Vector3 scaled{local.x * world.worldScale.x, local.y * world.worldScale.y,
                                       local.z * world.worldScale.z};
-        const Math::Vector3UVE rotated = Math::RotateVectorUVE(world.worldRotation, scaled);
+        const Math::Vector3 rotated = Math::RotateVector(world.worldRotation, scaled);
         return Vec3{world.worldPosition.x + rotated.x, world.worldPosition.y + rotated.y,
                     world.worldPosition.z + rotated.z};
     }
 
-    [[nodiscard]] static Vec3 Turn(const Scene::WorldTransformComponentUVE& world, const Vec3& local) {
-        const Math::Vector3UVE rotated =
-            Math::RotateVectorUVE(world.worldRotation, Math::Vector3UVE{local.x, local.y, local.z});
+    [[nodiscard]] static Vec3 Turn(const Scene::WorldTransformComponent& world, const Vec3& local) {
+        const Math::Vector3 rotated =
+            Math::RotateVector(world.worldRotation, Math::Vector3{local.x, local.y, local.z});
         return Vec3{rotated.x, rotated.y, rotated.z};
     }
 
-    void Box(const Scene::WorldTransformComponentUVE& world,
+    void Box(const Scene::WorldTransformComponent& world,
              const Vec3& centre,
              const Vec3& half,
              const Vec3& color,
@@ -386,33 +386,33 @@ private:
     univex::gizmo::GizmoMesh& m_mesh;
 };
 
-[[nodiscard]] bool ShowsObjectGizmoUVE(Scene::IEntityManagerUVE& entityManager, const Scene::EntityUVE entity) {
-    if (entityManager.HasComponentUVE<Scene::EditorInternalEntityComponentUVE>(entity)) {
+[[nodiscard]] bool ShowsObjectGizmo(Scene::IEntityManager& entityManager, const Scene::Entity entity) {
+    if (entityManager.HasComponent<Scene::EditorInternalEntityComponent>(entity)) {
         return false;
     }
-    return !entityManager.HasComponentUVE<Scene::VisibilityComponentUVE>(entity) ||
-           entityManager.GetComponentUVE<Scene::VisibilityComponentUVE>(entity).visibleInHierarchy;
+    return !entityManager.HasComponent<Scene::VisibilityComponent>(entity) ||
+           entityManager.GetComponent<Scene::VisibilityComponent>(entity).visibleInHierarchy;
 }
 
 } // namespace
 
-univex::gizmo::GizmoMesh ViewportObjectGizmosUVE::BuildCameraFrustumMeshUVE(Scene::IEntityManagerUVE& entityManager,
-                                                                            const Scene::EntityUVE hideEntity,
+univex::gizmo::GizmoMesh ViewportObjectGizmos::BuildCameraFrustumMesh(Scene::IEntityManager& entityManager,
+                                                                            const Scene::Entity hideEntity,
                                                                             const float aspectRatio) {
     univex::gizmo::GizmoMesh mesh;
     if (!(std::isfinite(aspectRatio) && aspectRatio > 0.0F)) {
         return mesh;
     }
-    Render::CameraSystemUVE cameras;
-    entityManager.ForEachUVE<Scene::WorldTransformComponentUVE, Scene::CameraComponentUVE>(
-        [&](const Scene::EntityUVE entity, const Scene::WorldTransformComponentUVE& worldTransform,
-            const Scene::CameraComponentUVE& camera) {
-            if (entity == hideEntity || !Scene::IsDocumentCameraEntityUVE(entityManager, entity) ||
-                !Scene::IsCameraComponentValidUVE(camera)) {
+    Render::CameraSystem cameras;
+    entityManager.ForEach<Scene::WorldTransformComponent, Scene::CameraComponent>(
+        [&](const Scene::Entity entity, const Scene::WorldTransformComponent& worldTransform,
+            const Scene::CameraComponent& camera) {
+            if (entity == hideEntity || !Scene::IsDocumentCameraEntity(entityManager, entity) ||
+                !Scene::IsCameraComponentValid(camera)) {
                 return;
             }
-            const Render::CameraFrustumCornersUVE corners =
-                cameras.ComputeFrustumCornersUVE(entityManager, entity, aspectRatio);
+            const Render::CameraFrustumCorners corners =
+                cameras.ComputeFrustumCorners(entityManager, entity, aspectRatio);
             constexpr float kEditorFrustumLength = 2.4F;
             const float visualFarScale =
                 std::min(1.0F, kEditorFrustumLength / std::max(camera.farPlane, camera.nearPlane));
@@ -430,8 +430,8 @@ univex::gizmo::GizmoMesh ViewportObjectGizmosUVE::BuildCameraFrustumMeshUVE(Scen
                 };
                 mesh.lines.push_back(univex::gizmo::GizmoLine{visualPoint(a), visualPoint(b), color, widthPx});
             };
-            const auto rotate = [&](const Math::Vector3UVE local) {
-                const Math::Vector3UVE world = Math::RotateVectorUVE(worldTransform.worldRotation, local);
+            const auto rotate = [&](const Math::Vector3 local) {
+                const Math::Vector3 world = Math::RotateVector(worldTransform.worldRotation, local);
                 return univex::math::Vec3{world.x, world.y, world.z};
             };
             const univex::math::Vec3 right = rotate({1.0F, 0.0F, 0.0F});
@@ -491,79 +491,79 @@ univex::gizmo::GizmoMesh ViewportObjectGizmosUVE::BuildCameraFrustumMeshUVE(Scen
     return mesh;
 }
 
-univex::gizmo::GizmoMesh ViewportObjectGizmosUVE::BuildLightDirectionMeshUVE(Scene::IEntityManagerUVE& entityManager) {
+univex::gizmo::GizmoMesh ViewportObjectGizmos::BuildLightDirectionMesh(Scene::IEntityManager& entityManager) {
     univex::gizmo::GizmoMesh mesh;
-    std::vector<Scene::LightDirectionGizmoUVE> gizmos;
-    Scene::CollectLightDirectionGizmosUVE(entityManager, gizmos);
-    for (const Scene::LightDirectionGizmoUVE& gizmo : gizmos) {
-        AppendLightDirectionGizmoUVE(mesh, gizmo);
+    std::vector<Scene::LightDirectionGizmo> gizmos;
+    Scene::CollectLightDirectionGizmos(entityManager, gizmos);
+    for (const Scene::LightDirectionGizmo& gizmo : gizmos) {
+        AppendLightDirectionGizmo(mesh, gizmo);
     }
     return mesh;
 }
 
-univex::gizmo::GizmoMesh ViewportObjectGizmosUVE::BuildFogVolumeMeshUVE(Scene::IEntityManagerUVE& entityManager) {
+univex::gizmo::GizmoMesh ViewportObjectGizmos::BuildFogVolumeMesh(Scene::IEntityManager& entityManager) {
     univex::gizmo::GizmoMesh mesh;
-    std::vector<Scene::FogVolume3DGizmoUVE> gizmos;
-    Scene::CollectFogVolume3DGizmosUVE(entityManager, gizmos);
-    for (const Scene::FogVolume3DGizmoUVE& gizmo : gizmos) {
-        AppendFogVolumeGizmoUVE(mesh, gizmo);
+    std::vector<Scene::FogVolume3DGizmo> gizmos;
+    Scene::CollectFogVolume3DGizmos(entityManager, gizmos);
+    for (const Scene::FogVolume3DGizmo& gizmo : gizmos) {
+        AppendFogVolumeGizmo(mesh, gizmo);
     }
     return mesh;
 }
 
-univex::gizmo::GizmoMesh ViewportObjectGizmosUVE::BuildReflectionProbeMeshUVE(Scene::IEntityManagerUVE& entityManager) {
+univex::gizmo::GizmoMesh ViewportObjectGizmos::BuildReflectionProbeMesh(Scene::IEntityManager& entityManager) {
     univex::gizmo::GizmoMesh mesh;
-    std::vector<Scene::ReflectionProbe3DGizmoUVE> gizmos;
-    Scene::CollectReflectionProbe3DGizmosUVE(entityManager, gizmos);
-    for (const Scene::ReflectionProbe3DGizmoUVE& gizmo : gizmos) {
-        AppendReflectionProbeGizmoUVE(mesh, gizmo);
+    std::vector<Scene::ReflectionProbe3DGizmo> gizmos;
+    Scene::CollectReflectionProbe3DGizmos(entityManager, gizmos);
+    for (const Scene::ReflectionProbe3DGizmo& gizmo : gizmos) {
+        AppendReflectionProbeGizmo(mesh, gizmo);
     }
     return mesh;
 }
 
-univex::gizmo::GizmoMesh ViewportObjectGizmosUVE::BuildWorldPartitionMeshUVE(Scene::IEntityManagerUVE& entityManager) {
+univex::gizmo::GizmoMesh ViewportObjectGizmos::BuildWorldPartitionMesh(Scene::IEntityManager& entityManager) {
     univex::gizmo::GizmoMesh mesh;
-    std::vector<Scene::WorldPartition3DGizmoUVE> gizmos;
-    Scene::CollectWorldPartition3DGizmosUVE(entityManager, gizmos);
-    for (const Scene::WorldPartition3DGizmoUVE& gizmo : gizmos) {
-        AppendWorldPartitionGizmoUVE(mesh, gizmo);
+    std::vector<Scene::WorldPartition3DGizmo> gizmos;
+    Scene::CollectWorldPartition3DGizmos(entityManager, gizmos);
+    for (const Scene::WorldPartition3DGizmo& gizmo : gizmos) {
+        AppendWorldPartitionGizmo(mesh, gizmo);
     }
     return mesh;
 }
 
-univex::gizmo::GizmoMesh ViewportObjectGizmosUVE::BuildVisibilityRegionMeshUVE(
-    Scene::IEntityManagerUVE& entityManager) {
+univex::gizmo::GizmoMesh ViewportObjectGizmos::BuildVisibilityRegionMesh(
+    Scene::IEntityManager& entityManager) {
     univex::gizmo::GizmoMesh mesh;
-    std::vector<Scene::VisibilityRegion3DGizmoUVE> gizmos;
-    Scene::CollectVisibilityRegion3DGizmosUVE(entityManager, gizmos);
-    for (const Scene::VisibilityRegion3DGizmoUVE& gizmo : gizmos) {
-        AppendAxisAlignedBoxGizmoUVE(mesh, gizmo.origin, gizmo.halfExtents, gizmo.color);
+    std::vector<Scene::VisibilityRegion3DGizmo> gizmos;
+    Scene::CollectVisibilityRegion3DGizmos(entityManager, gizmos);
+    for (const Scene::VisibilityRegion3DGizmo& gizmo : gizmos) {
+        AppendAxisAlignedBoxGizmo(mesh, gizmo.origin, gizmo.halfExtents, gizmo.color);
     }
     return mesh;
 }
 
-univex::gizmo::GizmoMesh ViewportObjectGizmosUVE::BuildOccluderMeshUVE(Scene::IEntityManagerUVE& entityManager) {
+univex::gizmo::GizmoMesh ViewportObjectGizmos::BuildOccluderMesh(Scene::IEntityManager& entityManager) {
     univex::gizmo::GizmoMesh mesh;
-    std::vector<Scene::Occluder3DGizmoUVE> gizmos;
-    Scene::CollectOccluder3DGizmosUVE(entityManager, gizmos);
-    for (const Scene::Occluder3DGizmoUVE& gizmo : gizmos) {
-        AppendAxisAlignedBoxGizmoUVE(mesh, gizmo.origin, gizmo.halfExtents, gizmo.color);
+    std::vector<Scene::Occluder3DGizmo> gizmos;
+    Scene::CollectOccluder3DGizmos(entityManager, gizmos);
+    for (const Scene::Occluder3DGizmo& gizmo : gizmos) {
+        AppendAxisAlignedBoxGizmo(mesh, gizmo.origin, gizmo.halfExtents, gizmo.color);
     }
     return mesh;
 }
 
-univex::gizmo::GizmoMesh ViewportObjectGizmosUVE::BuildColliderMeshUVE(Scene::IEntityManagerUVE& entityManager) {
+univex::gizmo::GizmoMesh ViewportObjectGizmos::BuildColliderMesh(Scene::IEntityManager& entityManager) {
     univex::gizmo::GizmoMesh mesh;
-    entityManager.ForEachUVE<Scene::WorldTransformComponentUVE, Scene::ColliderComponentUVE>(
-        [&](const Scene::EntityUVE, const Scene::WorldTransformComponentUVE& worldTransform,
-            const Scene::ColliderComponentUVE& collider) {
+    entityManager.ForEach<Scene::WorldTransformComponent, Scene::ColliderComponent>(
+        [&](const Scene::Entity, const Scene::WorldTransformComponent& worldTransform,
+            const Scene::ColliderComponent& collider) {
             const univex::math::Vec3 color =
                 collider.disabled ? univex::math::Vec3{0.5F, 0.5F, 0.5F} : univex::math::Vec3{0.35F, 0.9F, 0.35F};
             constexpr float kLineWidth = 1.5F;
 
             const auto toWorld = [&](const float lx, const float ly, const float lz) -> univex::math::Vec3 {
-                const Math::Vector3UVE w = Scene::TransformWorldPointUVE(worldTransform, {lx, ly, lz});
-                return univex::integration::FromUveVector3UVE(w);
+                const Math::Vector3 w = Scene::TransformWorldPoint(worldTransform, {lx, ly, lz});
+                return univex::integration::FromUveVector3(w);
             };
             const auto addEdge = [&](const univex::math::Vec3& p1, const univex::math::Vec3& p2) {
                 mesh.lines.push_back(univex::gizmo::GizmoLine{p1, p2, color, kLineWidth});
@@ -585,7 +585,7 @@ univex::gizmo::GizmoMesh ViewportObjectGizmosUVE::BuildColliderMeshUVE(Scene::IE
             };
 
             switch (collider.shapeType) {
-                case Scene::ColliderShapeTypeUVE::Box: {
+                case Scene::ColliderShapeType::Box: {
                     const float hx = collider.halfExtents.x;
                     const float hy = collider.halfExtents.y;
                     const float hz = collider.halfExtents.z;
@@ -607,7 +607,7 @@ univex::gizmo::GizmoMesh ViewportObjectGizmosUVE::BuildColliderMeshUVE(Scene::IE
                     addEdge(c[3], c[7]);
                     break;
                 }
-                case Scene::ColliderShapeTypeUVE::Sphere: {
+                case Scene::ColliderShapeType::Sphere: {
                     const float r = std::max(0.001F, collider.radius);
                     addRing(0.0F, r);
                     const float angles[2] = {kPi / 6.0F, kPi / 3.0F};
@@ -636,7 +636,7 @@ univex::gizmo::GizmoMesh ViewportObjectGizmosUVE::BuildColliderMeshUVE(Scene::IE
                     }
                     break;
                 }
-                case Scene::ColliderShapeTypeUVE::Capsule: {
+                case Scene::ColliderShapeType::Capsule: {
                     const float r = std::max(0.001F, collider.radius);
                     const float h = std::max(0.0F, collider.height);
                     const float cylH = std::max(0.0F, h - 2.0F * r);
@@ -690,7 +690,7 @@ univex::gizmo::GizmoMesh ViewportObjectGizmosUVE::BuildColliderMeshUVE(Scene::IE
                     }
                     break;
                 }
-                case Scene::ColliderShapeTypeUVE::Cylinder: {
+                case Scene::ColliderShapeType::Cylinder: {
                     const float r = std::max(0.001F, collider.radius);
                     const float halfH = std::max(0.001F, collider.height * 0.5F);
                     addRing(halfH, r);
@@ -710,27 +710,27 @@ univex::gizmo::GizmoMesh ViewportObjectGizmosUVE::BuildColliderMeshUVE(Scene::IE
     return mesh;
 }
 
-univex::gizmo::GizmoMesh ViewportObjectGizmosUVE::BuildSpatialObjectGizmosMeshUVE(
-    Scene::IEntityManagerUVE& entityManager,
+univex::gizmo::GizmoMesh ViewportObjectGizmos::BuildSpatialObjectGizmosMesh(
+    Scene::IEntityManager& entityManager,
     const bool includeSpotCones) {
     using univex::math::Vec3;
-    using WorldUVE = Scene::WorldTransformComponentUVE;
+    using World = Scene::WorldTransformComponent;
     univex::gizmo::GizmoMesh mesh;
-    ObjectGizmoBuilderUVE g(mesh);
+    ObjectGizmoBuilder g(mesh);
     const Vec3 zero{0.0F, 0.0F, 0.0F};
-    const auto origin = [](const WorldUVE& w) { return Vec3{w.worldPosition.x, w.worldPosition.y, w.worldPosition.z}; };
+    const auto origin = [](const World& w) { return Vec3{w.worldPosition.x, w.worldPosition.y, w.worldPosition.z}; };
 
     // Point lights: range spheres; spot lights: cones out to range (when not drawn by the host).
-    entityManager.ForEachUVE<WorldUVE, Scene::LightComponentUVE>(
-        [&](const Scene::EntityUVE e, const WorldUVE& w, const Scene::LightComponentUVE& light) {
-            if (!ShowsObjectGizmoUVE(entityManager, e) || light.type == Scene::LightTypeUVE::Directional ||
+    entityManager.ForEach<World, Scene::LightComponent>(
+        [&](const Scene::Entity e, const World& w, const Scene::LightComponent& light) {
+            if (!ShowsObjectGizmo(entityManager, e) || light.type == Scene::LightType::Directional ||
                 !(light.range > 0.0F) || !std::isfinite(light.range)) {
                 return;
             }
             const Vec3 color{0.5F + 0.5F * std::clamp(light.color.r, 0.0F, 1.0F),
                              0.5F + 0.5F * std::clamp(light.color.g, 0.0F, 1.0F),
                              0.5F + 0.5F * std::clamp(light.color.b, 0.0F, 1.0F)};
-            if (light.type == Scene::LightTypeUVE::Point) {
+            if (light.type == Scene::LightType::Point) {
                 g.Sphere(origin(w), light.range, color);
                 return;
             }
@@ -738,9 +738,9 @@ univex::gizmo::GizmoMesh ViewportObjectGizmosUVE::BuildSpatialObjectGizmosMeshUV
                 return;
             }
             const Vec3 apex = origin(w);
-            const Vec3 forward = ObjectGizmoBuilderUVE::Turn(w, Vec3{0.0F, 0.0F, -1.0F});
-            const Vec3 right = ObjectGizmoBuilderUVE::Turn(w, Vec3{1.0F, 0.0F, 0.0F});
-            const Vec3 up = ObjectGizmoBuilderUVE::Turn(w, Vec3{0.0F, 1.0F, 0.0F});
+            const Vec3 forward = ObjectGizmoBuilder::Turn(w, Vec3{0.0F, 0.0F, -1.0F});
+            const Vec3 right = ObjectGizmoBuilder::Turn(w, Vec3{1.0F, 0.0F, 0.0F});
+            const Vec3 up = ObjectGizmoBuilder::Turn(w, Vec3{0.0F, 1.0F, 0.0F});
             const float angle = std::clamp(light.spotAngleDegrees, 0.5F, 89.5F) * 0.0174532925F;
             const float radius = light.range * std::tan(angle);
             const Vec3 end = apex + forward * light.range;
@@ -752,66 +752,66 @@ univex::gizmo::GizmoMesh ViewportObjectGizmosUVE::BuildSpatialObjectGizmosMeshUV
         });
 
     // Decals: projection box and -Y projection arrow.
-    entityManager.ForEachUVE<WorldUVE, Scene::Decal3DComponentUVE>(
-        [&](const Scene::EntityUVE e, const WorldUVE& w, const Scene::Decal3DComponentUVE& decal) {
-            if (!ShowsObjectGizmoUVE(entityManager, e)) {
+    entityManager.ForEach<World, Scene::Decal3DComponent>(
+        [&](const Scene::Entity e, const World& w, const Scene::Decal3DComponent& decal) {
+            if (!ShowsObjectGizmo(entityManager, e)) {
                 return;
             }
             const Vec3 color{0.95F, 0.78F, 0.40F};
             const Vec3 half{decal.size.x * 0.5F, decal.size.y * 0.5F, decal.size.z * 0.5F};
             g.Box(w, zero, half, color);
-            g.Arrow(ObjectGizmoBuilderUVE::Place(w, zero), ObjectGizmoBuilderUVE::Place(w, Vec3{0.0F, -half.y, 0.0F}),
+            g.Arrow(ObjectGizmoBuilder::Place(w, zero), ObjectGizmoBuilder::Place(w, Vec3{0.0F, -half.y, 0.0F}),
                     color);
         });
 
     // Global illumination volumes, navigation mesh bounds, and on-screen visibility notifiers.
-    entityManager.ForEachUVE<WorldUVE, Scene::VoxelGI3DComponentUVE>(
-        [&](const Scene::EntityUVE e, const WorldUVE& w, const Scene::VoxelGI3DComponentUVE& gi) {
-            if (ShowsObjectGizmoUVE(entityManager, e)) {
+    entityManager.ForEach<World, Scene::VoxelGI3DComponent>(
+        [&](const Scene::Entity e, const World& w, const Scene::VoxelGI3DComponent& gi) {
+            if (ShowsObjectGizmo(entityManager, e)) {
                 g.Box(w, zero, Vec3{gi.halfExtents.x, gi.halfExtents.y, gi.halfExtents.z}, Vec3{0.55F, 0.85F, 1.0F});
             }
         });
-    entityManager.ForEachUVE<WorldUVE, Scene::LightmapGI3DComponentUVE>(
-        [&](const Scene::EntityUVE e, const WorldUVE& w, const Scene::LightmapGI3DComponentUVE& gi) {
-            if (ShowsObjectGizmoUVE(entityManager, e)) {
+    entityManager.ForEach<World, Scene::LightmapGI3DComponent>(
+        [&](const Scene::Entity e, const World& w, const Scene::LightmapGI3DComponent& gi) {
+            if (ShowsObjectGizmo(entityManager, e)) {
                 g.Box(w, zero, Vec3{gi.halfExtents.x, gi.halfExtents.y, gi.halfExtents.z}, Vec3{1.0F, 0.85F, 0.45F});
             }
         });
-    entityManager.ForEachUVE<WorldUVE, Scene::NavMeshVolume3DComponentUVE>(
-        [&](const Scene::EntityUVE e, const WorldUVE& w, const Scene::NavMeshVolume3DComponentUVE& nav) {
-            if (ShowsObjectGizmoUVE(entityManager, e)) {
+    entityManager.ForEach<World, Scene::NavMeshVolume3DComponent>(
+        [&](const Scene::Entity e, const World& w, const Scene::NavMeshVolume3DComponent& nav) {
+            if (ShowsObjectGizmo(entityManager, e)) {
                 g.Box(w, zero, Vec3{nav.boundsHalfExtents.x, nav.boundsHalfExtents.y, nav.boundsHalfExtents.z},
                       Vec3{0.35F, 0.90F, 0.50F});
             }
         });
-    entityManager.ForEachUVE<WorldUVE, Scene::VisibleOnScreenNotifier3DComponentUVE>(
-        [&](const Scene::EntityUVE e, const WorldUVE& w, const Scene::VisibleOnScreenNotifier3DComponentUVE& n) {
-            if (ShowsObjectGizmoUVE(entityManager, e)) {
+    entityManager.ForEach<World, Scene::VisibleOnScreenNotifier3DComponent>(
+        [&](const Scene::Entity e, const World& w, const Scene::VisibleOnScreenNotifier3DComponent& n) {
+            if (ShowsObjectGizmo(entityManager, e)) {
                 g.Box(w, Vec3{n.aabbCenterOffset.x, n.aabbCenterOffset.y, n.aabbCenterOffset.z},
                       Vec3{n.aabbHalfExtents.x, n.aabbHalfExtents.y, n.aabbHalfExtents.z}, Vec3{0.95F, 0.60F, 0.95F});
             }
         });
 
     // Ray and shape casts.
-    entityManager.ForEachUVE<WorldUVE, Scene::RayCast3DComponentUVE>(
-        [&](const Scene::EntityUVE e, const WorldUVE& w, const Scene::RayCast3DComponentUVE& ray) {
-            if (!ShowsObjectGizmoUVE(entityManager, e) || !(ray.length > 0.0F) || !std::isfinite(ray.length)) {
+    entityManager.ForEach<World, Scene::RayCast3DComponent>(
+        [&](const Scene::Entity e, const World& w, const Scene::RayCast3DComponent& ray) {
+            if (!ShowsObjectGizmo(entityManager, e) || !(ray.length > 0.0F) || !std::isfinite(ray.length)) {
                 return;
             }
             const Vec3 dir = univex::math::Normalize(
-                ObjectGizmoBuilderUVE::Turn(w, Vec3{ray.direction.x, ray.direction.y, ray.direction.z}));
+                ObjectGizmoBuilder::Turn(w, Vec3{ray.direction.x, ray.direction.y, ray.direction.z}));
             g.Arrow(origin(w), origin(w) + dir * ray.length,
                     ray.hit ? Vec3{1.0F, 0.35F, 0.30F} : Vec3{1.0F, 0.62F, 0.22F});
         });
-    entityManager.ForEachUVE<WorldUVE, Scene::ShapeCast3DComponentUVE>(
-        [&](const Scene::EntityUVE e, const WorldUVE& w, const Scene::ShapeCast3DComponentUVE& cast) {
-            if (!ShowsObjectGizmoUVE(entityManager, e) || !(cast.maxDistance > 0.0F) ||
+    entityManager.ForEach<World, Scene::ShapeCast3DComponent>(
+        [&](const Scene::Entity e, const World& w, const Scene::ShapeCast3DComponent& cast) {
+            if (!ShowsObjectGizmo(entityManager, e) || !(cast.maxDistance > 0.0F) ||
                 !std::isfinite(cast.maxDistance)) {
                 return;
             }
             const Vec3 color = cast.hit ? Vec3{1.0F, 0.35F, 0.30F} : Vec3{1.0F, 0.62F, 0.22F};
             const Vec3 dir = univex::math::Normalize(
-                ObjectGizmoBuilderUVE::Turn(w, Vec3{cast.direction.x, cast.direction.y, cast.direction.z}));
+                ObjectGizmoBuilder::Turn(w, Vec3{cast.direction.x, cast.direction.y, cast.direction.z}));
             const float reach = cast.hit ? cast.hitDistance : cast.maxDistance;
             g.Line(origin(w), origin(w) + dir * reach, color);
             g.Sphere(origin(w), std::max(0.01F, cast.radius), color);
@@ -819,12 +819,12 @@ univex::gizmo::GizmoMesh ViewportObjectGizmosUVE::BuildSpatialObjectGizmosMeshUV
         });
 
     // Spring arms extend along local +Z.
-    entityManager.ForEachUVE<WorldUVE, Scene::SpringArm3DComponentUVE>(
-        [&](const Scene::EntityUVE e, const WorldUVE& w, const Scene::SpringArm3DComponentUVE& arm) {
-            if (!ShowsObjectGizmoUVE(entityManager, e) || !(arm.armLength > 0.0F) || !std::isfinite(arm.armLength)) {
+    entityManager.ForEach<World, Scene::SpringArm3DComponent>(
+        [&](const Scene::Entity e, const World& w, const Scene::SpringArm3DComponent& arm) {
+            if (!ShowsObjectGizmo(entityManager, e) || !(arm.armLength > 0.0F) || !std::isfinite(arm.armLength)) {
                 return;
             }
-            const Vec3 dir = ObjectGizmoBuilderUVE::Turn(w, Vec3{0.0F, 0.0F, 1.0F});
+            const Vec3 dir = ObjectGizmoBuilder::Turn(w, Vec3{0.0F, 0.0F, 1.0F});
             const float current = std::clamp(arm.currentLength, 0.0F, arm.armLength);
             g.Line(origin(w), origin(w) + dir * current, Vec3{0.92F, 0.90F, 0.40F}, 2.0F);
             g.Line(origin(w) + dir * current, origin(w) + dir * arm.armLength, Vec3{0.55F, 0.54F, 0.30F}, 1.2F);
@@ -832,51 +832,51 @@ univex::gizmo::GizmoMesh ViewportObjectGizmosUVE::BuildSpatialObjectGizmosMeshUV
         });
 
     // Markers, spawn points, and audio listeners.
-    entityManager.ForEachUVE<WorldUVE, Scene::Marker3DComponentUVE>(
-        [&](const Scene::EntityUVE e, const WorldUVE& w, const Scene::Marker3DComponentUVE&) {
-            if (!ShowsObjectGizmoUVE(entityManager, e)) {
+    entityManager.ForEach<World, Scene::Marker3DComponent>(
+        [&](const Scene::Entity e, const World& w, const Scene::Marker3DComponent&) {
+            if (!ShowsObjectGizmo(entityManager, e)) {
                 return;
             }
             constexpr float kSize = 0.5F;
-            g.Line(ObjectGizmoBuilderUVE::Place(w, Vec3{-kSize, 0.0F, 0.0F}),
-                   ObjectGizmoBuilderUVE::Place(w, Vec3{kSize, 0.0F, 0.0F}), Vec3{0.90F, 0.32F, 0.32F});
-            g.Line(ObjectGizmoBuilderUVE::Place(w, Vec3{0.0F, -kSize, 0.0F}),
-                   ObjectGizmoBuilderUVE::Place(w, Vec3{0.0F, kSize, 0.0F}), Vec3{0.45F, 0.80F, 0.30F});
-            g.Line(ObjectGizmoBuilderUVE::Place(w, Vec3{0.0F, 0.0F, -kSize}),
-                   ObjectGizmoBuilderUVE::Place(w, Vec3{0.0F, 0.0F, kSize}), Vec3{0.30F, 0.55F, 0.92F});
+            g.Line(ObjectGizmoBuilder::Place(w, Vec3{-kSize, 0.0F, 0.0F}),
+                   ObjectGizmoBuilder::Place(w, Vec3{kSize, 0.0F, 0.0F}), Vec3{0.90F, 0.32F, 0.32F});
+            g.Line(ObjectGizmoBuilder::Place(w, Vec3{0.0F, -kSize, 0.0F}),
+                   ObjectGizmoBuilder::Place(w, Vec3{0.0F, kSize, 0.0F}), Vec3{0.45F, 0.80F, 0.30F});
+            g.Line(ObjectGizmoBuilder::Place(w, Vec3{0.0F, 0.0F, -kSize}),
+                   ObjectGizmoBuilder::Place(w, Vec3{0.0F, 0.0F, kSize}), Vec3{0.30F, 0.55F, 0.92F});
         });
-    entityManager.ForEachUVE<WorldUVE, Scene::SpawnPoint3DComponentUVE>(
-        [&](const Scene::EntityUVE e, const WorldUVE& w, const Scene::SpawnPoint3DComponentUVE&) {
-            if (!ShowsObjectGizmoUVE(entityManager, e)) {
+    entityManager.ForEach<World, Scene::SpawnPoint3DComponent>(
+        [&](const Scene::Entity e, const World& w, const Scene::SpawnPoint3DComponent&) {
+            if (!ShowsObjectGizmo(entityManager, e)) {
                 return;
             }
             const Vec3 color{0.40F, 0.80F, 1.0F};
-            g.Circle(origin(w), ObjectGizmoBuilderUVE::Turn(w, Vec3{1.0F, 0.0F, 0.0F}),
-                     ObjectGizmoBuilderUVE::Turn(w, Vec3{0.0F, 0.0F, 1.0F}), 0.5F, color);
-            g.Arrow(origin(w), origin(w) + ObjectGizmoBuilderUVE::Turn(w, Vec3{0.0F, 0.0F, -1.0F}) * 0.9F, color);
+            g.Circle(origin(w), ObjectGizmoBuilder::Turn(w, Vec3{1.0F, 0.0F, 0.0F}),
+                     ObjectGizmoBuilder::Turn(w, Vec3{0.0F, 0.0F, 1.0F}), 0.5F, color);
+            g.Arrow(origin(w), origin(w) + ObjectGizmoBuilder::Turn(w, Vec3{0.0F, 0.0F, -1.0F}) * 0.9F, color);
         });
-    entityManager.ForEachUVE<WorldUVE, Scene::AudioListener3DComponentUVE>(
-        [&](const Scene::EntityUVE e, const WorldUVE& w, const Scene::AudioListener3DComponentUVE&) {
-            if (!ShowsObjectGizmoUVE(entityManager, e)) {
+    entityManager.ForEach<World, Scene::AudioListener3DComponent>(
+        [&](const Scene::Entity e, const World& w, const Scene::AudioListener3DComponent&) {
+            if (!ShowsObjectGizmo(entityManager, e)) {
                 return;
             }
             const Vec3 color{0.82F, 0.82F, 0.86F};
-            g.Circle(origin(w), ObjectGizmoBuilderUVE::Turn(w, Vec3{1.0F, 0.0F, 0.0F}),
-                     ObjectGizmoBuilderUVE::Turn(w, Vec3{0.0F, 1.0F, 0.0F}), 0.35F, color);
-            g.Arrow(origin(w), origin(w) + ObjectGizmoBuilderUVE::Turn(w, Vec3{0.0F, 0.0F, -1.0F}) * 0.7F, color);
+            g.Circle(origin(w), ObjectGizmoBuilder::Turn(w, Vec3{1.0F, 0.0F, 0.0F}),
+                     ObjectGizmoBuilder::Turn(w, Vec3{0.0F, 1.0F, 0.0F}), 0.35F, color);
+            g.Arrow(origin(w), origin(w) + ObjectGizmoBuilder::Turn(w, Vec3{0.0F, 0.0F, -1.0F}) * 0.7F, color);
         });
 
     // Path3D curves.
-    entityManager.ForEachUVE<WorldUVE, Scene::Path3DComponentUVE>(
-        [&](const Scene::EntityUVE e, const WorldUVE& w, const Scene::Path3DComponentUVE& path) {
-            if (!ShowsObjectGizmoUVE(entityManager, e) || path.points.size() < 2U) {
+    entityManager.ForEach<World, Scene::Path3DComponent>(
+        [&](const Scene::Entity e, const World& w, const Scene::Path3DComponent& path) {
+            if (!ShowsObjectGizmo(entityManager, e) || path.points.size() < 2U) {
                 return;
             }
             const Vec3 color{0.42F, 0.72F, 1.0F};
-            const std::size_t count = std::min(path.points.size(), Scene::kMaximumPath3DPointsUVE);
+            const std::size_t count = std::min(path.points.size(), Scene::kMaximumPath3DPoints);
             const auto at = [&](const std::size_t i) {
-                const Math::Vector3UVE& p = path.points[i];
-                return ObjectGizmoBuilderUVE::Place(w, Vec3{p.x, p.y, p.z});
+                const Math::Vector3& p = path.points[i];
+                return ObjectGizmoBuilder::Place(w, Vec3{p.x, p.y, p.z});
             };
             for (std::size_t i = 1U; i < count; ++i) {
                 g.Line(at(i - 1U), at(i), color, 2.0F);
@@ -891,24 +891,24 @@ univex::gizmo::GizmoMesh ViewportObjectGizmosUVE::BuildSpatialObjectGizmosMeshUV
     return mesh;
 }
 
-ViewportObjectGizmoBuildResultUVE ViewportObjectGizmosUVE::BuildAllObjectGizmosUVE(
-    Scene::IEntityManagerUVE& entityManager,
-    const Scene::EntityUVE hideCameraEntity,
+ViewportObjectGizmoBuildResult ViewportObjectGizmos::BuildAllObjectGizmos(
+    Scene::IEntityManager& entityManager,
+    const Scene::Entity hideCameraEntity,
     const float aspectRatio,
     const bool hostDrawsPrimaryGlyphs) {
-    ViewportObjectGizmoBuildResultUVE result{};
+    ViewportObjectGizmoBuildResult result{};
     if (!hostDrawsPrimaryGlyphs) {
-        result.mesh = BuildCameraFrustumMeshUVE(entityManager, hideCameraEntity, aspectRatio);
-        AppendMeshUVE(result.mesh, BuildLightDirectionMeshUVE(entityManager));
+        result.mesh = BuildCameraFrustumMesh(entityManager, hideCameraEntity, aspectRatio);
+        AppendMesh(result.mesh, BuildLightDirectionMesh(entityManager));
     }
-    AppendMeshUVE(result.mesh, BuildFogVolumeMeshUVE(entityManager));
-    AppendMeshUVE(result.mesh, BuildReflectionProbeMeshUVE(entityManager));
-    AppendMeshUVE(result.mesh, BuildWorldPartitionMeshUVE(entityManager));
-    AppendMeshUVE(result.mesh, BuildVisibilityRegionMeshUVE(entityManager));
-    AppendMeshUVE(result.mesh, BuildOccluderMeshUVE(entityManager));
-    AppendMeshUVE(result.mesh, BuildSpatialObjectGizmosMeshUVE(entityManager, !hostDrawsPrimaryGlyphs));
+    AppendMesh(result.mesh, BuildFogVolumeMesh(entityManager));
+    AppendMesh(result.mesh, BuildReflectionProbeMesh(entityManager));
+    AppendMesh(result.mesh, BuildWorldPartitionMesh(entityManager));
+    AppendMesh(result.mesh, BuildVisibilityRegionMesh(entityManager));
+    AppendMesh(result.mesh, BuildOccluderMesh(entityManager));
+    AppendMesh(result.mesh, BuildSpatialObjectGizmosMesh(entityManager, !hostDrawsPrimaryGlyphs));
     result.colliderLinesStart = result.mesh.lines.size();
-    AppendMeshUVE(result.mesh, BuildColliderMeshUVE(entityManager));
+    AppendMesh(result.mesh, BuildColliderMesh(entityManager));
     return result;
 }
 

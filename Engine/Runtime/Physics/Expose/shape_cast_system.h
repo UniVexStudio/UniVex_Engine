@@ -10,7 +10,7 @@
 #include "entity.h"
 
 namespace UVE::Scene {
-class IEntityManagerUVE;
+class IEntityManager;
 }
 
 namespace UVE::Physics {
@@ -19,78 +19,78 @@ namespace UVE::Physics {
 /// capsule targets use exact point-ray/capsule time-of-impact with the moving radius expanded into
 /// the capsule; box and unknown targets remain conservatively expanded cached world AABBs. This is
 /// read-only and does not claim exact oriented-box casts or backend replacement.
-struct SphereCastQueryUVE final {
-    Math::RayUVE ray{};
+struct SphereCastQuery final {
+    Math::Ray ray{};
     float radius = 0.0F;
     float maxDistance = 0.0F;
     std::uint32_t layerMask = 0xFFFFFFFFU;
-    Scene::EntityUVE ignoreEntity{};
-    Scene::EntityUVE alsoIgnoreEntity{};
+    Scene::Entity ignoreEntity{};
+    Scene::Entity alsoIgnoreEntity{};
 };
 
-struct BoxCastQueryUVE final {
-    Math::RayUVE ray{};
-    Math::Vector3UVE halfExtents{};
+struct BoxCastQuery final {
+    Math::Ray ray{};
+    Math::Vector3 halfExtents{};
     float maxDistance = 0.0F;
     std::uint32_t layerMask = 0xFFFFFFFFU;
-    Scene::EntityUVE ignoreEntity{};
+    Scene::Entity ignoreEntity{};
 };
 
-struct CapsuleCastQueryUVE final {
-    Math::RayUVE ray{};
+struct CapsuleCastQuery final {
+    Math::Ray ray{};
     float radius = 0.0F;
     float height = 0.0F;
     float maxDistance = 0.0F;
     std::uint32_t layerMask = 0xFFFFFFFFU;
-    Scene::EntityUVE ignoreEntity{};
+    Scene::Entity ignoreEntity{};
 };
 
-struct CapsuleCastHitUVE final {
-    Scene::EntityUVE entity;
+struct CapsuleCastHit final {
+    Scene::Entity entity;
     /// Center of the moving local-Y capsule at first entry into the conservative expanded AABB.
-    Math::Vector3UVE center;
+    Math::Vector3 center;
     /// Axis-aligned face normal of the expanded AABB; zero when the ray starts inside it.
-    Math::Vector3UVE normal;
+    Math::Vector3 normal;
     float distance = 0.0F;
-    PhysicsMaterialUVE material;
+    PhysicsMaterial material;
 };
 
-struct BoxCastHitUVE final {
-    Scene::EntityUVE entity;
+struct BoxCastHit final {
+    Scene::Entity entity;
     /// Center of the moving axis-aligned box at first entry into the conservative expanded AABB.
-    Math::Vector3UVE center;
+    Math::Vector3 center;
     /// Axis-aligned face normal of the expanded AABB; zero when the ray starts inside it.
-    Math::Vector3UVE normal;
+    Math::Vector3 normal;
     float distance = 0.0F;
-    PhysicsMaterialUVE material;
+    PhysicsMaterial material;
 };
 
-struct SphereCastHitUVE final {
-    Scene::EntityUVE entity;
+struct SphereCastHit final {
+    Scene::Entity entity;
     /// Center of the moving sphere at first contact with the exact sphere/capsule target or the
     /// conservative expanded AABB fallback.
-    Math::Vector3UVE center;
+    Math::Vector3 center;
     /// Exact target-surface normal for sphere/capsule targets; axis-aligned fallback normal for an
     /// expanded AABB, and zero when the ray starts inside the target.
-    Math::Vector3UVE normal;
+    Math::Vector3 normal;
     float distance = 0.0F;
-    PhysicsMaterialUVE material;
+    PhysicsMaterial material;
 };
 
-class ShapeCastSystemUVE final {
+class ShapeCastSystem final {
 public:
-    [[nodiscard]] static std::optional<SphereCastHitUVE> SphereCastUVE(
-        Scene::IEntityManagerUVE& entityManager, const SphereCastQueryUVE& query);
+    [[nodiscard]] static std::optional<SphereCastHit> SphereCast(
+        Scene::IEntityManager& entityManager, const SphereCastQuery& query);
 
     /// Conservative axis-aligned box cast over cached world AABBs. The mover half-extents expand
     /// each target AABB; this is read-only and deliberately does not claim an oriented/exact box cast.
-    [[nodiscard]] static std::optional<BoxCastHitUVE> BoxCastUVE(
-        Scene::IEntityManagerUVE& entityManager, const BoxCastQueryUVE& query);
+    [[nodiscard]] static std::optional<BoxCastHit> BoxCast(
+        Scene::IEntityManager& entityManager, const BoxCastQuery& query);
 
     /// Conservative axis-aligned local-Y capsule cast. The mover capsule's broad-phase half-extents
     /// expand each target AABB; this does not claim exact or rotated capsule geometry.
-    [[nodiscard]] static std::optional<CapsuleCastHitUVE> CapsuleCastUVE(
-        Scene::IEntityManagerUVE& entityManager, const CapsuleCastQueryUVE& query);
+    [[nodiscard]] static std::optional<CapsuleCastHit> CapsuleCast(
+        Scene::IEntityManager& entityManager, const CapsuleCastQuery& query);
 };
 
 } // namespace UVE::Physics

@@ -12,11 +12,11 @@
 
 namespace UVE::UI {
 
-/// One baked glyph's shape, precomputed at `kBakedFontPixelHeightUVE` with the pen at the origin -
-/// `AppendTextQuadsUVE()` scales and translates these by the caller's actual font size and cursor.
+/// One baked glyph's shape, precomputed at `kBakedFontPixelHeight` with the pen at the origin -
+/// `AppendTextQuads()` scales and translates these by the caller's actual font size and cursor.
 /// Kept as our own plain struct (not stb_truetype's `stbtt_bakedchar`) so no vendored type ever
 /// appears in a public header.
-struct UIGlyphUVE final {
+struct UIGlyph final {
     float offsetX0 = 0.0F;
     float offsetY0 = 0.0F;
     float offsetX1 = 0.0F;
@@ -28,9 +28,9 @@ struct UIGlyphUVE final {
     float advanceX = 0.0F;
 };
 
-/// A quad for exactly one rendered character, in the same raw-pixel space as UIQuadUVE, already
+/// A quad for exactly one rendered character, in the same raw-pixel space as UIQuad, already
 /// scaled to the caller's requested font size.
-struct UIGlyphQuadUVE final {
+struct UIGlyphQuad final {
     float x0 = 0.0F;
     float y0 = 0.0F;
     float x1 = 0.0F;
@@ -48,52 +48,52 @@ struct UIGlyphQuadUVE final {
 /// baked reference will read softer than a native rasterization would. Only the baked subset's
 /// covered characters (printable ASCII, 0x20-0x7E) render; anything else is silently skipped.
 /// Thread-safety: not thread-safe; owned and ticked from the scene/runtime thread.
-class UIFontAtlasUVE final {
+class UIFontAtlas final {
 public:
-    static constexpr float kBakedFontPixelHeightUVE = 48.0F;
-    static constexpr int kAtlasWidthUVE = 512;
-    static constexpr int kAtlasHeightUVE = 512;
-    static constexpr int kFirstCharUVE = 0x20;
-    static constexpr int kCharCountUVE = 0x7F - 0x20;
+    static constexpr float kBakedFontPixelHeight = 48.0F;
+    static constexpr int kAtlasWidth = 512;
+    static constexpr int kAtlasHeight = 512;
+    static constexpr int kFirstChar = 0x20;
+    static constexpr int kCharCount = 0x7F - 0x20;
 
-    /// Bakes the embedded engine font (`GetEmbeddedUIFontBytesUVE()`): the default behind every
+    /// Bakes the embedded engine font (`GetEmbeddedUIFontBytes()`): the default behind every
     /// existing call site.
-    UIFontAtlasUVE();
+    UIFontAtlas();
 
-    /// Bakes `fontBytes` (raw TTF/OTF, e.g. a `FontAssetUVE`'s payload) instead of the embedded
-    /// font. Unparseable bytes fail closed: the atlas reports `!IsValidUVE()` with an empty
+    /// Bakes `fontBytes` (raw TTF/OTF, e.g. a `FontAsset`'s payload) instead of the embedded
+    /// font. Unparseable bytes fail closed: the atlas reports `!IsValid()` with an empty
     /// bitmap and no glyphs, exactly as a failed bake always has.
-    explicit UIFontAtlasUVE(std::span<const std::uint8_t> fontBytes);
+    explicit UIFontAtlas(std::span<const std::uint8_t> fontBytes);
 
-    [[nodiscard]] bool IsValidUVE() const noexcept { return m_valid; }
+    [[nodiscard]] bool IsValid() const noexcept { return m_valid; }
 
     /// The baked bitmap, expanded to RGBA8 (opaque white, glyph coverage carried in alpha - this
-    /// engine's TextureFormatUVE has no single-channel option), `kAtlasWidthUVE * kAtlasHeightUVE *
+    /// engine's TextureFormat has no single-channel option), `kAtlasWidth * kAtlasHeight *
     /// 4` bytes, row-major - the GPU upload source for the UI overlay pass. Empty when
-    /// `!IsValidUVE()`.
-    [[nodiscard]] const std::vector<std::uint8_t>& GetBitmapUVE() const noexcept { return m_bitmap; }
+    /// `!IsValid()`.
+    [[nodiscard]] const std::vector<std::uint8_t>& GetBitmap() const noexcept { return m_bitmap; }
 
     /// Returns the baked glyph for `character`, or nullptr if it falls outside the covered range.
-    [[nodiscard]] const UIGlyphUVE* FindGlyphUVE(char character) const noexcept;
+    [[nodiscard]] const UIGlyph* FindGlyph(char character) const noexcept;
 
-    /// Appends one UIGlyphQuadUVE per renderable character in `text` (unrenderable characters are
+    /// Appends one UIGlyphQuad per renderable character in `text` (unrenderable characters are
     /// skipped but still silently ignored for advance purposes - no tofu/placeholder glyph exists),
     /// starting at the pen position (`cursorX`, `cursorY` - baseline-relative, matching
     /// `stbtt_GetBakedQuad`'s own convention) and advancing it in place, scaled so the rendered
     /// text stands `fontSizePixels` tall regardless of the baked reference size.
-    void AppendTextQuadsUVE(std::string_view text, float& cursorX, float& cursorY, float fontSizePixels,
-                             std::vector<UIGlyphQuadUVE>& outQuads) const;
+    void AppendTextQuads(std::string_view text, float& cursorX, float& cursorY, float fontSizePixels,
+                             std::vector<UIGlyphQuad>& outQuads) const;
 
     /// The horizontal advance of `text` at `fontSizePixels`: the same per-glyph advance sum
-    /// AppendTextQuadsUVE walks the pen by, so measured width and drawn width agree by
+    /// AppendTextQuads walks the pen by, so measured width and drawn width agree by
     /// construction. Unrenderable characters contribute nothing on either side; an invalid atlas
     /// or a non-positive size measures zero.
-    [[nodiscard]] float MeasureTextWidthUVE(std::string_view text, float fontSizePixels) const noexcept;
+    [[nodiscard]] float MeasureTextWidth(std::string_view text, float fontSizePixels) const noexcept;
 
 private:
     bool m_valid = false;
     std::vector<std::uint8_t> m_bitmap;
-    std::array<UIGlyphUVE, kCharCountUVE> m_glyphs{};
+    std::array<UIGlyph, kCharCount> m_glyphs{};
 };
 
 } // namespace UVE::UI

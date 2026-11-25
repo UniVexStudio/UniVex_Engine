@@ -13,35 +13,35 @@
 namespace UVE::Editor {
 namespace {
 
-using SamplesUVE = std::vector<Asset::AnimationAssetSampleUVE>;
+using Samples = std::vector<Asset::AnimationAssetSample>;
 
-[[nodiscard]] double SnapUVE(const double seconds, const double frameRate, const double duration) {
+[[nodiscard]] double Snap(const double seconds, const double frameRate, const double duration) {
     const double rate = std::isfinite(frameRate) && frameRate > 0.0 ? frameRate : 30.0;
     return std::clamp(std::round(seconds * rate) / rate, 0.0, std::max(duration, 0.0));
 }
 
-[[nodiscard]] bool SameTimeUVE(const double a, const double b) {
-    return std::abs(a - b) < kClipKeyTimeToleranceUVE;
+[[nodiscard]] bool SameTime(const double a, const double b) {
+    return std::abs(a - b) < kClipKeyTimeTolerance;
 }
 
 /// Puts `sample` into `samples`, replacing one at the same time, keeping them sorted.
-void PlaceSampleUVE(SamplesUVE& samples, const Asset::AnimationAssetSampleUVE& sample) {
-    const auto same = std::find_if(samples.begin(), samples.end(), [&sample](const Asset::AnimationAssetSampleUVE& s) {
-        return SameTimeUVE(s.timeSeconds, sample.timeSeconds);
+void PlaceSample(Samples& samples, const Asset::AnimationAssetSample& sample) {
+    const auto same = std::find_if(samples.begin(), samples.end(), [&sample](const Asset::AnimationAssetSample& s) {
+        return SameTime(s.timeSeconds, sample.timeSeconds);
     });
     if (same != samples.end()) {
         *same = sample;
         return;
     }
     const auto at = std::lower_bound(samples.begin(), samples.end(), sample.timeSeconds,
-                                     [](const Asset::AnimationAssetSampleUVE& s, const double t) {
+                                     [](const Asset::AnimationAssetSample& s, const double t) {
                                          return s.timeSeconds < t;
                                      });
     samples.insert(at, sample);
 }
 
 /// The track's pose at `seconds`: linear position and scale, spherical rotation, held past the ends.
-[[nodiscard]] Asset::AnimationAssetPoseUVE SampleUVE(const SamplesUVE& samples, const double seconds) {
+[[nodiscard]] Asset::AnimationAssetPose Sample(const Samples& samples, const double seconds) {
     if (seconds <= samples.front().timeSeconds) {
         return samples.front().pose;
     }
@@ -49,17 +49,17 @@ void PlaceSampleUVE(SamplesUVE& samples, const Asset::AnimationAssetSampleUVE& s
         return samples.back().pose;
     }
     const auto next = std::lower_bound(samples.begin(), samples.end(), seconds,
-                                       [](const Asset::AnimationAssetSampleUVE& s, const double t) {
+                                       [](const Asset::AnimationAssetSample& s, const double t) {
                                            return s.timeSeconds < t;
                                        });
     const auto previous = next - 1;
     const double span = next->timeSeconds - previous->timeSeconds;
     const float alpha = span > 0.0 ? static_cast<float>((seconds - previous->timeSeconds) / span) : 0.0F;
-    const auto lerp = [alpha](const Math::Vector3UVE& a, const Math::Vector3UVE& b) { return a + (b - a) * alpha; };
-    Asset::AnimationAssetPoseUVE pose;
+    const auto lerp = [alpha](const Math::Vector3& a, const Math::Vector3& b) { return a + (b - a) * alpha; };
+    Asset::AnimationAssetPose pose;
     pose.position = lerp(previous->pose.position, next->pose.position);
     pose.scale = lerp(previous->pose.scale, next->pose.scale);
-    if (!Math::TrySlerpUVE(previous->pose.rotation, next->pose.rotation, alpha, pose.rotation)) {
+    if (!Math::TrySlerp(previous->pose.rotation, next->pose.rotation, alpha, pose.rotation)) {
         pose.rotation = alpha < 0.5F ? previous->pose.rotation : next->pose.rotation;
     }
     return pose;
@@ -67,21 +67,21 @@ void PlaceSampleUVE(SamplesUVE& samples, const Asset::AnimationAssetSampleUVE& s
 
 } // namespace
 
-std::vector<Asset::AnimationAssetSampleUVE>* FindClipTrackSamplesUVE(Asset::AnimationClipAssetUVE& clip,
+std::vector<Asset::AnimationAssetSample>* FindClipTrackSamples(Asset::AnimationClipAsset& clip,
                                                                     const std::string& track) {
     if (track.empty()) {
         return clip.samples.empty() ? nullptr : &clip.samples;
     }
-    if (track.front() == kClipObjectTrackPrefixUVE) {
+    if (track.front() == kClipObjectTrackPrefix) {
         const std::string_view name = std::string_view(track).substr(1U);
-        for (Asset::AnimationAssetBoneTrackUVE& object : clip.objects) {
+        for (Asset::AnimationAssetBoneTrack& object : clip.objects) {
             if (object.bone == name) {
                 return &object.samples;
             }
         }
         return nullptr;
     }
-    for (Asset::AnimationAssetBoneTrackUVE& bone : clip.bones) {
+    for (Asset::AnimationAssetBoneTrack& bone : clip.bones) {
         if (bone.bone == track) {
             return &bone.samples;
         }
@@ -89,20 +89,20 @@ std::vector<Asset::AnimationAssetSampleUVE>* FindClipTrackSamplesUVE(Asset::Anim
     return nullptr;
 }
 
-const std::vector<Asset::AnimationAssetSampleUVE>* FindClipTrackSamplesUVE(const Asset::AnimationClipAssetUVE& clip,
+const std::vector<Asset::AnimationAssetSample>* FindClipTrackSamples(const Asset::AnimationClipAsset& clip,
                                                                           const std::string& track) {
-    return FindClipTrackSamplesUVE(const_cast<Asset::AnimationClipAssetUVE&>(clip), track);
+    return FindClipTrackSamples(const_cast<Asset::AnimationClipAsset&>(clip), track);
 }
 
-std::size_t DeleteClipKeysUVE(Asset::AnimationClipAssetUVE& clip, const std::vector<ClipKeyUVE>& keys) {
+std::size_t DeleteClipKeys(Asset::AnimationClipAsset& clip, const std::vector<ClipKey>& keys) {
     std::size_t removed = 0U;
-    for (const ClipKeyUVE& key : keys) {
-        SamplesUVE* const samples = FindClipTrackSamplesUVE(clip, key.track);
+    for (const ClipKey& key : keys) {
+        Samples* const samples = FindClipTrackSamples(clip, key.track);
         if (samples == nullptr || samples->size() <= 1U) {
             continue;
         }
-        const auto found = std::find_if(samples->begin(), samples->end(), [&key](const Asset::AnimationAssetSampleUVE& s) {
-            return SameTimeUVE(s.timeSeconds, key.timeSeconds);
+        const auto found = std::find_if(samples->begin(), samples->end(), [&key](const Asset::AnimationAssetSample& s) {
+            return SameTime(s.timeSeconds, key.timeSeconds);
         });
         if (found != samples->end()) {
             samples->erase(found);
@@ -112,130 +112,130 @@ std::size_t DeleteClipKeysUVE(Asset::AnimationClipAssetUVE& clip, const std::vec
     return removed;
 }
 
-std::vector<ClipKeyUVE> MoveClipKeysUVE(Asset::AnimationClipAssetUVE& clip, const std::vector<ClipKeyUVE>& keys,
+std::vector<ClipKey> MoveClipKeys(Asset::AnimationClipAsset& clip, const std::vector<ClipKey>& keys,
                                         const double deltaSeconds, const double frameRate) {
     // Lift every moving sample out first, so keys moving past each other never overwrite one another.
-    struct LiftedUVE {
+    struct Lifted {
         std::string track;
-        Asset::AnimationAssetSampleUVE sample;
+        Asset::AnimationAssetSample sample;
     };
-    std::vector<LiftedUVE> lifted;
-    for (const ClipKeyUVE& key : keys) {
-        SamplesUVE* const samples = FindClipTrackSamplesUVE(clip, key.track);
+    std::vector<Lifted> lifted;
+    for (const ClipKey& key : keys) {
+        Samples* const samples = FindClipTrackSamples(clip, key.track);
         if (samples == nullptr) {
             continue;
         }
-        const auto found = std::find_if(samples->begin(), samples->end(), [&key](const Asset::AnimationAssetSampleUVE& s) {
-            return SameTimeUVE(s.timeSeconds, key.timeSeconds);
+        const auto found = std::find_if(samples->begin(), samples->end(), [&key](const Asset::AnimationAssetSample& s) {
+            return SameTime(s.timeSeconds, key.timeSeconds);
         });
         if (found != samples->end()) {
-            lifted.push_back(LiftedUVE{key.track, *found});
+            lifted.push_back(Lifted{key.track, *found});
             samples->erase(found);
         }
     }
-    std::vector<ClipKeyUVE> landed;
+    std::vector<ClipKey> landed;
     landed.reserve(lifted.size());
-    for (LiftedUVE& item : lifted) {
-        item.sample.timeSeconds = SnapUVE(item.sample.timeSeconds + deltaSeconds, frameRate, clip.durationSeconds);
+    for (Lifted& item : lifted) {
+        item.sample.timeSeconds = Snap(item.sample.timeSeconds + deltaSeconds, frameRate, clip.durationSeconds);
         // The track exists: the sample was lifted out of it above.
-        PlaceSampleUVE(*FindClipTrackSamplesUVE(clip, item.track), item.sample);
-        landed.push_back(ClipKeyUVE{item.track, item.sample.timeSeconds});
+        PlaceSample(*FindClipTrackSamples(clip, item.track), item.sample);
+        landed.push_back(ClipKey{item.track, item.sample.timeSeconds});
     }
     return landed;
 }
 
-ClipKeyClipboardUVE CopyClipKeysUVE(const Asset::AnimationClipAssetUVE& clip, const std::vector<ClipKeyUVE>& keys) {
-    ClipKeyClipboardUVE clipboard;
+ClipKeyClipboard CopyClipKeys(const Asset::AnimationClipAsset& clip, const std::vector<ClipKey>& keys) {
+    ClipKeyClipboard clipboard;
     double earliest = std::numeric_limits<double>::infinity();
-    for (const ClipKeyUVE& key : keys) {
-        const SamplesUVE* const samples = FindClipTrackSamplesUVE(clip, key.track);
+    for (const ClipKey& key : keys) {
+        const Samples* const samples = FindClipTrackSamples(clip, key.track);
         if (samples == nullptr) {
             continue;
         }
-        for (const Asset::AnimationAssetSampleUVE& sample : *samples) {
-            if (SameTimeUVE(sample.timeSeconds, key.timeSeconds)) {
-                clipboard.entries.push_back(ClipKeyClipboardUVE::EntryUVE{key.track, sample.timeSeconds, sample.pose});
+        for (const Asset::AnimationAssetSample& sample : *samples) {
+            if (SameTime(sample.timeSeconds, key.timeSeconds)) {
+                clipboard.entries.push_back(ClipKeyClipboard::Entry{key.track, sample.timeSeconds, sample.pose});
                 earliest = std::min(earliest, sample.timeSeconds);
                 break;
             }
         }
     }
-    for (ClipKeyClipboardUVE::EntryUVE& entry : clipboard.entries) {
+    for (ClipKeyClipboard::Entry& entry : clipboard.entries) {
         entry.offsetSeconds -= earliest;
     }
     return clipboard;
 }
 
-std::vector<ClipKeyUVE> PasteClipKeysUVE(Asset::AnimationClipAssetUVE& clip, const ClipKeyClipboardUVE& clipboard,
+std::vector<ClipKey> PasteClipKeys(Asset::AnimationClipAsset& clip, const ClipKeyClipboard& clipboard,
                                          const double atSeconds, const double frameRate) {
-    std::vector<ClipKeyUVE> pasted;
-    const double start = SnapUVE(atSeconds, frameRate, clip.durationSeconds);
-    for (const ClipKeyClipboardUVE::EntryUVE& entry : clipboard.entries) {
+    std::vector<ClipKey> pasted;
+    const double start = Snap(atSeconds, frameRate, clip.durationSeconds);
+    for (const ClipKeyClipboard::Entry& entry : clipboard.entries) {
         const double time = start + entry.offsetSeconds;
-        if (time > clip.durationSeconds + kClipKeyTimeToleranceUVE) {
+        if (time > clip.durationSeconds + kClipKeyTimeTolerance) {
             continue;
         }
-        SamplesUVE* const samples = FindClipTrackSamplesUVE(clip, entry.track);
+        Samples* const samples = FindClipTrackSamples(clip, entry.track);
         if (samples == nullptr) {
             continue;
         }
-        Asset::AnimationAssetSampleUVE sample;
-        sample.timeSeconds = SnapUVE(time, frameRate, clip.durationSeconds);
+        Asset::AnimationAssetSample sample;
+        sample.timeSeconds = Snap(time, frameRate, clip.durationSeconds);
         sample.pose = entry.pose;
-        PlaceSampleUVE(*samples, sample);
-        pasted.push_back(ClipKeyUVE{entry.track, sample.timeSeconds});
+        PlaceSample(*samples, sample);
+        pasted.push_back(ClipKey{entry.track, sample.timeSeconds});
     }
     return pasted;
 }
 
-bool InsertClipKeyUVE(Asset::AnimationClipAssetUVE& clip, const std::string& track, const double atSeconds,
+bool InsertClipKey(Asset::AnimationClipAsset& clip, const std::string& track, const double atSeconds,
                       const double frameRate) {
-    SamplesUVE* const samples = FindClipTrackSamplesUVE(clip, track);
+    Samples* const samples = FindClipTrackSamples(clip, track);
     if (samples == nullptr || samples->empty()) {
         return false;
     }
-    const double time = SnapUVE(atSeconds, frameRate, clip.durationSeconds);
-    for (const Asset::AnimationAssetSampleUVE& sample : *samples) {
-        if (SameTimeUVE(sample.timeSeconds, time)) {
+    const double time = Snap(atSeconds, frameRate, clip.durationSeconds);
+    for (const Asset::AnimationAssetSample& sample : *samples) {
+        if (SameTime(sample.timeSeconds, time)) {
             return false;
         }
     }
-    Asset::AnimationAssetSampleUVE sample;
+    Asset::AnimationAssetSample sample;
     sample.timeSeconds = time;
-    sample.pose = SampleUVE(*samples, time);
-    PlaceSampleUVE(*samples, sample);
+    sample.pose = Sample(*samples, time);
+    PlaceSample(*samples, sample);
     return true;
 }
 
-float GetClipPoseComponentUVE(const Asset::AnimationAssetPoseUVE& pose, const int channel, const int axis) {
-    const auto pick = [axis](const Math::Vector3UVE& v) { return axis == 0 ? v.x : (axis == 1 ? v.y : v.z); };
+float GetClipPoseComponent(const Asset::AnimationAssetPose& pose, const int channel, const int axis) {
+    const auto pick = [axis](const Math::Vector3& v) { return axis == 0 ? v.x : (axis == 1 ? v.y : v.z); };
     if (channel == 0) {
         return pick(pose.position);
     }
     if (channel == 2) {
         return pick(pose.scale);
     }
-    Math::Vector3UVE radians{};
-    if (!Math::TryToEulerUVE(pose.rotation, radians)) {
+    Math::Vector3 radians{};
+    if (!Math::TryToEuler(pose.rotation, radians)) {
         return 0.0F;
     }
-    return Math::RadToDegUVE(pick(radians));
+    return Math::RadToDeg(pick(radians));
 }
 
-bool SetClipKeyComponentUVE(Asset::AnimationClipAssetUVE& clip, const std::string& track, const double timeSeconds,
+bool SetClipKeyComponent(Asset::AnimationClipAsset& clip, const std::string& track, const double timeSeconds,
                             const int channel, const int axis, const float value) {
-    SamplesUVE* const samples = FindClipTrackSamplesUVE(clip, track);
+    Samples* const samples = FindClipTrackSamples(clip, track);
     if (samples == nullptr || !std::isfinite(value) || channel < 0 || channel > 2 || axis < 0 || axis > 2) {
         return false;
     }
-    const auto found = std::find_if(samples->begin(), samples->end(), [timeSeconds](const Asset::AnimationAssetSampleUVE& s) {
-        return SameTimeUVE(s.timeSeconds, timeSeconds);
+    const auto found = std::find_if(samples->begin(), samples->end(), [timeSeconds](const Asset::AnimationAssetSample& s) {
+        return SameTime(s.timeSeconds, timeSeconds);
     });
     if (found == samples->end()) {
         return false;
     }
-    const auto set = [axis, value](Math::Vector3UVE& v) { (axis == 0 ? v.x : (axis == 1 ? v.y : v.z)) = value; };
-    Asset::AnimationAssetPoseUVE& pose = found->pose;
+    const auto set = [axis, value](Math::Vector3& v) { (axis == 0 ? v.x : (axis == 1 ? v.y : v.z)) = value; };
+    Asset::AnimationAssetPose& pose = found->pose;
     if (channel == 0) {
         set(pose.position);
         return true;
@@ -244,19 +244,19 @@ bool SetClipKeyComponentUVE(Asset::AnimationClipAssetUVE& clip, const std::strin
         set(pose.scale);
         return true;
     }
-    Math::Vector3UVE radians{};
-    if (!Math::TryToEulerUVE(pose.rotation, radians)) {
+    Math::Vector3 radians{};
+    if (!Math::TryToEuler(pose.rotation, radians)) {
         return false;
     }
-    (axis == 0 ? radians.x : (axis == 1 ? radians.y : radians.z)) = Math::DegToRadUVE(value);
-    return Math::TryMakeEulerUVE(radians, pose.rotation);
+    (axis == 0 ? radians.x : (axis == 1 ? radians.y : radians.z)) = Math::DegToRad(value);
+    return Math::TryMakeEuler(radians, pose.rotation);
 }
 
 namespace {
 
 /// Re-sorts the events by time and returns where `moved` (identified by address before sorting)
 /// now is.
-std::size_t SortEventsUVE(Asset::AnimationClipAssetUVE& clip, const std::size_t moved) {
+std::size_t SortEvents(Asset::AnimationClipAsset& clip, const std::size_t moved) {
     std::vector<std::size_t> order(clip.events.size());
     for (std::size_t i = 0U; i < order.size(); ++i) {
         order[i] = i;
@@ -264,7 +264,7 @@ std::size_t SortEventsUVE(Asset::AnimationClipAssetUVE& clip, const std::size_t 
     std::ranges::stable_sort(order, [&clip](const std::size_t a, const std::size_t b) {
         return clip.events[a].timeSeconds < clip.events[b].timeSeconds;
     });
-    std::vector<Asset::AnimationAssetEventUVE> sorted;
+    std::vector<Asset::AnimationAssetEvent> sorted;
     sorted.reserve(order.size());
     std::size_t where = 0U;
     for (std::size_t i = 0U; i < order.size(); ++i) {
@@ -279,7 +279,7 @@ std::size_t SortEventsUVE(Asset::AnimationClipAssetUVE& clip, const std::size_t 
 
 } // namespace
 
-std::size_t AddClipEventUVE(Asset::AnimationClipAssetUVE& clip, const double atSeconds, const double frameRate) {
+std::size_t AddClipEvent(Asset::AnimationClipAsset& clip, const double atSeconds, const double frameRate) {
     const auto taken = [&clip](const std::string& name) {
         return std::ranges::any_of(clip.events, [&name](const auto& event) { return event.eventId == name; });
     };
@@ -287,28 +287,28 @@ std::size_t AddClipEventUVE(Asset::AnimationClipAssetUVE& clip, const double atS
     for (int suffix = 2; taken(name); ++suffix) {
         name = "event_" + std::to_string(suffix);
     }
-    clip.events.push_back(Asset::AnimationAssetEventUVE{SnapUVE(atSeconds, frameRate, clip.durationSeconds), name});
-    return SortEventsUVE(clip, clip.events.size() - 1U);
+    clip.events.push_back(Asset::AnimationAssetEvent{Snap(atSeconds, frameRate, clip.durationSeconds), name});
+    return SortEvents(clip, clip.events.size() - 1U);
 }
 
-std::optional<std::size_t> MoveClipEventUVE(Asset::AnimationClipAssetUVE& clip, const std::size_t index,
+std::optional<std::size_t> MoveClipEvent(Asset::AnimationClipAsset& clip, const std::size_t index,
                                             const double toSeconds, const double frameRate) {
     if (index >= clip.events.size()) {
         return std::nullopt;
     }
-    clip.events[index].timeSeconds = SnapUVE(toSeconds, frameRate, clip.durationSeconds);
-    return SortEventsUVE(clip, index);
+    clip.events[index].timeSeconds = Snap(toSeconds, frameRate, clip.durationSeconds);
+    return SortEvents(clip, index);
 }
 
-bool RenameClipEventUVE(Asset::AnimationClipAssetUVE& clip, const std::size_t index, const std::string& name) {
-    if (index >= clip.events.size() || name.empty() || name.size() > Asset::kMaximumAnimationAssetIdentifierBytesUVE) {
+bool RenameClipEvent(Asset::AnimationClipAsset& clip, const std::size_t index, const std::string& name) {
+    if (index >= clip.events.size() || name.empty() || name.size() > Asset::kMaximumAnimationAssetIdentifierBytes) {
         return false;
     }
     clip.events[index].eventId = name;
     return true;
 }
 
-bool RemoveClipEventUVE(Asset::AnimationClipAssetUVE& clip, const std::size_t index) {
+bool RemoveClipEvent(Asset::AnimationClipAsset& clip, const std::size_t index) {
     if (index >= clip.events.size()) {
         return false;
     }

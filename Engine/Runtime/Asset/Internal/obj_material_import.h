@@ -36,9 +36,9 @@ namespace UVE::Asset::Detail {
 /// Returns false only when a published file is refused by the asset database; every recoverable
 /// problem (no `mtllib`, missing library file, unparsable material, undecodable texture) is logged
 /// and leaves that part empty, because the geometry is still worth importing.
-[[nodiscard]] bool ImportObjMaterialsUVE(std::string_view objSource, const std::filesystem::path& sourcePath,
+[[nodiscard]] bool ImportObjMaterials(std::string_view objSource, const std::filesystem::path& sourcePath,
                                          const std::filesystem::path& destinationPath,
-                                         IAssetDatabaseUVE& assetDatabase, MeshAssetUVE& inOutMesh,
-                                         const std::vector<ObjSurfaceRangeUVE>& surfaceRanges);
+                                         IAssetDatabase& assetDatabase, MeshAsset& inOutMesh,
+                                         const std::vector<ObjSurfaceRange>& surfaceRanges);
 
 } // namespace UVE::Asset::Detail

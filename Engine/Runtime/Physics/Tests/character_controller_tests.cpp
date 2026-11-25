@@ -20,402 +20,402 @@
 namespace UVE::Physics::Tests {
 namespace {
 
-class FixedCollisionSystemUVE final : public ICollisionSystemUVE {
+class FixedCollisionSystem final : public ICollisionSystem {
 public:
-    std::vector<CollisionPairUVE> pairs;
+    std::vector<CollisionPair> pairs;
 
-    [[nodiscard]] std::vector<CollisionPairUVE> DetectCollisionsUVE(
-        Scene::IEntityManagerUVE&) const override {
+    [[nodiscard]] std::vector<CollisionPair> DetectCollisions(
+        Scene::IEntityManager&) const override {
         return pairs;
     }
 };
 
-class CharacterControllerUVETest : public ::testing::Test {
+class CharacterControllerTest : public ::testing::Test {
 protected:
-    Memory::MemoryManagerUVE memoryManager;
-    Events::EventSystemUVE eventSystem;
-    Scene::EntityManagerUVE entityManager{memoryManager.GetDefaultAllocatorUVE(), eventSystem};
-    Scene::SceneGraphUVE sceneGraph;
-    CollisionSystemUVE collisionSystem;
+    Memory::MemoryManager memoryManager;
+    Events::EventSystem eventSystem;
+    Scene::EntityManager entityManager{memoryManager.GetDefaultAllocator(), eventSystem};
+    Scene::SceneGraph sceneGraph;
+    CollisionSystem collisionSystem;
 
-    Scene::EntityUVE MakeColliderEntityUVE(Math::Vector3UVE position, Math::Vector3UVE halfExtents,
+    Scene::Entity MakeColliderEntity(Math::Vector3 position, Math::Vector3 halfExtents,
                                             std::uint32_t layer = 1U,
                                             std::uint32_t mask = 0xFFFFFFFFU) {
-        const Scene::EntityUVE entity = entityManager.CreateEntityUVE();
-        Scene::TransformComponentUVE transform;
+        const Scene::Entity entity = entityManager.CreateEntity();
+        Scene::TransformComponent transform;
         transform.localPosition = position;
-        sceneGraph.AttachTransformUVE(entityManager, entity, transform);
-        sceneGraph.UpdateUVE(entityManager);
-        Scene::ColliderComponentUVE collider{halfExtents};
+        sceneGraph.AttachTransform(entityManager, entity, transform);
+        sceneGraph.Update(entityManager);
+        Scene::ColliderComponent collider{halfExtents};
         collider.collisionLayer = layer;
         collider.collisionMask = mask;
-        entityManager.AddComponentUVE<Scene::ColliderComponentUVE>(entity, collider);
+        entityManager.AddComponent<Scene::ColliderComponent>(entity, collider);
         return entity;
     }
 
-    Scene::EntityUVE MakeControllerEntityUVE(Math::Vector3UVE position, Math::Vector3UVE halfExtents,
+    Scene::Entity MakeControllerEntity(Math::Vector3 position, Math::Vector3 halfExtents,
                                               std::uint32_t layer = 1U,
                                               std::uint32_t mask = 0xFFFFFFFFU) {
-        const Scene::EntityUVE entity = MakeColliderEntityUVE(position, halfExtents, layer, mask);
-        entityManager.AddComponentUVE<Scene::Rigid3DComponentUVE>(
-            entity, Scene::Rigid3DComponentUVE{1.0F, true});
+        const Scene::Entity entity = MakeColliderEntity(position, halfExtents, layer, mask);
+        entityManager.AddComponent<Scene::Rigid3DComponent>(
+            entity, Scene::Rigid3DComponent{1.0F, true});
         return entity;
     }
 
-    [[nodiscard]] Math::Vector3UVE GetWorldPositionUVE(Scene::EntityUVE entity) {
-        return entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(entity).worldPosition;
+    [[nodiscard]] Math::Vector3 GetWorldPosition(Scene::Entity entity) {
+        return entityManager.GetComponent<Scene::WorldTransformComponent>(entity).worldPosition;
     }
 };
 
-TEST(CharacterControllerCcdPolicyUVETest, ClassifiesFiniteDisplacementAgainstSweepThreshold) {
-    EXPECT_EQ(EvaluateCcdEligibilityUVE(Math::Vector3UVE{0.1F, 0.0F, 0.0F}, 0.25F),
-              CcdEligibilityStatusUVE::Disabled);
-    EXPECT_EQ(EvaluateCcdEligibilityUVE(Math::Vector3UVE{0.25F, 0.0F, 0.0F}, 0.25F),
-              CcdEligibilityStatusUVE::Enabled);
-    EXPECT_EQ(EvaluateCcdEligibilityUVE(Math::Vector3UVE{0.0F, 0.0F, 0.0F}, 0.25F),
-              CcdEligibilityStatusUVE::Disabled);
+TEST(CharacterControllerCcdPolicyTest, ClassifiesFiniteDisplacementAgainstSweepThreshold) {
+    EXPECT_EQ(EvaluateCcdEligibility(Math::Vector3{0.1F, 0.0F, 0.0F}, 0.25F),
+              CcdEligibilityStatus::Disabled);
+    EXPECT_EQ(EvaluateCcdEligibility(Math::Vector3{0.25F, 0.0F, 0.0F}, 0.25F),
+              CcdEligibilityStatus::Enabled);
+    EXPECT_EQ(EvaluateCcdEligibility(Math::Vector3{0.0F, 0.0F, 0.0F}, 0.25F),
+              CcdEligibilityStatus::Disabled);
 }
 
-TEST(CharacterControllerCcdPolicyUVETest, RejectsNonFiniteDisplacementAndInvalidThreshold) {
-    EXPECT_EQ(EvaluateCcdEligibilityUVE(
-                  Math::Vector3UVE{std::numeric_limits<float>::quiet_NaN(), 0.0F, 0.0F}, 0.25F),
-              CcdEligibilityStatusUVE::Invalid);
-    EXPECT_EQ(EvaluateCcdEligibilityUVE(Math::Vector3UVE{1.0F, 0.0F, 0.0F}, 0.0F),
-              CcdEligibilityStatusUVE::Invalid);
+TEST(CharacterControllerCcdPolicyTest, RejectsNonFiniteDisplacementAndInvalidThreshold) {
+    EXPECT_EQ(EvaluateCcdEligibility(
+                  Math::Vector3{std::numeric_limits<float>::quiet_NaN(), 0.0F, 0.0F}, 0.25F),
+              CcdEligibilityStatus::Invalid);
+    EXPECT_EQ(EvaluateCcdEligibility(Math::Vector3{1.0F, 0.0F, 0.0F}, 0.0F),
+              CcdEligibilityStatus::Invalid);
 }
 
-TEST(CharacterControllerCcdPolicyUVETest, RejectsFiniteDisplacementWhoseLengthOverflows) {
+TEST(CharacterControllerCcdPolicyTest, RejectsFiniteDisplacementWhoseLengthOverflows) {
     const float maximumFloat = std::numeric_limits<float>::max();
-    EXPECT_EQ(EvaluateCcdEligibilityUVE(Math::Vector3UVE{maximumFloat, maximumFloat, 0.0F}, 0.25F),
-              CcdEligibilityStatusUVE::Invalid);
+    EXPECT_EQ(EvaluateCcdEligibility(Math::Vector3{maximumFloat, maximumFloat, 0.0F}, 0.25F),
+              CcdEligibilityStatus::Invalid);
 }
 
-TEST_F(CharacterControllerUVETest, MoveUVE_RejectsFiniteDisplacementWhoseLengthOverflowsWithoutMutation) {
-    const Scene::EntityUVE controller = MakeControllerEntityUVE({1.0F, 2.0F, 3.0F}, {0.5F, 0.5F, 0.5F});
-    const Math::Vector3UVE positionBefore = GetWorldPositionUVE(controller);
+TEST_F(CharacterControllerTest, Move_RejectsFiniteDisplacementWhoseLengthOverflowsWithoutMutation) {
+    const Scene::Entity controller = MakeControllerEntity({1.0F, 2.0F, 3.0F}, {0.5F, 0.5F, 0.5F});
+    const Math::Vector3 positionBefore = GetWorldPosition(controller);
     const float maximumFloat = std::numeric_limits<float>::max();
 
-    const CharacterControllerMoveResultUVE moveResult = CharacterControllerUVE::MoveUVE(
+    const CharacterControllerMoveResult moveResult = CharacterController::Move(
         entityManager, sceneGraph, collisionSystem,
-        CharacterControllerInputUVE{controller, {maximumFloat, maximumFloat, 0.0F}, 8U, 0.25F});
+        CharacterControllerInput{controller, {maximumFloat, maximumFloat, 0.0F}, 8U, 0.25F});
 
-    EXPECT_EQ(moveResult.code, CharacterControllerMoveCodeUVE::InvalidInput);
+    EXPECT_EQ(moveResult.code, CharacterControllerMoveCode::InvalidInput);
     EXPECT_EQ(moveResult.substeps, 0U);
-    EXPECT_EQ(GetWorldPositionUVE(controller), positionBefore);
+    EXPECT_EQ(GetWorldPosition(controller), positionBefore);
 }
 
-TEST_F(CharacterControllerUVETest, MoveUVE_RejectsFiniteDerivedCorrectionOverflowWithoutMutation) {
+TEST_F(CharacterControllerTest, Move_RejectsFiniteDerivedCorrectionOverflowWithoutMutation) {
     const float maximumFloat = std::numeric_limits<float>::max();
-    const Scene::EntityUVE controller =
-        MakeControllerEntityUVE({maximumFloat, 0.0F, 0.0F}, {0.5F, 0.5F, 0.5F});
-    const Scene::EntityUVE target = MakeColliderEntityUVE({0.0F, 0.0F, 0.0F}, {0.5F, 0.5F, 0.5F});
-    FixedCollisionSystemUVE overflowCollisionSystem;
+    const Scene::Entity controller =
+        MakeControllerEntity({maximumFloat, 0.0F, 0.0F}, {0.5F, 0.5F, 0.5F});
+    const Scene::Entity target = MakeColliderEntity({0.0F, 0.0F, 0.0F}, {0.5F, 0.5F, 0.5F});
+    FixedCollisionSystem overflowCollisionSystem;
     overflowCollisionSystem.pairs.push_back(
-        CollisionPairUVE{target, controller, {1.0F, 0.0F, 0.0F}, maximumFloat});
-    const Math::Vector3UVE positionBefore = GetWorldPositionUVE(controller);
+        CollisionPair{target, controller, {1.0F, 0.0F, 0.0F}, maximumFloat});
+    const Math::Vector3 positionBefore = GetWorldPosition(controller);
 
-    const CharacterControllerMoveResultUVE result = CharacterControllerUVE::MoveUVE(
+    const CharacterControllerMoveResult result = CharacterController::Move(
         entityManager, sceneGraph, overflowCollisionSystem,
-        CharacterControllerInputUVE{controller, {1.0F, 0.0F, 0.0F}, 8U, 0.25F});
+        CharacterControllerInput{controller, {1.0F, 0.0F, 0.0F}, 8U, 0.25F});
 
-    EXPECT_EQ(result.code, CharacterControllerMoveCodeUVE::InvalidInput);
+    EXPECT_EQ(result.code, CharacterControllerMoveCode::InvalidInput);
     EXPECT_EQ(result.substeps, 1U);
-    EXPECT_EQ(GetWorldPositionUVE(controller), positionBefore);
-    EXPECT_TRUE(std::isfinite(GetWorldPositionUVE(controller).x));
-    EXPECT_TRUE(std::isfinite(GetWorldPositionUVE(controller).y));
-    EXPECT_TRUE(std::isfinite(GetWorldPositionUVE(controller).z));
+    EXPECT_EQ(GetWorldPosition(controller), positionBefore);
+    EXPECT_TRUE(std::isfinite(GetWorldPosition(controller).x));
+    EXPECT_TRUE(std::isfinite(GetWorldPosition(controller).y));
+    EXPECT_TRUE(std::isfinite(GetWorldPosition(controller).z));
 }
 
-TEST_F(CharacterControllerUVETest, MoveUVE_SkipsNonUnitFiniteCollisionAxisWithoutNonFiniteMutation) {
-    const Scene::EntityUVE controller = MakeControllerEntityUVE({}, {0.5F, 0.5F, 0.5F});
-    const Scene::EntityUVE target = MakeColliderEntityUVE({0.0F, 0.0F, 0.0F}, {0.5F, 0.5F, 0.5F});
-    FixedCollisionSystemUVE malformedCollisionSystem;
+TEST_F(CharacterControllerTest, Move_SkipsNonUnitFiniteCollisionAxisWithoutNonFiniteMutation) {
+    const Scene::Entity controller = MakeControllerEntity({}, {0.5F, 0.5F, 0.5F});
+    const Scene::Entity target = MakeColliderEntity({0.0F, 0.0F, 0.0F}, {0.5F, 0.5F, 0.5F});
+    FixedCollisionSystem malformedCollisionSystem;
     malformedCollisionSystem.pairs.push_back(
-        CollisionPairUVE{controller, target, {std::numeric_limits<float>::max(), 0.0F, 0.0F}, 1.0F});
+        CollisionPair{controller, target, {std::numeric_limits<float>::max(), 0.0F, 0.0F}, 1.0F});
 
-    const CharacterControllerMoveResultUVE result = CharacterControllerUVE::MoveUVE(
+    const CharacterControllerMoveResult result = CharacterController::Move(
         entityManager, sceneGraph, malformedCollisionSystem,
-        CharacterControllerInputUVE{controller, {1.0F, 0.0F, 0.0F}, 8U, 0.25F});
+        CharacterControllerInput{controller, {1.0F, 0.0F, 0.0F}, 8U, 0.25F});
 
-    EXPECT_EQ(result.code, CharacterControllerMoveCodeUVE::Moved);
+    EXPECT_EQ(result.code, CharacterControllerMoveCode::Moved);
     EXPECT_FALSE(result.blocked);
     EXPECT_EQ(result.contactCount, 0U);
-    const Math::Vector3UVE position = GetWorldPositionUVE(controller);
+    const Math::Vector3 position = GetWorldPosition(controller);
     EXPECT_TRUE(std::isfinite(position.x));
     EXPECT_TRUE(std::isfinite(position.y));
     EXPECT_TRUE(std::isfinite(position.z));
     EXPECT_NEAR(position.x, 1.0F, 1.0e-4F);
 }
 
-TEST_F(CharacterControllerUVETest, MoveUVE_FreeSpaceAppliesRequestedDisplacementDeterministically) {
-    const Scene::EntityUVE controller = MakeControllerEntityUVE({}, {0.5F, 0.5F, 0.5F});
+TEST_F(CharacterControllerTest, Move_FreeSpaceAppliesRequestedDisplacementDeterministically) {
+    const Scene::Entity controller = MakeControllerEntity({}, {0.5F, 0.5F, 0.5F});
 
-    const CharacterControllerMoveResultUVE result = CharacterControllerUVE::MoveUVE(
+    const CharacterControllerMoveResult result = CharacterController::Move(
         entityManager, sceneGraph, collisionSystem,
-        CharacterControllerInputUVE{controller, {1.0F, 0.0F, 0.0F}, 8U, 0.25F});
+        CharacterControllerInput{controller, {1.0F, 0.0F, 0.0F}, 8U, 0.25F});
 
-    ASSERT_TRUE(result.IsAcceptedUVE());
+    ASSERT_TRUE(result.IsAccepted());
     EXPECT_FALSE(result.blocked);
     EXPECT_EQ(result.substeps, 4U);
     EXPECT_EQ(result.contactCount, 0U);
-    EXPECT_NEAR(GetWorldPositionUVE(controller).x, 1.0F, 1.0e-4F);
+    EXPECT_NEAR(GetWorldPosition(controller).x, 1.0F, 1.0e-4F);
     EXPECT_NEAR(result.remainingDisplacement.x, 0.0F, 1.0e-4F);
 }
 
-TEST_F(CharacterControllerUVETest, MoveUVE_WallContactStopsAtMinimumTranslationDistance) {
-    const Scene::EntityUVE controller = MakeControllerEntityUVE({}, {0.5F, 0.5F, 0.5F});
-    MakeColliderEntityUVE({2.0F, 0.0F, 0.0F}, {0.5F, 2.0F, 2.0F});
+TEST_F(CharacterControllerTest, Move_WallContactStopsAtMinimumTranslationDistance) {
+    const Scene::Entity controller = MakeControllerEntity({}, {0.5F, 0.5F, 0.5F});
+    MakeColliderEntity({2.0F, 0.0F, 0.0F}, {0.5F, 2.0F, 2.0F});
 
-    const CharacterControllerMoveResultUVE result = CharacterControllerUVE::MoveUVE(
+    const CharacterControllerMoveResult result = CharacterController::Move(
         entityManager, sceneGraph, collisionSystem,
-        CharacterControllerInputUVE{controller, {3.0F, 0.0F, 0.0F}, 32U, 0.25F});
+        CharacterControllerInput{controller, {3.0F, 0.0F, 0.0F}, 32U, 0.25F});
 
-    ASSERT_TRUE(result.IsAcceptedUVE());
+    ASSERT_TRUE(result.IsAccepted());
     EXPECT_TRUE(result.blocked);
     EXPECT_FALSE(result.grounded);
     EXPECT_GT(result.contactCount, 0U);
-    EXPECT_NEAR(GetWorldPositionUVE(controller).x, 1.0F, 1.0e-4F);
-    EXPECT_NEAR(GetWorldPositionUVE(controller).y, 0.0F, 1.0e-4F);
+    EXPECT_NEAR(GetWorldPosition(controller).x, 1.0F, 1.0e-4F);
+    EXPECT_NEAR(GetWorldPosition(controller).y, 0.0F, 1.0e-4F);
 }
 
-TEST_F(CharacterControllerUVETest, MoveUVE_GroundContactReportsSupportNormal) {
-    const Scene::EntityUVE controller = MakeControllerEntityUVE({0.0F, 2.0F, 0.0F}, {0.5F, 0.5F, 0.5F});
-    MakeColliderEntityUVE({0.0F, 0.0F, 0.0F}, {2.0F, 0.5F, 2.0F});
+TEST_F(CharacterControllerTest, Move_GroundContactReportsSupportNormal) {
+    const Scene::Entity controller = MakeControllerEntity({0.0F, 2.0F, 0.0F}, {0.5F, 0.5F, 0.5F});
+    MakeColliderEntity({0.0F, 0.0F, 0.0F}, {2.0F, 0.5F, 2.0F});
 
-    const CharacterControllerMoveResultUVE result = CharacterControllerUVE::MoveUVE(
+    const CharacterControllerMoveResult result = CharacterController::Move(
         entityManager, sceneGraph, collisionSystem,
-        CharacterControllerInputUVE{controller, {0.0F, -2.0F, 0.0F}, 16U, 0.25F});
+        CharacterControllerInput{controller, {0.0F, -2.0F, 0.0F}, 16U, 0.25F});
 
-    ASSERT_TRUE(result.IsAcceptedUVE());
+    ASSERT_TRUE(result.IsAccepted());
     EXPECT_TRUE(result.blocked);
     EXPECT_TRUE(result.grounded);
     EXPECT_NEAR(result.groundNormal.x, 0.0F, 1.0e-5F);
     EXPECT_NEAR(result.groundNormal.y, 1.0F, 1.0e-5F);
     EXPECT_NEAR(result.groundNormal.z, 0.0F, 1.0e-5F);
-    EXPECT_NEAR(GetWorldPositionUVE(controller).y, 1.0F, 1.0e-4F);
+    EXPECT_NEAR(GetWorldPosition(controller).y, 1.0F, 1.0e-4F);
 }
 
-TEST_F(CharacterControllerUVETest, MoveUVE_WallContactPreservesTangentialDisplacement) {
-    const Scene::EntityUVE controller = MakeControllerEntityUVE({}, {0.5F, 0.5F, 0.5F});
-    MakeColliderEntityUVE({2.0F, 0.0F, 0.0F}, {0.5F, 2.0F, 2.0F});
+TEST_F(CharacterControllerTest, Move_WallContactPreservesTangentialDisplacement) {
+    const Scene::Entity controller = MakeControllerEntity({}, {0.5F, 0.5F, 0.5F});
+    MakeColliderEntity({2.0F, 0.0F, 0.0F}, {0.5F, 2.0F, 2.0F});
 
-    const CharacterControllerMoveResultUVE result = CharacterControllerUVE::MoveUVE(
+    const CharacterControllerMoveResult result = CharacterController::Move(
         entityManager, sceneGraph, collisionSystem,
-        CharacterControllerInputUVE{controller, {3.0F, 2.0F, 0.0F}, 32U, 0.25F});
+        CharacterControllerInput{controller, {3.0F, 2.0F, 0.0F}, 32U, 0.25F});
 
-    ASSERT_TRUE(result.IsAcceptedUVE());
+    ASSERT_TRUE(result.IsAccepted());
     EXPECT_TRUE(result.blocked);
-    EXPECT_NEAR(GetWorldPositionUVE(controller).x, 1.0F, 1.0e-4F);
-    EXPECT_NEAR(GetWorldPositionUVE(controller).y, 2.0F, 1.0e-4F);
+    EXPECT_NEAR(GetWorldPosition(controller).x, 1.0F, 1.0e-4F);
+    EXPECT_NEAR(GetWorldPosition(controller).y, 2.0F, 1.0e-4F);
 }
 
-TEST_F(CharacterControllerUVETest, MoveUVE_IncompatibleLayerMaskPassesThroughCollider) {
-    const Scene::EntityUVE controller = MakeControllerEntityUVE({}, {0.5F, 0.5F, 0.5F}, 1U, 1U);
-    MakeColliderEntityUVE({2.0F, 0.0F, 0.0F}, {0.5F, 2.0F, 2.0F}, 2U, 0xFFFFFFFFU);
+TEST_F(CharacterControllerTest, Move_IncompatibleLayerMaskPassesThroughCollider) {
+    const Scene::Entity controller = MakeControllerEntity({}, {0.5F, 0.5F, 0.5F}, 1U, 1U);
+    MakeColliderEntity({2.0F, 0.0F, 0.0F}, {0.5F, 2.0F, 2.0F}, 2U, 0xFFFFFFFFU);
 
-    const CharacterControllerMoveResultUVE result = CharacterControllerUVE::MoveUVE(
+    const CharacterControllerMoveResult result = CharacterController::Move(
         entityManager, sceneGraph, collisionSystem,
-        CharacterControllerInputUVE{controller, {3.0F, 0.0F, 0.0F}, 32U, 0.25F});
+        CharacterControllerInput{controller, {3.0F, 0.0F, 0.0F}, 32U, 0.25F});
 
-    ASSERT_TRUE(result.IsAcceptedUVE());
+    ASSERT_TRUE(result.IsAccepted());
     EXPECT_FALSE(result.blocked);
     EXPECT_EQ(result.contactCount, 0U);
-    EXPECT_NEAR(GetWorldPositionUVE(controller).x, 3.0F, 1.0e-4F);
+    EXPECT_NEAR(GetWorldPosition(controller).x, 3.0F, 1.0e-4F);
 }
 
-TEST_F(CharacterControllerUVETest, MoveWithToIUVE_StopsBeforeThinWallWithoutTunneling) {
-    const Scene::EntityUVE controller = MakeControllerEntityUVE({}, {0.5F, 0.5F, 0.5F});
-    MakeColliderEntityUVE({2.0F, 0.0F, 0.0F}, {0.05F, 2.0F, 2.0F});
+TEST_F(CharacterControllerTest, MoveWithToI_StopsBeforeThinWallWithoutTunneling) {
+    const Scene::Entity controller = MakeControllerEntity({}, {0.5F, 0.5F, 0.5F});
+    MakeColliderEntity({2.0F, 0.0F, 0.0F}, {0.05F, 2.0F, 2.0F});
 
-    const CharacterControllerMoveResultUVE result = CharacterControllerUVE::MoveWithToIUVE(
+    const CharacterControllerMoveResult result = CharacterController::MoveWithToI(
         entityManager, sceneGraph, collisionSystem,
-        CharacterControllerInputUVE{controller, {10.0F, 0.0F, 0.0F}, 1U, 100.0F});
+        CharacterControllerInput{controller, {10.0F, 0.0F, 0.0F}, 1U, 100.0F});
 
-    ASSERT_TRUE(result.IsAcceptedUVE());
+    ASSERT_TRUE(result.IsAccepted());
     EXPECT_TRUE(result.blocked);
     EXPECT_TRUE(result.toiUsed);
     EXPECT_EQ(result.contactCount, 1U);
     EXPECT_NEAR(result.earliestImpactTime, 0.145F, 1.0e-4F);
-    EXPECT_NEAR(GetWorldPositionUVE(controller).x, 1.449F, 2.0e-3F);
-    EXPECT_LT(GetWorldPositionUVE(controller).x, 1.5F);
+    EXPECT_NEAR(GetWorldPosition(controller).x, 1.449F, 2.0e-3F);
+    EXPECT_LT(GetWorldPosition(controller).x, 1.5F);
 }
 
-TEST_F(CharacterControllerUVETest, MoveWithToIUVE_StepHeightOptInTraversesLowObstacle) {
-    const Scene::EntityUVE controller = MakeControllerEntityUVE({0.0F, 1.0F, 0.0F}, {0.5F, 1.0F, 0.5F});
-    MakeColliderEntityUVE({1.0F, 0.25F, 0.0F}, {0.5F, 0.25F, 2.0F});
+TEST_F(CharacterControllerTest, MoveWithToI_StepHeightOptInTraversesLowObstacle) {
+    const Scene::Entity controller = MakeControllerEntity({0.0F, 1.0F, 0.0F}, {0.5F, 1.0F, 0.5F});
+    MakeColliderEntity({1.0F, 0.25F, 0.0F}, {0.5F, 0.25F, 2.0F});
 
-    const CharacterControllerMoveResultUVE result = CharacterControllerUVE::MoveWithToIUVE(
+    const CharacterControllerMoveResult result = CharacterController::MoveWithToI(
         entityManager, sceneGraph, collisionSystem,
-        CharacterControllerInputUVE{controller, {3.0F, 0.0F, 0.0F}, 8U, 100.0F, 45.0F, 0.75F});
+        CharacterControllerInput{controller, {3.0F, 0.0F, 0.0F}, 8U, 100.0F, 45.0F, 0.75F});
 
-    ASSERT_TRUE(result.IsAcceptedUVE());
+    ASSERT_TRUE(result.IsAccepted());
     EXPECT_TRUE(result.blocked);
     EXPECT_TRUE(result.toiUsed);
     EXPECT_TRUE(result.stepUpUsed);
-    EXPECT_NEAR(GetWorldPositionUVE(controller).x, 3.0F, 1.0e-4F);
-    EXPECT_NEAR(GetWorldPositionUVE(controller).y, 1.0F, 1.0e-4F);
+    EXPECT_NEAR(GetWorldPosition(controller).x, 3.0F, 1.0e-4F);
+    EXPECT_NEAR(GetWorldPosition(controller).y, 1.0F, 1.0e-4F);
 }
 
-TEST_F(CharacterControllerUVETest, MoveWithToIUVE_StepHeightTooLowPreservesWallBlock) {
-    const Scene::EntityUVE controller = MakeControllerEntityUVE({0.0F, 1.0F, 0.0F}, {0.5F, 1.0F, 0.5F});
-    MakeColliderEntityUVE({1.0F, 1.0F, 0.0F}, {0.5F, 1.0F, 2.0F});
+TEST_F(CharacterControllerTest, MoveWithToI_StepHeightTooLowPreservesWallBlock) {
+    const Scene::Entity controller = MakeControllerEntity({0.0F, 1.0F, 0.0F}, {0.5F, 1.0F, 0.5F});
+    MakeColliderEntity({1.0F, 1.0F, 0.0F}, {0.5F, 1.0F, 2.0F});
 
-    const CharacterControllerMoveResultUVE result = CharacterControllerUVE::MoveWithToIUVE(
+    const CharacterControllerMoveResult result = CharacterController::MoveWithToI(
         entityManager, sceneGraph, collisionSystem,
-        CharacterControllerInputUVE{controller, {3.0F, 0.0F, 0.0F}, 8U, 100.0F, 45.0F, 0.75F});
+        CharacterControllerInput{controller, {3.0F, 0.0F, 0.0F}, 8U, 100.0F, 45.0F, 0.75F});
 
-    ASSERT_TRUE(result.IsAcceptedUVE());
+    ASSERT_TRUE(result.IsAccepted());
     EXPECT_TRUE(result.blocked);
     EXPECT_TRUE(result.toiUsed);
     EXPECT_FALSE(result.stepUpUsed);
-    EXPECT_LT(GetWorldPositionUVE(controller).x, 0.5F);
+    EXPECT_LT(GetWorldPosition(controller).x, 0.5F);
 }
 
-TEST_F(CharacterControllerUVETest, MoveWithToIUVE_PreservesTangentialDisplacementAfterImpact) {
-    const Scene::EntityUVE controller = MakeControllerEntityUVE({}, {0.5F, 0.5F, 0.5F});
-    MakeColliderEntityUVE({2.0F, 0.0F, 0.0F}, {0.5F, 2.0F, 2.0F});
+TEST_F(CharacterControllerTest, MoveWithToI_PreservesTangentialDisplacementAfterImpact) {
+    const Scene::Entity controller = MakeControllerEntity({}, {0.5F, 0.5F, 0.5F});
+    MakeColliderEntity({2.0F, 0.0F, 0.0F}, {0.5F, 2.0F, 2.0F});
 
-    const CharacterControllerMoveResultUVE result = CharacterControllerUVE::MoveWithToIUVE(
+    const CharacterControllerMoveResult result = CharacterController::MoveWithToI(
         entityManager, sceneGraph, collisionSystem,
-        CharacterControllerInputUVE{controller, {10.0F, 3.0F, 0.0F}, 8U, 100.0F});
+        CharacterControllerInput{controller, {10.0F, 3.0F, 0.0F}, 8U, 100.0F});
 
-    ASSERT_TRUE(result.IsAcceptedUVE());
+    ASSERT_TRUE(result.IsAccepted());
     EXPECT_TRUE(result.blocked);
     EXPECT_TRUE(result.toiUsed);
-    EXPECT_NEAR(GetWorldPositionUVE(controller).x, 0.999F, 2.0e-3F);
-    EXPECT_NEAR(GetWorldPositionUVE(controller).y, 3.0F, 2.0e-3F);
+    EXPECT_NEAR(GetWorldPosition(controller).x, 0.999F, 2.0e-3F);
+    EXPECT_NEAR(GetWorldPosition(controller).y, 3.0F, 2.0e-3F);
 }
 
-TEST_F(CharacterControllerUVETest, MoveWithToIUVE_IncompatibleLayerMaskPassesThrough) {
-    const Scene::EntityUVE controller = MakeControllerEntityUVE({}, {0.5F, 0.5F, 0.5F}, 1U, 1U);
-    MakeColliderEntityUVE({2.0F, 0.0F, 0.0F}, {0.05F, 2.0F, 2.0F}, 2U, 0xFFFFFFFFU);
+TEST_F(CharacterControllerTest, MoveWithToI_IncompatibleLayerMaskPassesThrough) {
+    const Scene::Entity controller = MakeControllerEntity({}, {0.5F, 0.5F, 0.5F}, 1U, 1U);
+    MakeColliderEntity({2.0F, 0.0F, 0.0F}, {0.05F, 2.0F, 2.0F}, 2U, 0xFFFFFFFFU);
 
-    const CharacterControllerMoveResultUVE result = CharacterControllerUVE::MoveWithToIUVE(
+    const CharacterControllerMoveResult result = CharacterController::MoveWithToI(
         entityManager, sceneGraph, collisionSystem,
-        CharacterControllerInputUVE{controller, {10.0F, 0.0F, 0.0F}, 1U, 100.0F});
+        CharacterControllerInput{controller, {10.0F, 0.0F, 0.0F}, 1U, 100.0F});
 
-    ASSERT_TRUE(result.IsAcceptedUVE());
+    ASSERT_TRUE(result.IsAccepted());
     EXPECT_FALSE(result.blocked);
     EXPECT_FALSE(result.toiUsed);
-    EXPECT_NEAR(GetWorldPositionUVE(controller).x, 10.0F, 1.0e-4F);
+    EXPECT_NEAR(GetWorldPosition(controller).x, 10.0F, 1.0e-4F);
 }
 
-TEST_F(CharacterControllerUVETest, MoveUVE_ClampsInvalidGroundSlopeWithoutRejectingInput) {
-    const Scene::EntityUVE controller = MakeControllerEntityUVE({}, {0.5F, 0.5F, 0.5F});
+TEST_F(CharacterControllerTest, Move_ClampsInvalidGroundSlopeWithoutRejectingInput) {
+    const Scene::Entity controller = MakeControllerEntity({}, {0.5F, 0.5F, 0.5F});
 
-    const CharacterControllerMoveResultUVE result = CharacterControllerUVE::MoveUVE(
+    const CharacterControllerMoveResult result = CharacterController::Move(
         entityManager, sceneGraph, collisionSystem,
-        CharacterControllerInputUVE{controller, {0.1F, 0.0F, 0.0F}, 1U, 1.0F, -5.0F});
+        CharacterControllerInput{controller, {0.1F, 0.0F, 0.0F}, 1U, 1.0F, -5.0F});
 
-    ASSERT_TRUE(result.IsAcceptedUVE());
+    ASSERT_TRUE(result.IsAccepted());
     EXPECT_TRUE(result.inputClamped);
     EXPECT_FALSE(result.grounded);
-    EXPECT_NEAR(GetWorldPositionUVE(controller).x, 0.1F, 1.0e-4F);
+    EXPECT_NEAR(GetWorldPosition(controller).x, 0.1F, 1.0e-4F);
 }
 
-TEST_F(CharacterControllerUVETest, MoveUVE_OptInPushesDynamicTargetWithBoundedNormalSpeed) {
-    const Scene::EntityUVE controller = MakeControllerEntityUVE({}, {0.5F, 0.5F, 0.5F});
-    const Scene::EntityUVE target = MakeColliderEntityUVE({2.0F, 0.0F, 0.0F}, {0.5F, 0.5F, 0.5F});
-    entityManager.AddComponentUVE<Scene::Rigid3DComponentUVE>(target, Scene::Rigid3DComponentUVE{});
+TEST_F(CharacterControllerTest, Move_OptInPushesDynamicTargetWithBoundedNormalSpeed) {
+    const Scene::Entity controller = MakeControllerEntity({}, {0.5F, 0.5F, 0.5F});
+    const Scene::Entity target = MakeColliderEntity({2.0F, 0.0F, 0.0F}, {0.5F, 0.5F, 0.5F});
+    entityManager.AddComponent<Scene::Rigid3DComponent>(target, Scene::Rigid3DComponent{});
 
-    const CharacterControllerMoveResultUVE result = CharacterControllerUVE::MoveUVE(
+    const CharacterControllerMoveResult result = CharacterController::Move(
         entityManager, sceneGraph, collisionSystem,
-        CharacterControllerInputUVE{controller, {3.0F, 0.0F, 0.0F}, 32U, 0.25F, 45.0F, 0.0F,
+        CharacterControllerInput{controller, {3.0F, 0.0F, 0.0F}, 32U, 0.25F, 45.0F, 0.0F,
                                     true, 1.0F, 5.0F, 1.0F / 60.0F});
 
-    ASSERT_TRUE(result.IsAcceptedUVE());
+    ASSERT_TRUE(result.IsAccepted());
     EXPECT_TRUE(result.blocked);
     EXPECT_EQ(result.pushedBodyCount, 1U);
     EXPECT_FALSE(result.dynamicBodyPushClamped);
-    const Scene::Rigid3DComponentUVE& pushedBody =
-        entityManager.GetComponentUVE<Scene::Rigid3DComponentUVE>(target);
+    const Scene::Rigid3DComponent& pushedBody =
+        entityManager.GetComponent<Scene::Rigid3DComponent>(target);
     EXPECT_NEAR(pushedBody.velocity.x, 5.0F, 1.0e-4F);
     EXPECT_NEAR(pushedBody.velocity.y, 0.0F, 1.0e-4F);
 }
 
-TEST_F(CharacterControllerUVETest, MoveUVE_DefaultPushPolicyLeavesDynamicTargetUnchanged) {
-    const Scene::EntityUVE controller = MakeControllerEntityUVE({}, {0.5F, 0.5F, 0.5F});
-    const Scene::EntityUVE target = MakeColliderEntityUVE({2.0F, 0.0F, 0.0F}, {0.5F, 0.5F, 0.5F});
-    entityManager.AddComponentUVE<Scene::Rigid3DComponentUVE>(target, Scene::Rigid3DComponentUVE{});
+TEST_F(CharacterControllerTest, Move_DefaultPushPolicyLeavesDynamicTargetUnchanged) {
+    const Scene::Entity controller = MakeControllerEntity({}, {0.5F, 0.5F, 0.5F});
+    const Scene::Entity target = MakeColliderEntity({2.0F, 0.0F, 0.0F}, {0.5F, 0.5F, 0.5F});
+    entityManager.AddComponent<Scene::Rigid3DComponent>(target, Scene::Rigid3DComponent{});
 
-    const CharacterControllerMoveResultUVE result = CharacterControllerUVE::MoveUVE(
+    const CharacterControllerMoveResult result = CharacterController::Move(
         entityManager, sceneGraph, collisionSystem,
-        CharacterControllerInputUVE{controller, {3.0F, 0.0F, 0.0F}, 32U, 0.25F});
+        CharacterControllerInput{controller, {3.0F, 0.0F, 0.0F}, 32U, 0.25F});
 
-    ASSERT_TRUE(result.IsAcceptedUVE());
+    ASSERT_TRUE(result.IsAccepted());
     EXPECT_EQ(result.pushedBodyCount, 0U);
-    EXPECT_FLOAT_EQ(entityManager.GetComponentUVE<Scene::Rigid3DComponentUVE>(target).velocity.x, 0.0F);
+    EXPECT_FLOAT_EQ(entityManager.GetComponent<Scene::Rigid3DComponent>(target).velocity.x, 0.0F);
 }
 
-TEST_F(CharacterControllerUVETest, MoveUVE_DoesNotPushKinematicTargetAndClampsInvalidPushPolicy) {
-    const Scene::EntityUVE controller = MakeControllerEntityUVE({}, {0.5F, 0.5F, 0.5F});
-    const Scene::EntityUVE target = MakeColliderEntityUVE({2.0F, 0.0F, 0.0F}, {0.5F, 0.5F, 0.5F});
-    entityManager.AddComponentUVE<Scene::Rigid3DComponentUVE>(target, Scene::Rigid3DComponentUVE{1.0F, true});
+TEST_F(CharacterControllerTest, Move_DoesNotPushKinematicTargetAndClampsInvalidPushPolicy) {
+    const Scene::Entity controller = MakeControllerEntity({}, {0.5F, 0.5F, 0.5F});
+    const Scene::Entity target = MakeColliderEntity({2.0F, 0.0F, 0.0F}, {0.5F, 0.5F, 0.5F});
+    entityManager.AddComponent<Scene::Rigid3DComponent>(target, Scene::Rigid3DComponent{1.0F, true});
 
-    const CharacterControllerMoveResultUVE result = CharacterControllerUVE::MoveUVE(
+    const CharacterControllerMoveResult result = CharacterController::Move(
         entityManager, sceneGraph, collisionSystem,
-        CharacterControllerInputUVE{controller, {3.0F, 0.0F, 0.0F}, 32U, 0.25F, 45.0F, 0.0F,
+        CharacterControllerInput{controller, {3.0F, 0.0F, 0.0F}, 32U, 0.25F, 45.0F, 0.0F,
                                     true, -1.0F, 0.0F, -1.0F});
 
-    ASSERT_TRUE(result.IsAcceptedUVE());
+    ASSERT_TRUE(result.IsAccepted());
     EXPECT_TRUE(result.dynamicBodyPushClamped);
     EXPECT_EQ(result.pushedBodyCount, 0U);
-    EXPECT_TRUE(entityManager.GetComponentUVE<Scene::Rigid3DComponentUVE>(target).isKinematic);
+    EXPECT_TRUE(entityManager.GetComponent<Scene::Rigid3DComponent>(target).isKinematic);
 }
 
-TEST_F(CharacterControllerUVETest, MoveUVE_RejectsDynamicBodyAndClampsInvalidBudget) {
-    const Scene::EntityUVE dynamic = MakeColliderEntityUVE({5.0F, 0.0F, 0.0F}, {0.5F, 0.5F, 0.5F});
-    entityManager.AddComponentUVE<Scene::Rigid3DComponentUVE>(dynamic, Scene::Rigid3DComponentUVE{});
-    const CharacterControllerMoveResultUVE rejected = CharacterControllerUVE::MoveUVE(
+TEST_F(CharacterControllerTest, Move_RejectsDynamicBodyAndClampsInvalidBudget) {
+    const Scene::Entity dynamic = MakeColliderEntity({5.0F, 0.0F, 0.0F}, {0.5F, 0.5F, 0.5F});
+    entityManager.AddComponent<Scene::Rigid3DComponent>(dynamic, Scene::Rigid3DComponent{});
+    const CharacterControllerMoveResult rejected = CharacterController::Move(
         entityManager, sceneGraph, collisionSystem,
-        CharacterControllerInputUVE{dynamic, {1.0F, 0.0F, 0.0F}, 8U, 0.25F});
-    EXPECT_EQ(rejected.code, CharacterControllerMoveCodeUVE::NonKinematicBody);
+        CharacterControllerInput{dynamic, {1.0F, 0.0F, 0.0F}, 8U, 0.25F});
+    EXPECT_EQ(rejected.code, CharacterControllerMoveCode::NonKinematicBody);
 
-    const Scene::EntityUVE controller = MakeControllerEntityUVE({}, {0.5F, 0.5F, 0.5F});
-    const CharacterControllerMoveResultUVE clamped = CharacterControllerUVE::MoveUVE(
+    const Scene::Entity controller = MakeControllerEntity({}, {0.5F, 0.5F, 0.5F});
+    const CharacterControllerMoveResult clamped = CharacterController::Move(
         entityManager, sceneGraph, collisionSystem,
-        CharacterControllerInputUVE{controller, {0.1F, 0.0F, 0.0F}, 0U, -1.0F});
-    ASSERT_TRUE(clamped.IsAcceptedUVE());
+        CharacterControllerInput{controller, {0.1F, 0.0F, 0.0F}, 0U, -1.0F});
+    ASSERT_TRUE(clamped.IsAccepted());
     EXPECT_TRUE(clamped.inputClamped);
-    EXPECT_NEAR(GetWorldPositionUVE(controller).x, 0.1F, 1.0e-4F);
+    EXPECT_NEAR(GetWorldPosition(controller).x, 0.1F, 1.0e-4F);
 }
 
-TEST_F(CharacterControllerUVETest, MoveUVE_IgnoresUnrelatedWorldPairsWhenCountingContacts) {
-    const Scene::EntityUVE controller = MakeControllerEntityUVE({}, {0.5F, 0.5F, 0.5F});
-    const Scene::EntityUVE wall = MakeColliderEntityUVE({0.5F, 0.0F, 0.0F}, {0.5F, 0.5F, 0.5F});
-    const Scene::EntityUVE dummyA = MakeColliderEntityUVE({100.0F, 0.0F, 0.0F}, {0.5F, 0.5F, 0.5F});
-    const Scene::EntityUVE dummyB = MakeColliderEntityUVE({100.1F, 0.0F, 0.0F}, {0.5F, 0.5F, 0.5F});
+TEST_F(CharacterControllerTest, Move_IgnoresUnrelatedWorldPairsWhenCountingContacts) {
+    const Scene::Entity controller = MakeControllerEntity({}, {0.5F, 0.5F, 0.5F});
+    const Scene::Entity wall = MakeColliderEntity({0.5F, 0.0F, 0.0F}, {0.5F, 0.5F, 0.5F});
+    const Scene::Entity dummyA = MakeColliderEntity({100.0F, 0.0F, 0.0F}, {0.5F, 0.5F, 0.5F});
+    const Scene::Entity dummyB = MakeColliderEntity({100.1F, 0.0F, 0.0F}, {0.5F, 0.5F, 0.5F});
 
-    FixedCollisionSystemUVE crowdedWorld;
-    for (std::size_t i = 0U; i < CharacterControllerUVE::kMaximumContactsUVE + 10U; ++i) {
-        crowdedWorld.pairs.push_back(CollisionPairUVE{dummyA, dummyB, {1.0F, 0.0F, 0.0F}, 0.1F});
+    FixedCollisionSystem crowdedWorld;
+    for (std::size_t i = 0U; i < CharacterController::kMaximumContacts + 10U; ++i) {
+        crowdedWorld.pairs.push_back(CollisionPair{dummyA, dummyB, {1.0F, 0.0F, 0.0F}, 0.1F});
     }
-    crowdedWorld.pairs.push_back(CollisionPairUVE{controller, wall, {1.0F, 0.0F, 0.0F}, 0.25F});
+    crowdedWorld.pairs.push_back(CollisionPair{controller, wall, {1.0F, 0.0F, 0.0F}, 0.25F});
 
-    const CharacterControllerMoveResultUVE result = CharacterControllerUVE::MoveUVE(
+    const CharacterControllerMoveResult result = CharacterController::Move(
         entityManager, sceneGraph, crowdedWorld,
-        CharacterControllerInputUVE{controller, {0.25F, 0.0F, 0.0F}, 1U, 1.0F});
-    ASSERT_TRUE(result.IsAcceptedUVE());
+        CharacterControllerInput{controller, {0.25F, 0.0F, 0.0F}, 1U, 1.0F});
+    ASSERT_TRUE(result.IsAccepted());
     EXPECT_TRUE(result.blocked);
     EXPECT_FALSE(result.contactsTruncated);
     EXPECT_EQ(result.contactCount, 1U);
 }
 
-TEST_F(CharacterControllerUVETest, MoveWithToIUVE_FindsWallBeyond256NonIntersectingWorldColliders) {
-    for (std::size_t i = 0U; i < CharacterControllerUVE::kMaximumToITargetsUVE + 16U; ++i) {
-        MakeColliderEntityUVE({-50.0F - static_cast<float>(i) * 2.0F, 50.0F, 0.0F}, {0.25F, 0.25F, 0.25F});
+TEST_F(CharacterControllerTest, MoveWithToI_FindsWallBeyond256NonIntersectingWorldColliders) {
+    for (std::size_t i = 0U; i < CharacterController::kMaximumToITargets + 16U; ++i) {
+        MakeColliderEntity({-50.0F - static_cast<float>(i) * 2.0F, 50.0F, 0.0F}, {0.25F, 0.25F, 0.25F});
     }
-    const Scene::EntityUVE controller = MakeControllerEntityUVE({}, {0.5F, 0.5F, 0.5F});
-    MakeColliderEntityUVE({2.0F, 0.0F, 0.0F}, {0.05F, 2.0F, 2.0F});
+    const Scene::Entity controller = MakeControllerEntity({}, {0.5F, 0.5F, 0.5F});
+    MakeColliderEntity({2.0F, 0.0F, 0.0F}, {0.05F, 2.0F, 2.0F});
 
-    const CharacterControllerMoveResultUVE result = CharacterControllerUVE::MoveWithToIUVE(
+    const CharacterControllerMoveResult result = CharacterController::MoveWithToI(
         entityManager, sceneGraph, collisionSystem,
-        CharacterControllerInputUVE{controller, {10.0F, 0.0F, 0.0F}, 1U, 100.0F});
-    ASSERT_TRUE(result.IsAcceptedUVE());
+        CharacterControllerInput{controller, {10.0F, 0.0F, 0.0F}, 1U, 100.0F});
+    ASSERT_TRUE(result.IsAccepted());
     EXPECT_TRUE(result.blocked);
     EXPECT_TRUE(result.toiUsed);
     EXPECT_FALSE(result.contactsTruncated);
-    EXPECT_LT(GetWorldPositionUVE(controller).x, 1.5F);
+    EXPECT_LT(GetWorldPosition(controller).x, 1.5F);
 }
 
 } // namespace

@@ -10,19 +10,19 @@
 namespace UVE::Networking {
 namespace {
 
-TEST(VoiceChatUVETest, ImaAdpcmRoundTripPreservesWaveformAndCompresses4To1) {
-    ImaAdpcmVoiceCodecUVE codec;
-    std::vector<float> input(kDefaultVoiceFrameSamplesUVE);
+TEST(VoiceChatTest, ImaAdpcmRoundTripPreservesWaveformAndCompresses4To1) {
+    ImaAdpcmVoiceCodec codec;
+    std::vector<float> input(kDefaultVoiceFrameSamples);
     for (std::size_t i = 0U; i < input.size(); ++i) {
         input[i] = 0.45F * std::sin(2.0F * 3.14159265F * 440.0F * static_cast<float>(i) / 16000.0F);
     }
 
     std::vector<std::uint8_t> encoded;
-    codec.EncodeFrameUVE(input, encoded);
+    codec.EncodeFrame(input, encoded);
     EXPECT_LE(encoded.size(), input.size() / 2U + 6U);
 
     std::vector<float> decoded;
-    codec.DecodeFrameUVE(encoded, input.size(), decoded);
+    codec.DecodeFrame(encoded, input.size(), decoded);
     ASSERT_EQ(decoded.size(), input.size());
 
     double errSq = 0.0;
@@ -34,44 +34,44 @@ TEST(VoiceChatUVETest, ImaAdpcmRoundTripPreservesWaveformAndCompresses4To1) {
     EXPECT_LT(rmse, 0.05);
 }
 
-TEST(VoiceChatUVETest, VadPttJitterBufferReorderingAndSessionRoundTrip) {
-    VoiceChatSessionUVE sender(7U);
-    VoiceChatSessionUVE receiver(2U);
+TEST(VoiceChatTest, VadPttJitterBufferReorderingAndSessionRoundTrip) {
+    VoiceChatSession sender(7U);
+    VoiceChatSession receiver(2U);
 
     // Silence rejected by VAD.
-    std::vector<float> silence(kDefaultVoiceFrameSamplesUVE, 0.0F);
-    VoiceFramePacketUVE pkt{};
-    EXPECT_FALSE(sender.CaptureAndEncodeUVE(silence, kDefaultVoiceSampleRateHzUVE, pkt));
+    std::vector<float> silence(kDefaultVoiceFrameSamples, 0.0F);
+    VoiceFramePacket pkt{};
+    EXPECT_FALSE(sender.CaptureAndEncode(silence, kDefaultVoiceSampleRateHz, pkt));
 
     // Active speech accepted, serialized, reordered, and recovered in order by jitter buffer.
-    std::vector<float> speech(kDefaultVoiceFrameSamplesUVE);
+    std::vector<float> speech(kDefaultVoiceFrameSamples);
     for (std::size_t i = 0U; i < speech.size(); ++i) {
         speech[i] = 0.35F * std::sin(0.15F * static_cast<float>(i));
     }
 
-    std::vector<VoiceFramePacketUVE> txPackets;
+    std::vector<VoiceFramePacket> txPackets;
     for (int f = 0; f < 4; ++f) {
-        VoiceFramePacketUVE tx{};
-        ASSERT_TRUE(sender.CaptureAndEncodeUVE(speech, kDefaultVoiceSampleRateHzUVE, tx));
-        const auto wire = SerializeVoicePacketUVE(tx);
-        VoiceFramePacketUVE rx{};
-        ASSERT_TRUE(DeserializeVoicePacketUVE(wire, rx));
+        VoiceFramePacket tx{};
+        ASSERT_TRUE(sender.CaptureAndEncode(speech, kDefaultVoiceSampleRateHz, tx));
+        const auto wire = SerializeVoicePacket(tx);
+        VoiceFramePacket rx{};
+        ASSERT_TRUE(DeserializeVoicePacket(wire, rx));
         EXPECT_EQ(rx.peerId, 7U);
         EXPECT_EQ(rx.sequence, static_cast<std::uint32_t>(f));
         txPackets.push_back(std::move(rx));
     }
 
     // Deliver out of order: 2, 0, 1, 3.
-    receiver.ReceivePacketUVE(txPackets[2]);
-    receiver.ReceivePacketUVE(txPackets[0]);
-    receiver.ReceivePacketUVE(txPackets[1]);
-    receiver.ReceivePacketUVE(txPackets[3]);
-    EXPECT_EQ(receiver.ActivePeerCountUVE(), 1U);
+    receiver.ReceivePacket(txPackets[2]);
+    receiver.ReceivePacket(txPackets[0]);
+    receiver.ReceivePacket(txPackets[1]);
+    receiver.ReceivePacket(txPackets[3]);
+    EXPECT_EQ(receiver.ActivePeerCount(), 1U);
 
     for (int f = 0; f < 4; ++f) {
         std::vector<float> pcm;
-        ASSERT_TRUE(receiver.PopPeerPlaybackPcmUVE(7U, pcm));
-        EXPECT_EQ(pcm.size(), kDefaultVoiceFrameSamplesUVE);
+        ASSERT_TRUE(receiver.PopPeerPlaybackPcm(7U, pcm));
+        EXPECT_EQ(pcm.size(), kDefaultVoiceFrameSamples);
     }
 }
 

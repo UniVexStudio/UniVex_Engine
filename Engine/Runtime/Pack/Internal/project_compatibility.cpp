@@ -9,22 +9,22 @@
 namespace UVE::Pack {
 namespace {
 
-inline constexpr std::size_t kVersionComponentCountUVE = 4U;
+inline constexpr std::size_t kVersionComponentCount = 4U;
 
-using VersionComponentsUVE = std::array<std::uint32_t, kVersionComponentCountUVE>;
+using VersionComponents = std::array<std::uint32_t, kVersionComponentCount>;
 
-[[nodiscard]] Core::VersionUVE ToEngineVersionUVE(const Platform::EditorProjectVersionUVE& version) noexcept {
+[[nodiscard]] Core::Version ToEngineVersion(const Platform::EditorProjectVersion& version) noexcept {
     return {version.major, version.minor, version.patch, version.build};
 }
 
-[[nodiscard]] VersionComponentsUVE ComponentsUVE(const Core::VersionUVE& version) noexcept {
+[[nodiscard]] VersionComponents Components(const Core::Version& version) noexcept {
     return {version.major, version.minor, version.patch, version.build};
 }
 
 /// The most significant component at which the two versions differ, or none when they are equal.
-[[nodiscard]] std::optional<std::size_t> FirstDifferenceUVE(const VersionComponentsUVE& lhs,
-                                                            const VersionComponentsUVE& rhs) noexcept {
-    for (std::size_t index = 0U; index < kVersionComponentCountUVE; ++index) {
+[[nodiscard]] std::optional<std::size_t> FirstDifference(const VersionComponents& lhs,
+                                                            const VersionComponents& rhs) noexcept {
+    for (std::size_t index = 0U; index < kVersionComponentCount; ++index) {
         if (lhs[index] != rhs[index]) {
             return index;
         }
@@ -32,62 +32,62 @@ using VersionComponentsUVE = std::array<std::uint32_t, kVersionComponentCountUVE
     return std::nullopt;
 }
 
-[[nodiscard]] bool IsAtOrAboveUVE(const std::size_t component, const VersionComponentUVE threshold) noexcept {
+[[nodiscard]] bool IsAtOrAbove(const std::size_t component, const VersionComponent threshold) noexcept {
     return component <= static_cast<std::size_t>(threshold);
 }
 
 } // namespace
 
-ProjectCompatibilityUVE EvaluateProjectCompatibilityUVE(const Platform::EditorProjectVersionUVE& projectVersion,
-                                                        const Core::VersionUVE& engineVersion,
-                                                        const ProjectCompatibilityPolicyUVE& policy) {
-    const Core::VersionUVE project = ToEngineVersionUVE(projectVersion);
-    const VersionComponentsUVE projectComponents = ComponentsUVE(project);
-    const VersionComponentsUVE engineComponents = ComponentsUVE(engineVersion);
-    const std::string projectText = project.ToStringUVE();
-    const std::string engineText = engineVersion.ToStringUVE();
+ProjectCompatibility EvaluateProjectCompatibility(const Platform::EditorProjectVersion& projectVersion,
+                                                        const Core::Version& engineVersion,
+                                                        const ProjectCompatibilityPolicy& policy) {
+    const Core::Version project = ToEngineVersion(projectVersion);
+    const VersionComponents projectComponents = Components(project);
+    const VersionComponents engineComponents = Components(engineVersion);
+    const std::string projectText = project.ToString();
+    const std::string engineText = engineVersion.ToString();
 
-    const std::optional<std::size_t> difference = FirstDifferenceUVE(projectComponents, engineComponents);
+    const std::optional<std::size_t> difference = FirstDifference(projectComponents, engineComponents);
     if (!difference.has_value()) {
-        return {ProjectCompatibilityVerdictUVE::Same, "The project was last saved with engine " + engineText + "."};
+        return {ProjectCompatibilityVerdict::Same, "The project was last saved with engine " + engineText + "."};
     }
 
     if (projectComponents[*difference] > engineComponents[*difference]) {
-        if (IsAtOrAboveUVE(*difference, policy.newerRejectedFrom)) {
-            return {ProjectCompatibilityVerdictUVE::NewerIncompatible,
+        if (IsAtOrAbove(*difference, policy.newerRejectedFrom)) {
+            return {ProjectCompatibilityVerdict::NewerIncompatible,
                     "The project was saved with engine " + projectText + ", which engine " + engineText +
                         " cannot open. Use engine " + projectText + " or newer."};
         }
-        return {ProjectCompatibilityVerdictUVE::NewerCompatible,
+        return {ProjectCompatibilityVerdict::NewerCompatible,
                 "The project was saved with the newer engine " + projectText + "; engine " + engineText +
                     " opens it but may not support everything it uses."};
     }
 
-    if (IsAtOrAboveUVE(*difference, policy.olderUpgradePromptFrom)) {
-        return {ProjectCompatibilityVerdictUVE::OlderNeedsUpgrade,
+    if (IsAtOrAbove(*difference, policy.olderUpgradePromptFrom)) {
+        return {ProjectCompatibilityVerdict::OlderNeedsUpgrade,
                 "The project was saved with engine " + projectText + ". Upgrading it to engine " + engineText +
                     " means older engines may no longer open it."};
     }
-    return {ProjectCompatibilityVerdictUVE::OlderUpgradesSilently,
+    return {ProjectCompatibilityVerdict::OlderUpgradesSilently,
             "The project was saved with engine " + projectText + " and is upgraded to engine " + engineText + "."};
 }
 
-bool ShouldRecordEngineVersionUVE(const ProjectCompatibilityVerdictUVE verdict, const bool upgradeAccepted) noexcept {
+bool ShouldRecordEngineVersion(const ProjectCompatibilityVerdict verdict, const bool upgradeAccepted) noexcept {
     switch (verdict) {
-    case ProjectCompatibilityVerdictUVE::Same:
-    case ProjectCompatibilityVerdictUVE::OlderUpgradesSilently:
+    case ProjectCompatibilityVerdict::Same:
+    case ProjectCompatibilityVerdict::OlderUpgradesSilently:
         return true;
-    case ProjectCompatibilityVerdictUVE::OlderNeedsUpgrade:
+    case ProjectCompatibilityVerdict::OlderNeedsUpgrade:
         return upgradeAccepted;
-    case ProjectCompatibilityVerdictUVE::NewerCompatible:
-    case ProjectCompatibilityVerdictUVE::NewerIncompatible:
+    case ProjectCompatibilityVerdict::NewerCompatible:
+    case ProjectCompatibilityVerdict::NewerIncompatible:
         return false;
     }
     return false;
 }
 
-std::string FormatProjectVersionUVE(const Platform::EditorProjectVersionUVE& version) {
-    return ToEngineVersionUVE(version).ToStringUVE();
+std::string FormatProjectVersion(const Platform::EditorProjectVersion& version) {
+    return ToEngineVersion(version).ToString();
 }
 
 } // namespace UVE::Pack

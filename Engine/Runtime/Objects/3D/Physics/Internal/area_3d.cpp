@@ -14,14 +14,14 @@
 namespace UVE::Scene {
 namespace {
 
-[[nodiscard]] bool EntityLessUVE(const EntityUVE& lhs, const EntityUVE& rhs) noexcept {
+[[nodiscard]] bool EntityLess(const Entity& lhs, const Entity& rhs) noexcept {
     return lhs.index < rhs.index || (lhs.index == rhs.index && lhs.generation < rhs.generation);
 }
 
 template <std::size_t kCapacity>
-void AppendUniqueOccupantUVE(std::array<EntityUVE, kCapacity>& occupants, std::uint8_t& count,
-                             bool& truncated, const EntityUVE entity) noexcept {
-    if (entity == kInvalidEntityUVE) {
+void AppendUniqueOccupant(std::array<Entity, kCapacity>& occupants, std::uint8_t& count,
+                             bool& truncated, const Entity entity) noexcept {
+    if (entity == kInvalidEntity) {
         return;
     }
     for (std::uint8_t index = 0U; index < count; ++index) {
@@ -37,95 +37,95 @@ void AppendUniqueOccupantUVE(std::array<EntityUVE, kCapacity>& occupants, std::u
     ++count;
 }
 
-[[nodiscard]] Math::Vector3UVE DirectionOrZeroUVE(const Math::Vector3UVE& value) noexcept {
-    if (!Math::IsFiniteUVE(value)) {
+[[nodiscard]] Math::Vector3 DirectionOrZero(const Math::Vector3& value) noexcept {
+    if (!Math::IsFinite(value)) {
         return {};
     }
-    const float lengthSquared = Math::LengthSquaredUVE(value);
+    const float lengthSquared = Math::LengthSquared(value);
     if (!std::isfinite(lengthSquared) || lengthSquared <= 0.0F) {
         return {};
     }
-    return Math::NormalizeUVE(value);
+    return Math::Normalize(value);
 }
 
-struct SpaceMixActionUVE final {
+struct SpaceMixAction final {
     bool skip = true;
     bool add = false;
     bool done = false;
 };
 
-[[nodiscard]] SpaceMixActionUVE DecodeSpaceOverrideUVE(const AreaSpaceOverrideModeUVE mode) noexcept {
+[[nodiscard]] SpaceMixAction DecodeSpaceOverride(const AreaSpaceOverrideMode mode) noexcept {
     switch (mode) {
-    case AreaSpaceOverrideModeUVE::Disabled:
-        return SpaceMixActionUVE{true, false, false};
-    case AreaSpaceOverrideModeUVE::Combine:
-        return SpaceMixActionUVE{false, true, false};
-    case AreaSpaceOverrideModeUVE::CombineReplace:
-        return SpaceMixActionUVE{false, true, true};
-    case AreaSpaceOverrideModeUVE::Replace:
-        return SpaceMixActionUVE{false, false, true};
-    case AreaSpaceOverrideModeUVE::ReplaceCombine:
-        return SpaceMixActionUVE{false, false, false};
+    case AreaSpaceOverrideMode::Disabled:
+        return SpaceMixAction{true, false, false};
+    case AreaSpaceOverrideMode::Combine:
+        return SpaceMixAction{false, true, false};
+    case AreaSpaceOverrideMode::CombineReplace:
+        return SpaceMixAction{false, true, true};
+    case AreaSpaceOverrideMode::Replace:
+        return SpaceMixAction{false, false, true};
+    case AreaSpaceOverrideMode::ReplaceCombine:
+        return SpaceMixAction{false, false, false};
     }
-    return SpaceMixActionUVE{true, false, false};
+    return SpaceMixAction{true, false, false};
 }
 
 } // namespace
 
-bool IsArea3DObjectDefinitionValidUVE(const Area3DObjectDefinitionUVE& value) noexcept {
-    return IsAreaComponentValidUVE(value.area);
+bool IsArea3DObjectDefinitionValid(const Area3DObjectDefinition& value) noexcept {
+    return IsAreaComponentValid(value.area);
 }
 
-void ApplyArea3DObjectDefinitionUVE(IEntityManagerUVE& entityManager, const EntityUVE entity,
-                                    const Area3DObjectDefinitionUVE& value) {
-    EnsureObject3DBaselineUVE(entityManager, entity, Area3DObjectDefinitionUVE::defaultName);
-    entityManager.AddComponentUVE<AreaComponentUVE>(entity, SanitizeAreaComponentUVE(value.area));
+void ApplyArea3DObjectDefinition(IEntityManager& entityManager, const Entity entity,
+                                    const Area3DObjectDefinition& value) {
+    EnsureObject3DBaseline(entityManager, entity, Area3DObjectDefinition::defaultName);
+    entityManager.AddComponent<AreaComponent>(entity, SanitizeAreaComponent(value.area));
 }
 
-void Area3DUVE::ClearOccupancyUVE(AreaComponentUVE& area) noexcept {
-    ClearAreaRuntimeOverlapsUVE(area);
+void Area3D::ClearOccupancy(AreaComponent& area) noexcept {
+    ClearAreaRuntimeOverlaps(area);
 }
 
-void Area3DUVE::RefreshOccupancyUVE(AreaComponentUVE& area,
-                                    const std::span<const Area3DOverlapUVE> overlaps) noexcept {
-    ClearOccupancyUVE(area);
+void Area3D::RefreshOccupancy(AreaComponent& area,
+                                    const std::span<const Area3DOverlap> overlaps) noexcept {
+    ClearOccupancy(area);
     if (!area.monitoring) {
         return;
     }
-    for (const Area3DOverlapUVE& overlap : overlaps) {
+    for (const Area3DOverlap& overlap : overlaps) {
         if (overlap.otherIsArea) {
-            AppendUniqueOccupantUVE(area.overlappingAreas, area.overlappingAreaCount,
+            AppendUniqueOccupant(area.overlappingAreas, area.overlappingAreaCount,
                                     area.overlappingAreasTruncated, overlap.other);
         } else {
-            AppendUniqueOccupantUVE(area.overlappingBodies, area.overlappingBodyCount,
+            AppendUniqueOccupant(area.overlappingBodies, area.overlappingBodyCount,
                                     area.overlappingBodiesTruncated, overlap.other);
         }
     }
 }
 
-bool Area3DUVE::HasOverlappingBodyUVE(const AreaComponentUVE& area, const EntityUVE entity) noexcept {
-    return ContainsAreaOverlappingBodyUVE(area, entity);
+bool Area3D::HasOverlappingBody(const AreaComponent& area, const Entity entity) noexcept {
+    return ContainsAreaOverlappingBody(area, entity);
 }
 
-bool Area3DUVE::HasOverlappingAreaUVE(const AreaComponentUVE& area, const EntityUVE entity) noexcept {
-    return ContainsAreaOverlappingAreaUVE(area, entity);
+bool Area3D::HasOverlappingArea(const AreaComponent& area, const Entity entity) noexcept {
+    return ContainsAreaOverlappingArea(area, entity);
 }
 
-const EntityUVE* Area3DUVE::GetOverlappingBodyUVE(const AreaComponentUVE& area,
+const Entity* Area3D::GetOverlappingBody(const AreaComponent& area,
                                                   const std::size_t index) noexcept {
     return index < static_cast<std::size_t>(area.overlappingBodyCount) ? &area.overlappingBodies[index]
                                                                        : nullptr;
 }
 
-const EntityUVE* Area3DUVE::GetOverlappingAreaUVE(const AreaComponentUVE& area,
+const Entity* Area3D::GetOverlappingArea(const AreaComponent& area,
                                                   const std::size_t index) noexcept {
     return index < static_cast<std::size_t>(area.overlappingAreaCount) ? &area.overlappingAreas[index]
                                                                        : nullptr;
 }
 
-Area3DFieldUVE Area3DUVE::MakeFieldUVE(const EntityUVE areaEntity, const AreaComponentUVE& area,
-                                       const Math::Vector3UVE& areaWorldCenter) noexcept {
-    Area3DFieldUVE field;
+Area3DField Area3D::MakeField(const Entity areaEntity, const AreaComponent& area,
+                                       const Math::Vector3& areaWorldCenter) noexcept {
+    Area3DField field;
     field.areaEntity = areaEntity;
     field.priority = area.priority;
     field.gravityOverride = area.gravityOverride;
@@ -141,31 +141,31 @@ Area3DFieldUVE Area3DUVE::MakeFieldUVE(const EntityUVE areaEntity, const AreaCom
     return field;
 }
 
-Math::Vector3UVE Area3DUVE::EvaluateGravityAtUVE(const Area3DFieldUVE& field,
-                                                 const Math::Vector3UVE& bodyPosition) noexcept {
-    if (!std::isfinite(field.gravityMagnitude) || !Math::IsFiniteUVE(bodyPosition)) {
+Math::Vector3 Area3D::EvaluateGravityAt(const Area3DField& field,
+                                                 const Math::Vector3& bodyPosition) noexcept {
+    if (!std::isfinite(field.gravityMagnitude) || !Math::IsFinite(bodyPosition)) {
         return {};
     }
     if (!field.gravityPoint) {
-        const Math::Vector3UVE direction = DirectionOrZeroUVE(field.gravityDirection);
+        const Math::Vector3 direction = DirectionOrZero(field.gravityDirection);
         if (direction.x == 0.0F && direction.y == 0.0F && direction.z == 0.0F) {
             return {};
         }
         return direction * field.gravityMagnitude;
     }
-    if (!Math::IsFiniteUVE(field.gravityPointWorldCenter) ||
+    if (!Math::IsFinite(field.gravityPointWorldCenter) ||
         !std::isfinite(field.gravityPointUnitDistance) || field.gravityPointUnitDistance < 0.0F) {
         return {};
     }
-    const Math::Vector3UVE offset = field.gravityPointWorldCenter - bodyPosition;
-    if (!Math::IsFiniteUVE(offset)) {
+    const Math::Vector3 offset = field.gravityPointWorldCenter - bodyPosition;
+    if (!Math::IsFinite(offset)) {
         return {};
     }
-    const float lengthSquared = Math::LengthSquaredUVE(offset);
+    const float lengthSquared = Math::LengthSquared(offset);
     if (!std::isfinite(lengthSquared) || lengthSquared <= 0.0F) {
         return {};
     }
-    const Math::Vector3UVE direction = Math::NormalizeUVE(offset);
+    const Math::Vector3 direction = Math::Normalize(offset);
     if (field.gravityPointUnitDistance <= 0.0F) {
         return direction * field.gravityMagnitude;
     }
@@ -183,50 +183,50 @@ Math::Vector3UVE Area3DUVE::EvaluateGravityAtUVE(const Area3DFieldUVE& field,
     return direction * static_cast<float>(strength);
 }
 
-void Area3DUVE::SortFieldsByPriorityUVE(std::vector<Area3DFieldUVE>& fields) {
-    std::sort(fields.begin(), fields.end(), [](const Area3DFieldUVE& lhs, const Area3DFieldUVE& rhs) {
+void Area3D::SortFieldsByPriority(std::vector<Area3DField>& fields) {
+    std::sort(fields.begin(), fields.end(), [](const Area3DField& lhs, const Area3DField& rhs) {
         if (lhs.priority != rhs.priority) {
             return lhs.priority > rhs.priority;
         }
-        return EntityLessUVE(lhs.areaEntity, rhs.areaEntity);
+        return EntityLess(lhs.areaEntity, rhs.areaEntity);
     });
 }
 
-Area3DSpaceResultUVE Area3DUVE::ResolveSpaceUVE(const Math::Vector3UVE& worldGravity,
+Area3DSpaceResult Area3D::ResolveSpace(const Math::Vector3& worldGravity,
                                                 const float bodyLinearDamp,
                                                 const float bodyAngularDamp,
-                                                const Math::Vector3UVE& bodyPosition,
-                                                const std::span<const Area3DFieldUVE> overlappingFields) {
-    Area3DSpaceResultUVE result;
+                                                const Math::Vector3& bodyPosition,
+                                                const std::span<const Area3DField> overlappingFields) {
+    Area3DSpaceResult result;
     result.gravity = worldGravity;
     result.linearDamp = bodyLinearDamp;
     result.angularDamp = bodyAngularDamp;
-    if (!Math::IsFiniteUVE(worldGravity) || !std::isfinite(bodyLinearDamp) ||
-        !std::isfinite(bodyAngularDamp) || !Math::IsFiniteUVE(bodyPosition)) {
+    if (!Math::IsFinite(worldGravity) || !std::isfinite(bodyLinearDamp) ||
+        !std::isfinite(bodyAngularDamp) || !Math::IsFinite(bodyPosition)) {
         result.gravity = {};
         result.linearDamp = 0.0F;
         result.angularDamp = 0.0F;
         return result;
     }
 
-    std::vector<Area3DFieldUVE> fields(overlappingFields.begin(), overlappingFields.end());
-    SortFieldsByPriorityUVE(fields);
+    std::vector<Area3DField> fields(overlappingFields.begin(), overlappingFields.end());
+    SortFieldsByPriority(fields);
 
     bool gravityDone = false;
     bool linearDampDone = false;
     bool angularDampDone = false;
-    for (const Area3DFieldUVE& field : fields) {
+    for (const Area3DField& field : fields) {
         if (!gravityDone) {
-            const SpaceMixActionUVE action = DecodeSpaceOverrideUVE(field.gravityOverride);
+            const SpaceMixAction action = DecodeSpaceOverride(field.gravityOverride);
             if (!action.skip) {
-                const Math::Vector3UVE areaGravity = EvaluateGravityAtUVE(field, bodyPosition);
+                const Math::Vector3 areaGravity = EvaluateGravityAt(field, bodyPosition);
                 result.gravity = action.add ? (result.gravity + areaGravity) : areaGravity;
                 result.gravityFromArea = true;
                 gravityDone = action.done;
             }
         }
         if (!linearDampDone) {
-            const SpaceMixActionUVE action = DecodeSpaceOverrideUVE(field.linearDampOverride);
+            const SpaceMixAction action = DecodeSpaceOverride(field.linearDampOverride);
             if (!action.skip) {
                 result.linearDamp = action.add ? (result.linearDamp + field.linearDamp) : field.linearDamp;
                 result.linearDampFromArea = true;
@@ -234,7 +234,7 @@ Area3DSpaceResultUVE Area3DUVE::ResolveSpaceUVE(const Math::Vector3UVE& worldGra
             }
         }
         if (!angularDampDone) {
-            const SpaceMixActionUVE action = DecodeSpaceOverrideUVE(field.angularDampOverride);
+            const SpaceMixAction action = DecodeSpaceOverride(field.angularDampOverride);
             if (!action.skip) {
                 result.angularDamp =
                     action.add ? (result.angularDamp + field.angularDamp) : field.angularDamp;
@@ -246,7 +246,7 @@ Area3DSpaceResultUVE Area3DUVE::ResolveSpaceUVE(const Math::Vector3UVE& worldGra
             break;
         }
     }
-    if (!Math::IsFiniteUVE(result.gravity) || !std::isfinite(result.linearDamp) ||
+    if (!Math::IsFinite(result.gravity) || !std::isfinite(result.linearDamp) ||
         !std::isfinite(result.angularDamp)) {
         result.gravity = worldGravity;
         result.linearDamp = bodyLinearDamp;

@@ -20,24 +20,24 @@ namespace {
 
 // Every RPC frame opens with these two bytes, so an RPC peer never mistakes foreign
 // session data for a call - and foreign consumers never mistake ours for theirs.
-inline constexpr std::byte kRpcMagic0UVE = static_cast<std::byte>('R');
-inline constexpr std::byte kRpcMagic1UVE = static_cast<std::byte>('C');
+inline constexpr std::byte kRpcMagic0 = static_cast<std::byte>('R');
+inline constexpr std::byte kRpcMagic1 = static_cast<std::byte>('C');
 
-enum class RpcFrameKindUVE : std::uint8_t { Call = 0x01, Response = 0x02 };
+enum class RpcFrameKind : std::uint8_t { Call = 0x01, Response = 0x02 };
 
-struct DecodedFrameUVE final {
-    RpcFrameKindUVE kind = RpcFrameKindUVE::Call;
-    RpcCallIdUVE callId = kInvalidRpcCallIdUVE;
+struct DecodedFrame final {
+    RpcFrameKind kind = RpcFrameKind::Call;
+    RpcCallId callId = kInvalidRpcCallId;
     std::string method;
-    std::vector<Blueprint::ValueUVE> args;
+    std::vector<Blueprint::Value> args;
     bool ok = false;
-    Blueprint::ValueUVE value;
+    Blueprint::Value value;
     std::string error;
 };
 
 // Strict framing, like the snapshots: magic, version, kind, then exactly the declared body -
 // trailing bytes fail the frame, and foreign mail fails it before anything decodes.
-[[nodiscard]] std::optional<DecodedFrameUVE> DecodeFrameUVE(
+[[nodiscard]] std::optional<DecodedFrame> DecodeFrame(
     const std::vector<std::uint8_t>& payload) {
     std::vector<std::byte> in;
     in.reserve(payload.size());
@@ -46,31 +46,31 @@ struct DecodedFrameUVE final {
     }
     std::size_t offset = 0U;
     std::uint8_t version = 0U, kind = 0U;
-    RpcCallIdUVE callId = kInvalidRpcCallIdUVE;
-    if (in.size() < 8U || in[0] != kRpcMagic0UVE || in[1] != kRpcMagic1UVE) {
+    RpcCallId callId = kInvalidRpcCallId;
+    if (in.size() < 8U || in[0] != kRpcMagic0 || in[1] != kRpcMagic1) {
         return std::nullopt;
     }
     offset = 2U;
     version = std::to_integer<std::uint8_t>(in[offset++]);
     kind = std::to_integer<std::uint8_t>(in[offset++]);
-    if (version != kRpcFrameVersionUVE ||
-        (kind != static_cast<std::uint8_t>(RpcFrameKindUVE::Call) &&
-         kind != static_cast<std::uint8_t>(RpcFrameKindUVE::Response)) ||
-        !Utilities::ReadUint32LeFromBufferUVE(in, offset, callId)) {
+    if (version != kRpcFrameVersion ||
+        (kind != static_cast<std::uint8_t>(RpcFrameKind::Call) &&
+         kind != static_cast<std::uint8_t>(RpcFrameKind::Response)) ||
+        !Utilities::ReadUint32LeFromBuffer(in, offset, callId)) {
         return std::nullopt;
     }
-    DecodedFrameUVE frame;
-    frame.kind = static_cast<RpcFrameKindUVE>(kind);
+    DecodedFrame frame;
+    frame.kind = static_cast<RpcFrameKind>(kind);
     frame.callId = callId;
-    if (frame.kind == RpcFrameKindUVE::Call) {
-        std::optional<std::string> method = ReadWireStringUVE(in, offset);
+    if (frame.kind == RpcFrameKind::Call) {
+        std::optional<std::string> method = ReadWireString(in, offset);
         std::uint16_t argCount = 0U;
-        if (!method.has_value() || !Utilities::ReadUint16LeFromBufferUVE(in, offset, argCount)) {
+        if (!method.has_value() || !Utilities::ReadUint16LeFromBuffer(in, offset, argCount)) {
             return std::nullopt;
         }
         frame.method = std::move(*method);
         for (std::uint16_t i = 0U; i < argCount; ++i) {
-            std::optional<Blueprint::ValueUVE> arg = ReadWireValueUVE(in, offset, 0U);
+            std::optional<Blueprint::Value> arg = ReadWireValue(in, offset, 0U);
             if (!arg.has_value()) {
                 return std::nullopt;
             }
@@ -84,7 +84,7 @@ struct DecodedFrameUVE final {
         if (status != 0x00U && status != 0x01U) {
             return std::nullopt;
         }
-        std::optional<Blueprint::ValueUVE> value = ReadWireValueUVE(in, offset, 0U);
+        std::optional<Blueprint::Value> value = ReadWireValue(in, offset, 0U);
         if (!value.has_value()) {
             return std::nullopt;
         }
@@ -105,29 +105,29 @@ struct DecodedFrameUVE final {
 
 // Frames one call: magic, version, kind, id, method, then the arguments. Empty when the
 // call cannot cross - unencodable arguments, or a frame past the session payload budget.
-[[nodiscard]] std::optional<std::vector<std::byte>> EncodeCallFrameUVE(
-    const RpcCallIdUVE callId, const std::string& method,
-    const std::vector<Blueprint::ValueUVE>& args) {
+[[nodiscard]] std::optional<std::vector<std::byte>> EncodeCallFrame(
+    const RpcCallId callId, const std::string& method,
+    const std::vector<Blueprint::Value>& args) {
     if (method.size() > 0xFFFFU || args.size() > 0xFFFFU) {
         return std::nullopt;
     }
     std::vector<std::byte> frame;
-    frame.push_back(kRpcMagic0UVE);
-    frame.push_back(kRpcMagic1UVE);
-    frame.push_back(static_cast<std::byte>(kRpcFrameVersionUVE));
-    frame.push_back(static_cast<std::byte>(static_cast<std::uint8_t>(RpcFrameKindUVE::Call)));
-    Utilities::AppendUint32LeUVE(frame, callId);
-    Utilities::AppendUint16LeUVE(frame, static_cast<std::uint16_t>(method.size()));
+    frame.push_back(kRpcMagic0);
+    frame.push_back(kRpcMagic1);
+    frame.push_back(static_cast<std::byte>(kRpcFrameVersion));
+    frame.push_back(static_cast<std::byte>(static_cast<std::uint8_t>(RpcFrameKind::Call)));
+    Utilities::AppendUint32Le(frame, callId);
+    Utilities::AppendUint16Le(frame, static_cast<std::uint16_t>(method.size()));
     if (!method.empty()) {
-        Utilities::AppendBytesUVE(frame, method.data(), method.size());
+        Utilities::AppendBytes(frame, method.data(), method.size());
     }
-    Utilities::AppendUint16LeUVE(frame, static_cast<std::uint16_t>(args.size()));
-    for (const Blueprint::ValueUVE& arg : args) {
-        if (!AppendWireValueUVE(frame, arg, 0U)) {
+    Utilities::AppendUint16Le(frame, static_cast<std::uint16_t>(args.size()));
+    for (const Blueprint::Value& arg : args) {
+        if (!AppendWireValue(frame, arg, 0U)) {
             return std::nullopt;
         }
     }
-    if (frame.size() > kSessionMaximumPayloadBytesUVE) {
+    if (frame.size() > kSessionMaximumPayloadBytes) {
         return std::nullopt;
     }
     return frame;
@@ -135,21 +135,21 @@ struct DecodedFrameUVE final {
 
 // Frames one response: the same head, then a status byte plus the result - or the error
 // text as a string value, so errors need no second value codec.
-[[nodiscard]] std::optional<std::vector<std::byte>> EncodeResponseFrameUVE(
-    const RpcCallIdUVE callId, const bool ok, const Blueprint::ValueUVE& value,
+[[nodiscard]] std::optional<std::vector<std::byte>> EncodeResponseFrame(
+    const RpcCallId callId, const bool ok, const Blueprint::Value& value,
     const std::string& error) {
     std::vector<std::byte> frame;
-    frame.push_back(kRpcMagic0UVE);
-    frame.push_back(kRpcMagic1UVE);
-    frame.push_back(static_cast<std::byte>(kRpcFrameVersionUVE));
-    frame.push_back(static_cast<std::byte>(static_cast<std::uint8_t>(RpcFrameKindUVE::Response)));
-    Utilities::AppendUint32LeUVE(frame, callId);
+    frame.push_back(kRpcMagic0);
+    frame.push_back(kRpcMagic1);
+    frame.push_back(static_cast<std::byte>(kRpcFrameVersion));
+    frame.push_back(static_cast<std::byte>(static_cast<std::uint8_t>(RpcFrameKind::Response)));
+    Utilities::AppendUint32Le(frame, callId);
     frame.push_back(ok ? static_cast<std::byte>(0x00) : static_cast<std::byte>(0x01));
-    const Blueprint::ValueUVE& body = ok ? value : Blueprint::ValueUVE{error};
-    if (!AppendWireValueUVE(frame, body, 0U)) {
+    const Blueprint::Value& body = ok ? value : Blueprint::Value{error};
+    if (!AppendWireValue(frame, body, 0U)) {
         return std::nullopt;
     }
-    if (frame.size() > kSessionMaximumPayloadBytesUVE) {
+    if (frame.size() > kSessionMaximumPayloadBytes) {
         return std::nullopt;
     }
     return frame;
@@ -157,33 +157,33 @@ struct DecodedFrameUVE final {
 
 } // namespace
 
-NetworkRpcUVE::NetworkRpcUVE(NetworkSessionUVE&& session) noexcept
+NetworkRpc::NetworkRpc(NetworkSession&& session) noexcept
     : m_session(std::move(session)) {}
 
-NetworkRpcUVE::NetworkRpcUVE(NetworkSessionUVE& sharedSession,
-                              const NetworkChannelIdUVE channel) noexcept
+NetworkRpc::NetworkRpc(NetworkSession& sharedSession,
+                              const NetworkChannelId channel) noexcept
     : m_session(&sharedSession), m_channel(channel) {}
 
-bool NetworkRpcUVE::SendFrameUVE(const std::vector<std::byte>& frame) {
+bool NetworkRpc::SendFrame(const std::vector<std::byte>& frame) {
     std::vector<std::uint8_t> datagram;
     datagram.reserve(frame.size());
     for (const std::byte byte : frame) {
         datagram.push_back(std::to_integer<std::uint8_t>(byte));
     }
-    if (std::holds_alternative<NetworkSessionUVE*>(m_session)) {
-        return SessionUVE().SendChannelDataUVE(m_channel, datagram);
+    if (std::holds_alternative<NetworkSession*>(m_session)) {
+        return Session().SendChannelData(m_channel, datagram);
     }
-    return SessionUVE().SendDataUVE(datagram);
+    return Session().SendData(datagram);
 }
 
-std::optional<std::vector<std::uint8_t>> NetworkRpcUVE::ReceivePayloadUVE() {
-    if (std::holds_alternative<NetworkSessionUVE*>(m_session)) {
-        return SessionUVE().TryReceiveChannelDataUVE(m_channel);
+std::optional<std::vector<std::uint8_t>> NetworkRpc::ReceivePayload() {
+    if (std::holds_alternative<NetworkSession*>(m_session)) {
+        return Session().TryReceiveChannelData(m_channel);
     }
-    return SessionUVE().TryReceiveDataUVE();
+    return Session().TryReceiveData();
 }
 
-bool NetworkRpcUVE::RegisterMethodUVE(std::string method, RpcMethodHandlerUVE handler) {
+bool NetworkRpc::RegisterMethod(std::string method, RpcMethodHandler handler) {
     if (method.empty() || handler == nullptr || m_methods.contains(method)) {
         return false;
     }
@@ -191,23 +191,23 @@ bool NetworkRpcUVE::RegisterMethodUVE(std::string method, RpcMethodHandlerUVE ha
     return true;
 }
 
-bool NetworkRpcUVE::UnregisterMethodUVE(const std::string& method) noexcept {
+bool NetworkRpc::UnregisterMethod(const std::string& method) noexcept {
     return m_methods.erase(method) > 0U;
 }
 
-RpcCallIdUVE NetworkRpcUVE::CallUVE(const std::string& method,
-                                    const std::vector<Blueprint::ValueUVE>& args,
-                                    RpcResponseCallbackUVE callback, const std::uint64_t timeoutMs) {
-    if (SessionUVE().StateUVE() != SessionStateUVE::Established || method.empty() ||
+RpcCallId NetworkRpc::Call(const std::string& method,
+                                    const std::vector<Blueprint::Value>& args,
+                                    RpcResponseCallback callback, const std::uint64_t timeoutMs) {
+    if (Session().State() != SessionState::Established || method.empty() ||
         callback == nullptr) {
-        return kInvalidRpcCallIdUVE;
+        return kInvalidRpcCallId;
     }
-    const RpcCallIdUVE callId = NextCallIdUVE();
-    const std::optional<std::vector<std::byte>> frame = EncodeCallFrameUVE(callId, method, args);
-    if (!frame.has_value() || !SendFrameUVE(*frame)) {
-        return kInvalidRpcCallIdUVE;
+    const RpcCallId callId = NextCallId();
+    const std::optional<std::vector<std::byte>> frame = EncodeCallFrame(callId, method, args);
+    if (!frame.has_value() || !SendFrame(*frame)) {
+        return kInvalidRpcCallId;
     }
-    PendingCallUVE pending;
+    PendingCall pending;
     pending.callback = std::move(callback);
     pending.method = method;
     pending.timeoutMs = timeoutMs;
@@ -216,11 +216,11 @@ RpcCallIdUVE NetworkRpcUVE::CallUVE(const std::string& method,
     return callId;
 }
 
-bool NetworkRpcUVE::CancelUVE(const RpcCallIdUVE callId) noexcept {
+bool NetworkRpc::Cancel(const RpcCallId callId) noexcept {
     return m_pending.erase(callId) > 0U;
 }
 
-std::optional<RpcOutcomeUVE> NetworkRpcUVE::ResultUVE(const RpcCallIdUVE callId) const {
+std::optional<RpcOutcome> NetworkRpc::Result(const RpcCallId callId) const {
     const auto retained = m_results.find(callId);
     if (retained == m_results.end()) {
         return std::nullopt;
@@ -228,7 +228,7 @@ std::optional<RpcOutcomeUVE> NetworkRpcUVE::ResultUVE(const RpcCallIdUVE callId)
     return retained->second;
 }
 
-bool NetworkRpcUVE::ForgetResultUVE(const RpcCallIdUVE callId) {
+bool NetworkRpc::ForgetResult(const RpcCallId callId) {
     const auto retained = m_results.find(callId);
     if (retained == m_results.end()) {
         return false;
@@ -239,38 +239,38 @@ bool NetworkRpcUVE::ForgetResultUVE(const RpcCallIdUVE callId) {
     return true;
 }
 
-void NetworkRpcUVE::UpdateUVE(const std::uint64_t nowMs) {
-    SessionUVE().UpdateUVE(nowMs);
+void NetworkRpc::Update(const std::uint64_t nowMs) {
+    Session().Update(nowMs);
     for (;;) {
-        const std::optional<std::vector<std::uint8_t>> datagram = ReceivePayloadUVE();
+        const std::optional<std::vector<std::uint8_t>> datagram = ReceivePayload();
         if (!datagram.has_value()) {
             break;
         }
-        HandleFrameUVE(*datagram);
+        HandleFrame(*datagram);
     }
-    if (SessionUVE().StateUVE() != SessionStateUVE::Established) {
-        FailDownCallsUVE();
+    if (Session().State() != SessionState::Established) {
+        FailDownCalls();
     }
-    ExpireCallsUVE(nowMs);
+    ExpireCalls(nowMs);
 }
 
-void NetworkRpcUVE::HandleFrameUVE(const std::vector<std::uint8_t>& payload) {
-    std::optional<DecodedFrameUVE> frame = DecodeFrameUVE(payload);
+void NetworkRpc::HandleFrame(const std::vector<std::uint8_t>& payload) {
+    std::optional<DecodedFrame> frame = DecodeFrame(payload);
     if (!frame.has_value()) {
         ++m_stats.framesIgnoredMalformed;
         return;
     }
-    if (frame->kind == RpcFrameKindUVE::Call) {
+    if (frame->kind == RpcFrameKind::Call) {
         ++m_stats.callsReceived;
         const auto method = m_methods.find(frame->method);
-        RpcOutcomeUVE outcome;
+        RpcOutcome outcome;
         if (method == m_methods.end()) {
-            outcome = RpcErrorUVE("unknown method '" + frame->method + "'");
+            outcome = RpcError("unknown method '" + frame->method + "'");
         } else {
             try {
                 outcome = method->second(frame->args);
             } catch (...) {
-                outcome = RpcErrorUVE("handler for '" + frame->method + "' threw");
+                outcome = RpcError("handler for '" + frame->method + "' threw");
             }
             if (!outcome.ok) {
                 ++m_stats.handlerErrors;
@@ -278,16 +278,16 @@ void NetworkRpcUVE::HandleFrameUVE(const std::vector<std::uint8_t>& payload) {
         }
         std::optional<std::vector<std::byte>> wire;
         if (outcome.ok) {
-            wire = EncodeResponseFrameUVE(frame->callId, true, outcome.value, {});
+            wire = EncodeResponseFrame(frame->callId, true, outcome.value, {});
             if (!wire.has_value()) {
                 ++m_stats.handlerErrors;
-                wire = EncodeResponseFrameUVE(frame->callId, false, Blueprint::ValueUVE{},
+                wire = EncodeResponseFrame(frame->callId, false, Blueprint::Value{},
                                               "result of '" + frame->method + "' could not be sent");
             }
         } else {
-            wire = EncodeResponseFrameUVE(frame->callId, false, Blueprint::ValueUVE{}, outcome.error);
+            wire = EncodeResponseFrame(frame->callId, false, Blueprint::Value{}, outcome.error);
         }
-        if (!wire.has_value() || !SendFrameUVE(*wire)) {
+        if (!wire.has_value() || !SendFrame(*wire)) {
             ++m_stats.responsesDropped;
             return;
         }
@@ -300,34 +300,34 @@ void NetworkRpcUVE::HandleFrameUVE(const std::vector<std::uint8_t>& payload) {
         ++m_stats.responsesIgnoredStale;
         return;
     }
-    RpcOutcomeUVE outcome = frame->ok ? RpcOkUVE(std::move(frame->value))
-                                      : RpcErrorUVE(std::move(frame->error));
-    RpcResponseCallbackUVE callback = std::move(pending->second.callback);
+    RpcOutcome outcome = frame->ok ? RpcOk(std::move(frame->value))
+                                      : RpcError(std::move(frame->error));
+    RpcResponseCallback callback = std::move(pending->second.callback);
     m_pending.erase(pending);
     ++m_stats.responsesMatched;
     // Retained before the callback runs, so a callback that polls sees its own outcome.
-    RetainResultUVE(frame->callId, outcome);
+    RetainResult(frame->callId, outcome);
     callback(frame->callId, outcome);
 }
 
-void NetworkRpcUVE::FailDownCallsUVE() {
+void NetworkRpc::FailDownCalls() {
     if (m_pending.empty()) {
         return;
     }
-    std::map<RpcCallIdUVE, PendingCallUVE> failed;
+    std::map<RpcCallId, PendingCall> failed;
     failed.swap(m_pending);
     for (auto& [callId, pending] : failed) {
         ++m_stats.callsFailedSessionDown;
-        RpcOutcomeUVE outcome{false, Blueprint::ValueUVE{},
+        RpcOutcome outcome{false, Blueprint::Value{},
                               "session down during call to '" + pending.method + "'"};
-        RetainResultUVE(callId, outcome);
+        RetainResult(callId, outcome);
         pending.callback(callId, outcome);
     }
 }
 
-void NetworkRpcUVE::ExpireCallsUVE(const std::uint64_t nowMs) {
+void NetworkRpc::ExpireCalls(const std::uint64_t nowMs) {
     for (auto it = m_pending.begin(); it != m_pending.end();) {
-        PendingCallUVE& pending = it->second;
+        PendingCall& pending = it->second;
         // Deadlines count from the first Update after the call - the call itself takes no
         // clock, so this arming is what binds a timeout to time.
         if (!pending.armed) {
@@ -335,13 +335,13 @@ void NetworkRpcUVE::ExpireCallsUVE(const std::uint64_t nowMs) {
             pending.deadlineMs = nowMs + pending.timeoutMs;
         }
         if (pending.timeoutMs != 0U && nowMs >= pending.deadlineMs) {
-            const RpcCallIdUVE callId = it->first;
-            RpcResponseCallbackUVE callback = std::move(pending.callback);
+            const RpcCallId callId = it->first;
+            RpcResponseCallback callback = std::move(pending.callback);
             std::string method = std::move(pending.method);
             it = m_pending.erase(it);
             ++m_stats.callsTimedOut;
-            RpcOutcomeUVE outcome{false, Blueprint::ValueUVE{}, "call to '" + method + "' timed out"};
-            RetainResultUVE(callId, outcome);
+            RpcOutcome outcome{false, Blueprint::Value{}, "call to '" + method + "' timed out"};
+            RetainResult(callId, outcome);
             callback(callId, outcome);
         } else {
             ++it;
@@ -349,23 +349,23 @@ void NetworkRpcUVE::ExpireCallsUVE(const std::uint64_t nowMs) {
     }
 }
 
-void NetworkRpcUVE::RetainResultUVE(const RpcCallIdUVE callId, RpcOutcomeUVE outcome) {
+void NetworkRpc::RetainResult(const RpcCallId callId, RpcOutcome outcome) {
     if (!m_results.contains(callId)) {
         m_resultOrder.push_back(callId);
     }
     m_results.insert_or_assign(callId, std::move(outcome));
-    while (m_results.size() > kRpcMaximumRetainedResultsUVE) {
-        const RpcCallIdUVE oldest = m_resultOrder.front();
+    while (m_results.size() > kRpcMaximumRetainedResults) {
+        const RpcCallId oldest = m_resultOrder.front();
         m_resultOrder.pop_front();
         m_results.erase(oldest);
         ++m_stats.resultsEvicted;
     }
 }
 
-RpcCallIdUVE NetworkRpcUVE::NextCallIdUVE() noexcept {
+RpcCallId NetworkRpc::NextCallId() noexcept {
     for (;;) {
-        RpcCallIdUVE callId = m_nextCallId++;
-        if (callId == kInvalidRpcCallIdUVE) {
+        RpcCallId callId = m_nextCallId++;
+        if (callId == kInvalidRpcCallId) {
             callId = m_nextCallId++;
         }
         if (!m_pending.contains(callId)) {

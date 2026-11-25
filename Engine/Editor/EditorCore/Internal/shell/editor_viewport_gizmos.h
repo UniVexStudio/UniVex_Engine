@@ -19,11 +19,11 @@ namespace UVE::Editor {
 ///
 ///   * the camera, the selection pivot and the object gizmo geometry (camera frustums, light
 ///     directions, fog volumes, probes, partitions, visibility regions, occluders, colliders,
-///     bones) come from the viewport renderer through ViewportOverlayStateUVE's output fields;
+///     bones) come from the viewport renderer through ViewportOverlayState's output fields;
 ///   * the transform gizmo drives the editor's gesture API (Begin / PreviewTranslate /
-///     PreviewTransform / CommitTransformGestureUVE), so parent space, snapping and undo are the
+///     PreviewTransform / CommitTransformGesture), so parent space, snapping and undo are the
 ///     editor's own;
-///   * the navigation gizmo snaps the view with RequestViewportViewUVE and orbits by handing the
+///   * the navigation gizmo snaps the view with RequestViewportView and orbits by handing the
 ///     renderer pixel deltas (orbitRequestX/Y);
 ///   * light and camera billboards use the engine's object icons and select their object;
 ///   * the ground grid (the renderer's grid settings) and the selection outline (the renderer's
@@ -32,36 +32,36 @@ namespace UVE::Editor {
 ///
 /// The widget claims the pointer only over a handle, so the camera and picking keep every other
 /// click (consumesHostInput).
-class EditorViewportGizmosUVE final : public prism::Widget {
+class EditorViewportGizmos final : public prism::Widget {
 public:
-    explicit EditorViewportGizmosUVE(EditorUVE& editor);
-    ~EditorViewportGizmosUVE() override;
+    explicit EditorViewportGizmos(Editor& editor);
+    ~EditorViewportGizmos() override;
 
     /// Refreshes the camera, pivot, marquee box, and billboards from the view the renderer just produced.
-    void SyncUVE();
+    void Sync();
     /// Samples the Android-only floating dual-stick touch controller into `state` (no-op on Desktop
     /// and auto-hidden whenever a hardware mouse or external keyboard is connected).
-    void ApplyTouchControllerToStateUVE(EditorUVE::ViewportOverlayStateUVE& state);
+    void ApplyTouchControllerToState(Editor::ViewportOverlayState& state);
     /// Pixels the navigation gizmo wants the view orbited by this frame (consumed on read).
-    [[nodiscard]] std::array<float, 2> TakeOrbitRequestUVE();
+    [[nodiscard]] std::array<float, 2> TakeOrbitRequest();
 
     void paint(prism::Canvas& c) override;
     bool onMouseDown(const prism::MouseEvent& e) override;
     bool onMouseMove(const prism::MouseEvent& e) override;
     bool onMouseUp(const prism::MouseEvent& e) override;
     void onMouseLeave() override;
-    bool consumesHostInput() const override { return m_hot || m_dragging != DragUVE::None; }
+    bool consumesHostInput() const override { return m_hot || m_dragging != Drag::None; }
     bool focusable() const override { return true; }
 
 private:
-    enum class DragUVE : std::uint8_t { None, Transform, Nav };
+    enum class Drag : std::uint8_t { None, Transform, Nav };
     /// The PRISM glyph an object is drawn with, from its own components.
-    enum class GlyphUVE : std::uint8_t { Icon, Camera, DirectionalLight, SpotLight };
-    struct BillboardUVE final {
-        Scene::EntityUVE entity = Scene::kInvalidEntityUVE;
+    enum class Glyph : std::uint8_t { Icon, Camera, DirectionalLight, SpotLight };
+    struct Billboard final {
+        Scene::Entity entity = Scene::kInvalidEntity;
         prism::Vec3 position;
-        EditorIconsUVE::ImageUVE icon;
-        GlyphUVE glyph = GlyphUVE::Icon;
+        EditorIcons::Image icon;
+        Glyph glyph = Glyph::Icon;
         prism::Vec3 forward{0.0F, 0.0F, -1.0F};
         prism::Vec3 up{0.0F, 1.0F, 0.0F};
         float fovYDegrees = 60.0F;
@@ -73,7 +73,7 @@ private:
         std::vector<std::pair<prism::Vec2, prism::Vec2>> segments;
     };
 
-    struct TouchControllerLayoutUVE final {
+    struct TouchControllerLayout final {
         prism::Vec2 leftCenter{};
         prism::Vec2 rightCenter{};
         float padRadius = 40.0F;
@@ -85,26 +85,26 @@ private:
         prism::Rect toggleBtn{};
     };
 
-    [[nodiscard]] bool UpdateCameraUVE();
-    void UpdateHoverUVE(prism::Vec2 p);
-    [[nodiscard]] int BillboardAtUVE(prism::Vec2 p) const;
-    [[nodiscard]] bool TransformGizmoActiveUVE() const;
-    [[nodiscard]] bool TouchControllerVisibleUVE() const;
-    [[nodiscard]] TouchControllerLayoutUVE ComputeTouchLayoutUVE() const;
-    [[nodiscard]] bool TryClaimAndroidTouchUVE(float physicalX, float physicalY);
+    [[nodiscard]] bool UpdateCamera();
+    void UpdateHover(prism::Vec2 p);
+    [[nodiscard]] int BillboardAt(prism::Vec2 p) const;
+    [[nodiscard]] bool TransformGizmoActive() const;
+    [[nodiscard]] bool TouchControllerVisible() const;
+    [[nodiscard]] TouchControllerLayout ComputeTouchLayout() const;
+    [[nodiscard]] bool TryClaimAndroidTouch(float physicalX, float physicalY);
 
-    EditorUVE& m_editor;
-    EditorIconsUVE m_icons;
+    Editor& m_editor;
+    EditorIcons m_icons;
     prism::GizmoCamera m_camera;
     bool m_cameraValid = false;
     prism::TransformGizmo m_gizmo;
     prism::NavGizmo m_nav;
-    std::vector<BillboardUVE> m_billboards;
+    std::vector<Billboard> m_billboards;
 
     bool m_hot = false;
     int m_lastNavHover = -1;
     int m_lastGizmoHover = -1;
-    DragUVE m_dragging = DragUVE::None;
+    Drag m_dragging = Drag::None;
     prism::Vec2 m_navPress{0.0F, 0.0F};
     prism::Vec2 m_navLast{0.0F, 0.0F};
     bool m_navMoved = false;
@@ -113,8 +113,8 @@ private:
     // Scene depth (occlusion), the ground grid and the selection outline band for this view.
     prism::GizmoDepth m_depth;
     std::vector<float> m_depthCopy;
-    std::vector<EditorUVE::ViewportOverlayStateUVE::GizmoLineUVE> m_lines;
-    std::vector<EditorUVE::ViewportOverlayStateUVE::GizmoTriangleUVE> m_triangles;
+    std::vector<Editor::ViewportOverlayState::GizmoLine> m_lines;
+    std::vector<Editor::ViewportOverlayState::GizmoTriangle> m_triangles;
     float m_aspect = 1.6F;
     bool m_gameWorkspace = false;
     prism::WorldGrid m_grid;
@@ -122,7 +122,7 @@ private:
     std::vector<std::uint32_t> m_outlinePixels;
     prism::Rect m_outlineRect{};
     std::array<int, 2> m_outlineSize{0, 0};
-    Math::Vector3UVE m_baselineScale{1.0F, 1.0F, 1.0F};
+    Math::Vector3 m_baselineScale{1.0F, 1.0F, 1.0F};
 
     // Marquee box-selection overlay (Desktop LMB hold+drag & Android non-controller hold+drag).
     bool m_marqueeActive = false;
@@ -140,7 +140,7 @@ private:
     bool m_touchZoomInHeld = false;
     bool m_touchZoomOutHeld = false;
 
-    /// What the overlay last painted, hashed (see SyncUVE): unchanged, it is not painted again.
+    /// What the overlay last painted, hashed (see Sync): unchanged, it is not painted again.
     std::uint64_t m_drawnHash = 0U;
 };
 

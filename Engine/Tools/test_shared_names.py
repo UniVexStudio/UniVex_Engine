@@ -30,12 +30,12 @@ HEADERS = (
 )
 TARGETS_DIR = "Engine/Source/Targets"
 ENGINE_FEED = "Engine/Distribution/engine_feed.json"
-ANDROID_ABI_CONTRACT_HEADER = "contracts/v1/univex_android_editor_abi.h"
+ANDROID_ABI_CONTRACT_HEADER = "contracts/v2/univex_android_editor_abi.h"
 
 # `inline constexpr <type> kName = <value>;` where the value is a string, an unsigned integer, or
 # the name of another constant.
 CONSTANT_PATTERN = re.compile(
-    r"inline\s+constexpr\s+[\w:<>]+\s+(k\w+UVE)\s*=\s*(\"(?:[^\"\\]|\\.)*\"|\d+U?|k\w+UVE)\s*;"
+    r"inline\s+constexpr\s+[\w:<>]+\s+(k[A-Z]\w*)\s*=\s*(\"(?:[^\"\\]|\\.)*\"|\d+U?|k[A-Z]\w*)\s*;"
 )
 OUTPUT_NAME_PATTERN = re.compile(r"OutputName\s*=\s*\"([^\"]+)\"")
 
@@ -80,18 +80,18 @@ class SharedNamesTest(unittest.TestCase):
         self.assertEqual(self.cpp[name], python_value, f"{name} differs between C++ and Python")
 
     def test_engine_package_names(self) -> None:
-        self.assert_cpp("kEnginePackagePrefixUVE", package_engine.PACKAGE_PREFIX)
-        self.assert_cpp("kEnginePackageExtensionUVE", package_engine.PACKAGE_EXTENSION)
-        self.assert_cpp("kEngineChecksumSuffixUVE", package_engine.CHECKSUM_SUFFIX)
-        self.assert_cpp("kBetaTagSuffixUVE", package_engine.BETA_TAG_SUFFIX)
+        self.assert_cpp("kEnginePackagePrefix", package_engine.PACKAGE_PREFIX)
+        self.assert_cpp("kEnginePackageExtension", package_engine.PACKAGE_EXTENSION)
+        self.assert_cpp("kEngineChecksumSuffix", package_engine.CHECKSUM_SUFFIX)
+        self.assert_cpp("kBetaTagSuffix", package_engine.BETA_TAG_SUFFIX)
 
     def test_engine_manifest(self) -> None:
-        self.assert_cpp("kEngineManifestFileNameUVE", package_engine.MANIFEST_NAME)
-        self.assert_cpp("kEngineManifestFormatUVE", package_engine.MANIFEST_FORMAT)
-        self.assert_cpp("kCurrentEngineManifestSchemaVersionUVE", package_engine.MANIFEST_SCHEMA_VERSION)
+        self.assert_cpp("kEngineManifestFileName", package_engine.MANIFEST_NAME)
+        self.assert_cpp("kEngineManifestFormat", package_engine.MANIFEST_FORMAT)
+        self.assert_cpp("kCurrentEngineManifestSchemaVersion", package_engine.MANIFEST_SCHEMA_VERSION)
 
     def test_executables(self) -> None:
-        self.assert_cpp("kEditorExecutableStemUVE", package_engine.EDITOR_STEM)
+        self.assert_cpp("kEditorExecutableStem", package_engine.EDITOR_STEM)
         built = set(self.outputs.values())
         for stem in package_engine.EXECUTABLE_STEMS:
             self.assertIn(stem, built, f"no build target produces {stem}")
@@ -99,18 +99,18 @@ class SharedNamesTest(unittest.TestCase):
     def test_data_directories(self) -> None:
         self.assertEqual(package_engine.PRISM_ASSETS_DIRECTORY, uvbt.PRISM_ASSETS_DIRECTORY)
         editor = (REPO_ROOT / "Engine/App/Android/editor/editor_android.cpp").read_text(encoding="utf-8")
-        self.assertIn(f'kPrismAssetsDirectoryNameUVE = "{package_engine.PRISM_ASSETS_DIRECTORY}"', editor)
-        self.assert_cpp("kProjectTemplatesDirectoryNameUVE", uvbt.PROJECT_TEMPLATES_DIRECTORY)
+        self.assertIn(f'kPrismAssetsDirectoryName = "{package_engine.PRISM_ASSETS_DIRECTORY}"', editor)
+        self.assert_cpp("kProjectTemplatesDirectoryName", uvbt.PROJECT_TEMPLATES_DIRECTORY)
         self.assertTrue(REPO_ROOT.joinpath(*uvbt.PRISM_ASSETS_SOURCE).is_dir())
         self.assertTrue(REPO_ROOT.joinpath(*uvbt.PROJECT_TEMPLATES_SOURCE).is_dir())
 
     def test_engine_feed(self) -> None:
-        self.assert_cpp("kEngineFeedFileNameUVE", uvbt.ENGINE_FEED_FILE)
+        self.assert_cpp("kEngineFeedFileName", uvbt.ENGINE_FEED_FILE)
         feed_path = REPO_ROOT.joinpath(*uvbt.DISTRIBUTION_SOURCE, uvbt.ENGINE_FEED_FILE)
         self.assertEqual(feed_path, REPO_ROOT / ENGINE_FEED)
         feed = json.loads(feed_path.read_text(encoding="utf-8"))
-        self.assertEqual(feed["format"], self.cpp["kEngineFeedFormatUVE"])
-        self.assertEqual(feed["schemaVersion"], self.cpp["kCurrentEngineFeedSchemaVersionUVE"])
+        self.assertEqual(feed["format"], self.cpp["kEngineFeedFormat"])
+        self.assertEqual(feed["schemaVersion"], self.cpp["kCurrentEngineFeedSchemaVersion"])
         self.assertTrue(feed["owner"] and feed["repository"], "the feed must name the releases repository")
 
     def test_workflow_reads_the_feed(self) -> None:
@@ -131,16 +131,16 @@ class SharedNamesTest(unittest.TestCase):
         self.assertTrue(REPO_ROOT.joinpath(*package_engine.SHADERS_SOURCE).is_dir())
         editor = (REPO_ROOT / "Engine/App/Android/editor/editor_android.cpp").read_text(encoding="utf-8")
         abi_header = (REPO_ROOT / ANDROID_ABI_CONTRACT_HEADER).read_text(encoding="utf-8")
-        self.assertIn(f'kShadersDirectoryUVE = "{package_engine.SHADERS_DIRECTORY}"', editor)
-        self.assertIn('#define UVE_ANDROID_EDITOR_ABI_VERSION 1U', abi_header)
-        self.assertIn('#define UVE_ANDROID_EDITOR_ENTRY_SYMBOL "UveEditorRunUVE"', abi_header)
-        self.assertIn('#define UVE_ANDROID_EDITOR_ABI_VERSION_SYMBOL "UveEditorAbiVersionUVE"', abi_header)
-        self.assertIn('kEditorAndroidEntryPointUVE = "UveEditorRunUVE"',
+        self.assertIn(f'kShadersDirectory = "{package_engine.SHADERS_DIRECTORY}"', editor)
+        self.assertIn('#define UVE_ANDROID_EDITOR_ABI_VERSION 2U', abi_header)
+        self.assertIn('#define UVE_ANDROID_EDITOR_ENTRY_SYMBOL "UveEditorRun"', abi_header)
+        self.assertIn('#define UVE_ANDROID_EDITOR_ABI_VERSION_SYMBOL "UveEditorAbiVersion"', abi_header)
+        self.assertIn('kEditorAndroidEntryPoint = "UveEditorRun"',
                       (REPO_ROOT / "Engine/Runtime/Pack/Expose/engine_install.h").read_text(encoding="utf-8"))
-        self.assertIn("UveEditorRunUVE(", editor)
-        self.assertIn("UveEditorAbiVersionUVE(", editor)
-        self.assertEqual(uvbt.ANDROID_EDITOR_ENTRY, "UveEditorRunUVE")
-        self.assertEqual(uvbt.ANDROID_EDITOR_ABI_VERSION_ENTRY, "UveEditorAbiVersionUVE")
+        self.assertIn("UveEditorRun(", editor)
+        self.assertIn("UveEditorAbiVersion(", editor)
+        self.assertEqual(uvbt.ANDROID_EDITOR_ENTRY, "UveEditorRun")
+        self.assertEqual(uvbt.ANDROID_EDITOR_ABI_VERSION_ENTRY, "UveEditorAbiVersion")
 
     def test_android_icon(self) -> None:
         # Every manifest's launcher icon must be among the resources build_apk.py compiles.

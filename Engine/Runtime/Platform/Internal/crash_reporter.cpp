@@ -33,23 +33,23 @@
 namespace UVE::Platform {
 namespace {
 
-std::mutex g_crashReporterMutexUVE;
-bool g_crashReporterInstalledUVE = false;
+std::mutex g_crashReporterMutex;
+bool g_crashReporterInstalled = false;
 
 #if defined(_WIN32)
-struct WindowsCrashStateUVE final {
+struct WindowsCrashState final {
     HANDLE reportFile = INVALID_HANDLE_VALUE;
     HANDLE dumpFile = INVALID_HANDLE_VALUE;
     volatile LONG crashRecorded = 0;
 };
-WindowsCrashStateUVE* g_windowsCrashStateUVE = nullptr;
-HANDLE g_terminateReportHandleUVE = INVALID_HANDLE_VALUE;
+WindowsCrashState* g_windowsCrashState = nullptr;
+HANDLE g_terminateReportHandle = INVALID_HANDLE_VALUE;
 #elif !defined(__EMSCRIPTEN__)
-volatile std::sig_atomic_t g_reportFileDescriptorUVE = -1;
-volatile std::sig_atomic_t g_crashRecordedUVE = 0;
+volatile std::sig_atomic_t g_reportFileDescriptor = -1;
+volatile std::sig_atomic_t g_crashRecorded = 0;
 #endif
 
-[[nodiscard]] std::string CurrentTimestampUVE() {
+[[nodiscard]] std::string CurrentTimestamp() {
     const std::time_t now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
     std::tm localTime{};
 #if defined(_WIN32)
@@ -68,7 +68,7 @@ volatile std::sig_atomic_t g_crashRecordedUVE = 0;
     return buffer.data();
 }
 
-[[nodiscard]] std::uint64_t GetProcessIdUVE() noexcept {
+[[nodiscard]] std::uint64_t GetProcessId() noexcept {
 #if defined(_WIN32)
     return static_cast<std::uint64_t>(_getpid());
 #elif !defined(__EMSCRIPTEN__)
@@ -84,7 +84,7 @@ volatile std::sig_atomic_t g_crashRecordedUVE = 0;
 /// subtraction - a false positive inside the standard library, but fatal under this project's
 /// `-Werror` policy, and one that appears only in the optimized profiles (Debug builds inline
 /// nothing). Appending with explicit sizes keeps every copy bound a value the compiler can see.
-[[nodiscard]] std::string MakeRetrySuffixUVE(const unsigned int attempt) {
+[[nodiscard]] std::string MakeRetrySuffix(const unsigned int attempt) {
     if (attempt == 0U) {
         return {};
     }
@@ -97,7 +97,7 @@ volatile std::sig_atomic_t g_crashRecordedUVE = 0;
 }
 
 /// Builds `<stem><suffix><extension>`; see the comment above for why it appends.
-[[nodiscard]] std::string MakeReportFileNameUVE(const std::string& stem, const std::string& suffix,
+[[nodiscard]] std::string MakeReportFileName(const std::string& stem, const std::string& suffix,
                                                 const std::string_view extension) {
     std::string fileName;
     fileName.reserve(stem.size() + suffix.size() + extension.size());
@@ -108,7 +108,7 @@ volatile std::sig_atomic_t g_crashRecordedUVE = 0;
 }
 
 #if defined(_WIN32)
-[[nodiscard]] std::filesystem::path MakePathFromAsciiUVE(const std::filesystem::path& directory,
+[[nodiscard]] std::filesystem::path MakePathFromAscii(const std::filesystem::path& directory,
                                                          const std::string& filename) {
     std::wstring wideFilename;
     wideFilename.reserve(filename.size());
@@ -118,7 +118,7 @@ volatile std::sig_atomic_t g_crashRecordedUVE = 0;
     return directory / wideFilename;
 }
 
-void WriteWindowsFileUVE(const HANDLE file, const char* const data, const std::size_t size) noexcept {
+void WriteWindowsFile(const HANDLE file, const char* const data, const std::size_t size) noexcept {
     if (file == INVALID_HANDLE_VALUE || data == nullptr) {
         return;
     }
@@ -137,13 +137,13 @@ void WriteWindowsFileUVE(const HANDLE file, const char* const data, const std::s
     static_cast<void>(FlushFileBuffers(file));
 }
 
-LONG WINAPI HandleUnhandledWindowsExceptionUVE(EXCEPTION_POINTERS* exceptionPointers) noexcept {
-    WindowsCrashStateUVE* const state = g_windowsCrashStateUVE;
+LONG WINAPI HandleUnhandledWindowsException(EXCEPTION_POINTERS* exceptionPointers) noexcept {
+    WindowsCrashState* const state = g_windowsCrashState;
     if (state == nullptr || InterlockedExchange(&state->crashRecorded, 1) != 0) {
         return EXCEPTION_EXECUTE_HANDLER;
     }
     constexpr char kReport[] = "UniVex native crash report\r\nUnhandled Windows exception.\r\n";
-    WriteWindowsFileUVE(state->reportFile, kReport, sizeof(kReport) - 1U);
+    WriteWindowsFile(state->reportFile, kReport, sizeof(kReport) - 1U);
     if (state->dumpFile != INVALID_HANDLE_VALUE) {
         MINIDUMP_EXCEPTION_INFORMATION exceptionInfo{};
         MINIDUMP_EXCEPTION_INFORMATION* exceptionInfoPointer = nullptr;
@@ -160,9 +160,9 @@ LONG WINAPI HandleUnhandledWindowsExceptionUVE(EXCEPTION_POINTERS* exceptionPoin
     return EXCEPTION_EXECUTE_HANDLER;
 }
 
-void WriteTerminateReportUVE() noexcept {
+void WriteTerminateReport() noexcept {
     constexpr char kMessage[] = "\r\nC++ std::terminate invoked.\r\n";
-    WriteWindowsFileUVE(g_terminateReportHandleUVE, kMessage, sizeof(kMessage) - 1U);
+    WriteWindowsFile(g_terminateReportHandle, kMessage, sizeof(kMessage) - 1U);
     const std::exception_ptr exception = std::current_exception();
     if (exception == nullptr) {
         return;
@@ -171,26 +171,26 @@ void WriteTerminateReportUVE() noexcept {
         std::rethrow_exception(exception);
     } catch (const std::exception& value) {
         constexpr char kPrefix[] = "Exception: ";
-        WriteWindowsFileUVE(g_terminateReportHandleUVE, kPrefix, sizeof(kPrefix) - 1U);
+        WriteWindowsFile(g_terminateReportHandle, kPrefix, sizeof(kPrefix) - 1U);
         const char* const message = value.what();
         if (message != nullptr) {
-            WriteWindowsFileUVE(g_terminateReportHandleUVE, message, std::char_traits<char>::length(message));
+            WriteWindowsFile(g_terminateReportHandle, message, std::char_traits<char>::length(message));
             constexpr char kNewline[] = "\r\n";
-            WriteWindowsFileUVE(g_terminateReportHandleUVE, kNewline, sizeof(kNewline) - 1U);
+            WriteWindowsFile(g_terminateReportHandle, kNewline, sizeof(kNewline) - 1U);
         }
     } catch (...) {
         constexpr char kUnknown[] = "Non-standard exception.\r\n";
-        WriteWindowsFileUVE(g_terminateReportHandleUVE, kUnknown, sizeof(kUnknown) - 1U);
+        WriteWindowsFile(g_terminateReportHandle, kUnknown, sizeof(kUnknown) - 1U);
     }
 }
 
-[[noreturn]] void CrashTerminateHandlerUVE() noexcept {
-    WriteTerminateReportUVE();
+[[noreturn]] void CrashTerminateHandler() noexcept {
+    WriteTerminateReport();
     TerminateProcess(GetCurrentProcess(), 134U);
     std::_Exit(134);
 }
 #elif !defined(__EMSCRIPTEN__)
-void WritePosixFileUVE(const int fileDescriptor, const char* const data, const std::size_t size) noexcept {
+void WritePosixFile(const int fileDescriptor, const char* const data, const std::size_t size) noexcept {
     if (fileDescriptor < 0 || data == nullptr) {
         return;
     }
@@ -204,7 +204,7 @@ void WritePosixFileUVE(const int fileDescriptor, const char* const data, const s
     }
 }
 
-void WritePosixUnsignedUVE(const int fileDescriptor, std::uint64_t value) noexcept {
+void WritePosixUnsigned(const int fileDescriptor, std::uint64_t value) noexcept {
     std::array<char, 24U> digits{};
     std::size_t count = 0U;
     do {
@@ -215,11 +215,11 @@ void WritePosixUnsignedUVE(const int fileDescriptor, std::uint64_t value) noexce
     } while (value != 0U && count < digits.size());
     while (count > 0U) {
         --count;
-        WritePosixFileUVE(fileDescriptor, &digits[count], 1U);
+        WritePosixFile(fileDescriptor, &digits[count], 1U);
     }
 }
 
-void WritePosixHexUVE(const int fileDescriptor, std::uintptr_t value) noexcept {
+void WritePosixHex(const int fileDescriptor, std::uintptr_t value) noexcept {
     constexpr char kHexDigits[] = "0123456789abcdef";
     std::array<char, sizeof(value) * 2U> digits{};
     std::size_t count = 0U;
@@ -231,41 +231,41 @@ void WritePosixHexUVE(const int fileDescriptor, std::uintptr_t value) noexcept {
     } while (value != 0U && count < digits.size());
     while (count > 0U) {
         --count;
-        WritePosixFileUVE(fileDescriptor, &digits[count], 1U);
+        WritePosixFile(fileDescriptor, &digits[count], 1U);
     }
 }
 
-void WriteSignalReportUVE(const int signalNumber, const siginfo_t* const signalInfo) noexcept {
-    const int fileDescriptor = static_cast<int>(g_reportFileDescriptorUVE);
+void WriteSignalReport(const int signalNumber, const siginfo_t* const signalInfo) noexcept {
+    const int fileDescriptor = static_cast<int>(g_reportFileDescriptor);
     if (fileDescriptor < 0) {
         return;
     }
     constexpr char kPrefix[] = "\nFatal POSIX signal: ";
     constexpr char kNewline[] = "\n";
-    WritePosixFileUVE(fileDescriptor, kPrefix, sizeof(kPrefix) - 1U);
-    WritePosixUnsignedUVE(fileDescriptor, static_cast<std::uint64_t>(signalNumber));
-    WritePosixFileUVE(fileDescriptor, kNewline, sizeof(kNewline) - 1U);
+    WritePosixFile(fileDescriptor, kPrefix, sizeof(kPrefix) - 1U);
+    WritePosixUnsigned(fileDescriptor, static_cast<std::uint64_t>(signalNumber));
+    WritePosixFile(fileDescriptor, kNewline, sizeof(kNewline) - 1U);
     if (signalInfo != nullptr) {
         constexpr char kAddressPrefix[] = "Fault address: 0x";
-        WritePosixFileUVE(fileDescriptor, kAddressPrefix, sizeof(kAddressPrefix) - 1U);
-        WritePosixHexUVE(fileDescriptor, reinterpret_cast<std::uintptr_t>(signalInfo->si_addr));
-        WritePosixFileUVE(fileDescriptor, kNewline, sizeof(kNewline) - 1U);
+        WritePosixFile(fileDescriptor, kAddressPrefix, sizeof(kAddressPrefix) - 1U);
+        WritePosixHex(fileDescriptor, reinterpret_cast<std::uintptr_t>(signalInfo->si_addr));
+        WritePosixFile(fileDescriptor, kNewline, sizeof(kNewline) - 1U);
     }
 }
 
-void HandleFatalPosixSignalUVE(const int signalNumber, siginfo_t* const signalInfo, void*) noexcept {
-    if (g_crashRecordedUVE != 0) {
+void HandleFatalPosixSignal(const int signalNumber, siginfo_t* const signalInfo, void*) noexcept {
+    if (g_crashRecorded != 0) {
         _exit(128 + signalNumber);
     }
-    g_crashRecordedUVE = 1;
-    WriteSignalReportUVE(signalNumber, signalInfo);
+    g_crashRecorded = 1;
+    WriteSignalReport(signalNumber, signalInfo);
     _exit(128 + signalNumber);
 }
 
-void WritePosixTerminateReportUVE() noexcept {
-    const int fileDescriptor = static_cast<int>(g_reportFileDescriptorUVE);
+void WritePosixTerminateReport() noexcept {
+    const int fileDescriptor = static_cast<int>(g_reportFileDescriptor);
     constexpr char kMessage[] = "\nC++ std::terminate invoked.\n";
-    WritePosixFileUVE(fileDescriptor, kMessage, sizeof(kMessage) - 1U);
+    WritePosixFile(fileDescriptor, kMessage, sizeof(kMessage) - 1U);
     const std::exception_ptr exception = std::current_exception();
     if (exception == nullptr) {
         return;
@@ -274,23 +274,23 @@ void WritePosixTerminateReportUVE() noexcept {
         std::rethrow_exception(exception);
     } catch (const std::exception& value) {
         constexpr char kPrefix[] = "Exception: ";
-        WritePosixFileUVE(fileDescriptor, kPrefix, sizeof(kPrefix) - 1U);
+        WritePosixFile(fileDescriptor, kPrefix, sizeof(kPrefix) - 1U);
         const char* const message = value.what();
         if (message != nullptr) {
-            WritePosixFileUVE(fileDescriptor, message, std::char_traits<char>::length(message));
+            WritePosixFile(fileDescriptor, message, std::char_traits<char>::length(message));
             constexpr char kNewline[] = "\n";
-            WritePosixFileUVE(fileDescriptor, kNewline, sizeof(kNewline) - 1U);
+            WritePosixFile(fileDescriptor, kNewline, sizeof(kNewline) - 1U);
         }
     } catch (...) {
         constexpr char kUnknown[] = "Non-standard exception.\n";
-        WritePosixFileUVE(fileDescriptor, kUnknown, sizeof(kUnknown) - 1U);
+        WritePosixFile(fileDescriptor, kUnknown, sizeof(kUnknown) - 1U);
     }
 }
 
-[[noreturn]] void CrashTerminateHandlerUVE() noexcept {
-    if (g_crashRecordedUVE == 0) {
-        g_crashRecordedUVE = 1;
-        WritePosixTerminateReportUVE();
+[[noreturn]] void CrashTerminateHandler() noexcept {
+    if (g_crashRecorded == 0) {
+        g_crashRecorded = 1;
+        WritePosixTerminateReport();
     }
     _exit(134);
 }
@@ -298,13 +298,13 @@ void WritePosixTerminateReportUVE() noexcept {
 
 } // namespace
 
-struct CrashReporterUVE::ImplUVE final {
+struct CrashReporter::Impl final {
     std::filesystem::path reportPath;
     bool installed = false;
     std::terminate_handler previousTerminateHandler = nullptr;
 #if defined(_WIN32)
     std::filesystem::path dumpPath;
-    WindowsCrashStateUVE windowsState{};
+    WindowsCrashState windowsState{};
     LPTOP_LEVEL_EXCEPTION_FILTER previousExceptionFilter = nullptr;
 #elif !defined(__EMSCRIPTEN__)
     static constexpr std::size_t kSignalCount = 5U;
@@ -314,7 +314,7 @@ struct CrashReporterUVE::ImplUVE final {
     int reportFileDescriptor = -1;
 #endif
 
-    void UninstallUVE() noexcept {
+    void Uninstall() noexcept {
         if (!installed) {
 #if defined(_WIN32)
             const bool reportWasCreated = windowsState.reportFile != INVALID_HANDLE_VALUE;
@@ -345,12 +345,12 @@ struct CrashReporterUVE::ImplUVE final {
 #endif
             return;
         }
-        const std::lock_guard<std::mutex> lock(g_crashReporterMutexUVE);
+        const std::lock_guard<std::mutex> lock(g_crashReporterMutex);
 #if defined(_WIN32)
-        if (g_windowsCrashStateUVE == &windowsState) {
+        if (g_windowsCrashState == &windowsState) {
             static_cast<void>(SetUnhandledExceptionFilter(previousExceptionFilter));
-            g_windowsCrashStateUVE = nullptr;
-            g_terminateReportHandleUVE = INVALID_HANDLE_VALUE;
+            g_windowsCrashState = nullptr;
+            g_terminateReportHandle = INVALID_HANDLE_VALUE;
         }
         if (previousTerminateHandler != nullptr) {
             static_cast<void>(std::set_terminate(previousTerminateHandler));
@@ -374,9 +374,9 @@ struct CrashReporterUVE::ImplUVE final {
             static_cast<void>(sigaction(signalNumbers[index], &previousSignalActions[index], nullptr));
         }
         installedSignalCount = 0U;
-        if (g_reportFileDescriptorUVE == reportFileDescriptor) {
-            g_reportFileDescriptorUVE = -1;
-            g_crashRecordedUVE = 0;
+        if (g_reportFileDescriptor == reportFileDescriptor) {
+            g_reportFileDescriptor = -1;
+            g_crashRecorded = 0;
         }
         if (previousTerminateHandler != nullptr) {
             static_cast<void>(std::set_terminate(previousTerminateHandler));
@@ -390,50 +390,50 @@ struct CrashReporterUVE::ImplUVE final {
         std::filesystem::remove(reportPath, ignored);
 #endif
         if (installed) {
-            g_crashReporterInstalledUVE = false;
+            g_crashReporterInstalled = false;
             installed = false;
         }
     }
 
-    ~ImplUVE() { UninstallUVE(); }
+    ~Impl() { Uninstall(); }
 };
 
-CrashReporterUVE::CrashReporterUVE() = default;
-CrashReporterUVE::~CrashReporterUVE() = default;
+CrashReporter::CrashReporter() = default;
+CrashReporter::~CrashReporter() = default;
 
-CrashReporterResultUVE CrashReporterUVE::InstallUVE(const std::filesystem::path& dumpDirectory,
+CrashReporterResult CrashReporter::Install(const std::filesystem::path& dumpDirectory,
                                                      const std::string& applicationIdentifier) {
     if (m_impl != nullptr && m_impl->installed) {
-        return {CrashReporterCodeUVE::AlreadyInstalled, m_impl->reportPath,
+        return {CrashReporterCode::AlreadyInstalled, m_impl->reportPath,
                 "This crash reporter already owns the process handlers."};
     }
     if (dumpDirectory.empty() || applicationIdentifier.empty()) {
-        return {CrashReporterCodeUVE::Failed, {}, "A dump directory and application identifier are required."};
+        return {CrashReporterCode::Failed, {}, "A dump directory and application identifier are required."};
     }
 #if defined(__EMSCRIPTEN__)
     static_cast<void>(dumpDirectory);
     static_cast<void>(applicationIdentifier);
-    return {CrashReporterCodeUVE::Unsupported, {}, "The web target does not provide a native crash-report backend."};
+    return {CrashReporterCode::Unsupported, {}, "The web target does not provide a native crash-report backend."};
 #else
     std::error_code error;
     std::filesystem::create_directories(dumpDirectory, error);
     if (error || !std::filesystem::is_directory(dumpDirectory, error) || error) {
-        return {CrashReporterCodeUVE::Failed, {}, "Unable to create or inspect the crash dump directory."};
+        return {CrashReporterCode::Failed, {}, "Unable to create or inspect the crash dump directory."};
     }
 
-    const std::lock_guard<std::mutex> lock(g_crashReporterMutexUVE);
-    if (g_crashReporterInstalledUVE) {
-        return {CrashReporterCodeUVE::AlreadyInstalled, {}, "Another crash reporter already owns the process handlers."};
+    const std::lock_guard<std::mutex> lock(g_crashReporterMutex);
+    if (g_crashReporterInstalled) {
+        return {CrashReporterCode::AlreadyInstalled, {}, "Another crash reporter already owns the process handlers."};
     }
-    std::unique_ptr<ImplUVE> candidate = std::make_unique<ImplUVE>();
-    const std::string fileStem = "uve-crash-" + CurrentTimestampUVE() + "-" + std::to_string(GetProcessIdUVE());
+    std::unique_ptr<Impl> candidate = std::make_unique<Impl>();
+    const std::string fileStem = "uve-crash-" + CurrentTimestamp() + "-" + std::to_string(GetProcessId());
 #if defined(_WIN32)
     std::filesystem::path reportPath;
     std::filesystem::path dumpPath;
     for (unsigned int suffix = 0U; suffix < 100U; ++suffix) {
-        const std::string suffixText = MakeRetrySuffixUVE(suffix);
-        reportPath = MakePathFromAsciiUVE(dumpDirectory, MakeReportFileNameUVE(fileStem, suffixText, ".log"));
-        dumpPath = MakePathFromAsciiUVE(dumpDirectory, MakeReportFileNameUVE(fileStem, suffixText, ".dmp"));
+        const std::string suffixText = MakeRetrySuffix(suffix);
+        reportPath = MakePathFromAscii(dumpDirectory, MakeReportFileName(fileStem, suffixText, ".log"));
+        dumpPath = MakePathFromAscii(dumpDirectory, MakeReportFileName(fileStem, suffixText, ".dmp"));
         candidate->windowsState.reportFile = CreateFileW(reportPath.c_str(), GENERIC_WRITE, FILE_SHARE_READ,
                                                           nullptr, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, nullptr);
         if (candidate->windowsState.reportFile == INVALID_HANDLE_VALUE) {
@@ -441,7 +441,7 @@ CrashReporterResultUVE CrashReporterUVE::InstallUVE(const std::filesystem::path&
             if (reportOpenError == ERROR_FILE_EXISTS || reportOpenError == ERROR_ALREADY_EXISTS) {
                 continue;
             }
-            return {CrashReporterCodeUVE::Failed, {}, "Unable to create the crash report file."};
+            return {CrashReporterCode::Failed, {}, "Unable to create the crash report file."};
         }
         candidate->windowsState.dumpFile = CreateFileW(dumpPath.c_str(), GENERIC_WRITE, FILE_SHARE_READ,
                                                         nullptr, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, nullptr);
@@ -454,30 +454,30 @@ CrashReporterResultUVE CrashReporterUVE::InstallUVE(const std::filesystem::path&
         std::error_code ignored;
         std::filesystem::remove(reportPath, ignored);
         if (dumpOpenError != ERROR_FILE_EXISTS && dumpOpenError != ERROR_ALREADY_EXISTS) {
-            return {CrashReporterCodeUVE::Failed, {}, "Unable to reserve the native minidump file."};
+            return {CrashReporterCode::Failed, {}, "Unable to reserve the native minidump file."};
         }
     }
     if (candidate->windowsState.reportFile == INVALID_HANDLE_VALUE ||
         candidate->windowsState.dumpFile == INVALID_HANDLE_VALUE) {
-        return {CrashReporterCodeUVE::Failed, {}, "Unable to reserve unique crash-report filenames."};
+        return {CrashReporterCode::Failed, {}, "Unable to reserve unique crash-report filenames."};
     }
     candidate->reportPath = reportPath;
     candidate->dumpPath = dumpPath;
     constexpr char kHeader[] = "UniVex native crash report reserved for this process.\r\nApplication: ";
-    WriteWindowsFileUVE(candidate->windowsState.reportFile, kHeader, sizeof(kHeader) - 1U);
-    WriteWindowsFileUVE(candidate->windowsState.reportFile, applicationIdentifier.data(), applicationIdentifier.size());
+    WriteWindowsFile(candidate->windowsState.reportFile, kHeader, sizeof(kHeader) - 1U);
+    WriteWindowsFile(candidate->windowsState.reportFile, applicationIdentifier.data(), applicationIdentifier.size());
     constexpr char kLineEnding[] = "\r\n";
-    WriteWindowsFileUVE(candidate->windowsState.reportFile, kLineEnding, sizeof(kLineEnding) - 1U);
-    candidate->previousExceptionFilter = SetUnhandledExceptionFilter(&HandleUnhandledWindowsExceptionUVE);
-    g_windowsCrashStateUVE = &candidate->windowsState;
-    g_terminateReportHandleUVE = candidate->windowsState.reportFile;
-    candidate->previousTerminateHandler = std::set_terminate(&CrashTerminateHandlerUVE);
+    WriteWindowsFile(candidate->windowsState.reportFile, kLineEnding, sizeof(kLineEnding) - 1U);
+    candidate->previousExceptionFilter = SetUnhandledExceptionFilter(&HandleUnhandledWindowsException);
+    g_windowsCrashState = &candidate->windowsState;
+    g_terminateReportHandle = candidate->windowsState.reportFile;
+    candidate->previousTerminateHandler = std::set_terminate(&CrashTerminateHandler);
 #else
     int reportFileDescriptor = -1;
     std::filesystem::path reportPath;
     for (unsigned int suffix = 0U; suffix < 100U; ++suffix) {
-        const std::string suffixText = MakeRetrySuffixUVE(suffix);
-        reportPath = dumpDirectory / MakeReportFileNameUVE(fileStem, suffixText, ".log");
+        const std::string suffixText = MakeRetrySuffix(suffix);
+        reportPath = dumpDirectory / MakeReportFileName(fileStem, suffixText, ".log");
         int flags = O_CREAT | O_EXCL | O_WRONLY | O_APPEND;
 #ifdef O_CLOEXEC
         flags |= O_CLOEXEC;
@@ -490,26 +490,26 @@ CrashReporterResultUVE CrashReporterUVE::InstallUVE(const std::filesystem::path&
             break;
         }
         if (errno != EEXIST) {
-            return {CrashReporterCodeUVE::Failed, {}, "Unable to create the crash report file."};
+            return {CrashReporterCode::Failed, {}, "Unable to create the crash report file."};
         }
     }
     if (reportFileDescriptor < 0) {
-        return {CrashReporterCodeUVE::Failed, {}, "Unable to reserve a unique crash-report filename."};
+        return {CrashReporterCode::Failed, {}, "Unable to reserve a unique crash-report filename."};
     }
     candidate->reportFileDescriptor = reportFileDescriptor;
     candidate->reportPath = reportPath;
     constexpr char kHeader[] = "UniVex crash report reserved for this process.\nApplication: ";
-    WritePosixFileUVE(reportFileDescriptor, kHeader, sizeof(kHeader) - 1U);
-    WritePosixFileUVE(reportFileDescriptor, applicationIdentifier.data(), applicationIdentifier.size());
+    WritePosixFile(reportFileDescriptor, kHeader, sizeof(kHeader) - 1U);
+    WritePosixFile(reportFileDescriptor, applicationIdentifier.data(), applicationIdentifier.size());
     constexpr char kLineEnding[] = "\n";
-    WritePosixFileUVE(reportFileDescriptor, kLineEnding, sizeof(kLineEnding) - 1U);
+    WritePosixFile(reportFileDescriptor, kLineEnding, sizeof(kLineEnding) - 1U);
 
     struct sigaction action{};
-    action.sa_sigaction = &HandleFatalPosixSignalUVE;
+    action.sa_sigaction = &HandleFatalPosixSignal;
     action.sa_flags = SA_SIGINFO;
     static_cast<void>(sigemptyset(&action.sa_mask));
-    g_reportFileDescriptorUVE = static_cast<std::sig_atomic_t>(reportFileDescriptor);
-    g_crashRecordedUVE = 0;
+    g_reportFileDescriptor = static_cast<std::sig_atomic_t>(reportFileDescriptor);
+    g_crashRecorded = 0;
     for (std::size_t index = 0U; index < candidate->signalNumbers.size(); ++index) {
         if (sigaction(candidate->signalNumbers[index], &action, &candidate->previousSignalActions[index]) != 0) {
             for (std::size_t restoreIndex = 0U; restoreIndex < candidate->installedSignalCount; ++restoreIndex) {
@@ -517,31 +517,31 @@ CrashReporterResultUVE CrashReporterUVE::InstallUVE(const std::filesystem::path&
                                             &candidate->previousSignalActions[restoreIndex], nullptr));
             }
             candidate->installedSignalCount = 0U;
-            g_reportFileDescriptorUVE = -1;
+            g_reportFileDescriptor = -1;
             static_cast<void>(close(reportFileDescriptor));
             candidate->reportFileDescriptor = -1;
             std::error_code ignored;
             std::filesystem::remove(reportPath, ignored);
-            return {CrashReporterCodeUVE::Failed, {}, "Unable to install a fatal POSIX signal handler."};
+            return {CrashReporterCode::Failed, {}, "Unable to install a fatal POSIX signal handler."};
         }
         ++candidate->installedSignalCount;
     }
-    candidate->previousTerminateHandler = std::set_terminate(&CrashTerminateHandlerUVE);
+    candidate->previousTerminateHandler = std::set_terminate(&CrashTerminateHandler);
 #endif
     candidate->installed = true;
-    g_crashReporterInstalledUVE = true;
+    g_crashReporterInstalled = true;
     const std::filesystem::path reportPathResult = candidate->reportPath;
     m_impl = std::move(candidate);
 #if defined(_WIN32)
-    return {CrashReporterCodeUVE::Installed, reportPathResult,
+    return {CrashReporterCode::Installed, reportPathResult,
             "Native crash reporting installed; a Windows minidump will be written beside the report."};
 #else
-    return {CrashReporterCodeUVE::Installed, reportPathResult,
+    return {CrashReporterCode::Installed, reportPathResult,
             "Fatal-signal and terminate reporting installed; POSIX reports include signal/address metadata."};
 #endif
 #endif
 }
 
-bool CrashReporterUVE::IsInstalledUVE() const noexcept { return m_impl != nullptr && m_impl->installed; }
+bool CrashReporter::IsInstalled() const noexcept { return m_impl != nullptr && m_impl->installed; }
 
 } // namespace UVE::Platform

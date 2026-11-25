@@ -10,45 +10,45 @@
 
 namespace UVE::Scene {
 
-inline constexpr float kMinimumUIButtonSizePixelsUVE = 1.0F;
-inline constexpr float kMaximumUIButtonSizePixelsUVE = 8192.0F;
+inline constexpr float kMinimumUIButtonSizePixels = 1.0F;
+inline constexpr float kMaximumUIButtonSizePixels = 8192.0F;
 
 /// A screen-space, rectangular, hit-testable UI button. Mixes authored config
 /// (position/size/normal/hover/pressed colors) with persisted runtime state (`isHovered`,
-/// `wasClickedThisFrame`) in one component, mirroring CharacterControllerComponentUVE's own
-/// established convention. UIRuntimeUVE writes the runtime fields every tick by hit-testing the
-/// button's screen rect against IInputSystemUVE's real mouse position/button state - scripts and
+/// `wasClickedThisFrame`) in one component, mirroring CharacterControllerComponent's own
+/// established convention. UIRuntime writes the runtime fields every tick by hit-testing the
+/// button's screen rect against IInputSystem's real mouse position/button state - scripts and
 /// gameplay code read `wasClickedThisFrame` the same way they'd read any other runtime-state field.
 /// Thread-safety: value type; trivially safe to copy/move.
-struct UIButtonComponentUVE final {
-    Math::RectUVE rect{Math::Vector2UVE{0.0F, 0.0F}, Math::Vector2UVE{120.0F, 32.0F}};
-    Math::Vector3UVE normalColor{0.25F, 0.25F, 0.28F};
-    Math::Vector3UVE hoverColor{0.35F, 0.35F, 0.40F};
-    Math::Vector3UVE pressedColor{0.18F, 0.18F, 0.20F};
+struct UIButtonComponent final {
+    Math::Rect rect{Math::Vector2{0.0F, 0.0F}, Math::Vector2{120.0F, 32.0F}};
+    Math::Vector3 normalColor{0.25F, 0.25F, 0.28F};
+    Math::Vector3 hoverColor{0.35F, 0.35F, 0.40F};
+    Math::Vector3 pressedColor{0.18F, 0.18F, 0.20F};
     /// Persisted runtime state: true while the mouse cursor is over this button's screen rect.
     bool isHovered = false;
     /// Persisted runtime state: true for exactly the one tick the button was clicked (mouse
     /// pressed this frame while hovered) - callers must read it the same tick it's set.
     bool wasClickedThisFrame = false;
-    [[nodiscard]] bool operator==(const UIButtonComponentUVE&) const = default;
+    [[nodiscard]] bool operator==(const UIButtonComponent&) const = default;
 };
 
-[[nodiscard]] bool IsUIButtonComponentValidUVE(const UIButtonComponentUVE& component) noexcept;
+[[nodiscard]] bool IsUIButtonComponentValid(const UIButtonComponent& component) noexcept;
 
 /// Returns the active display color (`pressedColor` when hovered & mouseDown, `hoverColor` when hovered, else `normalColor`).
-[[nodiscard]] Math::Vector3UVE ResolveUIButtonActiveColorUVE(const UIButtonComponentUVE& component,
+[[nodiscard]] Math::Vector3 ResolveUIButtonActiveColor(const UIButtonComponent& component,
                                                              bool isMouseButtonDown = false) noexcept;
 
 /// True when `pointPixels` lies inside `component.rect`.
-[[nodiscard]] bool HitTestUIButtonUVE(const UIButtonComponentUVE& component,
-                                      const Math::Vector2UVE& pointPixels) noexcept;
+[[nodiscard]] bool HitTestUIButton(const UIButtonComponent& component,
+                                      const Math::Vector2& pointPixels) noexcept;
 
 /// Resets runtime state (`isHovered = false`, `wasClickedThisFrame = false`).
-void ResetUIButtonRuntimeStateUVE(UIButtonComponentUVE& component) noexcept;
+void ResetUIButtonRuntimeState(UIButtonComponent& component) noexcept;
 
 /// Steps `isHovered` and `wasClickedThisFrame` from `pointerPixels` and `mouseJustPressed`.
-bool StepUIButtonInteractionUVE(UIButtonComponentUVE& component,
-                                const Math::Vector2UVE& pointerPixels,
+bool StepUIButtonInteraction(UIButtonComponent& component,
+                                const Math::Vector2& pointerPixels,
                                 bool mouseJustPressed) noexcept;
 
 } // namespace UVE::Scene

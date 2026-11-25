@@ -25,48 +25,48 @@ namespace Detail {
 /// std::index_sequence-based unpack — not exotic, just the mechanical way to turn a runtime
 /// vector<void*> back into a compile-time-known pack of typed references.
 template <typename... TComponents, typename TFunc, std::size_t... Is>
-void InvokeForEachCallbackUVE(TFunc& callback, EntityUVE entity, const std::vector<void*>& pointers,
+void InvokeForEachCallback(TFunc& callback, Entity entity, const std::vector<void*>& pointers,
                                std::index_sequence<Is...>) {
     callback(entity, *static_cast<TComponents*>(pointers[Is])...);
 }
 
 } // namespace Detail
 
-/// IEntityManagerUVE is the archetype ECS interface: entity lifecycle (create/destroy),
-/// component attachment, and multi-component queries. Mirrors IEventSystemUVE's exact shape
+/// IEntityManager is the archetype ECS interface: entity lifecycle (create/destroy),
+/// component attachment, and multi-component queries. Mirrors IEventSystem's exact shape
 /// (engine/events/include/uve/events/i_event_system_uve.h) — public, non-virtual member
 /// templates for compile-time type safety at call sites, routing through protected pure-virtual
 /// type-erased primitives a concrete implementation provides. Component types are identified by
-/// std::type_index(typeid(T)), the same mechanism IEventSystemUVE already uses, rather than a
+/// std::type_index(typeid(T)), the same mechanism IEventSystem already uses, rather than a
 /// new global type-id registry (see docs/CODING_STANDARDS.md).
-/// Thread-safety: not thread-safe — every method (including ForEachUVE) must be called only
-/// from the main/scene thread, matching EngineCoreUVE's own single-threaded contract. A future
-/// increment could add parallel ForEachUVE iteration via IThreadPoolUVE over already-stable
+/// Thread-safety: not thread-safe — every method (including ForEach) must be called only
+/// from the main/scene thread, matching EngineCore's own single-threaded contract. A future
+/// increment could add parallel ForEach iteration via IThreadPool over already-stable
 /// archetypes without changing this interface.
-class IEntityManagerUVE {
+class IEntityManager {
 public:
-    virtual ~IEntityManagerUVE() = default;
+    virtual ~IEntityManager() = default;
 
-    /// Creates a new, component-less entity and publishes EntityCreatedEventUVE.
-    [[nodiscard]] virtual EntityUVE CreateEntityUVE() = 0;
+    /// Creates a new, component-less entity and publishes EntityCreatedEvent.
+    [[nodiscard]] virtual Entity CreateEntity() = 0;
 
-    /// Destroys `entity`, destroying every component it owns and publishing EntityDestroyedEventUVE.
+    /// Destroys `entity`, destroying every component it owns and publishing EntityDestroyedEvent.
     /// Debug builds assert that the entity is alive; release builds return without mutation for a
     /// stale or invalid handle.
-    virtual void DestroyEntityUVE(EntityUVE entity) = 0;
+    virtual void DestroyEntity(Entity entity) = 0;
 
     /// True iff `entity`'s generation matches the current occupant of its index slot.
-    [[nodiscard]] virtual bool IsAliveUVE(EntityUVE entity) const noexcept = 0;
+    [[nodiscard]] virtual bool IsAlive(Entity entity) const noexcept = 0;
 
     /// Number of currently-alive entities.
-    [[nodiscard]] virtual std::size_t GetEntityCountUVE() const noexcept = 0;
+    [[nodiscard]] virtual std::size_t GetEntityCount() const noexcept = 0;
 
     /// Returns the std::type_index of every component `entity` currently has, in unspecified
     /// order. Debug builds assert that the entity is alive; release builds return an empty vector
     /// for a stale or invalid handle. The generic, runtime-enumerable counterpart to
-    /// HasComponentUVE<T>()/GetComponentUVE<T>() — used by SceneSerializerUVE to walk an
+    /// HasComponent<T>()/GetComponent<T>() — used by SceneSerializer to walk an
     /// entity's full component set without knowing the types in advance.
-    [[nodiscard]] virtual std::vector<std::type_index> GetComponentTypesUVE(EntityUVE entity) const = 0;
+    [[nodiscard]] virtual std::vector<std::type_index> GetComponentTypes(Entity entity) const = 0;
 
     /// Attaches a `T` (constructed from `args`) to `entity`, migrating it to the archetype
     /// {entity's current components} ∪ {T}. Asserts `entity` is alive and does not already have
@@ -79,22 +79,22 @@ public:
     /// non-brace-enclosed initializer, i.e. exactly this call copy-constructing `T` from a single
     /// existing value — confirmed by direct testing across both compilers this project targets.
     template <typename T, typename... TArgs>
-    PublicComponentUVE<T>& AddComponentUVE(EntityUVE entity, TArgs&&... args) {
-        void* const slot = AddComponentErased(entity, std::type_index(typeid(T)), MakeComponentTypeInfoUVE<T>());
+    PublicComponent<T>& AddComponent(Entity entity, TArgs&&... args) {
+        void* const slot = AddComponentErased(entity, std::type_index(typeid(T)), MakeComponentTypeInfo<T>());
         return *(::new (slot) T(std::forward<TArgs>(args)...));
     }
 
-    /// Runtime-typed counterpart to AddComponentUVE<T>(): attaches a component of type
+    /// Runtime-typed counterpart to AddComponent<T>(): attaches a component of type
     /// `componentType` (described by `typeInfo`, whose size/alignment/construct/move/destroy
     /// must match the type) to `entity`, default-constructed in its archetype slot. The caller
     /// fills the slot through the returned pointer (a metadata entry's assignInstance from a
     /// factory-built instance, today). Same asserts as the typed form: `entity` is alive and
     /// does not already have the type. What lets generic deserialization attach a component it
     /// only knows by std::type_index.
-    [[nodiscard]] void* AddComponentUVE(EntityUVE entity, std::type_index componentType,
-                                        const ComponentTypeInfoUVE& typeInfo) {
+    [[nodiscard]] void* AddComponent(Entity entity, std::type_index componentType,
+                                        const ComponentTypeInfo& typeInfo) {
         // Runtime-derived caches are not generic authoring/serialization destinations.
-        if (componentType == std::type_index(typeid(WorldTransformComponentUVE))) return nullptr;
+        if (componentType == std::type_index(typeid(WorldTransformComponent))) return nullptr;
         void* const slot = AddComponentErased(entity, componentType, typeInfo);
         typeInfo.constructDefault(slot);
         return slot;
@@ -103,120 +103,120 @@ public:
     /// Removes `T` from `entity`, migrating it to the new archetype (entity's current
     /// components minus `T`). Asserts `entity` is alive and currently has a `T`.
     template <typename T>
-    void RemoveComponentUVE(EntityUVE entity) {
+    void RemoveComponent(Entity entity) {
         RemoveComponentErased(entity, std::type_index(typeid(T)));
     }
 
     /// True iff a live `entity` currently has a `T`. Debug builds assert that the entity is alive;
     /// release builds return false for a stale or invalid handle.
     template <typename T>
-    [[nodiscard]] bool HasComponentUVE(EntityUVE entity) const {
+    [[nodiscard]] bool HasComponent(Entity entity) const {
         return HasComponentErased(entity, std::type_index(typeid(T)));
     }
 
-    /// Runtime-typed counterpart to HasComponentUVE<T>(), for a caller that only learns the type
-    /// at runtime. GetComponentPointerUVE() below asserts that the component is present, so it is
+    /// Runtime-typed counterpart to HasComponent<T>(), for a caller that only learns the type
+    /// at runtime. GetComponentPointer() below asserts that the component is present, so it is
     /// not a presence test; this is, and it is what a caller asks first.
-    [[nodiscard]] bool HasComponentUVE(EntityUVE entity, std::type_index componentType) const {
-        return IsAliveUVE(entity) && HasComponentErased(entity, componentType);
+    [[nodiscard]] bool HasComponent(Entity entity, std::type_index componentType) const {
+        return IsAlive(entity) && HasComponentErased(entity, componentType);
     }
 
     /// Returns a reference to `entity`'s `T`. Asserts `entity` is alive and currently has one.
     template <typename T>
-    [[nodiscard]] PublicComponentUVE<T>& GetComponentUVE(EntityUVE entity) {
-        return *static_cast<PublicComponentUVE<T>*>(GetComponentErased(entity, std::type_index(typeid(T))));
+    [[nodiscard]] PublicComponent<T>& GetComponent(Entity entity) {
+        return *static_cast<PublicComponent<T>*>(GetComponentErased(entity, std::type_index(typeid(T))));
     }
 
     /// Scene-graph authority is required for mutable live derived caches. The access key cannot
     /// be constructed by ordinary consumers; the type-erased lookup stays implementation-private.
     template <typename T>
-    [[nodiscard]] T& GetSceneGraphComponentUVE(EntityUVE entity, SceneGraphWriteAccessUVE) {
+    [[nodiscard]] T& GetSceneGraphComponent(Entity entity, SceneGraphWriteAccess) {
         return *static_cast<T*>(GetComponentErased(entity, std::type_index(typeid(T))));
     }
 
-    /// Const overload of GetComponentUVE<T>().
+    /// Const overload of GetComponent<T>().
     template <typename T>
-    [[nodiscard]] const T& GetComponentUVE(EntityUVE entity) const {
+    [[nodiscard]] const T& GetComponent(Entity entity) const {
         return *static_cast<const T*>(
-            const_cast<IEntityManagerUVE*>(this)->GetComponentErased(entity, std::type_index(typeid(T))));
+            const_cast<IEntityManager*>(this)->GetComponentErased(entity, std::type_index(typeid(T))));
     }
 
     /// Returns a type-erased pointer to `entity`'s component of type `componentType`. Debug builds
     /// assert that the entity is alive and currently has the component; release builds return
     /// nullptr for a stale entity or absent component. The runtime-typed counterpart to
-    /// GetComponentUVE<T>(), used together with GetComponentTypesUVE() by SceneSerializerUVE to
+    /// GetComponent<T>(), used together with GetComponentTypes() by SceneSerializer to
     /// read every component of an entity whose types are only known at runtime.
-    [[nodiscard]] void* GetComponentPointerUVE(EntityUVE entity, std::type_index componentType) {
-        if (!IsAliveUVE(entity)) {
-            UVE_ASSERT(IsAliveUVE(entity));
+    [[nodiscard]] void* GetComponentPointer(Entity entity, std::type_index componentType) {
+        if (!IsAlive(entity)) {
+            UVE_ASSERT(IsAlive(entity));
             return nullptr;
         }
         if (!HasComponentErased(entity, componentType)) {
             UVE_ASSERT(HasComponentErased(entity, componentType));
             return nullptr;
         }
-        if (componentType == std::type_index(typeid(WorldTransformComponentUVE))) return nullptr;
+        if (componentType == std::type_index(typeid(WorldTransformComponent))) return nullptr;
         return GetComponentErased(entity, componentType);
     }
 
     /// Const erased reads include derived caches; mutable erased access above rejects them.
-    [[nodiscard]] const void* GetComponentPointerUVE(EntityUVE entity, std::type_index componentType) const {
-        if (!IsAliveUVE(entity) || !HasComponentErased(entity, componentType)) {
-            UVE_ASSERT(IsAliveUVE(entity) && HasComponentErased(entity, componentType));
+    [[nodiscard]] const void* GetComponentPointer(Entity entity, std::type_index componentType) const {
+        if (!IsAlive(entity) || !HasComponentErased(entity, componentType)) {
+            UVE_ASSERT(IsAlive(entity) && HasComponentErased(entity, componentType));
             return nullptr;
         }
-        return const_cast<IEntityManagerUVE*>(this)->GetComponentErased(entity, componentType);
+        return const_cast<IEntityManager*>(this)->GetComponentErased(entity, componentType);
     }
 
-    /// Invokes `callback(EntityUVE, TComponents&...)` once for every entity whose current
+    /// Invokes `callback(Entity, TComponents&...)` once for every entity whose current
     /// archetype contains every one of `TComponents...` (it may contain others too). Iteration
     /// order is unspecified beyond "every matching entity exactly once."
     template <typename... TComponents, typename TFunc>
-    void ForEachUVE(TFunc&& callback) {
+    void ForEach(TFunc&& callback) {
         const std::vector<std::type_index> types{std::type_index(typeid(TComponents))...};
-        ForEachErased(types, [&callback](EntityUVE entity, const std::vector<void*>& pointers) {
-            Detail::InvokeForEachCallbackUVE<PublicComponentUVE<TComponents>...>(
+        ForEachErased(types, [&callback](Entity entity, const std::vector<void*>& pointers) {
+            Detail::InvokeForEachCallback<PublicComponent<TComponents>...>(
                 callback, entity, pointers, std::index_sequence_for<TComponents...>{});
         });
     }
 
     /// Same stable-archetype iteration rule, but mutable cache references require scene-graph authority.
     template <typename... TComponents, typename TFunc>
-    void ForEachSceneGraphUVE(SceneGraphWriteAccessUVE, TFunc&& callback) {
+    void ForEachSceneGraph(SceneGraphWriteAccess, TFunc&& callback) {
         const std::vector<std::type_index> types{std::type_index(typeid(TComponents))...};
-        ForEachErased(types, [&callback](EntityUVE entity, const std::vector<void*>& pointers) {
-            Detail::InvokeForEachCallbackUVE<TComponents...>(
+        ForEachErased(types, [&callback](Entity entity, const std::vector<void*>& pointers) {
+            Detail::InvokeForEachCallback<TComponents...>(
                 callback, entity, pointers, std::index_sequence_for<TComponents...>{});
         });
     }
 
     /// Collects the entities currently carrying every one of `TComponents...` into an iterable
-    /// `EntityViewUVE` (range-for over `entry.entity` plus live `entry.GetUVE<T>()` references).
-    /// Same matches as `ForEachUVE`, snapshotted once: re-call to re-query, and record
-    /// structural changes through `EntityCommandBufferUVE` rather than making them mid-iteration.
+    /// `EntityView` (range-for over `entry.entity` plus live `entry.Get<T>()` references).
+    /// Same matches as `ForEach`, snapshotted once: re-call to re-query, and record
+    /// structural changes through `EntityCommandBuffer` rather than making them mid-iteration.
     template <typename... TComponents>
-    [[nodiscard]] EntityViewUVE<TComponents...> ViewUVE() {
-        std::vector<typename EntityViewUVE<TComponents...>::RowUVE> rows;
+    [[nodiscard]] EntityView<TComponents...> View() {
+        std::vector<typename EntityView<TComponents...>::Row> rows;
         const std::vector<std::type_index> types{std::type_index(typeid(TComponents))...};
-        ForEachErased(types, [&rows](const EntityUVE entity, const std::vector<void*>& pointers) {
-            rows.push_back(Detail::MakeViewRowUVE<TComponents...>(
+        ForEachErased(types, [&rows](const Entity entity, const std::vector<void*>& pointers) {
+            rows.push_back(Detail::MakeViewRow<TComponents...>(
                 entity, pointers, std::index_sequence_for<TComponents...>{}));
         });
-        return EntityViewUVE<TComponents...>{std::move(rows)};
+        return EntityView<TComponents...>{std::move(rows)};
     }
 
 protected:
-    [[nodiscard]] virtual void* AddComponentErased(EntityUVE entity, std::type_index componentType,
-                                                    const ComponentTypeInfoUVE& typeInfo) = 0;
-    virtual void RemoveComponentErased(EntityUVE entity, std::type_index componentType) = 0;
-    [[nodiscard]] virtual bool HasComponentErased(EntityUVE entity, std::type_index componentType) const = 0;
-    [[nodiscard]] virtual void* GetComponentErased(EntityUVE entity, std::type_index componentType) = 0;
+    [[nodiscard]] virtual void* AddComponentErased(Entity entity, std::type_index componentType,
+                                                    const ComponentTypeInfo& typeInfo) = 0;
+    virtual void RemoveComponentErased(Entity entity, std::type_index componentType) = 0;
+    [[nodiscard]] virtual bool HasComponentErased(Entity entity, std::type_index componentType) const = 0;
+    [[nodiscard]] virtual void* GetComponentErased(Entity entity, std::type_index componentType) = 0;
 
-    /// `callback` receives, for every matching entity, its EntityUVE and a vector of raw
+    /// `callback` receives, for every matching entity, its Entity and a vector of raw
     /// component pointers in the same order as `componentTypes`.
     virtual void ForEachErased(
         const std::vector<std::type_index>& componentTypes,
-        const std::function<void(EntityUVE, const std::vector<void*>&)>& callback) = 0;
+        const std::function<void(Entity, const std::vector<void*>&)>& callback) = 0;
 };
 
 } // namespace UVE::Scene

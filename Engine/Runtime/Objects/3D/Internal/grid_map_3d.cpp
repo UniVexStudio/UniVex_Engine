@@ -10,13 +10,13 @@
 
 namespace UVE::Scene {
 
-bool IsGridMap3DComponentValidUVE(const GridMap3DComponentUVE& value) noexcept {
-    if (!IsFinite3DObjectVectorUVE(value.cellSize) || value.cellSize.x <= 0.0F ||
+bool IsGridMap3DComponentValid(const GridMap3DComponent& value) noexcept {
+    if (!IsFinite3DObjectVector(value.cellSize) || value.cellSize.x <= 0.0F ||
         value.cellSize.y <= 0.0F || value.cellSize.z <= 0.0F ||
-        value.cells.size() > kMaximumGridMapCells3DUVE) {
+        value.cells.size() > kMaximumGridMapCells3D) {
         return false;
     }
-    for (const GridMapCellEntry3DUVE& c : value.cells) {
+    for (const GridMapCellEntry3D& c : value.cells) {
         if (c.itemIndex < 0 || c.orientationIndex >= 24U) {
             return false;
         }
@@ -24,17 +24,17 @@ bool IsGridMap3DComponentValidUVE(const GridMap3DComponentUVE& value) noexcept {
     return true;
 }
 
-GridMap3DComponentUVE SanitizeGridMap3DComponentUVE(const GridMap3DComponentUVE& value) {
-    GridMap3DComponentUVE out = value;
-    if (!IsFinite3DObjectVectorUVE(out.cellSize) || out.cellSize.x <= 0.0F ||
+GridMap3DComponent SanitizeGridMap3DComponent(const GridMap3DComponent& value) {
+    GridMap3DComponent out = value;
+    if (!IsFinite3DObjectVector(out.cellSize) || out.cellSize.x <= 0.0F ||
         out.cellSize.y <= 0.0F || out.cellSize.z <= 0.0F) {
-        out.cellSize = Math::Vector3UVE{2.0F, 2.0F, 2.0F};
+        out.cellSize = Math::Vector3{2.0F, 2.0F, 2.0F};
     }
-    if (out.cells.size() > kMaximumGridMapCells3DUVE) {
-        out.cells.resize(kMaximumGridMapCells3DUVE);
+    if (out.cells.size() > kMaximumGridMapCells3D) {
+        out.cells.resize(kMaximumGridMapCells3D);
     }
-    std::erase_if(out.cells, [](const GridMapCellEntry3DUVE& c) { return c.itemIndex < 0; });
-    for (GridMapCellEntry3DUVE& c : out.cells) {
+    std::erase_if(out.cells, [](const GridMapCellEntry3D& c) { return c.itemIndex < 0; });
+    for (GridMapCellEntry3D& c : out.cells) {
         if (c.orientationIndex >= 24U) {
             c.orientationIndex = 0U;
         }
@@ -42,51 +42,51 @@ GridMap3DComponentUVE SanitizeGridMap3DComponentUVE(const GridMap3DComponentUVE&
     return out;
 }
 
-bool IsGridMap3DObjectDefinitionValidUVE(const GridMap3DObjectDefinitionUVE& value) noexcept {
-    return IsGridMap3DComponentValidUVE(value.gridMap);
+bool IsGridMap3DObjectDefinitionValid(const GridMap3DObjectDefinition& value) noexcept {
+    return IsGridMap3DComponentValid(value.gridMap);
 }
 
-void ApplyGridMap3DObjectDefinitionUVE(IEntityManagerUVE& entityManager, const EntityUVE entity,
-                                       const GridMap3DObjectDefinitionUVE& value) {
-    EnsureObject3DBaselineUVE(entityManager, entity, GridMap3DObjectDefinitionUVE::defaultName);
-    entityManager.AddComponentUVE<GridMap3DComponentUVE>(
-        entity, SanitizeGridMap3DComponentUVE(value.gridMap));
+void ApplyGridMap3DObjectDefinition(IEntityManager& entityManager, const Entity entity,
+                                       const GridMap3DObjectDefinition& value) {
+    EnsureObject3DBaseline(entityManager, entity, GridMap3DObjectDefinition::defaultName);
+    entityManager.AddComponent<GridMap3DComponent>(
+        entity, SanitizeGridMap3DComponent(value.gridMap));
 }
 
-Math::Vector3UVE GridMap3DUVE::MapToLocalPositionUVE(const GridMap3DComponentUVE& gridMap,
-                                                     const Math::Vector3iUVE& coord) noexcept {
-    const Math::Vector3UVE safeSize =
-        (IsFinite3DObjectVectorUVE(gridMap.cellSize) && gridMap.cellSize.x > 0.0F &&
+Math::Vector3 GridMap3D::MapToLocalPosition(const GridMap3DComponent& gridMap,
+                                                     const Math::Vector3i& coord) noexcept {
+    const Math::Vector3 safeSize =
+        (IsFinite3DObjectVector(gridMap.cellSize) && gridMap.cellSize.x > 0.0F &&
          gridMap.cellSize.y > 0.0F && gridMap.cellSize.z > 0.0F)
             ? gridMap.cellSize
-            : Math::Vector3UVE{2.0F, 2.0F, 2.0F};
-    return Math::Vector3UVE{
+            : Math::Vector3{2.0F, 2.0F, 2.0F};
+    return Math::Vector3{
         (static_cast<float>(coord.x) + (gridMap.centerX ? 0.5F : 0.0F)) * safeSize.x,
         (static_cast<float>(coord.y) + (gridMap.centerY ? 0.5F : 0.0F)) * safeSize.y,
         (static_cast<float>(coord.z) + (gridMap.centerZ ? 0.5F : 0.0F)) * safeSize.z};
 }
 
-Math::Vector3iUVE GridMap3DUVE::LocalPositionToMapUVE(
-    const GridMap3DComponentUVE& gridMap, const Math::Vector3UVE& localPosition) noexcept {
-    if (!IsFinite3DObjectVectorUVE(localPosition)) {
-        return Math::Vector3iUVE{0, 0, 0};
+Math::Vector3i GridMap3D::LocalPositionToMap(
+    const GridMap3DComponent& gridMap, const Math::Vector3& localPosition) noexcept {
+    if (!IsFinite3DObjectVector(localPosition)) {
+        return Math::Vector3i{0, 0, 0};
     }
-    const Math::Vector3UVE safeSize =
-        (IsFinite3DObjectVectorUVE(gridMap.cellSize) && gridMap.cellSize.x > 0.0F &&
+    const Math::Vector3 safeSize =
+        (IsFinite3DObjectVector(gridMap.cellSize) && gridMap.cellSize.x > 0.0F &&
          gridMap.cellSize.y > 0.0F && gridMap.cellSize.z > 0.0F)
             ? gridMap.cellSize
-            : Math::Vector3UVE{2.0F, 2.0F, 2.0F};
-    return Math::Vector3iUVE{static_cast<std::int32_t>(std::floor(localPosition.x / safeSize.x)),
+            : Math::Vector3{2.0F, 2.0F, 2.0F};
+    return Math::Vector3i{static_cast<std::int32_t>(std::floor(localPosition.x / safeSize.x)),
                              static_cast<std::int32_t>(std::floor(localPosition.y / safeSize.y)),
                              static_cast<std::int32_t>(std::floor(localPosition.z / safeSize.z))};
 }
 
-void GridMap3DUVE::SetCellItemUVE(GridMap3DComponentUVE& gridMap, const Math::Vector3iUVE& coord,
+void GridMap3D::SetCellItem(GridMap3DComponent& gridMap, const Math::Vector3i& coord,
                                   const std::int32_t itemIndex,
                                   const std::uint8_t orientationIndex) {
     const auto it = std::find_if(
         gridMap.cells.begin(), gridMap.cells.end(),
-        [&](const GridMapCellEntry3DUVE& entry) { return entry.coord == coord; });
+        [&](const GridMapCellEntry3D& entry) { return entry.coord == coord; });
     if (itemIndex < 0) {
         if (it != gridMap.cells.end()) {
             gridMap.cells.erase(it);
@@ -97,19 +97,19 @@ void GridMap3DUVE::SetCellItemUVE(GridMap3DComponentUVE& gridMap, const Math::Ve
     if (it != gridMap.cells.end()) {
         it->itemIndex = itemIndex;
         it->orientationIndex = safeOrient;
-    } else if (gridMap.cells.size() < kMaximumGridMapCells3DUVE) {
-        gridMap.cells.push_back(GridMapCellEntry3DUVE{coord, itemIndex, safeOrient});
+    } else if (gridMap.cells.size() < kMaximumGridMapCells3D) {
+        gridMap.cells.push_back(GridMapCellEntry3D{coord, itemIndex, safeOrient});
     }
 }
 
-std::int32_t GridMap3DUVE::GetCellItemUVE(const GridMap3DComponentUVE& gridMap,
-                                          const Math::Vector3iUVE& coord) noexcept {
-    for (const GridMapCellEntry3DUVE& entry : gridMap.cells) {
+std::int32_t GridMap3D::GetCellItem(const GridMap3DComponent& gridMap,
+                                          const Math::Vector3i& coord) noexcept {
+    for (const GridMapCellEntry3D& entry : gridMap.cells) {
         if (entry.coord == coord) {
             return entry.itemIndex;
         }
     }
-    return kGridMapInvalidItemUVE;
+    return kGridMapInvalidItem;
 }
 
 } // namespace UVE::Scene

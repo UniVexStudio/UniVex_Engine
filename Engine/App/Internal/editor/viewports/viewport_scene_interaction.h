@@ -20,15 +20,15 @@
 #include "vector3.h"
 
 namespace UVE::Scene {
-class IEntityManagerUVE;
+class IEntityManager;
 }
 
 namespace UVE::App::Viewports {
 
-class ViewportSurfaceUVE;
+class ViewportSurface;
 
 /// Snapshot of an editor orbit camera pose (used for Play-mode and Camera3D preview restoration).
-struct ViewportCameraPoseUVE final {
+struct ViewportCameraPose final {
     univex::math::Vec3 target{};
     float yaw = 0.0F;
     float pitch = 0.0F;
@@ -36,93 +36,93 @@ struct ViewportCameraPoseUVE final {
     bool orthographic = false;
 };
 
-/// Composable interactive 3D authoring controller owned by `LevelViewportUVE` and
-/// `EntityViewportUVE`.
+/// Composable interactive 3D authoring controller owned by `LevelViewport` and
+/// `EntityViewport`.
 ///
 /// Owns the orbit camera, mouse/keyboard navigation (Alt+Left orbit, Middle pan, Wheel dolly,
 /// Right-hold WASD/QE eased fly camera, PRISM nav-gizmo orbit requests, Numpad/Alt named views,
 /// bookmarks, F-to-focus), smooth Camera3D look-through flight, entity picking and context-toolbar
 /// arming, throttled object-gizmo and selection-outline caches, silhouette mask readback, and
 /// half-resolution double-PBO scene depth export for the PRISM shell.
-class ViewportSceneInteractionUVE final {
+class ViewportSceneInteraction final {
 public:
-    ViewportSceneInteractionUVE(Editor::EditorUVE& editor, Scene::IEntityManagerUVE& entityManager);
-    ~ViewportSceneInteractionUVE();
+    ViewportSceneInteraction(Editor::Editor& editor, Scene::IEntityManager& entityManager);
+    ~ViewportSceneInteraction();
 
-    ViewportSceneInteractionUVE(const ViewportSceneInteractionUVE&) = delete;
-    ViewportSceneInteractionUVE& operator=(const ViewportSceneInteractionUVE&) = delete;
-    ViewportSceneInteractionUVE(ViewportSceneInteractionUVE&&) = delete;
-    ViewportSceneInteractionUVE& operator=(ViewportSceneInteractionUVE&&) = delete;
+    ViewportSceneInteraction(const ViewportSceneInteraction&) = delete;
+    ViewportSceneInteraction& operator=(const ViewportSceneInteraction&) = delete;
+    ViewportSceneInteraction(ViewportSceneInteraction&&) = delete;
+    ViewportSceneInteraction& operator=(ViewportSceneInteraction&&) = delete;
 
-    [[nodiscard]] univex::camera::OrbitCamera& CameraUVE() noexcept { return m_camera; }
-    [[nodiscard]] const univex::camera::OrbitCamera& CameraUVE() const noexcept { return m_camera; }
-    [[nodiscard]] bool IsPreviewingCameraUVE() const noexcept { return m_previewing; }
+    [[nodiscard]] univex::camera::OrbitCamera& Camera() noexcept { return m_camera; }
+    [[nodiscard]] const univex::camera::OrbitCamera& Camera() const noexcept { return m_camera; }
+    [[nodiscard]] bool IsPreviewingCamera() const noexcept { return m_previewing; }
 
-    [[nodiscard]] ViewportCameraPoseUVE CapturePoseUVE() const noexcept;
-    void RestorePoseUVE(const ViewportCameraPoseUVE& pose);
+    [[nodiscard]] ViewportCameraPose CapturePose() const noexcept;
+    void RestorePose(const ViewportCameraPose& pose);
 
     /// Applies editor overlay settings (projection, named view, focus requests, grid appearance,
     /// selection outline settings, axis palette, bones, and collider wireframes) to this camera
     /// and the target surface.
-    void ApplyOverlayStateUVE(ViewportSurfaceUVE& surface,
-                              const Editor::EditorUVE::ViewportOverlayStateUVE& overlayState,
+    void ApplyOverlayState(ViewportSurface& surface,
+                              const Editor::Editor::ViewportOverlayState& overlayState,
                               bool suppressGrid);
 
     /// Advances smooth fly-in / fly-out camera transitions when previewing a document `Camera3D`.
     /// Returns the `Camera3D` entity to look directly through once the fly-in completes.
-    [[nodiscard]] std::optional<Scene::EntityUVE> UpdateCameraPreviewFlightUVE(
+    [[nodiscard]] std::optional<Scene::Entity> UpdateCameraPreviewFlight(
         bool allowPreview,
-        const Editor::EditorViewportInputUVE& input);
+        const Editor::EditorViewportInput& input);
 
     /// Processes gizmo pivot tracking, nav-gizmo orbit requests, entity picking, context toolbar
     /// right-clicks, and (when `skipAuthoringNavigation` is false) fly/orbit/pan/zoom/hotkeys.
-    void UpdateInteractionUVE(const Editor::EditorUVE::ViewportOverlayStateUVE& overlayState,
+    void UpdateInteraction(const Editor::Editor::ViewportOverlayState& overlayState,
                               int width,
                               int height,
                               bool skipAuthoringNavigation);
 
-    /// Advances camera animations and publishes the camera focus target back to `EditorUVE`.
-    void AdvanceCameraAndPublishFocusUVE(const Editor::EditorViewportInputUVE& input);
+    /// Advances camera animations and publishes the camera focus target back to `Editor`.
+    void AdvanceCameraAndPublishFocus(const Editor::EditorViewportInput& input);
 
     /// Refreshes the throttled spatial object gizmo cache and routes it either to the PRISM host
     /// or to the surface's GL overlay pass.
-    void UpdateObjectGizmoOverlayUVE(ViewportSurfaceUVE& surface,
-                                     const Editor::EditorUVE::ViewportOverlayStateUVE& overlayState,
+    void UpdateObjectGizmoOverlay(ViewportSurface& surface,
+                                     const Editor::Editor::ViewportOverlayState& overlayState,
                                      int width,
                                      int height,
-                                     std::optional<Scene::EntityUVE> lookThroughCamera,
+                                     std::optional<Scene::Entity> lookThroughCamera,
                                      bool wantOverlay);
 
     /// Exports camera state, transform-gizmo pivot, and host-drawn gizmo geometry into
     /// `overlayState`.
-    void ExportViewForHostUVE(const Editor::EditorUVE::ViewportOverlayStateUVE& overlayState,
+    void ExportViewForHost(const Editor::Editor::ViewportOverlayState& overlayState,
                               int width,
                               int height,
                               bool wantOverlay);
 
     /// Exports the surface grid settings into `overlayState.hostGrid`.
-    void ExportGridForHostUVE(const ViewportSurfaceUVE& surface,
-                              const Editor::EditorUVE::ViewportOverlayStateUVE& overlayState,
+    void ExportGridForHost(const ViewportSurface& surface,
+                              const Editor::Editor::ViewportOverlayState& overlayState,
                               bool want);
 
     /// Downsamples and asynchronously reads back linear view-forward scene depth via double PBOs
     /// for PRISM gizmo occlusion.
-    void ExportSceneDepthForHostUVE(ViewportSurfaceUVE& surface,
-                                    const Editor::EditorUVE::ViewportOverlayStateUVE& overlayState,
+    void ExportSceneDepthForHost(ViewportSurface& surface,
+                                    const Editor::Editor::ViewportOverlayState& overlayState,
                                     int width,
                                     int height);
 
     /// Updates cached selection triangles and either reads back a silhouette mask for PRISM or
     /// renders the GL selection outline directly into the currently bound MSAA framebuffer.
-    void RenderSelectionOutlineOrMaskUVE(ViewportSurfaceUVE& surface,
-                                         const Editor::EditorUVE::ViewportOverlayStateUVE& overlayState,
+    void RenderSelectionOutlineOrMask(ViewportSurface& surface,
+                                         const Editor::Editor::ViewportOverlayState& overlayState,
                                          int width,
                                          int height);
 
-    [[nodiscard]] static univex::math::Vec3 NamedViewDirectionUVE(Editor::EditorUVE::ViewportViewUVE view);
+    [[nodiscard]] static univex::math::Vec3 NamedViewDirection(Editor::Editor::ViewportView view);
 
 private:
-    struct CameraFlightPoseUVE final {
+    struct CameraFlightPose final {
         univex::math::Vec3 target{};
         float yaw = 0.0F;
         float pitch = 0.0F;
@@ -130,67 +130,67 @@ private:
         float fovY = 0.87F;
     };
 
-    struct CameraFlightUVE final {
-        CameraFlightPoseUVE from;
-        CameraFlightPoseUVE to;
+    struct CameraFlight final {
+        CameraFlightPose from;
+        CameraFlightPose to;
         float t = 0.0F;
         bool entering = true;
     };
 
-    struct SelectedEntitySnapshotUVE final {
-        Scene::EntityUVE entity = Scene::kInvalidEntityUVE;
-        Math::Vector3UVE position{};
-        Math::QuaternionUVE rotation{};
+    struct SelectedEntitySnapshot final {
+        Scene::Entity entity = Scene::kInvalidEntity;
+        Math::Vector3 position{};
+        Math::Quaternion rotation{};
     };
 
-    static constexpr float kCameraFlightSecondsUVE = 0.45F;
+    static constexpr float kCameraFlightSeconds = 0.45F;
 
-    void ApplyNamedViewUVE(Editor::EditorUVE::ViewportViewUVE view);
-    void FocusCameraOnEntityUVE(Scene::EntityUVE entity);
-    [[nodiscard]] CameraFlightPoseUVE CurrentFlightPoseUVE() const;
-    void ApplyFlightPoseUVE(const CameraFlightPoseUVE& pose);
-    [[nodiscard]] std::optional<CameraFlightPoseUVE> CameraEntityPoseUVE(Scene::EntityUVE entity) const;
+    void ApplyNamedView(Editor::Editor::ViewportView view);
+    void FocusCameraOnEntity(Scene::Entity entity);
+    [[nodiscard]] CameraFlightPose CurrentFlightPose() const;
+    void ApplyFlightPose(const CameraFlightPose& pose);
+    [[nodiscard]] std::optional<CameraFlightPose> CameraEntityPose(Scene::Entity entity) const;
 
-    void UpdateSelectionGizmoUVE();
-    void UpdateSelectionFromMouseUVE(const Editor::EditorUVE::ViewportOverlayStateUVE& overlayState,
+    void UpdateSelectionGizmo();
+    void UpdateSelectionFromMouse(const Editor::Editor::ViewportOverlayState& overlayState,
                                      int width,
                                      int height,
                                      bool suppressed);
-    void CommitMarqueeSelectionUVE(const Editor::EditorViewportInputUVE& input,
+    void CommitMarqueeSelection(const Editor::EditorViewportInput& input,
                                    int width,
                                    int height,
                                    float minX,
                                    float minY,
                                    float maxX,
                                    float maxY);
-    void UpdateEntityContextToolbarFromMouseUVE(const Editor::EditorViewportInputUVE& input,
+    void UpdateEntityContextToolbarFromMouse(const Editor::EditorViewportInput& input,
                                                 int width,
                                                 int height,
                                                 bool suppressed);
-    void UpdateTouchControllerCameraUVE(const Editor::EditorUVE::ViewportOverlayStateUVE& overlayState);
-    void UpdateOrbitPanZoomFromMouseUVE(const Editor::EditorViewportInputUVE& input,
+    void UpdateTouchControllerCamera(const Editor::Editor::ViewportOverlayState& overlayState);
+    void UpdateOrbitPanZoomFromMouse(const Editor::EditorViewportInput& input,
                                         int framebufferHeight,
                                         bool suppressOrbit);
-    [[nodiscard]] bool UpdateFlyCameraUVE(const Editor::EditorViewportInputUVE& input, bool suppressed);
-    void UpdateViewportViewHotkeysUVE(const Editor::EditorViewportInputUVE& input);
-    void UpdateViewportBookmarkHotkeysUVE(const Editor::EditorViewportInputUVE& input);
+    [[nodiscard]] bool UpdateFlyCamera(const Editor::EditorViewportInput& input, bool suppressed);
+    void UpdateViewportViewHotkeys(const Editor::EditorViewportInput& input);
+    void UpdateViewportBookmarkHotkeys(const Editor::EditorViewportInput& input);
 
-    [[nodiscard]] bool EnsureHostDepthUVE(ViewportSurfaceUVE& surface, int width, int height);
-    [[nodiscard]] bool AnySelectedEntityMovedUVE() const;
+    [[nodiscard]] bool EnsureHostDepth(ViewportSurface& surface, int width, int height);
+    [[nodiscard]] bool AnySelectedEntityMoved() const;
 
-    Editor::EditorUVE& m_editor;
-    Scene::IEntityManagerUVE& m_entityManager;
+    Editor::Editor& m_editor;
+    Scene::IEntityManager& m_entityManager;
     univex::camera::OrbitCamera m_camera;
 
     std::uint32_t m_appliedViewRequestSerial = 0U;
     std::uint32_t m_appliedFocusRequestSerial = 0U;
     bool m_pointerOverOverlay = false;
 
-    std::optional<ViewportCameraPoseUVE> m_poseBeforePreview;
+    std::optional<ViewportCameraPose> m_poseBeforePreview;
     bool m_previewing = false;
-    std::optional<CameraFlightUVE> m_flight;
+    std::optional<CameraFlight> m_flight;
     float m_fovBeforePreview = 0.87F;
-    Scene::EntityUVE m_lastPreviewCamera = Scene::kInvalidEntityUVE;
+    Scene::Entity m_lastPreviewCamera = Scene::kInvalidEntity;
 
     bool m_flyArmed = false;
     bool m_flying = false;
@@ -213,17 +213,17 @@ private:
     std::size_t m_hostOverlayOccludedFrom = std::numeric_limits<std::size_t>::max();
 
     float m_cachedOverlayAspect = 0.0F;
-    Scene::EntityUVE m_cachedLookThroughCamera = Scene::kInvalidEntityUVE;
+    Scene::Entity m_cachedLookThroughCamera = Scene::kInvalidEntity;
     std::size_t m_cachedOverlayEntityCount = 0U;
     bool m_cachedOverlayActive = false;
     float m_overlayRefreshTimerSeconds = 0.0F;
 
-    std::vector<Scene::EntityUVE> m_lastSelectedEntities;
-    Scene::EntityUVE m_lastSelectedEntity = Scene::kInvalidEntityUVE;
+    std::vector<Scene::Entity> m_lastSelectedEntities;
+    Scene::Entity m_lastSelectedEntity = Scene::kInvalidEntity;
     std::vector<univex::render::SelectionOutlineVertex> m_cachedSelectionTriangles;
     std::vector<std::uint8_t> m_lastMask;
     std::uint64_t m_lastMaskKey = 0U;
-    std::vector<SelectedEntitySnapshotUVE> m_lastSelectedSnapshots;
+    std::vector<SelectedEntitySnapshot> m_lastSelectedSnapshots;
 
     std::optional<univex::render::ShaderProgram> m_hostDepthProgram;
     bool m_hostDepthFailed = false;

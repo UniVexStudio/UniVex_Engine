@@ -11,25 +11,25 @@
 namespace UVE::Asset {
 namespace {
 
-[[nodiscard]] bool IsValidShaderStageValueUVE(const std::uint8_t value) noexcept {
-    return value == static_cast<std::uint8_t>(ShaderStageKindUVE::Vertex) ||
-           value == static_cast<std::uint8_t>(ShaderStageKindUVE::Fragment) ||
-           value == static_cast<std::uint8_t>(ShaderStageKindUVE::Compute);
+[[nodiscard]] bool IsValidShaderStageValue(const std::uint8_t value) noexcept {
+    return value == static_cast<std::uint8_t>(ShaderStageKind::Vertex) ||
+           value == static_cast<std::uint8_t>(ShaderStageKind::Fragment) ||
+           value == static_cast<std::uint8_t>(ShaderStageKind::Compute);
 }
 
-[[nodiscard]] bool IsValidShaderStageUVE(const ShaderStageKindUVE stage) noexcept {
-    return IsValidShaderStageValueUVE(static_cast<std::uint8_t>(stage));
+[[nodiscard]] bool IsValidShaderStage(const ShaderStageKind stage) noexcept {
+    return IsValidShaderStageValue(static_cast<std::uint8_t>(stage));
 }
 
 } // namespace
 
-bool LoadShaderAssetUVE(const std::filesystem::path& path, ShaderAssetUVE& outShader) {
-    const std::optional<std::pair<UveFileHeaderUVE, std::vector<std::byte>>> file = ReadUveFileUVE(path);
+bool LoadShaderAsset(const std::filesystem::path& path, ShaderAsset& outShader) {
+    const std::optional<std::pair<UveFileHeader, std::vector<std::byte>>> file = ReadUveFile(path);
     if (!file.has_value()) {
-        return false; // ReadUveFileUVE already logged the specific reason.
+        return false; // ReadUveFile already logged the specific reason.
     }
-    if (file->first.assetType != AssetKindUVE::Shader) {
-        UVE_ERROR("ShaderAssetUVE: \"{}\" is not a shader file (asset type {})", path.string(),
+    if (file->first.assetType != AssetKind::Shader) {
+        UVE_ERROR("ShaderAsset: \"{}\" is not a shader file (asset type {})", path.string(),
                    static_cast<std::uint32_t>(file->first.assetType));
         return false;
     }
@@ -41,28 +41,28 @@ bool LoadShaderAssetUVE(const std::filesystem::path& path, ShaderAssetUVE& outSh
     try {
         payload = nlohmann::json::parse(payloadText);
     } catch (const nlohmann::json::parse_error& parseError) {
-        UVE_ERROR("ShaderAssetUVE: failed to parse \"{}\": {}", path.string(), parseError.what());
+        UVE_ERROR("ShaderAsset: failed to parse \"{}\": {}", path.string(), parseError.what());
         return false;
     }
 
-    ShaderAssetUVE shader;
+    ShaderAsset shader;
     std::uint8_t stageValue = 0U;
     try {
         stageValue = payload.at("stage").get<std::uint8_t>();
         shader.sourceCode = payload.at("sourceCode").get<std::string>();
         shader.entryPointName = payload.value("entryPointName", std::string("main"));
     } catch (const nlohmann::json::exception& fieldError) {
-        UVE_ERROR("ShaderAssetUVE: \"{}\" is missing an expected field: {}", path.string(), fieldError.what());
+        UVE_ERROR("ShaderAsset: \"{}\" is missing an expected field: {}", path.string(), fieldError.what());
         return false;
     }
 
-    if (!IsValidShaderStageValueUVE(stageValue)) {
-        UVE_ERROR("ShaderAssetUVE: \"{}\" has an unknown shader stage", path.string());
+    if (!IsValidShaderStageValue(stageValue)) {
+        UVE_ERROR("ShaderAsset: \"{}\" has an unknown shader stage", path.string());
         return false;
     }
-    shader.stage = static_cast<ShaderStageKindUVE>(stageValue);
+    shader.stage = static_cast<ShaderStageKind>(stageValue);
     if (shader.sourceCode.empty()) {
-        UVE_ERROR("ShaderAssetUVE: \"{}\" has empty source code", path.string());
+        UVE_ERROR("ShaderAsset: \"{}\" has empty source code", path.string());
         return false;
     }
 
@@ -70,9 +70,9 @@ bool LoadShaderAssetUVE(const std::filesystem::path& path, ShaderAssetUVE& outSh
     return true;
 }
 
-bool SaveShaderAssetUVE(const ShaderAssetUVE& shader, const std::filesystem::path& path) {
-    if (!IsValidShaderStageUVE(shader.stage)) {
-        UVE_ERROR("ShaderAssetUVE: refusing to save an unknown shader stage to {}", path.string());
+bool SaveShaderAsset(const ShaderAsset& shader, const std::filesystem::path& path) {
+    if (!IsValidShaderStage(shader.stage)) {
+        UVE_ERROR("ShaderAsset: refusing to save an unknown shader stage to {}", path.string());
         return false;
     }
     nlohmann::json payload;
@@ -84,7 +84,7 @@ bool SaveShaderAssetUVE(const ShaderAssetUVE& shader, const std::filesystem::pat
     const auto* const payloadBytes = reinterpret_cast<const std::byte*>(payloadText.data());
     const std::vector<std::byte> payloadBuffer(payloadBytes, payloadBytes + payloadText.size());
 
-    return WriteUveFileUVE(path, AssetKindUVE::Shader, payloadBuffer);
+    return WriteUveFile(path, AssetKind::Shader, payloadBuffer);
 }
 
 } // namespace UVE::Asset

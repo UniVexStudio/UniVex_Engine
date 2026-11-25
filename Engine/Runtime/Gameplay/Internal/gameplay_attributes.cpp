@@ -9,25 +9,25 @@
 namespace UVE::Scene {
 namespace {
 
-[[nodiscard]] bool IsValidIdUVE(const std::string_view id) noexcept {
-    return !id.empty() && id.size() <= kMaximumGameplayAttributeIdBytesUVE &&
-           id != kReservedHealthAttributeIdUVE;
+[[nodiscard]] bool IsValidId(const std::string_view id) noexcept {
+    return !id.empty() && id.size() <= kMaximumGameplayAttributeIdBytes &&
+           id != kReservedHealthAttributeId;
 }
 
-[[nodiscard]] bool IsUsableUVE(const GameplayAttributeUVE& attribute) noexcept {
-    return IsValidIdUVE(attribute.id) && std::isfinite(attribute.current) &&
+[[nodiscard]] bool IsUsable(const GameplayAttribute& attribute) noexcept {
+    return IsValidId(attribute.id) && std::isfinite(attribute.current) &&
            std::isfinite(attribute.maximum) && std::isfinite(attribute.regenPerSecond) &&
            attribute.maximum >= 0.0F && attribute.current >= 0.0F && attribute.current <= attribute.maximum;
 }
 
 } // namespace
 
-bool IsGameplayAttributesComponentValidUVE(const GameplayAttributesComponentUVE& value) noexcept {
-    if (value.attributes.size() > kMaximumGameplayAttributesUVE) {
+bool IsGameplayAttributesComponentValid(const GameplayAttributesComponent& value) noexcept {
+    if (value.attributes.size() > kMaximumGameplayAttributes) {
         return false;
     }
-    for (const GameplayAttributeUVE& attribute : value.attributes) {
-        if (!IsUsableUVE(attribute)) {
+    for (const GameplayAttribute& attribute : value.attributes) {
+        if (!IsUsable(attribute)) {
             return false;
         }
     }
@@ -41,9 +41,9 @@ bool IsGameplayAttributesComponentValidUVE(const GameplayAttributesComponentUVE&
     return true;
 }
 
-GameplayAttributeUVE* FindGameplayAttributeUVE(GameplayAttributesComponentUVE& attributes,
+GameplayAttribute* FindGameplayAttribute(GameplayAttributesComponent& attributes,
                                                const std::string_view id) noexcept {
-    for (GameplayAttributeUVE& attribute : attributes.attributes) {
+    for (GameplayAttribute& attribute : attributes.attributes) {
         if (attribute.id == id) {
             return &attribute;
         }
@@ -51,9 +51,9 @@ GameplayAttributeUVE* FindGameplayAttributeUVE(GameplayAttributesComponentUVE& a
     return nullptr;
 }
 
-const GameplayAttributeUVE* FindGameplayAttributeUVE(const GameplayAttributesComponentUVE& attributes,
+const GameplayAttribute* FindGameplayAttribute(const GameplayAttributesComponent& attributes,
                                                      const std::string_view id) noexcept {
-    for (const GameplayAttributeUVE& attribute : attributes.attributes) {
+    for (const GameplayAttribute& attribute : attributes.attributes) {
         if (attribute.id == id) {
             return &attribute;
         }
@@ -61,14 +61,14 @@ const GameplayAttributeUVE* FindGameplayAttributeUVE(const GameplayAttributesCom
     return nullptr;
 }
 
-bool AddGameplayAttributeUVE(GameplayAttributesComponentUVE& attributes, std::string id, const float maximum,
+bool AddGameplayAttribute(GameplayAttributesComponent& attributes, std::string id, const float maximum,
                              const float initial, const float regenPerSecond) {
-    if (!IsValidIdUVE(id) || !std::isfinite(maximum) || maximum < 0.0F || !std::isfinite(initial) ||
-        !std::isfinite(regenPerSecond) || attributes.attributes.size() >= kMaximumGameplayAttributesUVE ||
-        FindGameplayAttributeUVE(attributes, id) != nullptr) {
+    if (!IsValidId(id) || !std::isfinite(maximum) || maximum < 0.0F || !std::isfinite(initial) ||
+        !std::isfinite(regenPerSecond) || attributes.attributes.size() >= kMaximumGameplayAttributes ||
+        FindGameplayAttribute(attributes, id) != nullptr) {
         return false;
     }
-    GameplayAttributeUVE attribute;
+    GameplayAttribute attribute;
     attribute.id = std::move(id);
     attribute.maximum = maximum;
     attribute.current = std::clamp(initial, 0.0F, maximum);
@@ -77,13 +77,13 @@ bool AddGameplayAttributeUVE(GameplayAttributesComponentUVE& attributes, std::st
     return true;
 }
 
-bool RemoveGameplayAttributeUVE(GameplayAttributesComponentUVE& attributes, const std::string_view id) {
+bool RemoveGameplayAttribute(GameplayAttributesComponent& attributes, const std::string_view id) {
     const auto removed = std::erase_if(attributes.attributes,
-                                       [id](const GameplayAttributeUVE& attribute) { return attribute.id == id; });
+                                       [id](const GameplayAttribute& attribute) { return attribute.id == id; });
     return removed > 0;
 }
 
-GameplayAttributeDamageResultUVE DamageGameplayAttributeUVE(GameplayAttributeUVE& attribute,
+GameplayAttributeDamageResult DamageGameplayAttribute(GameplayAttribute& attribute,
                                                             const float amount) noexcept {
     if (!std::isfinite(amount) || amount <= 0.0F) {
         return {};
@@ -93,7 +93,7 @@ GameplayAttributeDamageResultUVE DamageGameplayAttributeUVE(GameplayAttributeUVE
     return {applied, attribute.current, true, attribute.current <= 0.0F};
 }
 
-GameplayAttributeDamageResultUVE HealGameplayAttributeUVE(GameplayAttributeUVE& attribute,
+GameplayAttributeDamageResult HealGameplayAttribute(GameplayAttribute& attribute,
                                                           const float amount) noexcept {
     if (!std::isfinite(amount) || amount <= 0.0F) {
         return {};
@@ -103,7 +103,7 @@ GameplayAttributeDamageResultUVE HealGameplayAttributeUVE(GameplayAttributeUVE& 
     return {applied, attribute.current, true, false};
 }
 
-bool SetGameplayAttributeMaximumUVE(GameplayAttributeUVE& attribute, const float maximum) noexcept {
+bool SetGameplayAttributeMaximum(GameplayAttribute& attribute, const float maximum) noexcept {
     if (!std::isfinite(maximum) || maximum < 0.0F) {
         return false;
     }

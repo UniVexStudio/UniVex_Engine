@@ -12,32 +12,32 @@
 
 namespace UVE::Window {
 
-inline constexpr std::uint32_t kMaximumWindowIconAxisUVE = 8192U;
+inline constexpr std::uint32_t kMaximumWindowIconAxis = 8192U;
 
-struct WindowIconUVE final {
+struct WindowIcon final {
     std::uint32_t width = 0U;
     std::uint32_t height = 0U;
     std::vector<std::uint8_t> rgba8;
 
-    [[nodiscard]] bool operator==(const WindowIconUVE&) const = default;
+    [[nodiscard]] bool operator==(const WindowIcon&) const = default;
 };
 
-inline constexpr std::size_t kMaximumWindowTitleBytesUVE = 256U;
+inline constexpr std::size_t kMaximumWindowTitleBytes = 256U;
 
-/// Describes the window WindowManagerUVE creates. Passed once at construction; there is no
-/// "resize the desc" API — width/height change through the OS (user drag, SetFullscreenUVE()) and
-/// are read back via IWindowManagerUVE::GetWidthUVE()/GetHeightUVE(), not by mutating this struct.
-/// Width and height are validated against the shared kMaximumDisplayModeAxisUVE cap before backend
+/// Describes the window WindowManager creates. Passed once at construction; there is no
+/// "resize the desc" API — width/height change through the OS (user drag, SetFullscreen()) and
+/// are read back via IWindowManager::GetWidth()/GetHeight(), not by mutating this struct.
+/// Width and height are validated against the shared kMaximumDisplayModeAxis cap before backend
 /// creation narrows them to GLFW's signed integer dimensions.
-struct WindowDescUVE {
+struct WindowDesc {
     std::string title = "UniVex Engine";
     std::uint32_t width = 1280;
     std::uint32_t height = 720;
     bool resizable = true;
     bool vsyncEnabled = true; ///< Legacy Off/On request used when `vsyncModeExplicit` is false.
     bool vsyncModeExplicit = false;
-    Platform::VSyncModeUVE vsyncMode = Platform::VSyncModeUVE::On;
-    Platform::WindowModeUVE mode = Platform::WindowModeUVE::Windowed;
+    Platform::VSyncMode vsyncMode = Platform::VSyncMode::On;
+    Platform::WindowMode mode = Platform::WindowMode::Windowed;
     bool borderless = false;
     bool alwaysOnTop = false;
     bool transparent = false;
@@ -52,15 +52,15 @@ struct WindowDescUVE {
     bool highDpiAware = true;
     bool perMonitorScaling = true;
     double contentScaleOverride = 0.0;
-    Platform::StretchModeUVE stretchMode = Platform::StretchModeUVE::Disabled;
-    Platform::AspectPolicyUVE aspectPolicy = Platform::AspectPolicyUVE::Keep;
+    Platform::StretchMode stretchMode = Platform::StretchMode::Disabled;
+    Platform::AspectPolicy aspectPolicy = Platform::AspectPolicy::Keep;
     bool integerOnlyScaling = false;
     /// Handheld orientation request and its permitted set. Desktop GLFW has no API to rotate a
     /// display, so it retains these values without enforcing them; a handheld backend must apply
     /// them through its platform lifecycle/manifest integration.
-    Platform::DisplayOrientationUVE orientation = Platform::DisplayOrientationUVE::Auto;
-    std::vector<Platform::DisplayOrientationUVE> allowedOrientations{
-        Platform::DisplayOrientationUVE::Landscape, Platform::DisplayOrientationUVE::Portrait};
+    Platform::DisplayOrientation orientation = Platform::DisplayOrientation::Auto;
+    std::vector<Platform::DisplayOrientation> allowedOrientations{
+        Platform::DisplayOrientation::Landscape, Platform::DisplayOrientation::Portrait};
     std::uint32_t focusedFrameRateCap = 0U;
     std::uint32_t unfocusedFrameRateCap = 0U;
     bool allowDisplaySleep = true;
@@ -72,7 +72,7 @@ struct WindowDescUVE {
     bool cursorVisible = true;
     bool cursorConfinedToWindow = false;
 
-    /// Requested OpenGL context version (WindowManagerUVE's real GLFW3 backend requests Core
+    /// Requested OpenGL context version (WindowManager's real GLFW3 backend requests Core
     /// Profile at exactly this version via glfwWindowHint before creating the window). The
     /// production default is OpenGL 4.6 Core per the approved architecture decision. This is
     /// configurable — not hardcoded — because GL context availability is a real driver/platform
@@ -84,7 +84,7 @@ struct WindowDescUVE {
 
     /// Optional icon images in RGBA8 order. Backends that do not expose native icons may ignore
     /// these; the GLFW desktop backend applies them during window creation.
-    std::vector<WindowIconUVE> icons;
+    std::vector<WindowIcon> icons;
 };
 
 } // namespace UVE::Window

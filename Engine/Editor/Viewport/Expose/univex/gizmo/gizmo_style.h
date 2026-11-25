@@ -29,12 +29,12 @@ struct GizmoStyle {
     // ---- axis colours ----------------------------------------------------
     // From univex/viewport/AxisPalette.h, the single definition these and the grid's own axis
     // lines both derive from - see that header for why the grid takes a darker variant.
-    Vec3 axisColorX{univex::viewport::kAxisColorXUVE.r, univex::viewport::kAxisColorXUVE.g,
-                    univex::viewport::kAxisColorXUVE.b};
-    Vec3 axisColorY{univex::viewport::kAxisColorYUVE.r, univex::viewport::kAxisColorYUVE.g,
-                    univex::viewport::kAxisColorYUVE.b};
-    Vec3 axisColorZ{univex::viewport::kAxisColorZUVE.r, univex::viewport::kAxisColorZUVE.g,
-                    univex::viewport::kAxisColorZUVE.b};
+    Vec3 axisColorX{univex::viewport::kAxisColorX.r, univex::viewport::kAxisColorX.g,
+                    univex::viewport::kAxisColorX.b};
+    Vec3 axisColorY{univex::viewport::kAxisColorY.r, univex::viewport::kAxisColorY.g,
+                    univex::viewport::kAxisColorY.b};
+    Vec3 axisColorZ{univex::viewport::kAxisColorZ.r, univex::viewport::kAxisColorZ.g,
+                    univex::viewport::kAxisColorZ.b};
     Vec3 planeColor{0.933f, 0.945f, 0.965f};
     Vec3 freeRingColor{0.906f, 0.918f, 0.949f};
     // Brighter than it was as a cube: a 1.2 px ring has a fraction of a solid block's ink, so the

@@ -22,130 +22,130 @@ namespace UVE::Blueprint::Plugins {
 // API Version & Compatibility
 // ---------------------------------------------------------------------------
 
-struct BlueprintPluginApiVersionUVE final {
+struct BlueprintPluginApiVersion final {
     std::uint32_t major = 1U;
     std::uint32_t minor = 0U;
     std::uint32_t patch = 0U;
 
-    [[nodiscard]] bool operator==(const BlueprintPluginApiVersionUVE&) const = default;
-    [[nodiscard]] auto operator<=>(const BlueprintPluginApiVersionUVE&) const = default;
+    [[nodiscard]] bool operator==(const BlueprintPluginApiVersion&) const = default;
+    [[nodiscard]] auto operator<=>(const BlueprintPluginApiVersion&) const = default;
 };
 
-inline constexpr BlueprintPluginApiVersionUVE kCurrentBlueprintPluginApiVersionUVE{1U, 0U, 0U};
+inline constexpr BlueprintPluginApiVersion kCurrentBlueprintPluginApiVersion{1U, 0U, 0U};
 
 /// Compatible when major versions match and the plugin does not require a newer minor API than the host.
-[[nodiscard]] constexpr bool IsBlueprintPluginVersionCompatibleUVE(
-    const BlueprintPluginApiVersionUVE hostVersion, const BlueprintPluginApiVersionUVE requiredVersion) noexcept {
+[[nodiscard]] constexpr bool IsBlueprintPluginVersionCompatible(
+    const BlueprintPluginApiVersion hostVersion, const BlueprintPluginApiVersion requiredVersion) noexcept {
     return hostVersion.major == requiredVersion.major && requiredVersion.minor <= hostVersion.minor;
 }
 
-[[nodiscard]] std::string FormatBlueprintPluginVersionUVE(BlueprintPluginApiVersionUVE version);
-[[nodiscard]] std::optional<BlueprintPluginApiVersionUVE> ParseBlueprintPluginVersionUVE(std::string_view text);
+[[nodiscard]] std::string FormatBlueprintPluginVersion(BlueprintPluginApiVersion version);
+[[nodiscard]] std::optional<BlueprintPluginApiVersion> ParseBlueprintPluginVersion(std::string_view text);
 
 // ---------------------------------------------------------------------------
 // Manifest & Extension Interface
 // ---------------------------------------------------------------------------
 
-struct BlueprintPluginManifestUVE final {
+struct BlueprintPluginManifest final {
     std::string id;
     std::string displayName;
     std::string author;
     std::string description;
-    BlueprintPluginApiVersionUVE pluginVersion{1U, 0U, 0U};
-    BlueprintPluginApiVersionUVE requiredApiVersion = kCurrentBlueprintPluginApiVersionUVE;
+    BlueprintPluginApiVersion pluginVersion{1U, 0U, 0U};
+    BlueprintPluginApiVersion requiredApiVersion = kCurrentBlueprintPluginApiVersion;
     std::vector<std::string> dependencies;
     std::vector<std::string> providedNodeKeys;
 };
 
 /// Base interface implemented by Blueprint node/tool plugin extensions.
-class IBlueprintPluginExtensionUVE {
+class IBlueprintPluginExtension {
 public:
-    virtual ~IBlueprintPluginExtensionUVE() = default;
+    virtual ~IBlueprintPluginExtension() = default;
 
-    [[nodiscard]] virtual BlueprintPluginManifestUVE GetManifestUVE() const = 0;
-    virtual bool OnLoadUVE() { return true; }
-    virtual void OnUnloadUVE() {}
-    virtual void RegisterNodesUVE(std::vector<Asset::BlueprintNodeTypeUVE>& outNodes) const = 0;
+    [[nodiscard]] virtual BlueprintPluginManifest GetManifest() const = 0;
+    virtual bool OnLoad() { return true; }
+    virtual void OnUnload() {}
+    virtual void RegisterNodes(std::vector<Asset::BlueprintNodeType>& outNodes) const = 0;
 };
 
 // ---------------------------------------------------------------------------
 // Validation
 // ---------------------------------------------------------------------------
 
-struct BlueprintPluginValidationResultUVE final {
+struct BlueprintPluginValidationResult final {
     bool valid = true;
     std::vector<std::string> errors;
     std::vector<std::string> warnings;
 };
 
-[[nodiscard]] BlueprintPluginValidationResultUVE ValidateBlueprintPluginManifestUVE(
-    const BlueprintPluginManifestUVE& manifest,
-    BlueprintPluginApiVersionUVE hostApiVersion = kCurrentBlueprintPluginApiVersionUVE);
+[[nodiscard]] BlueprintPluginValidationResult ValidateBlueprintPluginManifest(
+    const BlueprintPluginManifest& manifest,
+    BlueprintPluginApiVersion hostApiVersion = kCurrentBlueprintPluginApiVersion);
 
 /// Parses a `.uvbpplugin` JSON manifest text.
-[[nodiscard]] std::optional<BlueprintPluginManifestUVE> ParseBlueprintPluginManifestJsonUVE(std::string_view jsonText);
+[[nodiscard]] std::optional<BlueprintPluginManifest> ParseBlueprintPluginManifestJson(std::string_view jsonText);
 
 /// Serializes a plugin manifest to JSON text.
-[[nodiscard]] std::string SerializeBlueprintPluginManifestJsonUVE(const BlueprintPluginManifestUVE& manifest);
+[[nodiscard]] std::string SerializeBlueprintPluginManifestJson(const BlueprintPluginManifest& manifest);
 
 // ---------------------------------------------------------------------------
 // Registration, Discovery & Loading
 // ---------------------------------------------------------------------------
 
-struct BlueprintPluginStatusUVE final {
-    BlueprintPluginManifestUVE manifest;
+struct BlueprintPluginStatus final {
+    BlueprintPluginManifest manifest;
     bool loaded = false;
     std::size_t contributedNodeCount = 0U;
     std::string lastError;
 };
 
-class BlueprintPluginManagerUVE final {
+class BlueprintPluginManager final {
 public:
-    explicit BlueprintPluginManagerUVE(
-        BlueprintPluginApiVersionUVE hostApiVersion = kCurrentBlueprintPluginApiVersionUVE) noexcept;
+    explicit BlueprintPluginManager(
+        BlueprintPluginApiVersion hostApiVersion = kCurrentBlueprintPluginApiVersion) noexcept;
 
     /// Discovers `.uvbpplugin` manifest files in `directory` (non-recursive).
-    [[nodiscard]] std::vector<BlueprintPluginManifestUVE> DiscoverManifestsUVE(
+    [[nodiscard]] std::vector<BlueprintPluginManifest> DiscoverManifests(
         const std::filesystem::path& directory) const;
 
     /// Registers an in-process plugin extension after manifest & compatibility validation.
-    bool RegisterExtensionUVE(std::shared_ptr<IBlueprintPluginExtensionUVE> extension, std::string* outError = nullptr);
+    bool RegisterExtension(std::shared_ptr<IBlueprintPluginExtension> extension, std::string* outError = nullptr);
 
     /// Unregisters and unloads the plugin with `pluginId`.
-    bool UnregisterExtensionUVE(std::string_view pluginId);
+    bool UnregisterExtension(std::string_view pluginId);
 
     /// Loads `pluginId` (ensuring declared dependencies are loaded first) and registers its nodes.
-    bool LoadPluginUVE(std::string_view pluginId, std::string* outError = nullptr);
+    bool LoadPlugin(std::string_view pluginId, std::string* outError = nullptr);
 
     /// Loads all registered extensions in dependency order. Returns number of plugins loaded.
-    std::size_t LoadAllPluginsUVE();
+    std::size_t LoadAllPlugins();
 
     /// Unloads `pluginId` and removes its contributed nodes.
-    bool UnloadPluginUVE(std::string_view pluginId);
-    void UnloadAllPluginsUVE();
+    bool UnloadPlugin(std::string_view pluginId);
+    void UnloadAllPlugins();
 
-    [[nodiscard]] std::optional<BlueprintPluginStatusUVE> GetStatusUVE(std::string_view pluginId) const;
-    [[nodiscard]] std::vector<BlueprintPluginStatusUVE> ListPluginsUVE() const;
-    [[nodiscard]] const std::vector<Asset::BlueprintNodeTypeUVE>& GetRegisteredNodesUVE() const noexcept {
+    [[nodiscard]] std::optional<BlueprintPluginStatus> GetStatus(std::string_view pluginId) const;
+    [[nodiscard]] std::vector<BlueprintPluginStatus> ListPlugins() const;
+    [[nodiscard]] const std::vector<Asset::BlueprintNodeType>& GetRegisteredNodes() const noexcept {
         return m_registeredNodes;
     }
-    [[nodiscard]] const Asset::BlueprintNodeTypeUVE* FindRegisteredNodeUVE(std::string_view nodeKey) const noexcept;
+    [[nodiscard]] const Asset::BlueprintNodeType* FindRegisteredNode(std::string_view nodeKey) const noexcept;
 
 private:
-    struct EntryUVE final {
-        std::shared_ptr<IBlueprintPluginExtensionUVE> extension;
-        BlueprintPluginManifestUVE manifest;
+    struct Entry final {
+        std::shared_ptr<IBlueprintPluginExtension> extension;
+        BlueprintPluginManifest manifest;
         bool loaded = false;
         std::vector<std::string> nodeKeys;
         std::string lastError;
     };
 
-    bool LoadRecursiveUVE(std::string_view pluginId, std::vector<std::string>& stack, std::string* outError);
-    void RebuildNodeTableUVE();
+    bool LoadRecursive(std::string_view pluginId, std::vector<std::string>& stack, std::string* outError);
+    void RebuildNodeTable();
 
-    BlueprintPluginApiVersionUVE m_hostApiVersion;
-    std::map<std::string, EntryUVE, std::less<>> m_entries;
-    std::vector<Asset::BlueprintNodeTypeUVE> m_registeredNodes;
+    BlueprintPluginApiVersion m_hostApiVersion;
+    std::map<std::string, Entry, std::less<>> m_entries;
+    std::vector<Asset::BlueprintNodeType> m_registeredNodes;
 };
 
 } // namespace UVE::Blueprint::Plugins

@@ -18,8 +18,8 @@ std::string_view Token(std::string_view& rest) noexcept { while (!rest.empty() &
 bool Has(std::string_view& rest, const std::size_t count) noexcept { for (std::size_t i=0U;i<count;++i) if (Token(rest).empty()) return false; return true; }
 }
 
-bool ValidateMtlTextureReferenceUVE(const std::string_view path) noexcept {
-    if (path.empty() || path.size() > kMaximumMtlTextureReferenceBytesUVE ||
+bool ValidateMtlTextureReference(const std::string_view path) noexcept {
+    if (path.empty() || path.size() > kMaximumMtlTextureReferenceBytes ||
         path.front() == '/' || path.front() == '\\' || path.contains('\0') ||
         (path.size() >= 2U && path[1U] == ':')) {
         return false;
@@ -40,8 +40,8 @@ bool ValidateMtlTextureReferenceUVE(const std::string_view path) noexcept {
     return true;
 }
 
-bool ParseMtlMaterialPropertyUVE(const std::string_view sourceLine, MtlMaterialPropertyUVE& outProperty) {
-    if (sourceLine.empty() || sourceLine.size() > kMaximumMtlTextureReferenceBytesUVE) {
+bool ParseMtlMaterialProperty(const std::string_view sourceLine, MtlMaterialProperty& outProperty) {
+    if (sourceLine.empty() || sourceLine.size() > kMaximumMtlTextureReferenceBytes) {
         return false;
     }
     const auto parseFloat = [](const std::string_view text, float& outValue) noexcept {
@@ -70,20 +70,20 @@ bool ParseMtlMaterialPropertyUVE(const std::string_view sourceLine, MtlMaterialP
     try {
         std::string_view rest = sourceLine;
         const std::string_view directive = Token(rest);
-        MtlMaterialPropertyUVE candidate;
+        MtlMaterialProperty candidate;
         if (directive == "Kd" || directive == "Ka" || directive == "Ks" || directive == "Ke" || directive == "Tf") {
-            candidate.kind = MtlMaterialPropertyKindUVE::Vector3;
+            candidate.kind = MtlMaterialPropertyKind::Vector3;
             for (std::size_t index = 0U; index < candidate.vectorValue.size(); ++index) {
                 if (!parseFloat(Token(rest), candidate.vectorValue[index])) return false;
             }
             if (!Token(rest).empty()) return false;
         } else if (directive == "Ns" || directive == "Ni" || directive == "d" || directive == "Tr" || directive == "illum") {
-            candidate.kind = MtlMaterialPropertyKindUVE::Scalar;
+            candidate.kind = MtlMaterialPropertyKind::Scalar;
             if (!parseFloat(Token(rest), candidate.scalarValue) || !Token(rest).empty()) return false;
         } else if (directive.rfind("map_", 0U) == 0U) {
             const std::string_view reference = Token(rest);
-            if (!ValidateMtlTextureReferenceUVE(reference) || !Token(rest).empty()) return false;
-            candidate.kind = MtlMaterialPropertyKindUVE::TextureReference;
+            if (!ValidateMtlTextureReference(reference) || !Token(rest).empty()) return false;
+            candidate.kind = MtlMaterialPropertyKind::TextureReference;
             candidate.textureReference.assign(reference);
         } else {
             return false;
@@ -95,8 +95,8 @@ bool ParseMtlMaterialPropertyUVE(const std::string_view sourceLine, MtlMaterialP
     }
 }
 
-bool ParseMtlTextureMapUVE(const std::string_view sourceLine, MtlTextureMapUVE& outMap) {
-    if (sourceLine.empty() || sourceLine.size() > kMaximumMtlTextureReferenceBytesUVE) return false;
+bool ParseMtlTextureMap(const std::string_view sourceLine, MtlTextureMap& outMap) {
+    if (sourceLine.empty() || sourceLine.size() > kMaximumMtlTextureReferenceBytes) return false;
     const auto parseFloat = [](const std::string_view text, float& outValue) noexcept {
         if (text.empty()) return false;
 #if defined(__ANDROID__)
@@ -119,7 +119,7 @@ bool ParseMtlTextureMapUVE(const std::string_view sourceLine, MtlTextureMapUVE& 
     try {
         std::string_view rest = sourceLine;
         if (Token(rest).rfind("map_", 0U) != 0U) return false;
-        MtlTextureMapUVE candidate;
+        MtlTextureMap candidate;
         bool hasReference = false;
         while (true) {
             const std::string_view option = Token(rest);
@@ -135,7 +135,7 @@ bool ParseMtlTextureMapUVE(const std::string_view sourceLine, MtlTextureMapUVE& 
                 else if (mode == "off") candidate.clamp = false;
                 else return false;
             } else {
-                if (option.front() == '-' || !ValidateMtlTextureReferenceUVE(option)) return false;
+                if (option.front() == '-' || !ValidateMtlTextureReference(option)) return false;
                 candidate.textureReference.assign(option);
                 hasReference = true;
                 if (!Token(rest).empty()) return false;
@@ -150,15 +150,15 @@ bool ParseMtlTextureMapUVE(const std::string_view sourceLine, MtlTextureMapUVE& 
     }
 }
 
-std::optional<MtlMetadataUVE> ParseMtlMetadataUVE(const std::string_view source) {
-    MtlMetadataUVE out; std::size_t start=0U;
+std::optional<MtlMetadata> ParseMtlMetadata(const std::string_view source) {
+    MtlMetadata out; std::size_t start=0U;
     while (start <= source.size()) {
         const auto end=source.find('\n', start); auto line=source.substr(start, end==std::string_view::npos?std::string_view::npos:end-start); if(!line.empty()&&line.back()=='\r') line.remove_suffix(1U);
         const auto comment = line.find('#'); if (comment != std::string_view::npos) line = line.substr(0U, comment);
         while(!line.empty()&&(line.front()==' '||line.front()=='\t')) line.remove_prefix(1U);
         if(!line.empty()) { auto rest=line; const auto directive=Token(rest);
             if(directive=="newmtl") { if(!Has(rest,1U)||!Token(rest).empty()||!Inc(out.materialCount)) return std::nullopt; }
-            else if(directive.rfind("map_",0U)==0U) { MtlTextureMapUVE map; if(!ParseMtlTextureMapUVE(line, map)||!Inc(out.textureMapCount)) return std::nullopt; }
+            else if(directive.rfind("map_",0U)==0U) { MtlTextureMap map; if(!ParseMtlTextureMap(line, map)||!Inc(out.textureMapCount)) return std::nullopt; }
             else if(directive=="Kd"||directive=="Ka"||directive=="Ks"||directive=="Ke"||directive=="Tf") { if(!Has(rest,3U)||!Token(rest).empty()||!Inc(out.vectorPropertyCount)) return std::nullopt; }
             else if(directive=="Ns"||directive=="Ni"||directive=="d"||directive=="Tr"||directive=="illum") { if(!Has(rest,1U)||!Token(rest).empty()||!Inc(out.scalarPropertyCount)) return std::nullopt; }
             else if(!Inc(out.ignoredStatementCount)) return std::nullopt;

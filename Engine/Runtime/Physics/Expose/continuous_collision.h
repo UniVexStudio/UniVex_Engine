@@ -12,13 +12,13 @@
 
 namespace UVE::Physics {
 
-/// Opt-in continuous collision settings, carried inside PhysicsSimulationSettingsUVE.
+/// Opt-in continuous collision settings, carried inside PhysicsSimulationSettings.
 ///
 /// Off by default and gated by a motion threshold on purpose: a swept test is several times the
 /// cost of the discrete integration it protects, and 99% of bodies in a scene move far less than
 /// their own size per step, where the discrete path is already exact. Turning it on globally would
 /// pay that cost to protect bodies that cannot tunnel.
-struct ContinuousCollisionSettingsUVE final {
+struct ContinuousCollisionSettings final {
     bool enabled = false;
 
     /// Metres of travel in one step below which a body is integrated discretely. Zero disables the
@@ -39,28 +39,28 @@ struct ContinuousCollisionSettingsUVE final {
 /// radius callers pass is the collider's own bounding radius, which makes the sweep CONSERVATIVE -
 /// it can stop a body a little early, never late - and early is recoverable while late is a
 /// tunneled hit.
-struct SweptSphereUVE final {
-    Math::Vector3UVE center{};
+struct SweptSphere final {
+    Math::Vector3 center{};
     float radius = 0.0F;
     /// Motion over the whole step, in metres. Not a direction: its length is the travel.
-    Math::Vector3UVE displacement{};
+    Math::Vector3 displacement{};
 };
 
 /// First contact found along a sweep.
-struct SweptContactUVE final {
+struct SweptContact final {
     /// Fraction of `displacement` travelled before contact, in [0, 1].
     float timeOfImpact = 1.0F;
     /// Unit normal pointing from the target toward the mover - the direction the mover must not
     /// continue into. Deterministic for axis-aligned targets: the entry face's outward axis.
-    Math::Vector3UVE normal{0.0F, 1.0F, 0.0F};
+    Math::Vector3 normal{0.0F, 1.0F, 0.0F};
     /// Mover centre at the time of impact.
-    Math::Vector3UVE position{};
+    Math::Vector3 position{};
 };
 
 /// Motion after a CCD pass, plus the contact that shortened it.
-struct ContinuousMotionResultUVE final {
-    Math::Vector3UVE displacement{};
-    std::optional<SweptContactUVE> contact{};
+struct ContinuousMotionResult final {
+    Math::Vector3 displacement{};
+    std::optional<SweptContact> contact{};
 };
 
 /// Exact earliest time of impact between a moving sphere and a static sphere, in [0, 1].
@@ -69,22 +69,22 @@ struct ContinuousMotionResultUVE final {
 /// when either input is non-finite. A mover that starts already overlapping reports
 /// `timeOfImpact == 0` with a normal pointing away from the target - the caller must resolve the
 /// overlap, not treat the zero as "no contact".
-[[nodiscard]] std::optional<SweptContactUVE> SweepSphereAgainstSphereUVE(
-    const SweptSphereUVE& mover, const Math::Vector3UVE& targetCenter, float targetRadius) noexcept;
+[[nodiscard]] std::optional<SweptContact> SweepSphereAgainstSphere(
+    const SweptSphere& mover, const Math::Vector3& targetCenter, float targetRadius) noexcept;
 
 /// Exact earliest time of impact between a moving sphere and a static axis-aligned box.
 ///
 /// The box is expanded by the mover's radius (Minkowski sum) and the mover's centre is then swept
 /// as a ray - the standard slab test, which is exact for this pair rather than conservative. A
 /// target of zero or negative extent on any axis is treated as invalid and ignored.
-[[nodiscard]] std::optional<SweptContactUVE> SweepSphereAgainstAabbUVE(
-    const SweptSphereUVE& mover, const Math::AabbUVE& target) noexcept;
+[[nodiscard]] std::optional<SweptContact> SweepSphereAgainstAabb(
+    const SweptSphere& mover, const Math::Aabb& target) noexcept;
 
 /// Earliest contact over several boxes. Ties resolve to the LOWEST index, so a scene whose colliders
 /// are enumerated in a stable order produces the same contact on every run - the determinism half
 /// of a network-friendly step.
-[[nodiscard]] std::optional<SweptContactUVE> SweepSphereAgainstAabbsUVE(
-    const SweptSphereUVE& mover, std::span<const Math::AabbUVE> targets) noexcept;
+[[nodiscard]] std::optional<SweptContact> SweepSphereAgainstAabbs(
+    const SweptSphere& mover, std::span<const Math::Aabb> targets) noexcept;
 
 /// Applies a CCD pass to one body's step motion.
 ///
@@ -92,8 +92,8 @@ struct ContinuousMotionResultUVE final {
 /// below `motionThreshold`, or when nothing is in the way. Otherwise the displacement is cut at the
 /// first contact minus `contactOffset`, and the contact is reported so the caller can also clear the
 /// velocity component heading into the surface.
-[[nodiscard]] ContinuousMotionResultUVE ResolveContinuousMotionUVE(
-    const SweptSphereUVE& mover, std::span<const Math::AabbUVE> targets,
-    const ContinuousCollisionSettingsUVE& settings) noexcept;
+[[nodiscard]] ContinuousMotionResult ResolveContinuousMotion(
+    const SweptSphere& mover, std::span<const Math::Aabb> targets,
+    const ContinuousCollisionSettings& settings) noexcept;
 
 } // namespace UVE::Physics

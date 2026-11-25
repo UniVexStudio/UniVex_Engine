@@ -4,36 +4,36 @@
 
 namespace UVE::Physics {
 
-std::optional<SphereCastHitUVE> PhysicsQuerySystemUVE::SphereCastUVE(
-    Scene::IEntityManagerUVE& entityManager, const SphereCastQueryUVE& query) const {
-    return ShapeCastSystemUVE::SphereCastUVE(entityManager, query);
+std::optional<SphereCastHit> PhysicsQuerySystem::SphereCast(
+    Scene::IEntityManager& entityManager, const SphereCastQuery& query) const {
+    return ShapeCastSystem::SphereCast(entityManager, query);
 }
 
-std::optional<BoxCastHitUVE> PhysicsQuerySystemUVE::BoxCastUVE(
-    Scene::IEntityManagerUVE& entityManager, const BoxCastQueryUVE& query) const {
-    return ShapeCastSystemUVE::BoxCastUVE(entityManager, query);
+std::optional<BoxCastHit> PhysicsQuerySystem::BoxCast(
+    Scene::IEntityManager& entityManager, const BoxCastQuery& query) const {
+    return ShapeCastSystem::BoxCast(entityManager, query);
 }
 
-std::optional<CapsuleCastHitUVE> PhysicsQuerySystemUVE::CapsuleCastUVE(
-    Scene::IEntityManagerUVE& entityManager, const CapsuleCastQueryUVE& query) const {
-    return ShapeCastSystemUVE::CapsuleCastUVE(entityManager, query);
+std::optional<CapsuleCastHit> PhysicsQuerySystem::CapsuleCast(
+    Scene::IEntityManager& entityManager, const CapsuleCastQuery& query) const {
+    return ShapeCastSystem::CapsuleCast(entityManager, query);
 }
 
-AreaOverlapQueryResultUVE PhysicsQuerySystemUVE::QueryAreaOverlapsUVE(
-    Scene::IEntityManagerUVE& entityManager, const std::size_t maximumResults) const {
-    return AreaOverlapSystemUVE::QueryUVE(entityManager, maximumResults);
+AreaOverlapQueryResult PhysicsQuerySystem::QueryAreaOverlaps(
+    Scene::IEntityManager& entityManager, const std::size_t maximumResults) const {
+    return AreaOverlapSystem::Query(entityManager, maximumResults);
 }
 
-CharacterControllerMoveResultUVE PhysicsQuerySystemUVE::MoveCharacterUVE(
-    Scene::IEntityManagerUVE& entityManager, Scene::ISceneGraphUVE& sceneGraph,
-    const CharacterControllerInputUVE& input) const {
-    return CharacterControllerUVE::MoveUVE(entityManager, sceneGraph, *m_collisionSystem, input);
+CharacterControllerMoveResult PhysicsQuerySystem::MoveCharacter(
+    Scene::IEntityManager& entityManager, Scene::ISceneGraph& sceneGraph,
+    const CharacterControllerInput& input) const {
+    return CharacterController::Move(entityManager, sceneGraph, *m_collisionSystem, input);
 }
 
-CharacterControllerMoveResultUVE PhysicsQuerySystemUVE::MoveCharacterWithToIUVE(
-    Scene::IEntityManagerUVE& entityManager, Scene::ISceneGraphUVE& sceneGraph,
-    const CharacterControllerInputUVE& input) const {
-    return CharacterControllerUVE::MoveWithToIUVE(entityManager, sceneGraph, *m_collisionSystem, input);
+CharacterControllerMoveResult PhysicsQuerySystem::MoveCharacterWithToI(
+    Scene::IEntityManager& entityManager, Scene::ISceneGraph& sceneGraph,
+    const CharacterControllerInput& input) const {
+    return CharacterController::MoveWithToI(entityManager, sceneGraph, *m_collisionSystem, input);
 }
 
 } // namespace UVE::Physics

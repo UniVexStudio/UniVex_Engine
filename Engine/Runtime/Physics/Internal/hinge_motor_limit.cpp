@@ -9,25 +9,25 @@
 namespace UVE::Physics {
 namespace {
 
-[[nodiscard]] bool IsFiniteUVE(const float value) noexcept {
+[[nodiscard]] bool IsFinite(const float value) noexcept {
     return std::isfinite(value);
 }
 
 } // namespace
 
-bool EvaluateHingeMotorLimitUVE(
-    const HingeMotorLimitInputUVE& input, HingeMotorLimitResultUVE& outResult) noexcept {
-    if (!IsFiniteUVE(input.currentAngleRadians) || !IsFiniteUVE(input.currentRelativeSpeedRadians) ||
-        !IsFiniteUVE(input.deltaTimeSeconds) || input.deltaTimeSeconds < 0.0F ||
-        !IsFiniteUVE(input.effectiveInverseInertia) || input.effectiveInverseInertia < 0.0F ||
-        !IsFiniteUVE(input.targetSpeedRadians) || !IsFiniteUVE(input.maximumMotorTorque) ||
-        input.maximumMotorTorque < 0.0F || !IsFiniteUVE(input.minimumAngleRadians) ||
-        !IsFiniteUVE(input.maximumAngleRadians) ||
+bool EvaluateHingeMotorLimit(
+    const HingeMotorLimitInput& input, HingeMotorLimitResult& outResult) noexcept {
+    if (!IsFinite(input.currentAngleRadians) || !IsFinite(input.currentRelativeSpeedRadians) ||
+        !IsFinite(input.deltaTimeSeconds) || input.deltaTimeSeconds < 0.0F ||
+        !IsFinite(input.effectiveInverseInertia) || input.effectiveInverseInertia < 0.0F ||
+        !IsFinite(input.targetSpeedRadians) || !IsFinite(input.maximumMotorTorque) ||
+        input.maximumMotorTorque < 0.0F || !IsFinite(input.minimumAngleRadians) ||
+        !IsFinite(input.maximumAngleRadians) ||
         (input.limitsEnabled && input.minimumAngleRadians > input.maximumAngleRadians)) {
         return false;
     }
 
-    HingeMotorLimitResultUVE candidate{};
+    HingeMotorLimitResult candidate{};
     if (input.motorEnabled && input.deltaTimeSeconds > 0.0F &&
         input.effectiveInverseInertia > 0.0F && input.maximumMotorTorque > 0.0F) {
         const double maximumSpeedDelta = static_cast<double>(input.maximumMotorTorque) *
@@ -56,7 +56,7 @@ bool EvaluateHingeMotorLimitUVE(
         candidate.limitApplied = std::fabs(candidate.angleCorrectionRadians) > 0.0F;
     }
 
-    if (!IsFiniteUVE(candidate.angularSpeedDeltaRadians) || !IsFiniteUVE(candidate.angleCorrectionRadians)) {
+    if (!IsFinite(candidate.angularSpeedDeltaRadians) || !IsFinite(candidate.angleCorrectionRadians)) {
         return false;
     }
     outResult = candidate;

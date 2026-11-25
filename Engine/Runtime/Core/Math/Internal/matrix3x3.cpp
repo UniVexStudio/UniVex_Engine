@@ -8,8 +8,8 @@
 
 namespace UVE::Math {
 
-Matrix3x3UVE operator*(const Matrix3x3UVE& lhs, const Matrix3x3UVE& rhs) noexcept {
-    Matrix3x3UVE result{};
+Matrix3x3 operator*(const Matrix3x3& lhs, const Matrix3x3& rhs) noexcept {
+    Matrix3x3 result{};
     for (int row = 0; row < 3; ++row) {
         for (int col = 0; col < 3; ++col) {
             double sum = 0.0;
@@ -22,8 +22,8 @@ Matrix3x3UVE operator*(const Matrix3x3UVE& lhs, const Matrix3x3UVE& rhs) noexcep
     return result;
 }
 
-Matrix3x3UVE TransposeUVE(const Matrix3x3UVE& matrix) noexcept {
-    Matrix3x3UVE result{};
+Matrix3x3 Transpose(const Matrix3x3& matrix) noexcept {
+    Matrix3x3 result{};
     for (int row = 0; row < 3; ++row) {
         for (int col = 0; col < 3; ++col) {
             result.m[row][col] = matrix.m[col][row];
@@ -32,9 +32,9 @@ Matrix3x3UVE TransposeUVE(const Matrix3x3UVE& matrix) noexcept {
     return result;
 }
 
-bool TryInverseUVE(const Matrix3x3UVE& matrix, Matrix3x3UVE& outInverse) noexcept {
+bool TryInverse(const Matrix3x3& matrix, Matrix3x3& outInverse) noexcept {
     // Gauss-Jordan elimination with partial pivoting on an augmented [matrix | identity] in
-    // double precision — a line-for-line 3x3 port of the Matrix4x4UVE overload, so the two stay
+    // double precision — a line-for-line 3x3 port of the Matrix4x4 overload, so the two stay
     // behaviorally identical (same singular detection, same rounding character).
     double augmented[3][6];
     for (int row = 0; row < 3; ++row) {
@@ -48,7 +48,7 @@ bool TryInverseUVE(const Matrix3x3UVE& matrix, Matrix3x3UVE& outInverse) noexcep
         }
     }
 
-    constexpr double kMinimumPivotUVE = 1e-9;
+    constexpr double kMinimumPivot = 1e-9;
     for (int pivotIndex = 0; pivotIndex < 3; ++pivotIndex) {
         int pivotRow = pivotIndex;
         double pivotMagnitude = std::abs(augmented[pivotIndex][pivotIndex]);
@@ -59,7 +59,7 @@ bool TryInverseUVE(const Matrix3x3UVE& matrix, Matrix3x3UVE& outInverse) noexcep
                 pivotRow = row;
             }
         }
-        if (pivotMagnitude < kMinimumPivotUVE) {
+        if (pivotMagnitude < kMinimumPivot) {
             return false; // Singular (or numerically indistinguishable from singular).
         }
         if (pivotRow != pivotIndex) {
@@ -86,7 +86,7 @@ bool TryInverseUVE(const Matrix3x3UVE& matrix, Matrix3x3UVE& outInverse) noexcep
         }
     }
 
-    Matrix3x3UVE result{};
+    Matrix3x3 result{};
     for (int row = 0; row < 3; ++row) {
         for (int col = 0; col < 3; ++col) {
             const double value = augmented[row][col + 3];
@@ -100,8 +100,8 @@ bool TryInverseUVE(const Matrix3x3UVE& matrix, Matrix3x3UVE& outInverse) noexcep
     return true;
 }
 
-Matrix3x3UVE ToMatrix3x3UVE(const Matrix4x4UVE& matrix) noexcept {
-    Matrix3x3UVE result{};
+Matrix3x3 ToMatrix3x3(const Matrix4x4& matrix) noexcept {
+    Matrix3x3 result{};
     for (int row = 0; row < 3; ++row) {
         for (int col = 0; col < 3; ++col) {
             result.m[row][col] = matrix.m[row][col];
@@ -110,8 +110,8 @@ Matrix3x3UVE ToMatrix3x3UVE(const Matrix4x4UVE& matrix) noexcept {
     return result;
 }
 
-Matrix4x4UVE ToMatrix4x4UVE(const Matrix3x3UVE& matrix) noexcept {
-    Matrix4x4UVE result = Matrix4x4UVE::IdentityUVE();
+Matrix4x4 ToMatrix4x4(const Matrix3x3& matrix) noexcept {
+    Matrix4x4 result = Matrix4x4::Identity();
     for (int row = 0; row < 3; ++row) {
         for (int col = 0; col < 3; ++col) {
             result.m[row][col] = matrix.m[row][col];
@@ -120,7 +120,7 @@ Matrix4x4UVE ToMatrix4x4UVE(const Matrix3x3UVE& matrix) noexcept {
     return result;
 }
 
-std::string ToStringUVE(const Matrix3x3UVE& matrix) {
+std::string ToString(const Matrix3x3& matrix) {
     std::string result = "(";
     for (int row = 0; row < 3; ++row) {
         result += "(";

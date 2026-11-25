@@ -4,29 +4,29 @@
 
 namespace UVE::Scene {
 
-bool IsEditorInternalEntityComponentValidUVE(
-    const EditorInternalEntityComponentUVE& /*component*/) noexcept {
+bool IsEditorInternalEntityComponentValid(
+    const EditorInternalEntityComponent& /*component*/) noexcept {
     return true;
 }
 
-bool IsEditorInternalEntityTagPresentUVE(
-    const EditorInternalEntityComponentUVE* const component) noexcept {
+bool IsEditorInternalEntityTagPresent(
+    const EditorInternalEntityComponent* const component) noexcept {
     return component != nullptr;
 }
 
-bool ShouldIncludeInDocumentHierarchyUVE(
-    const EditorInternalEntityComponentUVE* const component) noexcept {
-    return !IsEditorInternalEntityTagPresentUVE(component);
+bool ShouldIncludeInDocumentHierarchy(
+    const EditorInternalEntityComponent* const component) noexcept {
+    return !IsEditorInternalEntityTagPresent(component);
 }
 
-bool ShouldSerializeDocumentEntityUVE(
-    const EditorInternalEntityComponentUVE* const component) noexcept {
-    return !IsEditorInternalEntityTagPresentUVE(component);
+bool ShouldSerializeDocumentEntity(
+    const EditorInternalEntityComponent* const component) noexcept {
+    return !IsEditorInternalEntityTagPresent(component);
 }
 
-bool ShouldClearWithDocumentSceneUVE(
-    const EditorInternalEntityComponentUVE* const component) noexcept {
-    return !IsEditorInternalEntityTagPresentUVE(component);
+bool ShouldClearWithDocumentScene(
+    const EditorInternalEntityComponent* const component) noexcept {
+    return !IsEditorInternalEntityTagPresent(component);
 }
 
 } // namespace UVE::Scene

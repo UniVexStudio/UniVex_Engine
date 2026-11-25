@@ -11,11 +11,11 @@ namespace {
 constexpr std::string_view kFlagPrefix = "--";
 } // namespace
 
-CommandLineUVE::CommandLineUVE(std::vector<std::string> args) {
-    ParseUVE(args);
+CommandLine::CommandLine(std::vector<std::string> args) {
+    Parse(args);
 }
 
-CommandLineUVE::CommandLineUVE(int argc, char** argv) {
+CommandLine::CommandLine(int argc, char** argv) {
     std::vector<std::string> args;
     if (argc > 1) {
         args.reserve(static_cast<std::size_t>(argc - 1));
@@ -23,10 +23,10 @@ CommandLineUVE::CommandLineUVE(int argc, char** argv) {
             args.emplace_back(argv[index]);
         }
     }
-    ParseUVE(args);
+    Parse(args);
 }
 
-void CommandLineUVE::ParseUVE(const std::vector<std::string>& args) {
+void CommandLine::Parse(const std::vector<std::string>& args) {
     for (std::size_t index = 0; index < args.size(); ++index) {
         const std::string& token = args[index];
         if (token.compare(0, kFlagPrefix.size(), kFlagPrefix) != 0) {
@@ -51,16 +51,16 @@ void CommandLineUVE::ParseUVE(const std::vector<std::string>& args) {
     }
 }
 
-bool CommandLineUVE::HasFlagUVE(std::string_view name) const noexcept {
+bool CommandLine::HasFlag(std::string_view name) const noexcept {
     return m_flags.find(std::string(name)) != m_flags.end();
 }
 
-std::string CommandLineUVE::GetValueUVE(std::string_view name, std::string_view defaultValue) const {
-    const std::optional<std::string> value = GetOptionalValueUVE(name);
+std::string CommandLine::GetValue(std::string_view name, std::string_view defaultValue) const {
+    const std::optional<std::string> value = GetOptionalValue(name);
     return value.has_value() ? *value : std::string(defaultValue);
 }
 
-std::optional<std::string> CommandLineUVE::GetOptionalValueUVE(std::string_view name) const {
+std::optional<std::string> CommandLine::GetOptionalValue(std::string_view name) const {
     const auto flagIt = m_flags.find(std::string(name));
     return flagIt != m_flags.end() ? flagIt->second : std::nullopt;
 }

@@ -3,31 +3,31 @@
 #pragma once
 //
 // Scope: the production Gameplay adapter for client-side prediction - component <->
-// PredictedStateUVE, named as a follow-up in network_prediction_uve.h. A predicted pawn is an
+// PredictedState, named as a follow-up in network_prediction_uve.h. A predicted pawn is an
 // ordinary Character3D (transform, controller, pawn, possession) whose fixed step runs through
-// a NetworkPredictionUVE instead of the local mover: the pawn's resolved intent becomes the
+// a NetworkPrediction instead of the local mover: the pawn's resolved intent becomes the
 // tick's input, the predictor steps the real character intent plus kinematic integration, and
 // the predicted or reconciled state lands back on the components for render, animation, and
 // script to read.
 //
 // The production flow, per predicted pawn:
 //
-//   spawn:   PackPredictedStateUVE() the spawn pose -> construct the NetworkPredictionUVE with
-//            it and MakeCharacterPredictionStepperUVE() -> tag the entity with
-//            PredictedCharacterComponentUVE so the local mover refuses it (PredictedElsewhere)
+//   spawn:   PackPredictedState() the spawn pose -> construct the NetworkPrediction with
+//            it and MakeCharacterPredictionStepper() -> tag the entity with
+//            PredictedCharacterComponent so the local mover refuses it (PredictedElsewhere)
 //            and never double-steps it. Both sides agree the spawn out of band, like the
 //            predictor's `initial` says.
-//   client:  every fixed step, TickPredictedPawnUVE() (capture -> tick -> apply), then the
-//            session pump (predictor.UpdateUVE()), then SyncPredictedPawnUVE() so reconciles
+//   client:  every fixed step, TickPredictedPawn() (capture -> tick -> apply), then the
+//            session pump (predictor.Update()), then SyncPredictedPawn() so reconciles
 //            snap the components the same step they land.
-//   server:  pump, then SyncPredictedPawnUVE() onto its own pawn entity. The server stepper is
+//   server:  pump, then SyncPredictedPawn() onto its own pawn entity. The server stepper is
 //            usually the factory wrapped in a world clamp (floors it stands on, walls it stops
 //            at) - the disagreement reconciliation exists for.
 //
 // Truth flows one way: the predictor owns the motion and the components are a view of it.
-// Spawn is the only components-to-predictor moment; TickPredictedPawnUVE() never re-seeds from
+// Spawn is the only components-to-predictor moment; TickPredictedPawn() never re-seeds from
 // the scene, so a stray transform write cannot fork the tick stream. What the predictor does
-// not track it does not touch: ApplyPredictedStateUVE() writes position, velocity, grounded,
+// not track it does not touch: ApplyPredictedState() writes position, velocity, grounded,
 // and the coyote/jump-buffer clocks, and leaves the contact state (ceiling, walls, floor
 // normal, platforms, last motion) alone - if local movement ever resumes, the mover
 // recomputes all of it from the world on the next step.
@@ -57,24 +57,24 @@ namespace UVE::Scene {
 /// The mover's two determinism clocks in seconds: coyote (time since last on the floor) and
 /// the buffered jump's remaining time. Both restart a replay identically, which is why they
 /// ride the app word instead of the wire as floats.
-struct PredictionClocksUVE final {
+struct PredictionClocks final {
     float coyoteSeconds = 0.0F;
     float bufferSeconds = 0.0F;
 
-    [[nodiscard]] bool operator==(const PredictionClocksUVE&) const = default;
+    [[nodiscard]] bool operator==(const PredictionClocks&) const = default;
 };
 
 /// Packs the clocks into the app word as two millisecond halves (coyote high, jump buffer
 /// low), saturating past 65 seconds - airtime that long is not coyote time. Zero, negative,
 /// and non-finite inputs pack as zero, so a broken clock can never poison the word.
-[[nodiscard]] std::uint32_t PackPredictionClocksUVE(float coyoteSeconds,
+[[nodiscard]] std::uint32_t PackPredictionClocks(float coyoteSeconds,
                                                     float bufferSeconds) noexcept;
 
 /// The inverse: millisecond halves back to seconds. Lossy by design (sub-millisecond time is
 /// gone), but the same packer runs on both ends, so equal simulations pack equal words.
-[[nodiscard]] PredictionClocksUVE UnpackPredictionClocksUVE(std::uint32_t appState) noexcept;
+[[nodiscard]] PredictionClocks UnpackPredictionClocks(std::uint32_t appState) noexcept;
 
-/// The production stepper: the real character intent (StepCharacterIntentUVE) over a scratch
+/// The production stepper: the real character intent (StepCharacterIntent) over a scratch
 /// copy of `settings`, plus kinematic integration. Each step unpacks the state's velocity,
 /// grounded, and clocks into the scratch, runs the intent, integrates the position, and packs
 /// the result back - the scratch's post-intent grounded, so a jump's liftoff flows into the
@@ -82,59 +82,59 @@ struct PredictionClocksUVE final {
 /// authored movement fields; the runtime ones are overwritten from the state each step) and
 /// `gravityY` is the engine's signed gravity. Deterministic for equal arguments, like the
 /// predictor requires; a server wraps this in its world clamp and the client guesses without.
-[[nodiscard]] Network::PredictionStepperUVE MakeCharacterPredictionStepperUVE(
-    const CharacterControllerComponentUVE& settings, float gravityY);
+[[nodiscard]] Network::PredictionStepper MakeCharacterPredictionStepper(
+    const CharacterControllerComponent& settings, float gravityY);
 
 /// Resolves the pawn's intent exactly like the local mover would (possession, Player yaw
 /// facing, AI passthrough) and converts it to the tick's input. Fails closed through the
 /// resolver itself: unpossessed, unlinked, or non-finite input stands still.
-[[nodiscard]] Network::PredictedInputUVE CapturePredictedInputUVE(IEntityManagerUVE& entityManager,
-                                                                 EntityUVE entity);
+[[nodiscard]] Network::PredictedInput CapturePredictedInput(IEntityManager& entityManager,
+                                                                 Entity entity);
 
 /// Reads the pawn's motion state off the components: world position, velocity, grounded, and
 /// the packed clocks. Nothing for a dead entity, a missing world transform or controller, or
 /// a non-finite position or velocity. Parenting is fine here - a world position is a world
 /// position - so this is also how the app seeds the spawn both sides agree on.
-[[nodiscard]] std::optional<Network::PredictedStateUVE> PackPredictedStateUVE(
-    const IEntityManagerUVE& entityManager, EntityUVE entity);
+[[nodiscard]] std::optional<Network::PredictedState> PackPredictedState(
+    const IEntityManager& entityManager, Entity entity);
 
 /// Writes the predictor's present onto the components: the position through the scene graph
 /// (local transform, dirtied and immediately recomputed, the mover's own rule), the velocity,
 /// grounded, and clocks onto the controller. False - and the entity untouched - for a dead
 /// entity, missing transform/world/controller, a parented body, or a non-finite position or
 /// velocity. The contact state is deliberately not written (see the scope note above).
-bool ApplyPredictedStateUVE(IEntityManagerUVE& entityManager, ISceneGraphUVE& sceneGraph,
-                            EntityUVE entity, const Network::PredictedStateUVE& state);
+bool ApplyPredictedState(IEntityManager& entityManager, ISceneGraph& sceneGraph,
+                            Entity entity, const Network::PredictedState& state);
 
 /// One client fixed step for one pawn: capture the intent, tick the predictor, apply the
 /// predicted present. Answers the tick. The stream stays dense whatever the entity does - a
 /// pawn that lost its components still ticks (standing still) while the apply refuses - so
 /// the server never waits on a gap for an entity problem.
-[[nodiscard]] Network::PredictionTickUVE TickPredictedPawnUVE(IEntityManagerUVE& entityManager,
-                                                              ISceneGraphUVE& sceneGraph,
-                                                              EntityUVE entity,
-                                                              Network::NetworkPredictionUVE& predictor);
+[[nodiscard]] Network::PredictionTick TickPredictedPawn(IEntityManager& entityManager,
+                                                              ISceneGraph& sceneGraph,
+                                                              Entity entity,
+                                                              Network::NetworkPrediction& predictor);
 
 /// Multi-pawn: one call per entity, each with its pawn id - the intent drives that pawn's
 /// stream and the apply writes that pawn's present. Every pawn ticks at the predictor's
 /// configured step; seed each (both sides alike) before its first tick.
-[[nodiscard]] Network::PredictionTickUVE TickPredictedPawnUVE(IEntityManagerUVE& entityManager,
-                                                              ISceneGraphUVE& sceneGraph,
-                                                              EntityUVE entity,
-                                                              Network::NetworkPredictionUVE& predictor,
-                                                              Network::PredictionPawnUVE pawn);
+[[nodiscard]] Network::PredictionTick TickPredictedPawn(IEntityManager& entityManager,
+                                                              ISceneGraph& sceneGraph,
+                                                              Entity entity,
+                                                              Network::NetworkPrediction& predictor,
+                                                              Network::PredictionPawn pawn);
 
 /// The post-pump mirror: whatever the exchange just did - acked, reconciled, or nothing - the
 /// components now show the predictor's present. False when the apply refuses (see
-/// ApplyPredictedStateUVE); the predictor itself is always fine.
-bool SyncPredictedPawnUVE(IEntityManagerUVE& entityManager, ISceneGraphUVE& sceneGraph,
-                           EntityUVE entity, Network::NetworkPredictionUVE& predictor);
+/// ApplyPredictedState); the predictor itself is always fine.
+bool SyncPredictedPawn(IEntityManager& entityManager, ISceneGraph& sceneGraph,
+                           Entity entity, Network::NetworkPrediction& predictor);
 
 /// The post-pump mirror for `pawn`: whatever the exchange just did - acked, reconciled, or
 /// nothing - the components now show that pawn's present. False when the apply refuses (see
-/// ApplyPredictedStateUVE); the predictor itself is always fine.
-bool SyncPredictedPawnUVE(IEntityManagerUVE& entityManager, ISceneGraphUVE& sceneGraph,
-                           EntityUVE entity, Network::NetworkPredictionUVE& predictor,
-                           Network::PredictionPawnUVE pawn);
+/// ApplyPredictedState); the predictor itself is always fine.
+bool SyncPredictedPawn(IEntityManager& entityManager, ISceneGraph& sceneGraph,
+                           Entity entity, Network::NetworkPrediction& predictor,
+                           Network::PredictionPawn pawn);
 
 } // namespace UVE::Scene

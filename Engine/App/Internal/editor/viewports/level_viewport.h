@@ -15,64 +15,64 @@
 #include "viewport_surface.h"
 
 namespace UVE::Core {
-class EngineCoreUVE;
-class EngineServicesUVE;
+class EngineCore;
+class EngineServices;
 }
 
 namespace UVE::UI {
-class UIFontAtlasUVE;
+class UIFontAtlas;
 }
 
 namespace UVE::App::Viewports {
 
 /// Main Level Editor 3D viewport (`level_viewport`).
 ///
-/// Composes `ViewportSurfaceUVE` and `ViewportSceneInteractionUVE` and exclusively owns all
+/// Composes `ViewportSurface` and `ViewportSceneInteraction` and exclusively owns all
 /// Play-in-Editor engine bindings (UI pointer origin, UI viewport size, mouse cursor capture,
 /// focus provider, Quit Game / Open Level handlers), Play-mode spectator / player-follow camera
 /// control, pre-Play camera pose restoration, and the runtime Game HUD overlay pass.
-class LevelViewportUVE final {
+class LevelViewport final {
 public:
-    LevelViewportUVE(Editor::EditorUVE& editor,
-                     Core::EngineCoreUVE& engine,
-                     Core::EngineServicesUVE& services);
-    ~LevelViewportUVE();
+    LevelViewport(Editor::Editor& editor,
+                     Core::EngineCore& engine,
+                     Core::EngineServices& services);
+    ~LevelViewport();
 
-    LevelViewportUVE(const LevelViewportUVE&) = delete;
-    LevelViewportUVE& operator=(const LevelViewportUVE&) = delete;
-    LevelViewportUVE(LevelViewportUVE&&) = delete;
-    LevelViewportUVE& operator=(LevelViewportUVE&&) = delete;
+    LevelViewport(const LevelViewport&) = delete;
+    LevelViewport& operator=(const LevelViewport&) = delete;
+    LevelViewport(LevelViewport&&) = delete;
+    LevelViewport& operator=(LevelViewport&&) = delete;
 
-    [[nodiscard]] const Core::EngineServicesUVE* ServicesUVE() const noexcept { return m_surface.ServicesUVE(); }
+    [[nodiscard]] const Core::EngineServices* Services() const noexcept { return m_surface.Services(); }
 
-    [[nodiscard]] std::uint64_t RenderUVE(const Math::Vector2UVE& availableSize,
-                                          Math::Vector2UVE& outUsedSize,
-                                          const Editor::EditorUVE::ViewportOverlayStateUVE& overlayState);
+    [[nodiscard]] std::uint64_t Render(const Math::Vector2& availableSize,
+                                          Math::Vector2& outUsedSize,
+                                          const Editor::Editor::ViewportOverlayState& overlayState);
 
 private:
-    struct GameRequestUVE final {
+    struct GameRequest final {
         bool quit = false;
         std::string level;
     };
 
-    void SyncPlayInEditorHooksUVE(const Math::Vector2UVE& availableSize,
-                                  const Editor::EditorViewportInputUVE& input,
+    void SyncPlayInEditorHooks(const Math::Vector2& availableSize,
+                                  const Editor::EditorViewportInput& input,
                                   float renderScale);
-    void SyncPlayCameraPoseUVE();
-    void UpdatePlayCapturedCameraUVE(const Editor::EditorViewportInputUVE& input);
+    void SyncPlayCameraPose();
+    void UpdatePlayCapturedCamera(const Editor::EditorViewportInput& input);
 
-    void EnsureUIFontAtlasTextureUVE(const UI::UIFontAtlasUVE& fontAtlas);
-    [[nodiscard]] bool EnsureUIOverlayResourcesUVE();
-    void DrawUIOverlayUVE(int width, int height, float renderScale);
+    void EnsureUIFontAtlasTexture(const UI::UIFontAtlas& fontAtlas);
+    [[nodiscard]] bool EnsureUIOverlayResources();
+    void DrawUIOverlay(int width, int height, float renderScale);
 
-    Editor::EditorUVE& m_editor;
-    Core::EngineCoreUVE& m_engine;
-    ViewportSurfaceUVE m_surface;
-    ViewportSceneInteractionUVE m_interaction;
+    Editor::Editor& m_editor;
+    Core::EngineCore& m_engine;
+    ViewportSurface m_surface;
+    ViewportSceneInteraction m_interaction;
 
     bool m_pieCallbacksRegistered = false;
-    std::optional<GameRequestUVE> m_gameRequest;
-    std::optional<ViewportCameraPoseUVE> m_poseBeforePlay;
+    std::optional<GameRequest> m_gameRequest;
+    std::optional<ViewportCameraPose> m_poseBeforePlay;
 
     GLuint m_uiFontAtlasTexture = 0U;
     std::optional<univex::render::ShaderProgram> m_uiOverlayProgram;

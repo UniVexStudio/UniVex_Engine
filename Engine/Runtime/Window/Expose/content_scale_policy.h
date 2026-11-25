@@ -9,17 +9,17 @@
 
 namespace UVE::Window {
 
-struct ContentScaleUVE final {
+struct ContentScale final {
     float x = 1.0F;
     float y = 1.0F;
 
-    [[nodiscard]] constexpr bool operator==(const ContentScaleUVE&) const noexcept = default;
+    [[nodiscard]] constexpr bool operator==(const ContentScale&) const noexcept = default;
 };
 
 /// Returns a usable uniform override, or no value when automatic/native scaling is requested.
-[[nodiscard]] inline std::optional<float> ResolveContentScaleOverrideUVE(const double requestedScale) noexcept {
+[[nodiscard]] inline std::optional<float> ResolveContentScaleOverride(const double requestedScale) noexcept {
     if (!std::isfinite(requestedScale) || requestedScale <= 0.0 ||
-        requestedScale > Platform::kMaximumContentScaleOverrideUVE) {
+        requestedScale > Platform::kMaximumContentScaleOverride) {
         return std::nullopt;
     }
     const float scale = static_cast<float>(requestedScale);
@@ -31,7 +31,7 @@ struct ContentScaleUVE final {
 
 /// Native content scale is accepted only when both axes are positive and finite. Invalid samples
 /// fall back atomically to 1x rather than mixing a valid axis with a bad one.
-[[nodiscard]] inline ContentScaleUVE SanitizeNativeContentScaleUVE(const float x, const float y) noexcept {
+[[nodiscard]] inline ContentScale SanitizeNativeContentScale(const float x, const float y) noexcept {
     if (!(x > 0.0F) || !(y > 0.0F) || !std::isfinite(x) || !std::isfinite(y)) {
         return {};
     }

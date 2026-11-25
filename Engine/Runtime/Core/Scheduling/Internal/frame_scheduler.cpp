@@ -17,8 +17,8 @@
 namespace UVE::Core {
 namespace {
 
-[[nodiscard]] std::size_t FindTaskIndexUVE(std::span<const FrameTaskDefinitionUVE> tasks,
-                                           FrameTaskIdUVE taskId) noexcept {
+[[nodiscard]] std::size_t FindTaskIndex(std::span<const FrameTaskDefinition> tasks,
+                                           FrameTaskId taskId) noexcept {
     for (std::size_t index = 0U; index < tasks.size(); ++index) {
         if (tasks[index].id == taskId) {
             return index;
@@ -27,22 +27,22 @@ namespace {
     return tasks.size();
 }
 
-[[nodiscard]] bool IsValidDomainUVE(FrameTaskDomainUVE domain) noexcept {
+[[nodiscard]] bool IsValidDomain(FrameTaskDomain domain) noexcept {
     return static_cast<std::uint8_t>(domain) <
-           static_cast<std::uint8_t>(FrameTaskDomainUVE::Count);
+           static_cast<std::uint8_t>(FrameTaskDomain::Count);
 }
 
-[[nodiscard]] FrameTaskGraphMutationResultUVE MakeMutationErrorUVE(
-    FrameTaskGraphMutationCodeUVE code, FrameTaskIdUVE taskId, const char* message) {
-    return FrameTaskGraphMutationResultUVE{code, taskId, message};
+[[nodiscard]] FrameTaskGraphMutationResult MakeMutationError(
+    FrameTaskGraphMutationCode code, FrameTaskId taskId, const char* message) {
+    return FrameTaskGraphMutationResult{code, taskId, message};
 }
 
-[[nodiscard]] FrameTaskGraphValidationResultUVE MakeValidationErrorUVE(
-    FrameTaskGraphValidationCodeUVE code, FrameTaskIdUVE taskId, const char* message) {
-    return FrameTaskGraphValidationResultUVE{code, taskId, message};
+[[nodiscard]] FrameTaskGraphValidationResult MakeValidationError(
+    FrameTaskGraphValidationCode code, FrameTaskId taskId, const char* message) {
+    return FrameTaskGraphValidationResult{code, taskId, message};
 }
 
-[[nodiscard]] std::string ExceptionMessageUVE() {
+[[nodiscard]] std::string ExceptionMessage() {
     try {
         throw;
     } catch (const std::exception& exception) {
@@ -52,16 +52,16 @@ namespace {
     }
 }
 
-struct SchedulerStateUVE final {
-    explicit SchedulerStateUVE(const FrameTaskGraphUVE& graphIn,
-                               Threading::IThreadPoolUVE& threadPoolIn)
+struct SchedulerState final {
+    explicit SchedulerState(const FrameTaskGraph& graphIn,
+                               Threading::IThreadPool& threadPoolIn)
         : graph(graphIn), threadPool(threadPoolIn),
-          remainingDependencies(graphIn.GetTaskCountUVE(), 0U),
-          scheduled(graphIn.GetTaskCountUVE(), false), completed(graphIn.GetTaskCountUVE(), false),
-          dependents(graphIn.GetTaskCountUVE()) {}
+          remainingDependencies(graphIn.GetTaskCount(), 0U),
+          scheduled(graphIn.GetTaskCount(), false), completed(graphIn.GetTaskCount(), false),
+          dependents(graphIn.GetTaskCount()) {}
 
-    const FrameTaskGraphUVE& graph;
-    Threading::IThreadPoolUVE& threadPool;
+    const FrameTaskGraph& graph;
+    Threading::IThreadPool& threadPool;
     std::vector<std::size_t> remainingDependencies;
     std::vector<bool> scheduled;
     std::vector<bool> completed;
@@ -71,17 +71,17 @@ struct SchedulerStateUVE final {
     std::size_t pendingTaskCount = 0U;
     std::size_t completedTaskCount = 0U;
     bool failed = false;
-    FrameScheduleResultCodeUVE failureCode = FrameScheduleResultCodeUVE::TaskFailed;
+    FrameScheduleResultCode failureCode = FrameScheduleResultCode::TaskFailed;
     std::string failureMessage;
 };
 
-void SubmitTaskUVE(const std::shared_ptr<SchedulerStateUVE>& state, std::size_t taskIndex);
+void SubmitTask(const std::shared_ptr<SchedulerState>& state, std::size_t taskIndex);
 
-void MarkSubmissionFailureUVE(const std::shared_ptr<SchedulerStateUVE>& state,
+void MarkSubmissionFailure(const std::shared_ptr<SchedulerState>& state,
                               const std::string& message) {
     std::lock_guard<std::mutex> lock(state->mutex);
     state->failed = true;
-    state->failureCode = FrameScheduleResultCodeUVE::SubmissionFailed;
+    state->failureCode = FrameScheduleResultCode::SubmissionFailed;
     state->failureMessage = message;
     if (state->pendingTaskCount > 0U) {
         --state->pendingTaskCount;
@@ -89,7 +89,7 @@ void MarkSubmissionFailureUVE(const std::shared_ptr<SchedulerStateUVE>& state,
     state->condition.notify_all();
 }
 
-void CompleteTaskUVE(const std::shared_ptr<SchedulerStateUVE>& state, std::size_t taskIndex,
+void CompleteTask(const std::shared_ptr<SchedulerState>& state, std::size_t taskIndex,
                      bool actionSucceeded, const std::string& actionError) {
     std::vector<std::size_t> readyTasks;
     {
@@ -99,7 +99,7 @@ void CompleteTaskUVE(const std::shared_ptr<SchedulerStateUVE>& state, std::size_
         }
         if (!actionSucceeded) {
             state->failed = true;
-            state->failureCode = FrameScheduleResultCodeUVE::TaskFailed;
+            state->failureCode = FrameScheduleResultCode::TaskFailed;
             state->failureMessage = actionError;
         } else if (!state->failed) {
             state->completed[taskIndex] = true;
@@ -122,11 +122,11 @@ void CompleteTaskUVE(const std::shared_ptr<SchedulerStateUVE>& state, std::size_
     }
 
     for (const std::size_t readyTask : readyTasks) {
-        SubmitTaskUVE(state, readyTask);
+        SubmitTask(state, readyTask);
     }
 }
 
-void ExecuteTaskUVE(const std::shared_ptr<SchedulerStateUVE>& state, std::size_t taskIndex) {
+void ExecuteTask(const std::shared_ptr<SchedulerState>& state, std::size_t taskIndex) {
     {
         std::lock_guard<std::mutex> lock(state->mutex);
         if (state->failed) {
@@ -143,58 +143,58 @@ void ExecuteTaskUVE(const std::shared_ptr<SchedulerStateUVE>& state, std::size_t
     bool actionSucceeded = true;
     std::string actionError;
     try {
-        state->graph.GetTasksUVE()[taskIndex].action();
+        state->graph.GetTasks()[taskIndex].action();
     } catch (...) {
         actionSucceeded = false;
-        actionError = ExceptionMessageUVE();
+        actionError = ExceptionMessage();
     }
-    CompleteTaskUVE(state, taskIndex, actionSucceeded, actionError);
+    CompleteTask(state, taskIndex, actionSucceeded, actionError);
 }
 
-void SubmitTaskUVE(const std::shared_ptr<SchedulerStateUVE>& state, std::size_t taskIndex) {
+void SubmitTask(const std::shared_ptr<SchedulerState>& state, std::size_t taskIndex) {
     try {
-        state->threadPool.SubmitUVE(
-            [state, taskIndex]() { ExecuteTaskUVE(state, taskIndex); });
+        state->threadPool.Submit(
+            [state, taskIndex]() { ExecuteTask(state, taskIndex); });
     } catch (...) {
-        MarkSubmissionFailureUVE(state, ExceptionMessageUVE());
+        MarkSubmissionFailure(state, ExceptionMessage());
     }
 }
 
 } // namespace
 
-FrameTaskGraphMutationResultUVE FrameTaskGraphUVE::AddTaskUVE(FrameTaskDefinitionUVE task) {
-    if (m_tasks.FullUVE()) {
-        return MakeMutationErrorUVE(FrameTaskGraphMutationCodeUVE::CapacityExceeded, task.id,
+FrameTaskGraphMutationResult FrameTaskGraph::AddTask(FrameTaskDefinition task) {
+    if (m_tasks.Full()) {
+        return MakeMutationError(FrameTaskGraphMutationCode::CapacityExceeded, task.id,
                                     "frame task graph exceeds its bounded task capacity");
     }
     if (task.id == 0U) {
-        return MakeMutationErrorUVE(FrameTaskGraphMutationCodeUVE::InvalidId, task.id,
+        return MakeMutationError(FrameTaskGraphMutationCode::InvalidId, task.id,
                                     "frame task identifier must be non-zero");
     }
-    if (FindTaskIndexUVE(m_tasks.AsSpanUVE(), task.id) != m_tasks.SizeUVE()) {
-        return MakeMutationErrorUVE(FrameTaskGraphMutationCodeUVE::DuplicateId, task.id,
+    if (FindTaskIndex(m_tasks.AsSpan(), task.id) != m_tasks.Size()) {
+        return MakeMutationError(FrameTaskGraphMutationCode::DuplicateId, task.id,
                                     "frame task identifier must be unique");
     }
-    if (!IsValidDomainUVE(task.domain)) {
-        return MakeMutationErrorUVE(FrameTaskGraphMutationCodeUVE::InvalidDomain, task.id,
+    if (!IsValidDomain(task.domain)) {
+        return MakeMutationError(FrameTaskGraphMutationCode::InvalidDomain, task.id,
                                     "frame task domain is invalid");
     }
-    if (task.name.empty() || task.name.size() > kMaximumTaskNameBytesUVE) {
-        return MakeMutationErrorUVE(FrameTaskGraphMutationCodeUVE::InvalidName, task.id,
+    if (task.name.empty() || task.name.size() > kMaximumTaskNameBytes) {
+        return MakeMutationError(FrameTaskGraphMutationCode::InvalidName, task.id,
                                     "frame task name is empty or too long");
     }
     if (!task.action) {
-        return MakeMutationErrorUVE(FrameTaskGraphMutationCodeUVE::InvalidAction, task.id,
+        return MakeMutationError(FrameTaskGraphMutationCode::InvalidAction, task.id,
                                     "frame task action must be callable");
     }
-    if (task.dependencies.SizeUVE() > kMaximumDependenciesPerTaskUVE) {
-        return MakeMutationErrorUVE(FrameTaskGraphMutationCodeUVE::TooManyDependencies, task.id,
+    if (task.dependencies.Size() > kMaximumDependenciesPerTask) {
+        return MakeMutationError(FrameTaskGraphMutationCode::TooManyDependencies, task.id,
                                     "frame task dependency list exceeds its bounded capacity");
     }
-    for (std::size_t index = 0U; index < task.dependencies.SizeUVE(); ++index) {
-        const FrameTaskIdUVE dependencyId = task.dependencies[index];
+    for (std::size_t index = 0U; index < task.dependencies.Size(); ++index) {
+        const FrameTaskId dependencyId = task.dependencies[index];
         if (dependencyId == 0U || dependencyId == task.id) {
-            return MakeMutationErrorUVE(FrameTaskGraphMutationCodeUVE::InvalidDependency, task.id,
+            return MakeMutationError(FrameTaskGraphMutationCode::InvalidDependency, task.id,
                                         "frame task dependency identifier is invalid");
         }
         bool duplicateDependency = false;
@@ -205,38 +205,38 @@ FrameTaskGraphMutationResultUVE FrameTaskGraphUVE::AddTaskUVE(FrameTaskDefinitio
             }
         }
         if (duplicateDependency) {
-            return MakeMutationErrorUVE(FrameTaskGraphMutationCodeUVE::DuplicateDependency, task.id,
+            return MakeMutationError(FrameTaskGraphMutationCode::DuplicateDependency, task.id,
                                         "frame task dependency identifiers must be unique");
         }
     }
 
-    m_tasks.PushBackUVE(std::move(task));
-    return FrameTaskGraphMutationResultUVE{FrameTaskGraphMutationCodeUVE::Accepted,
-                                           m_tasks.BackUVE().id, "accepted"};
+    m_tasks.PushBack(std::move(task));
+    return FrameTaskGraphMutationResult{FrameTaskGraphMutationCode::Accepted,
+                                           m_tasks.Back().id, "accepted"};
 }
 
-FrameTaskGraphValidationResultUVE FrameTaskGraphUVE::ValidateUVE() const {
-    if (m_tasks.EmptyUVE()) {
-        return MakeValidationErrorUVE(FrameTaskGraphValidationCodeUVE::EmptyGraph, 0U,
+FrameTaskGraphValidationResult FrameTaskGraph::Validate() const {
+    if (m_tasks.Empty()) {
+        return MakeValidationError(FrameTaskGraphValidationCode::EmptyGraph, 0U,
                                       "frame task graph must contain at least one task");
     }
 
-    for (const FrameTaskDefinitionUVE& task : m_tasks) {
-        if (task.id == 0U || !IsValidDomainUVE(task.domain) || task.name.empty() ||
-            task.name.size() > kMaximumTaskNameBytesUVE || !task.action ||
-            task.dependencies.SizeUVE() > kMaximumDependenciesPerTaskUVE) {
-            return MakeValidationErrorUVE(FrameTaskGraphValidationCodeUVE::InvalidTask, task.id,
+    for (const FrameTaskDefinition& task : m_tasks) {
+        if (task.id == 0U || !IsValidDomain(task.domain) || task.name.empty() ||
+            task.name.size() > kMaximumTaskNameBytes || !task.action ||
+            task.dependencies.Size() > kMaximumDependenciesPerTask) {
+            return MakeValidationError(FrameTaskGraphValidationCode::InvalidTask, task.id,
                                           "frame task contains invalid metadata or action");
         }
-        for (const FrameTaskIdUVE dependencyId : task.dependencies) {
-            if (FindTaskIndexUVE(m_tasks.AsSpanUVE(), dependencyId) == m_tasks.SizeUVE()) {
-                return MakeValidationErrorUVE(FrameTaskGraphValidationCodeUVE::UnknownDependency,
+        for (const FrameTaskId dependencyId : task.dependencies) {
+            if (FindTaskIndex(m_tasks.AsSpan(), dependencyId) == m_tasks.Size()) {
+                return MakeValidationError(FrameTaskGraphValidationCode::UnknownDependency,
                                               task.id, "frame task references an unknown dependency");
             }
         }
     }
 
-    std::vector<std::uint8_t> colors(m_tasks.SizeUVE(), 0U);
+    std::vector<std::uint8_t> colors(m_tasks.Size(), 0U);
     const auto visit = [&](const auto& self, std::size_t taskIndex) -> bool {
         if (colors[taskIndex] == 1U) {
             return false;
@@ -245,9 +245,9 @@ FrameTaskGraphValidationResultUVE FrameTaskGraphUVE::ValidateUVE() const {
             return true;
         }
         colors[taskIndex] = 1U;
-        for (const FrameTaskIdUVE dependencyId : m_tasks[taskIndex].dependencies) {
-            const std::size_t dependencyIndex = FindTaskIndexUVE(m_tasks.AsSpanUVE(), dependencyId);
-            if (dependencyIndex == m_tasks.SizeUVE() || !self(self, dependencyIndex)) {
+        for (const FrameTaskId dependencyId : m_tasks[taskIndex].dependencies) {
+            const std::size_t dependencyIndex = FindTaskIndex(m_tasks.AsSpan(), dependencyId);
+            if (dependencyIndex == m_tasks.Size() || !self(self, dependencyIndex)) {
                 return false;
             }
         }
@@ -255,74 +255,74 @@ FrameTaskGraphValidationResultUVE FrameTaskGraphUVE::ValidateUVE() const {
         return true;
     };
 
-    for (std::size_t index = 0U; index < m_tasks.SizeUVE(); ++index) {
+    for (std::size_t index = 0U; index < m_tasks.Size(); ++index) {
         if (!visit(visit, index)) {
-            return MakeValidationErrorUVE(FrameTaskGraphValidationCodeUVE::CyclicDependency,
+            return MakeValidationError(FrameTaskGraphValidationCode::CyclicDependency,
                                           m_tasks[index].id, "frame task graph contains a cycle");
         }
     }
-    return FrameTaskGraphValidationResultUVE{FrameTaskGraphValidationCodeUVE::Valid, 0U, "valid"};
+    return FrameTaskGraphValidationResult{FrameTaskGraphValidationCode::Valid, 0U, "valid"};
 }
 
-FrameTaskGraphValidationResultUVE FrameTaskGraphUVE::BuildExecutionOrderUVE(
-    std::vector<FrameTaskIdUVE>& outOrder) const {
-    const auto validation = ValidateUVE();
-    if (!validation.IsValidUVE()) return validation;
-    const auto tasks = GetTasksUVE();
+FrameTaskGraphValidationResult FrameTaskGraph::BuildExecutionOrder(
+    std::vector<FrameTaskId>& outOrder) const {
+    const auto validation = Validate();
+    if (!validation.IsValid()) return validation;
+    const auto tasks = GetTasks();
     std::vector<std::vector<std::uint32_t>> edges(tasks.size());
     for (std::size_t index = 0U; index < tasks.size(); ++index) {
         for (auto id : tasks[index].dependencies) {
-            edges[index].push_back(static_cast<std::uint32_t>(FindTaskIndexUVE(tasks, id)));
+            edges[index].push_back(static_cast<std::uint32_t>(FindTaskIndex(tasks, id)));
         }
     }
     std::vector<std::uint32_t> indices;
-    if (Utilities::BuildTopologicalOrderUVE(edges, indices) != Utilities::TopologicalOrderCodeUVE::Ordered) {
-        return MakeValidationErrorUVE(FrameTaskGraphValidationCodeUVE::CyclicDependency, 0U,
+    if (Utilities::BuildTopologicalOrder(edges, indices) != Utilities::TopologicalOrderCode::Ordered) {
+        return MakeValidationError(FrameTaskGraphValidationCode::CyclicDependency, 0U,
                                       "frame dependency planning failed");
     }
-    std::vector<FrameTaskIdUVE> order;
+    std::vector<FrameTaskId> order;
     order.reserve(indices.size());
     for (auto index : indices) order.push_back(tasks[index].id);
     outOrder = std::move(order);
     return validation;
 }
 
-FrameScheduleResultUVE FrameSchedulerUVE::ExecuteSerialUVE(const FrameTaskGraphUVE& graph) {
-    std::vector<FrameTaskIdUVE> order;
-    const auto validation = graph.BuildExecutionOrderUVE(order);
-    if (!validation.IsValidUVE()) {
-        return {FrameScheduleResultCodeUVE::InvalidGraph, 0U, graph.GetTaskCountUVE(), validation.message};
+FrameScheduleResult FrameScheduler::ExecuteSerial(const FrameTaskGraph& graph) {
+    std::vector<FrameTaskId> order;
+    const auto validation = graph.BuildExecutionOrder(order);
+    if (!validation.IsValid()) {
+        return {FrameScheduleResultCode::InvalidGraph, 0U, graph.GetTaskCount(), validation.message};
     }
     std::size_t completed = 0U;
     try {
         for (const auto id : order) {
-            graph.GetTasksUVE()[FindTaskIndexUVE(graph.GetTasksUVE(), id)].action();
+            graph.GetTasks()[FindTaskIndex(graph.GetTasks(), id)].action();
             ++completed;
         }
     } catch (...) {
-        return {FrameScheduleResultCodeUVE::TaskFailed, completed, order.size(), ExceptionMessageUVE()};
+        return {FrameScheduleResultCode::TaskFailed, completed, order.size(), ExceptionMessage()};
     }
-    return {FrameScheduleResultCodeUVE::Completed, completed, order.size(), "completed"};
+    return {FrameScheduleResultCode::Completed, completed, order.size(), "completed"};
 }
 
-FrameScheduleResultUVE FrameSchedulerUVE::ExecuteUVE(const FrameTaskGraphUVE& graph) const {
-    const FrameTaskGraphValidationResultUVE validation = graph.ValidateUVE();
-    if (!validation.IsValidUVE()) {
-        return FrameScheduleResultUVE{FrameScheduleResultCodeUVE::InvalidGraph, 0U,
-                                      graph.GetTaskCountUVE(), validation.message};
+FrameScheduleResult FrameScheduler::Execute(const FrameTaskGraph& graph) const {
+    const FrameTaskGraphValidationResult validation = graph.Validate();
+    if (!validation.IsValid()) {
+        return FrameScheduleResult{FrameScheduleResultCode::InvalidGraph, 0U,
+                                      graph.GetTaskCount(), validation.message};
     }
 
-    const std::shared_ptr<SchedulerStateUVE> state =
-        std::make_shared<SchedulerStateUVE>(graph, m_threadPool);
+    const std::shared_ptr<SchedulerState> state =
+        std::make_shared<SchedulerState>(graph, m_threadPool);
     std::vector<std::size_t> rootTasks;
-    for (std::size_t index = 0U; index < graph.GetTasksUVE().size(); ++index) {
-        const FrameTaskDefinitionUVE& task = graph.GetTasksUVE()[index];
-        state->remainingDependencies[index] = task.dependencies.SizeUVE();
-        for (const FrameTaskIdUVE dependencyId : task.dependencies) {
-            const std::size_t dependencyIndex = FindTaskIndexUVE(graph.GetTasksUVE(), dependencyId);
+    for (std::size_t index = 0U; index < graph.GetTasks().size(); ++index) {
+        const FrameTaskDefinition& task = graph.GetTasks()[index];
+        state->remainingDependencies[index] = task.dependencies.Size();
+        for (const FrameTaskId dependencyId : task.dependencies) {
+            const std::size_t dependencyIndex = FindTaskIndex(graph.GetTasks(), dependencyId);
             state->dependents[dependencyIndex].push_back(index);
         }
-        if (task.dependencies.EmptyUVE()) {
+        if (task.dependencies.Empty()) {
             rootTasks.push_back(index);
         }
     }
@@ -335,16 +335,16 @@ FrameScheduleResultUVE FrameSchedulerUVE::ExecuteUVE(const FrameTaskGraphUVE& gr
         }
     }
     for (const std::size_t rootTask : rootTasks) {
-        SubmitTaskUVE(state, rootTask);
+        SubmitTask(state, rootTask);
     }
 
     std::unique_lock<std::mutex> lock(state->mutex);
     state->condition.wait(lock, [&state]() { return state->pendingTaskCount == 0U; });
-    const FrameScheduleResultCodeUVE resultCode =
-        state->failed ? state->failureCode : FrameScheduleResultCodeUVE::Completed;
+    const FrameScheduleResultCode resultCode =
+        state->failed ? state->failureCode : FrameScheduleResultCode::Completed;
     const std::string message = state->failed ? state->failureMessage : "completed";
-    return FrameScheduleResultUVE{resultCode, state->completedTaskCount,
-                                  graph.GetTaskCountUVE(), message};
+    return FrameScheduleResult{resultCode, state->completedTaskCount,
+                                  graph.GetTaskCount(), message};
 }
 
 } // namespace UVE::Core

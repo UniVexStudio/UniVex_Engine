@@ -9,21 +9,21 @@ namespace UVE::Math {
 
 namespace {
 
-using RowUVE = std::array<float, 4>;
+using Row = std::array<float, 4>;
 
-[[nodiscard]] RowUVE CombineRowsUVE(const RowUVE& a, const RowUVE& b, float sign) noexcept {
-    return RowUVE{a[0] + sign * b[0], a[1] + sign * b[1], a[2] + sign * b[2], a[3] + sign * b[3]};
+[[nodiscard]] Row CombineRows(const Row& a, const Row& b, float sign) noexcept {
+    return Row{a[0] + sign * b[0], a[1] + sign * b[1], a[2] + sign * b[2], a[3] + sign * b[3]};
 }
 
 /// Normalizes `coefficients` (an unnormalized `A*x + B*y + C*z + D` plane equation extracted
-/// from a matrix row combination) into a PlaneUVE with unit normal, matching PlaneUVE's contract.
-[[nodiscard]] PlaneUVE MakePlaneUVE(const RowUVE& coefficients) noexcept {
-    const Vector3UVE normal{coefficients[0], coefficients[1], coefficients[2]};
+/// from a matrix row combination) into a Plane with unit normal, matching Plane's contract.
+[[nodiscard]] Plane MakePlane(const Row& coefficients) noexcept {
+    const Vector3 normal{coefficients[0], coefficients[1], coefficients[2]};
     const float length = std::sqrt(normal.x * normal.x + normal.y * normal.y + normal.z * normal.z);
     if (std::isfinite(length)) {
         const float inverseLength = length > 0.0F ? 1.0F / length : 0.0F;
-        return PlaneUVE{
-            Vector3UVE{normal.x * inverseLength, normal.y * inverseLength, normal.z * inverseLength},
+        return Plane{
+            Vector3{normal.x * inverseLength, normal.y * inverseLength, normal.z * inverseLength},
             coefficients[3] * inverseLength,
         };
     }
@@ -31,8 +31,8 @@ using RowUVE = std::array<float, 4>;
     const double lengthWide = std::hypot(static_cast<double>(normal.x), static_cast<double>(normal.y),
                                          static_cast<double>(normal.z));
     const double inverseLengthWide = lengthWide > 0.0 && std::isfinite(lengthWide) ? 1.0 / lengthWide : 0.0;
-    return PlaneUVE{
-        Vector3UVE{
+    return Plane{
+        Vector3{
             static_cast<float>(static_cast<double>(normal.x) * inverseLengthWide),
             static_cast<float>(static_cast<double>(normal.y) * inverseLengthWide),
             static_cast<float>(static_cast<double>(normal.z) * inverseLengthWide),
@@ -43,29 +43,29 @@ using RowUVE = std::array<float, 4>;
 
 } // namespace
 
-FrustumUVE FrustumUVE::FromViewProjectionUVE(const Matrix4x4UVE& viewProjection) noexcept {
-    const RowUVE row0{viewProjection.m[0][0], viewProjection.m[0][1], viewProjection.m[0][2], viewProjection.m[0][3]};
-    const RowUVE row1{viewProjection.m[1][0], viewProjection.m[1][1], viewProjection.m[1][2], viewProjection.m[1][3]};
-    const RowUVE row2{viewProjection.m[2][0], viewProjection.m[2][1], viewProjection.m[2][2], viewProjection.m[2][3]};
-    const RowUVE row3{viewProjection.m[3][0], viewProjection.m[3][1], viewProjection.m[3][2], viewProjection.m[3][3]};
+Frustum Frustum::FromViewProjection(const Matrix4x4& viewProjection) noexcept {
+    const Row row0{viewProjection.m[0][0], viewProjection.m[0][1], viewProjection.m[0][2], viewProjection.m[0][3]};
+    const Row row1{viewProjection.m[1][0], viewProjection.m[1][1], viewProjection.m[1][2], viewProjection.m[1][3]};
+    const Row row2{viewProjection.m[2][0], viewProjection.m[2][1], viewProjection.m[2][2], viewProjection.m[2][3]};
+    const Row row3{viewProjection.m[3][0], viewProjection.m[3][1], viewProjection.m[3][2], viewProjection.m[3][3]};
 
-    FrustumUVE frustum;
-    frustum.planes[0] = MakePlaneUVE(CombineRowsUVE(row3, row0, 1.0F));  // left:   w + x >= 0
-    frustum.planes[1] = MakePlaneUVE(CombineRowsUVE(row3, row0, -1.0F)); // right:  w - x >= 0
-    frustum.planes[2] = MakePlaneUVE(CombineRowsUVE(row3, row1, 1.0F));  // bottom: w + y >= 0
-    frustum.planes[3] = MakePlaneUVE(CombineRowsUVE(row3, row1, -1.0F)); // top:    w - y >= 0
-    frustum.planes[4] = MakePlaneUVE(row2);                              // near:   z >= 0 ([0,1] depth range)
-    frustum.planes[5] = MakePlaneUVE(CombineRowsUVE(row3, row2, -1.0F)); // far:    w - z >= 0
+    Frustum frustum;
+    frustum.planes[0] = MakePlane(CombineRows(row3, row0, 1.0F));  // left:   w + x >= 0
+    frustum.planes[1] = MakePlane(CombineRows(row3, row0, -1.0F)); // right:  w - x >= 0
+    frustum.planes[2] = MakePlane(CombineRows(row3, row1, 1.0F));  // bottom: w + y >= 0
+    frustum.planes[3] = MakePlane(CombineRows(row3, row1, -1.0F)); // top:    w - y >= 0
+    frustum.planes[4] = MakePlane(row2);                              // near:   z >= 0 ([0,1] depth range)
+    frustum.planes[5] = MakePlane(CombineRows(row3, row2, -1.0F)); // far:    w - z >= 0
     return frustum;
 }
 
-bool FrustumUVE::IntersectsUVE(const AabbUVE& box) const noexcept {
-    const Vector3UVE center = box.GetCenterUVE();
-    const Vector3UVE extents = box.GetExtentsUVE();
-    for (const PlaneUVE& plane : planes) {
+bool Frustum::Intersects(const Aabb& box) const noexcept {
+    const Vector3 center = box.GetCenter();
+    const Vector3 extents = box.GetExtents();
+    for (const Plane& plane : planes) {
         const float radius = extents.x * std::abs(plane.normal.x) + extents.y * std::abs(plane.normal.y) +
                               extents.z * std::abs(plane.normal.z);
-        if (plane.GetSignedDistanceUVE(center) + radius < 0.0F) {
+        if (plane.GetSignedDistance(center) + radius < 0.0F) {
             return false;
         }
     }

@@ -9,7 +9,7 @@
 
 namespace UVE::Pack {
 
-bool ComputeFileIntegrityHashHexUVE(const std::filesystem::path& filePath,
+bool ComputeFileIntegrityHashHex(const std::filesystem::path& filePath,
                                     std::string& outHexDigest) {
     std::ifstream in(filePath, std::ios::binary);
     if (!in) {
@@ -31,14 +31,14 @@ bool ComputeFileIntegrityHashHexUVE(const std::filesystem::path& filePath,
     return true;
 }
 
-PatchManagerUVE::PatchManagerUVE(std::filesystem::path baseContentRoot)
+PatchManager::PatchManager(std::filesystem::path baseContentRoot)
     : m_baseContentRoot(std::move(baseContentRoot)) {}
 
-void PatchManagerUVE::SetBaseContentRootUVE(std::filesystem::path baseContentRoot) {
+void PatchManager::SetBaseContentRoot(std::filesystem::path baseContentRoot) {
     m_baseContentRoot = std::move(baseContentRoot);
 }
 
-bool PatchManagerUVE::MountPatchUVE(MountedPatchEntryUVE entry,
+bool PatchManager::MountPatch(MountedPatchEntry entry,
                                     const std::filesystem::path& manifestFilePath) {
     if (entry.patchId.empty() || entry.rootDirectory.empty()) {
         return false;
@@ -56,7 +56,7 @@ bool PatchManagerUVE::MountPatchUVE(MountedPatchEntryUVE entry,
         const std::filesystem::path checkFile =
             manifestFilePath.empty() ? (entry.rootDirectory / "patch.manifest") : manifestFilePath;
         std::string actualHex;
-        if (!ComputeFileIntegrityHashHexUVE(checkFile, actualHex) ||
+        if (!ComputeFileIntegrityHashHex(checkFile, actualHex) ||
             actualHex != entry.expectedManifestHashHex) {
             return false;
         }
@@ -64,15 +64,15 @@ bool PatchManagerUVE::MountPatchUVE(MountedPatchEntryUVE entry,
 
     m_patches.push_back(std::move(entry));
     std::stable_sort(m_patches.begin(), m_patches.end(),
-                     [](const MountedPatchEntryUVE& a, const MountedPatchEntryUVE& b) {
+                     [](const MountedPatchEntry& a, const MountedPatchEntry& b) {
                          return a.priority > b.priority;
                      });
     return true;
 }
 
-bool PatchManagerUVE::RollbackPatchUVE(const std::string_view patchId) {
+bool PatchManager::RollbackPatch(const std::string_view patchId) {
     const auto it = std::find_if(m_patches.begin(), m_patches.end(),
-                                 [patchId](const MountedPatchEntryUVE& p) { return p.patchId == patchId; });
+                                 [patchId](const MountedPatchEntry& p) { return p.patchId == patchId; });
     if (it == m_patches.end()) {
         return false;
     }
@@ -80,13 +80,13 @@ bool PatchManagerUVE::RollbackPatchUVE(const std::string_view patchId) {
     return true;
 }
 
-std::filesystem::path PatchManagerUVE::ResolvePatchedAssetPathUVE(
+std::filesystem::path PatchManager::ResolvePatchedAssetPath(
     const std::filesystem::path& relativeAssetPath) const {
     if (relativeAssetPath.empty() || relativeAssetPath.is_absolute()) {
         return {};
     }
     std::error_code ec;
-    for (const MountedPatchEntryUVE& patch : m_patches) {
+    for (const MountedPatchEntry& patch : m_patches) {
         const std::filesystem::path candidate = patch.rootDirectory / relativeAssetPath;
         if (std::filesystem::exists(candidate, ec)) {
             return candidate;

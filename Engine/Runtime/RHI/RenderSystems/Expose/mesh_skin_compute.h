@@ -20,10 +20,10 @@ namespace UVE::Render {
 /// no vec3s - a vec3 in std430 is 16-byte aligned and would introduce padding the host struct does
 /// not have.
 ///
-/// Note this is NOT MeshVertexUVE: the UV pair is absent, because skinning does not touch it and
+/// Note this is NOT MeshVertex: the UV pair is absent, because skinning does not touch it and
 /// shipping it to the GPU and back would be pure bandwidth. The host copies UVs across from the
 /// source vertices when it assembles the result.
-struct MeshSkinVertexGpuUVE final {
+struct MeshSkinVertexGpu final {
     float positionX = 0.0F;
     float positionY = 0.0F;
     float positionZ = 0.0F;
@@ -37,25 +37,25 @@ struct MeshSkinVertexGpuUVE final {
 };
 
 /// Four joint indices and four weights, matching the kernel's std430 SkinInfluence and
-/// Asset::MeshSkinningInfluenceUVE field for field.
-struct MeshSkinInfluenceGpuUVE final {
+/// Asset::MeshSkinningInfluence field for field.
+struct MeshSkinInfluenceGpu final {
     std::uint32_t joints[4]{0U, 0U, 0U, 0U};
     float weights[4]{0.0F, 0.0F, 0.0F, 0.0F};
 };
 
-struct MeshSkinParamsGpuUVE final {
+struct MeshSkinParamsGpu final {
     std::int32_t vertexCount = 0;
 };
 
-static_assert(sizeof(MeshSkinVertexGpuUVE) == 10U * sizeof(float),
-              "MeshSkinVertexGpuUVE must match the kernel's std430 SkinVertex exactly");
-static_assert(sizeof(MeshSkinInfluenceGpuUVE) == 4U * sizeof(std::uint32_t) + 4U * sizeof(float),
-              "MeshSkinInfluenceGpuUVE must match the kernel's std430 SkinInfluence exactly");
-static_assert(alignof(MeshSkinVertexGpuUVE) == alignof(float),
+static_assert(sizeof(MeshSkinVertexGpu) == 10U * sizeof(float),
+              "MeshSkinVertexGpu must match the kernel's std430 SkinVertex exactly");
+static_assert(sizeof(MeshSkinInfluenceGpu) == 4U * sizeof(std::uint32_t) + 4U * sizeof(float),
+              "MeshSkinInfluenceGpu must match the kernel's std430 SkinInfluence exactly");
+static_assert(alignof(MeshSkinVertexGpu) == alignof(float),
               "the GPU skin vertex must not acquire alignment padding the shader does not have");
 
-/// A lifetime-to-date account of observable MeshSkinComputeUVE work.
-struct MeshSkinComputeDiagnosticsUVE final {
+/// A lifetime-to-date account of observable MeshSkinCompute work.
+struct MeshSkinComputeDiagnostics final {
     std::uint32_t skinsRequested = 0U;
     std::uint32_t skinsRejected = 0U;
     std::uint64_t verticesSkinned = 0U;
@@ -64,19 +64,19 @@ struct MeshSkinComputeDiagnosticsUVE final {
     std::uint32_t bufferReallocations = 0U;
 };
 
-/// MeshSkinComputeUVE runs Asset::TrySkinMeshUVE on the GPU - the third workload named by ROADMAP
+/// MeshSkinCompute runs Asset::TrySkinMesh on the GPU - the third workload named by ROADMAP
 /// section 2's compute item, and the one that was blocked until CS9 built both the data model and
 /// the CPU authority it is verified against.
 ///
-/// SkinUVE() produces EXACTLY the vertices TrySkinMeshUVE would have produced, bit for bit, and
+/// Skin() produces EXACTLY the vertices TrySkinMesh would have produced, bit for bit, and
 /// the tests assert that with no tolerance. That is only possible because CS9's CPU path
-/// accumulates in float rather than through Math::TransformPointUVE's double - GLSL has no
+/// accumulates in float rather than through Math::TransformPoint's double - GLSL has no
 /// portable float64, and a double CPU path would have left a permanent ~1 ULP disagreement on
-/// roughly one vertex in six. See TransformPointFloatUVE in mesh_skinning_uve.cpp.
+/// roughly one vertex in six. See TransformPointFloat in mesh_skinning_uve.cpp.
 ///
 /// Scope, chosen deliberately: POSE RESOLUTION STAYS ON THE CPU. Walking a parent chain over a
 /// handful of joints is serial work a dispatch cannot accelerate, and keeping
-/// Asset::TryResolvePoseUVE as the single authority means there is one implementation of it to be
+/// Asset::TryResolvePose as the single authority means there is one implementation of it to be
 /// correct. The caller resolves a pose, this skins the vertices.
 ///
 /// Like every other compute workload here this is a synchronous GPU round trip on CS3's documented
@@ -87,25 +87,25 @@ struct MeshSkinComputeDiagnosticsUVE final {
 /// buffer straight into a draw is the natural next step, and CS7's indirect draw is the mechanism.
 ///
 /// Thread-safety: not thread-safe. Main engine thread only, like every other render system.
-class MeshSkinComputeUVE final {
+class MeshSkinCompute final {
 public:
     /// Matches the kernel's `local_size_x`. Dispatches round up; the kernel discards the tail.
-    static constexpr std::uint32_t kWorkgroupSizeUVE = 64U;
+    static constexpr std::uint32_t kWorkgroupSize = 64U;
 
-    MeshSkinComputeUVE(IRenderDeviceUVE& renderDevice, IComputeSystemUVE& computeSystem) noexcept;
-    ~MeshSkinComputeUVE();
+    MeshSkinCompute(IRenderDevice& renderDevice, IComputeSystem& computeSystem) noexcept;
+    ~MeshSkinCompute();
 
-    MeshSkinComputeUVE(const MeshSkinComputeUVE&) = delete;
-    MeshSkinComputeUVE& operator=(const MeshSkinComputeUVE&) = delete;
+    MeshSkinCompute(const MeshSkinCompute&) = delete;
+    MeshSkinCompute& operator=(const MeshSkinCompute&) = delete;
 
     /// Compiles the skinning kernel. Returns false (logging why, filling `outInfoLog` when
-    /// non-null) on a backend without compute support or if the kernel fails to build; IsReadyUVE()
-    /// then stays false and callers should use Asset::TrySkinMeshUVE. Idempotent once ready.
-    [[nodiscard]] bool InitializeUVE(std::string* outInfoLog = nullptr);
+    /// non-null) on a backend without compute support or if the kernel fails to build; IsReady()
+    /// then stays false and callers should use Asset::TrySkinMesh. Idempotent once ready.
+    [[nodiscard]] bool Initialize(std::string* outInfoLog = nullptr);
 
-    [[nodiscard]] bool IsReadyUVE() const noexcept;
+    [[nodiscard]] bool IsReady() const noexcept;
 
-    /// Skins `mesh` with `skinningMatrices` (from Asset::TryResolvePoseUVE) into `outVertices`,
+    /// Skins `mesh` with `skinningMatrices` (from Asset::TryResolvePose) into `outVertices`,
     /// which is resized to match `mesh.vertices`.
     ///
     /// Returns false, leaving `outVertices` untouched, when the system is not ready, the mesh is
@@ -115,31 +115,31 @@ public:
     ///
     /// One consequence worth stating: this call PRESENTS the device to make its own dispatch
     /// execute, for the reason documented on the other compute workloads (Vulkan replays submitted
-    /// recordings in PresentUVE()). That makes it a step to run outside the render frame's own
+    /// recordings in Present()). That makes it a step to run outside the render frame's own
     /// present, not in the middle of one.
-    [[nodiscard]] bool SkinUVE(const Asset::MeshAssetUVE& mesh,
-                               std::span<const Math::Matrix4x4UVE> skinningMatrices,
-                               std::vector<Asset::MeshVertexUVE>& outVertices);
+    [[nodiscard]] bool Skin(const Asset::MeshAsset& mesh,
+                               std::span<const Math::Matrix4x4> skinningMatrices,
+                               std::vector<Asset::MeshVertex>& outVertices);
 
-    [[nodiscard]] const MeshSkinComputeDiagnosticsUVE& GetDiagnosticsUVE() const noexcept;
+    [[nodiscard]] const MeshSkinComputeDiagnostics& GetDiagnostics() const noexcept;
 
 private:
-    [[nodiscard]] bool EnsureBufferCapacityUVE(std::size_t vertexCount, std::size_t jointCount);
+    [[nodiscard]] bool EnsureBufferCapacity(std::size_t vertexCount, std::size_t jointCount);
 
-    IRenderDeviceUVE& m_device;
-    IComputeSystemUVE& m_computeSystem;
-    PipelineHandleUVE m_program = kInvalidPipelineHandleUVE;
-    BufferHandleUVE m_inputVertexBuffer = kInvalidBufferHandleUVE;
-    BufferHandleUVE m_influenceBuffer = kInvalidBufferHandleUVE;
-    BufferHandleUVE m_matrixBuffer = kInvalidBufferHandleUVE;
-    BufferHandleUVE m_outputVertexBuffer = kInvalidBufferHandleUVE;
-    BufferHandleUVE m_paramBuffer = kInvalidBufferHandleUVE;
+    IRenderDevice& m_device;
+    IComputeSystem& m_computeSystem;
+    PipelineHandle m_program = kInvalidPipelineHandle;
+    BufferHandle m_inputVertexBuffer = kInvalidBufferHandle;
+    BufferHandle m_influenceBuffer = kInvalidBufferHandle;
+    BufferHandle m_matrixBuffer = kInvalidBufferHandle;
+    BufferHandle m_outputVertexBuffer = kInvalidBufferHandle;
+    BufferHandle m_paramBuffer = kInvalidBufferHandle;
     std::size_t m_bufferCapacityVertices = 0U;
     std::size_t m_bufferCapacityJoints = 0U;
-    std::vector<MeshSkinVertexGpuUVE> m_vertexScratch;
-    std::vector<MeshSkinInfluenceGpuUVE> m_influenceScratch;
+    std::vector<MeshSkinVertexGpu> m_vertexScratch;
+    std::vector<MeshSkinInfluenceGpu> m_influenceScratch;
     std::vector<float> m_matrixScratch;
-    MeshSkinComputeDiagnosticsUVE m_diagnostics;
+    MeshSkinComputeDiagnostics m_diagnostics;
 };
 
 } // namespace UVE::Render

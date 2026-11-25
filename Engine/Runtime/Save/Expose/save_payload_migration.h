@@ -12,14 +12,14 @@
 
 namespace UVE::Save {
 
-inline constexpr std::size_t kMaximumSaveMigrationReasonBytesUVE = 256U;
-inline constexpr std::size_t kMaximumSaveMigrationPayloadBytesUVE = 64U * 1024U * 1024U;
-inline constexpr std::size_t kMaximumSaveMigrationTransformsUVE = 32U;
+inline constexpr std::size_t kMaximumSaveMigrationReasonBytes = 256U;
+inline constexpr std::size_t kMaximumSaveMigrationPayloadBytes = 64U * 1024U * 1024U;
+inline constexpr std::size_t kMaximumSaveMigrationTransforms = 32U;
 
-using SavePayloadMigrationTransformUVE =
+using SavePayloadMigrationTransform =
     std::function<bool(std::vector<std::byte>& payload, std::string& failureReason)>;
 
-enum class SaveMigrationStatusUVE : std::uint8_t {
+enum class SaveMigrationStatus : std::uint8_t {
     NotRequired = 0,
     Migrated = 1,
     UnsupportedSourceVersion = 2,
@@ -27,19 +27,19 @@ enum class SaveMigrationStatusUVE : std::uint8_t {
     InvalidPayload = 4,
 };
 
-struct SaveMigrationDiagnosticsUVE final {
-    SaveMigrationStatusUVE status = SaveMigrationStatusUVE::NotRequired;
-    std::uint32_t sourceSchemaVersion = kCurrentSavePayloadSchemaVersionUVE;
-    std::uint32_t targetSchemaVersion = kCurrentSavePayloadSchemaVersionUVE;
+struct SaveMigrationDiagnostics final {
+    SaveMigrationStatus status = SaveMigrationStatus::NotRequired;
+    std::uint32_t sourceSchemaVersion = kCurrentSavePayloadSchemaVersion;
+    std::uint32_t targetSchemaVersion = kCurrentSavePayloadSchemaVersion;
     std::size_t appliedStepCount = 0U;
     std::string reason;
 
-    [[nodiscard]] bool SucceededUVE() const noexcept {
-        return status == SaveMigrationStatusUVE::NotRequired || status == SaveMigrationStatusUVE::Migrated;
+    [[nodiscard]] bool Succeeded() const noexcept {
+        return status == SaveMigrationStatus::NotRequired || status == SaveMigrationStatus::Migrated;
     }
 };
 
-enum class SaveMigrationRegistrationCodeUVE : std::uint8_t {
+enum class SaveMigrationRegistrationCode : std::uint8_t {
     Accepted = 0,
     InvalidVersionRange,
     MissingTransform,
@@ -47,46 +47,46 @@ enum class SaveMigrationRegistrationCodeUVE : std::uint8_t {
     CapacityExceeded,
 };
 
-struct SaveMigrationRegistrationResultUVE final {
-    SaveMigrationRegistrationCodeUVE code = SaveMigrationRegistrationCodeUVE::Accepted;
+struct SaveMigrationRegistrationResult final {
+    SaveMigrationRegistrationCode code = SaveMigrationRegistrationCode::Accepted;
     std::string message;
 
-    [[nodiscard]] bool IsAcceptedUVE() const noexcept {
-        return code == SaveMigrationRegistrationCodeUVE::Accepted;
+    [[nodiscard]] bool IsAccepted() const noexcept {
+        return code == SaveMigrationRegistrationCode::Accepted;
     }
 };
 
-class SavePayloadMigrationRegistryUVE final {
+class SavePayloadMigrationRegistry final {
 public:
-    SavePayloadMigrationRegistryUVE() = default;
-    SavePayloadMigrationRegistryUVE(const SavePayloadMigrationRegistryUVE&) = delete;
-    SavePayloadMigrationRegistryUVE& operator=(const SavePayloadMigrationRegistryUVE&) = delete;
+    SavePayloadMigrationRegistry() = default;
+    SavePayloadMigrationRegistry(const SavePayloadMigrationRegistry&) = delete;
+    SavePayloadMigrationRegistry& operator=(const SavePayloadMigrationRegistry&) = delete;
 
-    [[nodiscard]] SaveMigrationRegistrationResultUVE RegisterUVE(
+    [[nodiscard]] SaveMigrationRegistrationResult Register(
         std::uint32_t sourceSchemaVersion, std::uint32_t targetSchemaVersion,
-        SavePayloadMigrationTransformUVE transform);
+        SavePayloadMigrationTransform transform);
 
-    [[nodiscard]] SaveMigrationDiagnosticsUVE MigrateUVE(
+    [[nodiscard]] SaveMigrationDiagnostics Migrate(
         std::uint32_t sourceSchemaVersion, std::uint32_t targetSchemaVersion,
         std::vector<std::byte>& payload) const;
 
-    [[nodiscard]] std::size_t GetTransformCountUVE() const noexcept;
+    [[nodiscard]] std::size_t GetTransformCount() const noexcept;
 
 private:
-    struct EntryUVE final {
+    struct Entry final {
         std::uint32_t sourceSchemaVersion = 0U;
         std::uint32_t targetSchemaVersion = 0U;
-        SavePayloadMigrationTransformUVE transform;
+        SavePayloadMigrationTransform transform;
     };
 
-    std::vector<EntryUVE> m_entries;
+    std::vector<Entry> m_entries;
 };
 
 /// Bounded schema-dispatch seam for the fixed `.uvsave` payload. Current-version payloads pass
 /// through unchanged; registered transforms can be composed through a deterministic shortest path
 /// of at most the bounded registry capacity, with failure-atomic staging before scene deserialization.
 /// Compression, encryption, cloud sync, and gameplay-domain transforms remain outside this seam.
-[[nodiscard]] SaveMigrationDiagnosticsUVE MigrateSavePayloadUVE(std::uint32_t sourceSchemaVersion,
+[[nodiscard]] SaveMigrationDiagnostics MigrateSavePayload(std::uint32_t sourceSchemaVersion,
                                                                std::uint32_t targetSchemaVersion,
                                                                std::vector<std::byte>& payload);
 

@@ -4,7 +4,7 @@
 //
 //     uvsc --host <object.uvhost> --out <script.uvs.cpp> <script.uvs>
 //
-// The host file describes what the object offers (see DescribedHostUVE). Problems are printed as
+// The host file describes what the object offers (see DescribedHost). Problems are printed as
 // `file:line:column: message` and the exit code is non-zero; nothing is written then.
 
 #include <filesystem>
@@ -20,7 +20,7 @@
 
 namespace {
 
-[[nodiscard]] std::optional<std::string> ReadFileUVE(const std::filesystem::path& path) {
+[[nodiscard]] std::optional<std::string> ReadFile(const std::filesystem::path& path) {
     std::ifstream file(path, std::ios::binary);
     if (!file) {
         return std::nullopt;
@@ -30,7 +30,7 @@ namespace {
     return text.str();
 }
 
-int UsageUVE() {
+int Usage() {
     std::cerr << "usage: uvsc --host <object.uvhost> --out <script.uvs.cpp> <script.uvs>\n";
     return 2;
 }
@@ -50,36 +50,36 @@ int main(const int argc, char** const argv) {
         } else if (!argument.starts_with("--") && scriptPath.empty()) {
             scriptPath = argument;
         } else {
-            return UsageUVE();
+            return Usage();
         }
     }
     if (hostPath.empty() || outPath.empty() || scriptPath.empty()) {
-        return UsageUVE();
+        return Usage();
     }
 
-    const std::optional<std::string> hostText = ReadFileUVE(hostPath);
-    const std::optional<std::string> source = ReadFileUVE(scriptPath);
+    const std::optional<std::string> hostText = ReadFile(hostPath);
+    const std::optional<std::string> source = ReadFile(scriptPath);
     if (!hostText.has_value() || !source.has_value()) {
         std::cerr << (hostText.has_value() ? scriptPath : hostPath).string() << ": cannot be read\n";
         return 1;
     }
     std::string hostError;
-    const std::optional<UVE::Blueprint::DescribedHostUVE> host = UVE::Blueprint::DescribedHostUVE::ParseUVE(*hostText, hostError);
+    const std::optional<UVE::Blueprint::DescribedHost> host = UVE::Blueprint::DescribedHost::Parse(*hostText, hostError);
     if (!host.has_value()) {
         std::cerr << hostPath.string() << ": " << hostError << "\n";
         return 1;
     }
-    const UVE::Blueprint::CompileResultUVE compiled = UVE::Blueprint::CompileUVScriptSourceUVE(*source, *host);
-    if (!compiled.IsSuccessUVE()) {
-        for (const UVE::Blueprint::DiagnosticUVE& diagnostic : compiled.diagnostics) {
+    const UVE::Blueprint::CompileResult compiled = UVE::Blueprint::CompileUVScriptSource(*source, *host);
+    if (!compiled.IsSuccess()) {
+        for (const UVE::Blueprint::Diagnostic& diagnostic : compiled.diagnostics) {
             std::cerr << scriptPath.string() << ":" << diagnostic.at.line << ":" << diagnostic.at.column << ": "
                       << diagnostic.message << "\n";
         }
         return 1;
     }
-    const std::string cpp = UVE::Blueprint::GenerateUVScriptNativeCppUVE(*compiled.program, scriptPath.filename().string());
+    const std::string cpp = UVE::Blueprint::GenerateUVScriptNativeCpp(*compiled.program, scriptPath.filename().string());
     // Written only when it changed, so an unchanged script does not trigger a recompile.
-    if (ReadFileUVE(outPath) == cpp) {
+    if (ReadFile(outPath) == cpp) {
         return 0;
     }
     std::filesystem::create_directories(outPath.parent_path().empty() ? std::filesystem::path{"."} : outPath.parent_path());

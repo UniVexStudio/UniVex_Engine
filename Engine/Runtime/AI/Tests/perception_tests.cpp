@@ -10,15 +10,15 @@ namespace UVE::Scene::Tests {
 
 namespace {
 
-EntityUVE MakeEntityUVE(std::uint32_t id) {
-    EntityUVE entity;
+Entity MakeEntity(std::uint32_t id) {
+    Entity entity;
     entity.index = id;
     entity.generation = 1U;
     return entity;
 }
 
-PerceptionComponentUVE MakeSensorUVE() {
-    PerceptionComponentUVE sensor;
+PerceptionComponent MakeSensor() {
+    PerceptionComponent sensor;
     sensor.watchedTag = "enemy";
     sensor.sightRangeMetres = 20.0F;
     sensor.sightFieldOfViewDegrees = 90.0F;
@@ -28,186 +28,186 @@ PerceptionComponentUVE MakeSensorUVE() {
 
 } // namespace
 
-TEST(PerceptionUVETest, Sight_SeesNearestUnoccludedAndAsksNearestFirst) {
-    const PerceptionComponentUVE sensor = MakeSensorUVE();
-    const std::vector<SightTargetUVE> candidates{
-        SightTargetUVE{MakeEntityUVE(1U), Math::Vector3UVE{0.0F, 0.0F, -4.0F}},
-        SightTargetUVE{MakeEntityUVE(2U), Math::Vector3UVE{3.0F, 0.0F, -4.0F}},
-        SightTargetUVE{MakeEntityUVE(3U), Math::Vector3UVE{0.0F, 0.0F, -50.0F}},
+TEST(PerceptionTest, Sight_SeesNearestUnoccludedAndAsksNearestFirst) {
+    const PerceptionComponent sensor = MakeSensor();
+    const std::vector<SightTarget> candidates{
+        SightTarget{MakeEntity(1U), Math::Vector3{0.0F, 0.0F, -4.0F}},
+        SightTarget{MakeEntity(2U), Math::Vector3{3.0F, 0.0F, -4.0F}},
+        SightTarget{MakeEntity(3U), Math::Vector3{0.0F, 0.0F, -50.0F}},
     };
-    std::vector<EntityUVE> asked;
-    const SightOcclusionQueryUVE occluded =
-        [&asked](const Math::Vector3UVE&, const Math::Vector3UVE&, const EntityUVE target) {
+    std::vector<Entity> asked;
+    const SightOcclusionQuery occluded =
+        [&asked](const Math::Vector3&, const Math::Vector3&, const Entity target) {
             asked.push_back(target);
-            return target == MakeEntityUVE(1U);
+            return target == MakeEntity(1U);
         };
-    const SightResultUVE result =
-        SenseSightUVE(Math::Vector3UVE{}, Math::Vector3UVE{0.0F, 0.0F, -1.0F}, sensor, candidates, occluded);
+    const SightResult result =
+        SenseSight(Math::Vector3{}, Math::Vector3{0.0F, 0.0F, -1.0F}, sensor, candidates, occluded);
     EXPECT_TRUE(result.visible);
-    EXPECT_EQ(result.entity, MakeEntityUVE(2U));
+    EXPECT_EQ(result.entity, MakeEntity(2U));
     EXPECT_FLOAT_EQ(result.distance01, 0.25F);
-    EXPECT_EQ(result.position, Math::Vector3UVE(3.0F, 0.0F, -4.0F));
-    EXPECT_EQ(asked, (std::vector<EntityUVE>{MakeEntityUVE(1U), MakeEntityUVE(2U)}));
+    EXPECT_EQ(result.position, Math::Vector3(3.0F, 0.0F, -4.0F));
+    EXPECT_EQ(asked, (std::vector<Entity>{MakeEntity(1U), MakeEntity(2U)}));
 }
 
-TEST(PerceptionUVETest, Sight_RespectsConeOmnidirectionalAndContact) {
-    const PerceptionComponentUVE sensor = MakeSensorUVE();
-    const std::vector<SightTargetUVE> behind{
-        SightTargetUVE{MakeEntityUVE(1U), Math::Vector3UVE{0.0F, 0.0F, 5.0F}},
+TEST(PerceptionTest, Sight_RespectsConeOmnidirectionalAndContact) {
+    const PerceptionComponent sensor = MakeSensor();
+    const std::vector<SightTarget> behind{
+        SightTarget{MakeEntity(1U), Math::Vector3{0.0F, 0.0F, 5.0F}},
     };
-    const SightOcclusionQueryUVE clear =
-        [](const Math::Vector3UVE&, const Math::Vector3UVE&, const EntityUVE) { return false; };
-    EXPECT_FALSE(SenseSightUVE(Math::Vector3UVE{}, Math::Vector3UVE{0.0F, 0.0F, -1.0F}, sensor, behind, clear)
+    const SightOcclusionQuery clear =
+        [](const Math::Vector3&, const Math::Vector3&, const Entity) { return false; };
+    EXPECT_FALSE(SenseSight(Math::Vector3{}, Math::Vector3{0.0F, 0.0F, -1.0F}, sensor, behind, clear)
                      .visible);
 
-    PerceptionComponentUVE eyesBehind = sensor;
+    PerceptionComponent eyesBehind = sensor;
     eyesBehind.sightFieldOfViewDegrees = 360.0F;
-    const SightResultUVE seen =
-        SenseSightUVE(Math::Vector3UVE{}, Math::Vector3UVE{0.0F, 0.0F, -1.0F}, eyesBehind, behind, clear);
+    const SightResult seen =
+        SenseSight(Math::Vector3{}, Math::Vector3{0.0F, 0.0F, -1.0F}, eyesBehind, behind, clear);
     EXPECT_TRUE(seen.visible);
     EXPECT_FLOAT_EQ(seen.distance01, 0.25F);
 
-    const std::vector<SightTargetUVE> contact{
-        SightTargetUVE{MakeEntityUVE(1U), Math::Vector3UVE{}},
+    const std::vector<SightTarget> contact{
+        SightTarget{MakeEntity(1U), Math::Vector3{}},
     };
-    const SightResultUVE felt =
-        SenseSightUVE(Math::Vector3UVE{}, Math::Vector3UVE{0.0F, 0.0F, -1.0F}, sensor, contact, clear);
+    const SightResult felt =
+        SenseSight(Math::Vector3{}, Math::Vector3{0.0F, 0.0F, -1.0F}, sensor, contact, clear);
     EXPECT_TRUE(felt.visible);
     EXPECT_FLOAT_EQ(felt.distance01, 0.0F);
 }
 
-TEST(PerceptionUVETest, Sight_SkipsOcclusionWhenDisabled) {
-    PerceptionComponentUVE sensor = MakeSensorUVE();
+TEST(PerceptionTest, Sight_SkipsOcclusionWhenDisabled) {
+    PerceptionComponent sensor = MakeSensor();
     sensor.requiresLineOfSight = false;
-    const std::vector<SightTargetUVE> candidates{
-        SightTargetUVE{MakeEntityUVE(1U), Math::Vector3UVE{0.0F, 0.0F, -9.0F}},
-        SightTargetUVE{MakeEntityUVE(2U), Math::Vector3UVE{0.0F, 0.0F, -4.0F}},
+    const std::vector<SightTarget> candidates{
+        SightTarget{MakeEntity(1U), Math::Vector3{0.0F, 0.0F, -9.0F}},
+        SightTarget{MakeEntity(2U), Math::Vector3{0.0F, 0.0F, -4.0F}},
     };
     bool asked = false;
-    const SightOcclusionQueryUVE never =
-        [&asked](const Math::Vector3UVE&, const Math::Vector3UVE&, const EntityUVE) {
+    const SightOcclusionQuery never =
+        [&asked](const Math::Vector3&, const Math::Vector3&, const Entity) {
             asked = true;
             return true;
         };
-    const SightResultUVE result =
-        SenseSightUVE(Math::Vector3UVE{}, Math::Vector3UVE{0.0F, 0.0F, -1.0F}, sensor, candidates, never);
+    const SightResult result =
+        SenseSight(Math::Vector3{}, Math::Vector3{0.0F, 0.0F, -1.0F}, sensor, candidates, never);
     EXPECT_TRUE(result.visible);
-    EXPECT_EQ(result.entity, MakeEntityUVE(2U));
+    EXPECT_EQ(result.entity, MakeEntity(2U));
     EXPECT_FALSE(asked);
 }
 
-TEST(PerceptionUVETest, Hearing_HearsLoudestWithFalloff) {
-    const std::vector<HeardNoiseUVE> noises{
-        HeardNoiseUVE{Math::Vector3UVE{5.0F, 0.0F, 0.0F}, 1.0F},
-        HeardNoiseUVE{Math::Vector3UVE{1.0F, 0.0F, 0.0F}, 0.5F},
-        HeardNoiseUVE{Math::Vector3UVE{9.0F, 0.0F, 0.0F}, 0.5F},
-        HeardNoiseUVE{Math::Vector3UVE{1.0F, 0.0F, 0.0F}, 0.0F},
+TEST(PerceptionTest, Hearing_HearsLoudestWithFalloff) {
+    const std::vector<HeardNoise> noises{
+        HeardNoise{Math::Vector3{5.0F, 0.0F, 0.0F}, 1.0F},
+        HeardNoise{Math::Vector3{1.0F, 0.0F, 0.0F}, 0.5F},
+        HeardNoise{Math::Vector3{9.0F, 0.0F, 0.0F}, 0.5F},
+        HeardNoise{Math::Vector3{1.0F, 0.0F, 0.0F}, 0.0F},
     };
-    const HearingResultUVE result = SenseHearingUVE(Math::Vector3UVE{}, 10.0F, noises);
+    const HearingResult result = SenseHearing(Math::Vector3{}, 10.0F, noises);
     EXPECT_FLOAT_EQ(result.loudness, 0.5F);
-    EXPECT_EQ(result.position, Math::Vector3UVE(5.0F, 0.0F, 0.0F));
+    EXPECT_EQ(result.position, Math::Vector3(5.0F, 0.0F, 0.0F));
 
-    EXPECT_FLOAT_EQ(SenseHearingUVE(Math::Vector3UVE{}, 0.0F, noises).loudness, 0.0F);
-    EXPECT_FLOAT_EQ(SenseHearingUVE(Math::Vector3UVE{}, 10.0F, {}).loudness, 0.0F);
+    EXPECT_FLOAT_EQ(SenseHearing(Math::Vector3{}, 0.0F, noises).loudness, 0.0F);
+    EXPECT_FLOAT_EQ(SenseHearing(Math::Vector3{}, 10.0F, {}).loudness, 0.0F);
 }
 
-TEST(PerceptionUVETest, Write_KeepsLastPositionWhenUnseen) {
-    BlackboardComponentUVE board;
-    SightResultUVE sight;
+TEST(PerceptionTest, Write_KeepsLastPositionWhenUnseen) {
+    BlackboardComponent board;
+    SightResult sight;
     sight.visible = true;
     sight.distance01 = 0.3F;
-    sight.position = Math::Vector3UVE{1.0F, 2.0F, 3.0F};
-    sight.entity = MakeEntityUVE(7U);
-    HearingResultUVE hearing;
+    sight.position = Math::Vector3{1.0F, 2.0F, 3.0F};
+    sight.entity = MakeEntity(7U);
+    HearingResult hearing;
     hearing.loudness = 0.5F;
-    hearing.position = Math::Vector3UVE{4.0F, 5.0F, 6.0F};
-    WritePerceptionResultsUVE(board, "enemy", sight, hearing);
-    EXPECT_FLOAT_EQ(GetBlackboardValueUVE(board, "sight.enemy.visible"), 1.0F);
-    EXPECT_FLOAT_EQ(GetBlackboardValueUVE(board, "sight.enemy.distance01"), 0.3F);
-    EXPECT_EQ(GetBlackboardVectorUVE(board, "sight.enemy.position"),
-              Math::Vector3UVE(1.0F, 2.0F, 3.0F));
-    EXPECT_FLOAT_EQ(GetBlackboardValueUVE(board, "hearing.loudest"), 0.5F);
+    hearing.position = Math::Vector3{4.0F, 5.0F, 6.0F};
+    WritePerceptionResults(board, "enemy", sight, hearing);
+    EXPECT_FLOAT_EQ(GetBlackboardValue(board, "sight.enemy.visible"), 1.0F);
+    EXPECT_FLOAT_EQ(GetBlackboardValue(board, "sight.enemy.distance01"), 0.3F);
+    EXPECT_EQ(GetBlackboardVector(board, "sight.enemy.position"),
+              Math::Vector3(1.0F, 2.0F, 3.0F));
+    EXPECT_FLOAT_EQ(GetBlackboardValue(board, "hearing.loudest"), 0.5F);
 
-    WritePerceptionResultsUVE(board, "enemy", SightResultUVE{}, HearingResultUVE{});
-    EXPECT_FLOAT_EQ(GetBlackboardValueUVE(board, "sight.enemy.visible"), 0.0F);
-    EXPECT_FLOAT_EQ(GetBlackboardValueUVE(board, "sight.enemy.distance01"), 0.3F);
-    EXPECT_EQ(GetBlackboardVectorUVE(board, "sight.enemy.position"),
-              Math::Vector3UVE(1.0F, 2.0F, 3.0F));
-    EXPECT_FLOAT_EQ(GetBlackboardValueUVE(board, "hearing.loudest"), 0.0F);
-    EXPECT_EQ(GetBlackboardVectorUVE(board, "hearing.position"),
-              Math::Vector3UVE(4.0F, 5.0F, 6.0F));
+    WritePerceptionResults(board, "enemy", SightResult{}, HearingResult{});
+    EXPECT_FLOAT_EQ(GetBlackboardValue(board, "sight.enemy.visible"), 0.0F);
+    EXPECT_FLOAT_EQ(GetBlackboardValue(board, "sight.enemy.distance01"), 0.3F);
+    EXPECT_EQ(GetBlackboardVector(board, "sight.enemy.position"),
+              Math::Vector3(1.0F, 2.0F, 3.0F));
+    EXPECT_FLOAT_EQ(GetBlackboardValue(board, "hearing.loudest"), 0.0F);
+    EXPECT_EQ(GetBlackboardVector(board, "hearing.position"),
+              Math::Vector3(4.0F, 5.0F, 6.0F));
 }
 
-TEST(PerceptionUVETest, Decay_ClampsAtZeroAndHonoursStillness) {
-    NoiseEmitterComponentUVE bang;
+TEST(PerceptionTest, Decay_ClampsAtZeroAndHonoursStillness) {
+    NoiseEmitterComponent bang;
     bang.loudness = 1.0F;
     bang.decayPerSecond = 0.5F;
-    DecayNoiseEmitterUVE(bang, 1.0F);
+    DecayNoiseEmitter(bang, 1.0F);
     EXPECT_FLOAT_EQ(bang.loudness, 0.5F);
-    DecayNoiseEmitterUVE(bang, 5.0F);
+    DecayNoiseEmitter(bang, 5.0F);
     EXPECT_FLOAT_EQ(bang.loudness, 0.0F);
 
-    NoiseEmitterComponentUVE drone;
+    NoiseEmitterComponent drone;
     drone.loudness = 0.7F;
     drone.decayPerSecond = 0.0F;
-    DecayNoiseEmitterUVE(drone, 10.0F);
+    DecayNoiseEmitter(drone, 10.0F);
     EXPECT_FLOAT_EQ(drone.loudness, 0.7F);
 
-    NoiseEmitterComponentUVE frozen = bang;
+    NoiseEmitterComponent frozen = bang;
     frozen.loudness = 0.4F;
-    DecayNoiseEmitterUVE(frozen, 0.0F);
-    DecayNoiseEmitterUVE(frozen, -1.0F);
-    DecayNoiseEmitterUVE(frozen, std::numeric_limits<float>::quiet_NaN());
+    DecayNoiseEmitter(frozen, 0.0F);
+    DecayNoiseEmitter(frozen, -1.0F);
+    DecayNoiseEmitter(frozen, std::numeric_limits<float>::quiet_NaN());
     EXPECT_FLOAT_EQ(frozen.loudness, 0.4F);
 }
 
-TEST(PerceptionUVETest, BlackboardVectors_SetGetRemove) {
-    BlackboardComponentUVE board;
-    EXPECT_EQ(GetBlackboardVectorUVE(board, "missing"), Math::Vector3UVE{});
-    ASSERT_TRUE(SetBlackboardVectorUVE(board, "home", Math::Vector3UVE{1.0F, 2.0F, 3.0F}));
-    EXPECT_EQ(GetBlackboardVectorUVE(board, "home"), Math::Vector3UVE(1.0F, 2.0F, 3.0F));
-    ASSERT_TRUE(SetBlackboardVectorUVE(board, "home", Math::Vector3UVE{4.0F, 5.0F, 6.0F}));
-    EXPECT_EQ(GetBlackboardVectorUVE(board, "home"), Math::Vector3UVE(4.0F, 5.0F, 6.0F));
-    EXPECT_FALSE(SetBlackboardVectorUVE(board, "", Math::Vector3UVE{}));
-    EXPECT_FALSE(SetBlackboardVectorUVE(
-        board, "nan", Math::Vector3UVE{std::numeric_limits<float>::quiet_NaN(), 0.0F, 0.0F}));
-    EXPECT_FALSE(RemoveBlackboardVectorUVE(board, "missing"));
-    EXPECT_TRUE(RemoveBlackboardVectorUVE(board, "home"));
+TEST(PerceptionTest, BlackboardVectors_SetGetRemove) {
+    BlackboardComponent board;
+    EXPECT_EQ(GetBlackboardVector(board, "missing"), Math::Vector3{});
+    ASSERT_TRUE(SetBlackboardVector(board, "home", Math::Vector3{1.0F, 2.0F, 3.0F}));
+    EXPECT_EQ(GetBlackboardVector(board, "home"), Math::Vector3(1.0F, 2.0F, 3.0F));
+    ASSERT_TRUE(SetBlackboardVector(board, "home", Math::Vector3{4.0F, 5.0F, 6.0F}));
+    EXPECT_EQ(GetBlackboardVector(board, "home"), Math::Vector3(4.0F, 5.0F, 6.0F));
+    EXPECT_FALSE(SetBlackboardVector(board, "", Math::Vector3{}));
+    EXPECT_FALSE(SetBlackboardVector(
+        board, "nan", Math::Vector3{std::numeric_limits<float>::quiet_NaN(), 0.0F, 0.0F}));
+    EXPECT_FALSE(RemoveBlackboardVector(board, "missing"));
+    EXPECT_TRUE(RemoveBlackboardVector(board, "home"));
     EXPECT_TRUE(board.vectors.empty());
 }
 
-TEST(PerceptionUVETest, Validity_RejectsBrokenSensorsEmittersAndVectors) {
-    const PerceptionComponentUVE good = MakeSensorUVE();
-    EXPECT_TRUE(IsPerceptionComponentValidUVE(good));
+TEST(PerceptionTest, Validity_RejectsBrokenSensorsEmittersAndVectors) {
+    const PerceptionComponent good = MakeSensor();
+    EXPECT_TRUE(IsPerceptionComponentValid(good));
 
-    PerceptionComponentUVE noTag = good;
+    PerceptionComponent noTag = good;
     noTag.watchedTag.clear();
-    EXPECT_FALSE(IsPerceptionComponentValidUVE(noTag));
+    EXPECT_FALSE(IsPerceptionComponentValid(noTag));
 
-    PerceptionComponentUVE longTag = good;
+    PerceptionComponent longTag = good;
     longTag.watchedTag = std::string(33U, 'x');
-    EXPECT_FALSE(IsPerceptionComponentValidUVE(longTag));
+    EXPECT_FALSE(IsPerceptionComponentValid(longTag));
 
-    PerceptionComponentUVE badRange = good;
+    PerceptionComponent badRange = good;
     badRange.sightRangeMetres = 0.0F;
-    EXPECT_FALSE(IsPerceptionComponentValidUVE(badRange));
+    EXPECT_FALSE(IsPerceptionComponentValid(badRange));
 
-    PerceptionComponentUVE badFov = good;
+    PerceptionComponent badFov = good;
     badFov.sightFieldOfViewDegrees = 361.0F;
-    EXPECT_FALSE(IsPerceptionComponentValidUVE(badFov));
+    EXPECT_FALSE(IsPerceptionComponentValid(badFov));
 
-    PerceptionComponentUVE badHearing = good;
+    PerceptionComponent badHearing = good;
     badHearing.hearingRadiusMetres = -1.0F;
-    EXPECT_FALSE(IsPerceptionComponentValidUVE(badHearing));
+    EXPECT_FALSE(IsPerceptionComponentValid(badHearing));
 
-    NoiseEmitterComponentUVE badLoudness;
+    NoiseEmitterComponent badLoudness;
     badLoudness.loudness = 1.5F;
-    EXPECT_FALSE(IsNoiseEmitterComponentValidUVE(badLoudness));
+    EXPECT_FALSE(IsNoiseEmitterComponentValid(badLoudness));
 
-    BlackboardComponentUVE dupeVectors;
-    dupeVectors.vectors.push_back(AiBlackboardVectorEntryUVE{"p", Math::Vector3UVE{}});
-    dupeVectors.vectors.push_back(AiBlackboardVectorEntryUVE{"p", Math::Vector3UVE{}});
-    EXPECT_FALSE(IsBlackboardComponentValidUVE(dupeVectors));
+    BlackboardComponent dupeVectors;
+    dupeVectors.vectors.push_back(AiBlackboardVectorEntry{"p", Math::Vector3{}});
+    dupeVectors.vectors.push_back(AiBlackboardVectorEntry{"p", Math::Vector3{}});
+    EXPECT_FALSE(IsBlackboardComponentValid(dupeVectors));
 }
 
 } // namespace UVE::Scene::Tests

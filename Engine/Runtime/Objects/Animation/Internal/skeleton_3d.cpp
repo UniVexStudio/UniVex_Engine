@@ -10,26 +10,26 @@
 
 namespace UVE::Scene {
 
-std::vector<SkeletonBonePoseUVE> GetSkeletonCurrentPoseUVE(const Skeleton3DComponentUVE& skeleton) {
+std::vector<SkeletonBonePose> GetSkeletonCurrentPose(const Skeleton3DComponent& skeleton) {
     if (skeleton.pose.size() == skeleton.bones.size()) {
         return skeleton.pose;
     }
-    std::vector<SkeletonBonePoseUVE> rest;
+    std::vector<SkeletonBonePose> rest;
     rest.reserve(skeleton.bones.size());
-    for (const SkeletonBoneUVE& bone : skeleton.bones) {
-        rest.push_back(SkeletonBonePoseUVE{bone.localPosition, bone.localRotation, bone.localScale});
+    for (const SkeletonBone& bone : skeleton.bones) {
+        rest.push_back(SkeletonBonePose{bone.localPosition, bone.localRotation, bone.localScale});
     }
     return rest;
 }
 
-bool IsSkeleton3DObjectComponentValidUVE(const Skeleton3DComponentUVE& value) noexcept {
-    if (!IsBounded3DObjectStringUVE(value.skeletonAssetPath) || value.bones.size() > kMaximumSkeletonBonesUVE) {
+bool IsSkeleton3DObjectComponentValid(const Skeleton3DComponent& value) noexcept {
+    if (!IsBounded3DObjectString(value.skeletonAssetPath) || value.bones.size() > kMaximumSkeletonBones) {
         return false;
     }
     for (std::size_t index = 0U; index < value.bones.size(); ++index) {
-        const SkeletonBoneUVE& bone = value.bones[index];
-        if (!IsBounded3DObjectStringUVE(bone.name, false) || !IsFinite3DObjectVectorUVE(bone.localPosition) ||
-            !IsFinite3DObjectQuaternionUVE(bone.localRotation) || !IsFinite3DObjectVectorUVE(bone.localScale) ||
+        const SkeletonBone& bone = value.bones[index];
+        if (!IsBounded3DObjectString(bone.name, false) || !IsFinite3DObjectVector(bone.localPosition) ||
+            !IsFinite3DObjectQuaternion(bone.localRotation) || !IsFinite3DObjectVector(bone.localScale) ||
             bone.localScale.x <= 0.0F || bone.localScale.y <= 0.0F || bone.localScale.z <= 0.0F ||
             (bone.parentIndex >= 0 && static_cast<std::size_t>(bone.parentIndex) >= index)) {
             return false;
@@ -43,23 +43,23 @@ bool IsSkeleton3DObjectComponentValidUVE(const Skeleton3DComponentUVE& value) no
     return true;
 }
 
-void ApplySkeleton3DObjectDefinitionUVE(IEntityManagerUVE& entityManager, const EntityUVE entity,
-                                      const Skeleton3DObjectDefinitionUVE& value) {
-    ApplyObject3DRecipeUVE(entityManager, entity, Skeleton3DObjectDefinitionUVE::defaultName);
-    if (entityManager.IsAliveUVE(entity) && !entityManager.HasComponentUVE<Skeleton3DComponentUVE>(entity)) {
-        entityManager.AddComponentUVE<Skeleton3DComponentUVE>(entity, value.skeleton);
+void ApplySkeleton3DObjectDefinition(IEntityManager& entityManager, const Entity entity,
+                                      const Skeleton3DObjectDefinition& value) {
+    ApplyObject3DRecipe(entityManager, entity, Skeleton3DObjectDefinition::defaultName);
+    if (entityManager.IsAlive(entity) && !entityManager.HasComponent<Skeleton3DComponent>(entity)) {
+        entityManager.AddComponent<Skeleton3DComponent>(entity, value.skeleton);
     }
 }
 
 namespace {
 
 /// One bone's local frame for this frame: its pose when the runtime has one, else its rest pose.
-/// Reading `pose` here rather than through GetSkeletonCurrentPoseUVE() keeps this allocation-free -
+/// Reading `pose` here rather than through GetSkeletonCurrentPose() keeps this allocation-free -
 /// that helper builds a whole copy of the pose for callers that need every bone, and this needs one.
-void GetBoneLocalTRSUVE(const Skeleton3DComponentUVE& skeleton, const std::size_t boneIndex,
-                        Math::Vector3UVE& outPosition, Math::QuaternionUVE& outRotation,
-                        Math::Vector3UVE& outScale) noexcept {
-    const SkeletonBoneUVE& rest = skeleton.bones[boneIndex];
+void GetBoneLocalTRS(const Skeleton3DComponent& skeleton, const std::size_t boneIndex,
+                        Math::Vector3& outPosition, Math::Quaternion& outRotation,
+                        Math::Vector3& outScale) noexcept {
+    const SkeletonBone& rest = skeleton.bones[boneIndex];
     if (boneIndex < skeleton.pose.size()) {
         outPosition = skeleton.pose[boneIndex].position;
         outRotation = skeleton.pose[boneIndex].rotation;
@@ -73,7 +73,7 @@ void GetBoneLocalTRSUVE(const Skeleton3DComponentUVE& skeleton, const std::size_
 
 } // namespace
 
-bool TryFindSkeletonBoneIndexUVE(const Skeleton3DComponentUVE& skeleton, const std::string_view boneName,
+bool TryFindSkeletonBoneIndex(const Skeleton3DComponent& skeleton, const std::string_view boneName,
                                  std::uint32_t& outIndex) noexcept {
     if (boneName.empty()) {
         return false;
@@ -92,12 +92,12 @@ namespace {
 /// The name without its namespace: everything after the last `:` or `|`. Exporters put one of those
 /// two between a namespace and a name, and a mesh and its skeleton routinely disagree about keeping
 /// it - so this is the spelling both sides can be compared in.
-[[nodiscard]] std::string_view UnqualifiedBoneNameUVE(const std::string_view name) noexcept {
+[[nodiscard]] std::string_view UnqualifiedBoneName(const std::string_view name) noexcept {
     const std::size_t separator = name.find_last_of(":|");
     return separator == std::string_view::npos ? name : name.substr(separator + 1U);
 }
 
-[[nodiscard]] bool EqualsIgnoringCaseUVE(const std::string_view left, const std::string_view right) noexcept {
+[[nodiscard]] bool EqualsIgnoringCase(const std::string_view left, const std::string_view right) noexcept {
     if (left.size() != right.size()) {
         return false;
     }
@@ -108,19 +108,19 @@ namespace {
 
 } // namespace
 
-void SkeletonBoneLookupUVE::BuildUVE(const Skeleton3DComponentUVE& skeleton) {
+void SkeletonBoneLookup::Build(const Skeleton3DComponent& skeleton) {
     m_skeleton = &skeleton;
     m_boneOfName.clear();
     m_boneOfName.reserve(skeleton.bones.size());
     for (std::size_t index = 0U; index < skeleton.bones.size(); ++index) {
         // try_emplace, not emplace: the first bone of a duplicated name wins, which is the same
-        // answer TryFindSkeletonBoneIndexUVE() gives and the only one that does not depend on
+        // answer TryFindSkeletonBoneIndex() gives and the only one that does not depend on
         // iteration order.
         m_boneOfName.try_emplace(skeleton.bones[index].name, static_cast<std::uint32_t>(index));
     }
 }
 
-bool SkeletonBoneLookupUVE::TryFindUVE(const std::string_view jointName,
+bool SkeletonBoneLookup::TryFind(const std::string_view jointName,
                                        std::uint32_t& outBoneIndex) const noexcept {
     if (m_skeleton == nullptr || jointName.empty() || m_skeleton->bones.empty()) {
         return false;
@@ -129,12 +129,12 @@ bool SkeletonBoneLookupUVE::TryFindUVE(const std::string_view jointName,
         outBoneIndex = exact->second;
         return true;
     }
-    const std::string_view unqualified = UnqualifiedBoneNameUVE(jointName);
+    const std::string_view unqualified = UnqualifiedBoneName(jointName);
     if (unqualified.empty()) {
         return false;
     }
     for (std::size_t index = 0U; index < m_skeleton->bones.size(); ++index) {
-        if (EqualsIgnoringCaseUVE(UnqualifiedBoneNameUVE(m_skeleton->bones[index].name), unqualified)) {
+        if (EqualsIgnoringCase(UnqualifiedBoneName(m_skeleton->bones[index].name), unqualified)) {
             outBoneIndex = static_cast<std::uint32_t>(index);
             return true;
         }
@@ -142,23 +142,23 @@ bool SkeletonBoneLookupUVE::TryFindUVE(const std::string_view jointName,
     return false;
 }
 
-bool TryBuildSkinFromMeshJointsUVE(const Asset::MeshAssetUVE& mesh, const Skeleton3DComponentUVE& skeleton,
-                                   SkinComponentUVE& outSkin) {
+bool TryBuildSkinFromMeshJoints(const Asset::MeshAsset& mesh, const Skeleton3DComponent& skeleton,
+                                   SkinComponent& outSkin) {
     if (mesh.joints.empty() || skeleton.bones.empty()) {
         return false;
     }
-    SkeletonBoneLookupUVE lookup;
-    lookup.BuildUVE(skeleton);
+    SkeletonBoneLookup lookup;
+    lookup.Build(skeleton);
 
-    SkinComponentUVE candidate;
+    SkinComponent candidate;
     candidate.boneBinds.reserve(mesh.joints.size());
     std::size_t boundJointCount = 0U;
-    for (const Asset::MeshJointUVE& joint : mesh.joints) {
-        SkinBoneBindUVE bind;
+    for (const Asset::MeshJoint& joint : mesh.joints) {
+        SkinBoneBind bind;
         bind.boneName = joint.name;
         bind.inverseBindPose = joint.inverseBindMatrix;
         std::uint32_t boneIndex = 0U;
-        if (lookup.TryFindUVE(joint.name, boneIndex)) {
+        if (lookup.TryFind(joint.name, boneIndex)) {
             bind.boneIndex = static_cast<std::int32_t>(boneIndex);
             ++boundJointCount;
         }
@@ -175,15 +175,15 @@ bool TryBuildSkinFromMeshJointsUVE(const Asset::MeshAssetUVE& mesh, const Skelet
     return true;
 }
 
-bool TryResolveSkeletonBoneWorldFrameUVE(const Skeleton3DComponentUVE& skeleton, const std::uint32_t boneIndex,
-                                         const ObjectWorldFrameUVE& skeletonWorldFrame,
-                                         ObjectWorldFrameUVE& outFrame) noexcept {
-    outFrame = ObjectWorldFrameUVE{};
+bool TryResolveSkeletonBoneWorldFrame(const Skeleton3DComponent& skeleton, const std::uint32_t boneIndex,
+                                         const ObjectWorldFrame& skeletonWorldFrame,
+                                         ObjectWorldFrame& outFrame) noexcept {
+    outFrame = ObjectWorldFrame{};
     if (skeleton.bones.empty() || boneIndex >= skeleton.bones.size()) {
         return false;
     }
-    if (!IsFinite3DObjectVectorUVE(skeletonWorldFrame.position) ||
-        !IsFinite3DObjectVectorUVE(skeletonWorldFrame.scale)) {
+    if (!IsFinite3DObjectVector(skeletonWorldFrame.position) ||
+        !IsFinite3DObjectVector(skeletonWorldFrame.scale)) {
         return false;
     }
 
@@ -194,7 +194,7 @@ bool TryResolveSkeletonBoneWorldFrameUVE(const Skeleton3DComponentUVE& skeleton,
     std::uint32_t current = boneIndex;
     for (std::size_t depth = 0U; depth < skeleton.bones.size() + 1U; ++depth) {
         chain.push_back(current);
-        const SkeletonBoneUVE& bone = skeleton.bones[current];
+        const SkeletonBone& bone = skeleton.bones[current];
         if (bone.parentIndex < 0) {
             break;
         }
@@ -212,18 +212,18 @@ bool TryResolveSkeletonBoneWorldFrameUVE(const Skeleton3DComponentUVE& skeleton,
     outFrame = skeletonWorldFrame;
     for (std::size_t index = chain.size(); index > 0U; --index) {
         const std::uint32_t bone = chain[index - 1U];
-        Math::Vector3UVE localPosition{};
-        Math::QuaternionUVE localRotation{};
-        Math::Vector3UVE localScale{};
-        GetBoneLocalTRSUVE(skeleton, bone, localPosition, localRotation, localScale);
+        Math::Vector3 localPosition{};
+        Math::Quaternion localRotation{};
+        Math::Vector3 localScale{};
+        GetBoneLocalTRS(skeleton, bone, localPosition, localRotation, localScale);
 
         // Scale, then rotate, then translate - the order every TRS compose in this engine uses, so a
         // bone's own scale stretches the bones under it rather than the space it sits in.
-        const Math::Vector3UVE scaled{localPosition.x * outFrame.scale.x, localPosition.y * outFrame.scale.y,
+        const Math::Vector3 scaled{localPosition.x * outFrame.scale.x, localPosition.y * outFrame.scale.y,
                                       localPosition.z * outFrame.scale.z};
-        outFrame.position = outFrame.position + Math::RotateVectorUVE(outFrame.rotation, scaled);
-        outFrame.rotation = Math::MultiplyUVE(outFrame.rotation, localRotation);
-        outFrame.scale = Math::Vector3UVE{outFrame.scale.x * localScale.x, outFrame.scale.y * localScale.y,
+        outFrame.position = outFrame.position + Math::RotateVector(outFrame.rotation, scaled);
+        outFrame.rotation = Math::Multiply(outFrame.rotation, localRotation);
+        outFrame.scale = Math::Vector3{outFrame.scale.x * localScale.x, outFrame.scale.y * localScale.y,
                                           outFrame.scale.z * localScale.z};
     }
     return true;

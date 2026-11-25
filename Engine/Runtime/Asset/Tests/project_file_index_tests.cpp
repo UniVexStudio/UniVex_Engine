@@ -16,7 +16,7 @@
 namespace UVE::Asset::Tests {
 namespace {
 
-void WriteFixtureFileUVE(const std::filesystem::path& path, const std::string_view contents) {
+void WriteFixtureFile(const std::filesystem::path& path, const std::string_view contents) {
     if (!path.parent_path().empty()) {
         std::filesystem::create_directories(path.parent_path());
     }
@@ -26,102 +26,102 @@ void WriteFixtureFileUVE(const std::filesystem::path& path, const std::string_vi
     ASSERT_TRUE(file.good());
 }
 
-[[nodiscard]] std::vector<std::string> SnapshotPathsUVE(const ProjectFileSnapshotUVE& snapshot) {
+[[nodiscard]] std::vector<std::string> SnapshotPaths(const ProjectFileSnapshot& snapshot) {
     std::vector<std::string> paths;
     paths.reserve(snapshot.entries.size());
-    for (const ProjectFileEntryUVE& entry : snapshot.entries) {
+    for (const ProjectFileEntry& entry : snapshot.entries) {
         paths.push_back(entry.relativePath.generic_string());
     }
     return paths;
 }
 
-TEST(ProjectFileIndexUVETest, RefreshUVE_MissingRootPublishesValidEmptySnapshot) {
+TEST(ProjectFileIndexTest, Refresh_MissingRootPublishesValidEmptySnapshot) {
     const std::filesystem::path root = "uve_project_file_index_tests_missing";
     std::filesystem::remove_all(root);
 
-    AssetDatabaseUVE assetDatabase;
-    ProjectFileIndexUVE index(root);
+    AssetDatabase assetDatabase;
+    ProjectFileIndex index(root);
 
-    ASSERT_TRUE(index.RefreshUVE(assetDatabase));
-    const ProjectFileSnapshotUVE snapshot = index.GetSnapshotUVE();
+    ASSERT_TRUE(index.Refresh(assetDatabase));
+    const ProjectFileSnapshot snapshot = index.GetSnapshot();
     EXPECT_EQ(snapshot.contentRoot, root.lexically_normal());
     EXPECT_FALSE(snapshot.contentRootExists);
     EXPECT_TRUE(snapshot.entries.empty());
     EXPECT_EQ(snapshot.refreshGeneration, 1U);
 }
 
-TEST(ProjectFileIndexUVETest, GetSnapshotUVE_UsesCachedTreeUntilExplicitRefresh) {
+TEST(ProjectFileIndexTest, GetSnapshot_UsesCachedTreeUntilExplicitRefresh) {
     const std::filesystem::path root = "uve_project_file_index_tests_cached";
     std::filesystem::remove_all(root);
-    WriteFixtureFileUVE(root / "first.txt", "first");
+    WriteFixtureFile(root / "first.txt", "first");
 
-    AssetDatabaseUVE assetDatabase;
-    ProjectFileIndexUVE index(root);
-    ASSERT_TRUE(index.RefreshUVE(assetDatabase));
-    const ProjectFileSnapshotUVE firstSnapshot = index.GetSnapshotUVE();
-    ASSERT_EQ(SnapshotPathsUVE(firstSnapshot), std::vector<std::string>({"first.txt"}));
+    AssetDatabase assetDatabase;
+    ProjectFileIndex index(root);
+    ASSERT_TRUE(index.Refresh(assetDatabase));
+    const ProjectFileSnapshot firstSnapshot = index.GetSnapshot();
+    ASSERT_EQ(SnapshotPaths(firstSnapshot), std::vector<std::string>({"first.txt"}));
 
-    WriteFixtureFileUVE(root / "second.txt", "second");
-    const ProjectFileSnapshotUVE cachedSnapshot = index.GetSnapshotUVE();
+    WriteFixtureFile(root / "second.txt", "second");
+    const ProjectFileSnapshot cachedSnapshot = index.GetSnapshot();
     EXPECT_EQ(cachedSnapshot.refreshGeneration, firstSnapshot.refreshGeneration);
-    EXPECT_EQ(SnapshotPathsUVE(cachedSnapshot), SnapshotPathsUVE(firstSnapshot));
+    EXPECT_EQ(SnapshotPaths(cachedSnapshot), SnapshotPaths(firstSnapshot));
 
-    ASSERT_TRUE(index.RefreshUVE(assetDatabase));
-    const ProjectFileSnapshotUVE refreshedSnapshot = index.GetSnapshotUVE();
+    ASSERT_TRUE(index.Refresh(assetDatabase));
+    const ProjectFileSnapshot refreshedSnapshot = index.GetSnapshot();
     EXPECT_EQ(refreshedSnapshot.refreshGeneration, firstSnapshot.refreshGeneration + 1U);
-    EXPECT_EQ(SnapshotPathsUVE(refreshedSnapshot), std::vector<std::string>({"first.txt", "second.txt"}));
+    EXPECT_EQ(SnapshotPaths(refreshedSnapshot), std::vector<std::string>({"first.txt", "second.txt"}));
 
     std::filesystem::remove_all(root);
 }
 
-TEST(ProjectFileIndexUVETest, RefreshUVE_NormalizesRelativeTrailingSeparatorBeforeRootBoundaryComparison) {
+TEST(ProjectFileIndexTest, Refresh_NormalizesRelativeTrailingSeparatorBeforeRootBoundaryComparison) {
     const std::filesystem::path root = "uve_project_file_index_tests_trailing_separator";
     const std::filesystem::path configuredRoot = root.generic_string() + "/";
     std::filesystem::remove_all(root);
-    WriteFixtureFileUVE(root / "nested" / "asset.txt", "asset");
+    WriteFixtureFile(root / "nested" / "asset.txt", "asset");
 
-    AssetDatabaseUVE assetDatabase;
-    ProjectFileIndexUVE index(configuredRoot);
+    AssetDatabase assetDatabase;
+    ProjectFileIndex index(configuredRoot);
 
-    ASSERT_TRUE(index.RefreshUVE(assetDatabase));
-    const ProjectFileSnapshotUVE snapshot = index.GetSnapshotUVE();
+    ASSERT_TRUE(index.Refresh(assetDatabase));
+    const ProjectFileSnapshot snapshot = index.GetSnapshot();
     EXPECT_EQ(snapshot.contentRoot, root);
     EXPECT_TRUE(snapshot.contentRootExists);
-    EXPECT_EQ(SnapshotPathsUVE(snapshot), std::vector<std::string>({"nested", "nested/asset.txt"}));
+    EXPECT_EQ(SnapshotPaths(snapshot), std::vector<std::string>({"nested", "nested/asset.txt"}));
 
     std::filesystem::remove_all(root);
 }
 
-TEST(ProjectFileIndexUVETest, RefreshUVE_BuildsDeterministicFoldersFirstTreeAndCorrelatesInRootRecords) {
+TEST(ProjectFileIndexTest, Refresh_BuildsDeterministicFoldersFirstTreeAndCorrelatesInRootRecords) {
     const std::filesystem::path root = "uve_project_file_index_tests_tree";
     const std::filesystem::path outside = "uve_project_file_index_tests_outside.txt";
     std::filesystem::remove_all(root);
     std::filesystem::remove(outside);
-    WriteFixtureFileUVE(root / "BFolder" / "other.txt", "other");
-    WriteFixtureFileUVE(root / "aFolder" / "registered.txt", "registered");
-    WriteFixtureFileUVE(root / "root.txt", "root");
-    WriteFixtureFileUVE(outside, "outside");
+    WriteFixtureFile(root / "BFolder" / "other.txt", "other");
+    WriteFixtureFile(root / "aFolder" / "registered.txt", "registered");
+    WriteFixtureFile(root / "root.txt", "root");
+    WriteFixtureFile(outside, "outside");
 
-    AssetDatabaseUVE assetDatabase;
-    const AssetGuidUVE registeredGuid = assetDatabase.RegisterUVE(root / "aFolder" / "registered.txt");
-    const AssetGuidUVE outsideGuid = assetDatabase.RegisterUVE(outside);
-    ASSERT_NE(registeredGuid, kInvalidAssetGuidUVE);
-    ASSERT_NE(outsideGuid, kInvalidAssetGuidUVE);
+    AssetDatabase assetDatabase;
+    const AssetGuid registeredGuid = assetDatabase.Register(root / "aFolder" / "registered.txt");
+    const AssetGuid outsideGuid = assetDatabase.Register(outside);
+    ASSERT_NE(registeredGuid, kInvalidAssetGuid);
+    ASSERT_NE(outsideGuid, kInvalidAssetGuid);
 
-    ProjectFileIndexUVE index(root);
-    ASSERT_TRUE(index.RefreshUVE(assetDatabase));
-    const ProjectFileSnapshotUVE snapshot = index.GetSnapshotUVE();
+    ProjectFileIndex index(root);
+    ASSERT_TRUE(index.Refresh(assetDatabase));
+    const ProjectFileSnapshot snapshot = index.GetSnapshot();
     EXPECT_TRUE(snapshot.contentRootExists);
-    EXPECT_EQ(SnapshotPathsUVE(snapshot),
+    EXPECT_EQ(SnapshotPaths(snapshot),
               std::vector<std::string>({"BFolder", "aFolder", "BFolder/other.txt", "aFolder/registered.txt", "root.txt"}));
 
-    const auto registeredIt = std::find_if(snapshot.entries.begin(), snapshot.entries.end(), [](const ProjectFileEntryUVE& entry) {
+    const auto registeredIt = std::find_if(snapshot.entries.begin(), snapshot.entries.end(), [](const ProjectFileEntry& entry) {
         return entry.relativePath.generic_string() == "aFolder/registered.txt";
     });
     ASSERT_NE(registeredIt, snapshot.entries.end());
     ASSERT_TRUE(registeredIt->registeredAssetGuid.has_value());
     EXPECT_EQ(*registeredIt->registeredAssetGuid, registeredGuid);
-    EXPECT_TRUE(std::none_of(snapshot.entries.begin(), snapshot.entries.end(), [outsideGuid](const ProjectFileEntryUVE& entry) {
+    EXPECT_TRUE(std::none_of(snapshot.entries.begin(), snapshot.entries.end(), [outsideGuid](const ProjectFileEntry& entry) {
         return entry.registeredAssetGuid == outsideGuid;
     }));
 
@@ -129,13 +129,13 @@ TEST(ProjectFileIndexUVETest, RefreshUVE_BuildsDeterministicFoldersFirstTreeAndC
     std::filesystem::remove(outside);
 }
 
-TEST(ProjectFileIndexUVETest, RefreshUVE_SkipsAllSymlinksAndRetainsLastGoodSnapshotWhenRootBecomesSymlink) {
+TEST(ProjectFileIndexTest, Refresh_SkipsAllSymlinksAndRetainsLastGoodSnapshotWhenRootBecomesSymlink) {
     const std::filesystem::path root = "uve_project_file_index_tests_symlink_root";
     const std::filesystem::path outside = "uve_project_file_index_tests_symlink_outside";
     std::filesystem::remove_all(root);
     std::filesystem::remove_all(outside);
-    WriteFixtureFileUVE(root / "safe.txt", "safe");
-    WriteFixtureFileUVE(outside / "outside.txt", "outside");
+    WriteFixtureFile(root / "safe.txt", "safe");
+    WriteFixtureFile(outside / "outside.txt", "outside");
 
     std::error_code errorCode;
     std::filesystem::create_directory_symlink(outside, root / "outside_link", errorCode);
@@ -148,11 +148,11 @@ TEST(ProjectFileIndexUVETest, RefreshUVE_SkipsAllSymlinksAndRetainsLastGoodSnaps
         GTEST_SKIP() << "Host does not permit cycle symlink creation: " << errorCode.message();
     }
 
-    AssetDatabaseUVE assetDatabase;
-    ProjectFileIndexUVE index(root);
-    ASSERT_TRUE(index.RefreshUVE(assetDatabase));
-    const ProjectFileSnapshotUVE goodSnapshot = index.GetSnapshotUVE();
-    EXPECT_EQ(SnapshotPathsUVE(goodSnapshot), std::vector<std::string>({"safe.txt"}));
+    AssetDatabase assetDatabase;
+    ProjectFileIndex index(root);
+    ASSERT_TRUE(index.Refresh(assetDatabase));
+    const ProjectFileSnapshot goodSnapshot = index.GetSnapshot();
+    EXPECT_EQ(SnapshotPaths(goodSnapshot), std::vector<std::string>({"safe.txt"}));
 
     std::filesystem::remove_all(root);
     errorCode.clear();
@@ -161,10 +161,10 @@ TEST(ProjectFileIndexUVETest, RefreshUVE_SkipsAllSymlinksAndRetainsLastGoodSnaps
         GTEST_SKIP() << "Host does not permit root symlink creation: " << errorCode.message();
     }
 
-    EXPECT_FALSE(index.RefreshUVE(assetDatabase));
-    const ProjectFileSnapshotUVE retainedSnapshot = index.GetSnapshotUVE();
+    EXPECT_FALSE(index.Refresh(assetDatabase));
+    const ProjectFileSnapshot retainedSnapshot = index.GetSnapshot();
     EXPECT_EQ(retainedSnapshot.refreshGeneration, goodSnapshot.refreshGeneration);
-    EXPECT_EQ(SnapshotPathsUVE(retainedSnapshot), SnapshotPathsUVE(goodSnapshot));
+    EXPECT_EQ(SnapshotPaths(retainedSnapshot), SnapshotPaths(goodSnapshot));
 
     std::filesystem::remove(root, errorCode);
     std::filesystem::remove_all(outside);

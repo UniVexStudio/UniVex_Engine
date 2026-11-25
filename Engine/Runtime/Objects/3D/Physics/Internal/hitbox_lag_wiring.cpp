@@ -6,69 +6,69 @@
 
 namespace UVE::Scene {
 
-Physics::LagTickUVE ShooterViewTickUVE(const Network::NetworkPredictionUVE& predictor) {
-    return ShooterViewTickUVE(predictor, Network::kDefaultPredictionPawnUVE);
+Physics::LagTick ShooterViewTick(const Network::NetworkPrediction& predictor) {
+    return ShooterViewTick(predictor, Network::kDefaultPredictionPawn);
 }
 
-Physics::LagTickUVE ShooterViewTickUVE(const Network::NetworkPredictionUVE& predictor,
-                                       const Network::PredictionPawnUVE pawn) {
-    return predictor.LastAckedTickUVE(pawn);
+Physics::LagTick ShooterViewTick(const Network::NetworkPrediction& predictor,
+                                       const Network::PredictionPawn pawn) {
+    return predictor.LastAckedTick(pawn);
 }
 
-FireLagShotReceiptUVE FireLagShotUVE(const Network::NetworkPredictionUVE& predictor,
-                                     Network::ShotSenderUVE& sender,
-                                     const Network::PredictionPawnUVE pawn,
+FireLagShotReceipt FireLagShot(const Network::NetworkPrediction& predictor,
+                                     Network::ShotSender& sender,
+                                     const Network::PredictionPawn pawn,
                                      const float fraction) {
-    const Physics::LagTickUVE view = ShooterViewTickUVE(predictor, pawn);
-    if (view == Network::kInvalidPredictionTickUVE) {
-        return FireLagShotReceiptUVE{FireLagShotOutcomeUVE::NoView, view};
+    const Physics::LagTick view = ShooterViewTick(predictor, pawn);
+    if (view == Network::kInvalidPredictionTick) {
+        return FireLagShotReceipt{FireLagShotOutcome::NoView, view};
     }
-    if (!sender.FireUVE(pawn, view, fraction)) {
-        return FireLagShotReceiptUVE{FireLagShotOutcomeUVE::Refused, view};
+    if (!sender.Fire(pawn, view, fraction)) {
+        return FireLagShotReceipt{FireLagShotOutcome::Refused, view};
     }
-    return FireLagShotReceiptUVE{FireLagShotOutcomeUVE::Fired, view};
+    return FireLagShotReceipt{FireLagShotOutcome::Fired, view};
 }
 
-Physics::LagShotReportUVE ResolveLagShotUVE(Physics::HitboxLagCompensatorUVE& compensator,
-                                            const EntityUVE shooter,
-                                            const Physics::LagTickUVE shooterTick,
-                                            IEntityManagerUVE& entityManager) {
-    if (shooterTick == Network::kInvalidPredictionTickUVE) {
-        return Physics::LagShotReportUVE{};
+Physics::LagShotReport ResolveLagShot(Physics::HitboxLagCompensator& compensator,
+                                            const Entity shooter,
+                                            const Physics::LagTick shooterTick,
+                                            IEntityManager& entityManager) {
+    if (shooterTick == Network::kInvalidPredictionTick) {
+        return Physics::LagShotReport{};
     }
-    return compensator.ResolveShotUVE(shooter, shooterTick, entityManager);
+    return compensator.ResolveShot(shooter, shooterTick, entityManager);
 }
 
-Physics::LagShotReportUVE ResolveLagShotAtUVE(Physics::HitboxLagCompensatorUVE& compensator,
-                                              const EntityUVE shooter, const Physics::LagTickUVE tick,
+Physics::LagShotReport ResolveLagShotAt(Physics::HitboxLagCompensator& compensator,
+                                              const Entity shooter, const Physics::LagTick tick,
                                               const float fraction,
-                                              IEntityManagerUVE& entityManager) {
-    if (tick == Network::kInvalidPredictionTickUVE) {
-        return Physics::LagShotReportUVE{};
+                                              IEntityManager& entityManager) {
+    if (tick == Network::kInvalidPredictionTick) {
+        return Physics::LagShotReport{};
     }
-    return compensator.ResolveShotAtUVE(shooter, tick, fraction, entityManager);
+    return compensator.ResolveShotAt(shooter, tick, fraction, entityManager);
 }
 
-void MergeLagShotUVE(Physics::Hitbox3DSyncReportUVE& live,
-                     const Physics::LagShotReportUVE& compensated) {
+void MergeLagShot(Physics::Hitbox3DSyncReport& live,
+                     const Physics::LagShotReport& compensated) {
     live.strikes.insert(live.strikes.end(), compensated.pairs.begin(), compensated.pairs.end());
 }
 
-HealthDamageResultUVE ApplyLagRayHitUVE(IEntityManagerUVE& entityManager,
-                                        Events::IEventSystemUVE& eventSystem,
-                                        const EntityUVE shooter,
-                                        const Physics::LagRayReportUVE& report,
+HealthDamageResult ApplyLagRayHit(IEntityManager& entityManager,
+                                        Events::IEventSystem& eventSystem,
+                                        const Entity shooter,
+                                        const Physics::LagRayReport& report,
                                         const float amount) {
-    if (report.entity == kInvalidEntityUVE) {
-        return HealthDamageResultUVE{};
+    if (report.entity == kInvalidEntity) {
+        return HealthDamageResult{};
     }
-    const HealthDamageResultUVE damage =
-        ApplyHitboxStrikeToHealthUVE(entityManager, report.entity, amount);
+    const HealthDamageResult damage =
+        ApplyHitboxStrikeToHealth(entityManager, report.entity, amount);
     if (damage.applied) {
-        eventSystem.QueueEvent(Gameplay::HealthDamagedEventUVE{
+        eventSystem.QueueEvent(Gameplay::HealthDamagedEvent{
             damage.entity, shooter, report.entity, damage.amount, damage.remaining});
         if (damage.depleted) {
-            eventSystem.QueueEvent(Gameplay::HealthDepletedEventUVE{damage.entity});
+            eventSystem.QueueEvent(Gameplay::HealthDepletedEvent{damage.entity});
         }
     }
     return damage;

@@ -4,18 +4,18 @@
 
 namespace UVE::Utilities {
 
-/// `NonCopyableUVE` is the inherit-to-disable-copying base (`JobCounterUVE`,
-/// `ThreadPoolUVE`-adjacent utilities, every lock): deriving makes the derived type neither
+/// `NonCopyable` is the inherit-to-disable-copying base (`JobCounter`,
+/// `ThreadPool`-adjacent utilities, every lock): deriving makes the derived type neither
 /// copyable nor movable, exactly like spelling the four deletes by hand. New code inherits this
 /// instead of retyping them; existing hand-deleted types migrate opportunistically.
-class NonCopyableUVE {
+class NonCopyable {
 protected:
-    NonCopyableUVE() = default;
-    ~NonCopyableUVE() = default;
+    NonCopyable() = default;
+    ~NonCopyable() = default;
 
 private:
-    NonCopyableUVE(const NonCopyableUVE&) = delete;
-    NonCopyableUVE& operator=(const NonCopyableUVE&) = delete;
+    NonCopyable(const NonCopyable&) = delete;
+    NonCopyable& operator=(const NonCopyable&) = delete;
 };
 
 } // namespace UVE::Utilities

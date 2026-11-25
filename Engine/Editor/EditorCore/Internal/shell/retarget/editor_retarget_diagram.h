@@ -19,9 +19,9 @@ namespace UVE::Editor {
 ///
 /// The mouse wheel zooms at the pointer, a right or middle drag pans, a double click fits it
 /// again; hovering a joint names it, clicking picks it (onPicked).
-class RetargetSkeletonDiagramUVE final : public prism::Widget {
+class RetargetSkeletonDiagram final : public prism::Widget {
 public:
-    struct JointUVE {
+    struct Joint {
         std::string name;
         /// A second line when hovered or picked (what answers it, how it was found).
         std::string detail;
@@ -41,17 +41,17 @@ public:
         bool helper = false;
     };
 
-    RetargetSkeletonDiagramUVE();
+    RetargetSkeletonDiagram();
 
     /// A new skeleton (the view fits it again when `refit`).
-    void SetJointsUVE(std::vector<JointUVE> joints, bool refit);
-    [[nodiscard]] const std::vector<JointUVE>& JointsUVE() const noexcept { return m_joints; }
-    void SetSelectedUVE(int joint);
-    [[nodiscard]] int SelectedUVE() const noexcept { return m_selected; }
+    void SetJoints(std::vector<Joint> joints, bool refit);
+    [[nodiscard]] const std::vector<Joint>& Joints() const noexcept { return m_joints; }
+    void SetSelected(int joint);
+    [[nodiscard]] int Selected() const noexcept { return m_selected; }
     /// A line under the figure when there is nothing to draw.
-    void SetEmptyTextUVE(std::string text);
+    void SetEmptyText(std::string text);
     /// The key along the bottom: a colour and what it means (with its count).
-    void SetLegendUVE(std::vector<std::pair<std::array<float, 3>, std::string>> legend);
+    void SetLegend(std::vector<std::pair<std::array<float, 3>, std::string>> legend);
 
     std::function<void(int)> onPicked;
 
@@ -66,15 +66,15 @@ public:
 
 private:
     /// The figure's area inside the box (above the legend).
-    [[nodiscard]] prism::Rect FigureRectUVE() const;
+    [[nodiscard]] prism::Rect FigureRect() const;
     /// Where joint `index` is drawn, in window pixels.
-    [[nodiscard]] prism::Vec2 ToViewUVE(std::size_t index) const;
-    [[nodiscard]] float FitScaleUVE() const;
-    [[nodiscard]] int HitUVE(prism::Vec2 p) const;
+    [[nodiscard]] prism::Vec2 ToView(std::size_t index) const;
+    [[nodiscard]] float FitScale() const;
+    [[nodiscard]] int Hit(prism::Vec2 p) const;
     /// The nearest drawn joint above `index` (-1: none).
-    [[nodiscard]] int DrawnParentUVE(std::size_t index) const;
+    [[nodiscard]] int DrawnParent(std::size_t index) const;
 
-    std::vector<JointUVE> m_joints;
+    std::vector<Joint> m_joints;
     std::string m_empty;
     std::vector<std::pair<std::array<float, 3>, std::string>> m_legend;
     /// Bounds of the drawn joints, in skeleton units.

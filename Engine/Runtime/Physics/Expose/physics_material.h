@@ -13,7 +13,7 @@
 namespace UVE::Physics {
 
 /// Combine priority order: Average < Minimum < Multiply < Maximum.
-enum class PhysicsCombineModeUVE : std::uint8_t {
+enum class PhysicsCombineMode : std::uint8_t {
     Average = 0,
     Minimum = 1,
     Multiply = 2,
@@ -22,44 +22,44 @@ enum class PhysicsCombineModeUVE : std::uint8_t {
 
 /// Authored physics material asset definition (Part 6.5): friction, rolling friction, restitution,
 /// combine modes, and surface type tag for audio/decal dispatch.
-struct PhysicsMaterialAssetUVE final {
+struct PhysicsMaterialAsset final {
     float friction = 0.5F;
     float rollingFriction = 0.01F;
     float restitution = 0.0F;
     float density = 1.0F;
-    PhysicsCombineModeUVE frictionCombine = PhysicsCombineModeUVE::Average;
-    PhysicsCombineModeUVE restitutionCombine = PhysicsCombineModeUVE::Average;
+    PhysicsCombineMode frictionCombine = PhysicsCombineMode::Average;
+    PhysicsCombineMode restitutionCombine = PhysicsCombineMode::Average;
     std::string surfaceTypeTag = "default";
 };
 
-[[nodiscard]] constexpr float CombineScalarByModeUVE(const float a, const float b,
-                                                     const PhysicsCombineModeUVE modeA,
-                                                     const PhysicsCombineModeUVE modeB) noexcept {
-    const PhysicsCombineModeUVE effective =
+[[nodiscard]] constexpr float CombineScalarByMode(const float a, const float b,
+                                                     const PhysicsCombineMode modeA,
+                                                     const PhysicsCombineMode modeB) noexcept {
+    const PhysicsCombineMode effective =
         static_cast<std::uint8_t>(modeA) >= static_cast<std::uint8_t>(modeB) ? modeA : modeB;
     switch (effective) {
-    case PhysicsCombineModeUVE::Minimum:
+    case PhysicsCombineMode::Minimum:
         return std::min(a, b);
-    case PhysicsCombineModeUVE::Multiply:
+    case PhysicsCombineMode::Multiply:
         return a * b;
-    case PhysicsCombineModeUVE::Maximum:
+    case PhysicsCombineMode::Maximum:
         return std::max(a, b);
-    case PhysicsCombineModeUVE::Average:
+    case PhysicsCombineMode::Average:
     default:
         return (a + b) * 0.5F;
     }
 }
 
-/// PhysicsMaterialUVE is the spec's `PhysicsMaterialUVE` (Part 7.5): friction, restitution,
+/// PhysicsMaterial is the spec's `PhysicsMaterial` (Part 7.5): friction, restitution,
 /// density. It is deliberately a transient, derived, read-only value — never stored in the ECS.
-/// `Scene::ColliderComponentUVE` already owns the source-of-truth friction/restitution/density
-/// fields as plain floats (storing a `Physics::PhysicsMaterialUVE` field there instead would
+/// `Scene::ColliderComponent` already owns the source-of-truth friction/restitution/density
+/// fields as plain floats (storing a `Physics::PhysicsMaterial` field there instead would
 /// require `engine/scene` to depend on `engine/physics`, which already depends on `engine/scene`
 /// — a circular module dependency this codebase has never had). This type exists purely so
-/// PhysicsSystemUVE's collision resolution and RaycastHitUVE (Increment 16) have a small,
-/// self-contained value to combine/return, matching CollisionPairUVE's precedent for a plain
+/// PhysicsSystem's collision resolution and RaycastHit (Increment 16) have a small,
+/// self-contained value to combine/return, matching CollisionPair's precedent for a plain
 /// physics-internal value type.
-struct PhysicsMaterialUVE {
+struct PhysicsMaterial {
     float friction = 0.0F;
     float restitution = 0.0F;
     float density = 1.0F;
@@ -69,41 +69,41 @@ struct PhysicsMaterialUVE {
 /// No per-pair configurable combine mode (min/max/multiply) this increment, matching the "don't
 /// build ahead of a real second consumer" discipline; revisitable later without an interface
 /// change, since this is a pure implementation detail, not part of any public interface signature.
-[[nodiscard]] constexpr PhysicsMaterialUVE CombineMaterialsUVE(const PhysicsMaterialUVE& a,
-                                                                 const PhysicsMaterialUVE& b) noexcept {
-    return PhysicsMaterialUVE{(a.friction + b.friction) * 0.5F, (a.restitution + b.restitution) * 0.5F,
+[[nodiscard]] constexpr PhysicsMaterial CombineMaterials(const PhysicsMaterial& a,
+                                                                 const PhysicsMaterial& b) noexcept {
+    return PhysicsMaterial{(a.friction + b.friction) * 0.5F, (a.restitution + b.restitution) * 0.5F,
                                (a.density + b.density) * 0.5F};
 }
 
-/// Builds a PhysicsMaterialUVE from a collider's friction/restitution/density fields, clamping
+/// Builds a PhysicsMaterial from a collider's friction/restitution/density fields, clamping
 /// friction and restitution to [0,1] at this read boundary — a defensive guard against corrupted
 /// or hand-edited scene data producing energy-gaining bounces (restitution > 1) or inverted
 /// friction (negative), without a general NaN/validation framework (out of scope this increment).
-/// Shared by PhysicsSystemUVE's resolution and RaycastSystemUVE's hit reporting so both read this
+/// Shared by PhysicsSystem's resolution and RaycastSystem's hit reporting so both read this
 /// data through the exact same clamp, never two independently-maintained copies of it.
-[[nodiscard]] inline PhysicsMaterialUVE MaterialOfUVE(const Scene::ColliderComponentUVE& collider) noexcept {
+[[nodiscard]] inline PhysicsMaterial MaterialOf(const Scene::ColliderComponent& collider) noexcept {
     const float friction = std::isfinite(collider.friction) ? std::clamp(collider.friction, 0.0F, 1.0F) : 0.0F;
     const float restitution = std::isfinite(collider.restitution)
                                   ? std::clamp(collider.restitution, 0.0F, 1.0F)
                                   : 0.0F;
     const float density = std::isfinite(collider.density) && collider.density > 0.0F ? collider.density : 1.0F;
-    return PhysicsMaterialUVE{friction, restitution, density};
+    return PhysicsMaterial{friction, restitution, density};
 }
 
 /// Resolves the effective material for `collider`, applying `overrideAsset` first, then
 /// `projectDefaultAsset`, and falling back to the collider's inline values.
-[[nodiscard]] inline PhysicsMaterialAssetUVE ResolveColliderPhysicsMaterialUVE(
-    const Scene::ColliderComponentUVE& collider,
-    const PhysicsMaterialAssetUVE* const overrideAsset = nullptr,
-    const PhysicsMaterialAssetUVE* const projectDefaultAsset = nullptr) {
+[[nodiscard]] inline PhysicsMaterialAsset ResolveColliderPhysicsMaterial(
+    const Scene::ColliderComponent& collider,
+    const PhysicsMaterialAsset* const overrideAsset = nullptr,
+    const PhysicsMaterialAsset* const projectDefaultAsset = nullptr) {
     if (overrideAsset != nullptr) {
         return *overrideAsset;
     }
     if (projectDefaultAsset != nullptr) {
         return *projectDefaultAsset;
     }
-    const PhysicsMaterialUVE base = MaterialOfUVE(collider);
-    PhysicsMaterialAssetUVE resolved{};
+    const PhysicsMaterial base = MaterialOf(collider);
+    PhysicsMaterialAsset resolved{};
     resolved.friction = base.friction;
     resolved.restitution = base.restitution;
     resolved.density = base.density;

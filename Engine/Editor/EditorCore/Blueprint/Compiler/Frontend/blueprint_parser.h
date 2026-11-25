@@ -9,20 +9,20 @@
 
 namespace UVE::Blueprint {
 
-struct ParseResultUVE final {
-    FileUVE file;
+struct ParseResult final {
+    File file;
     /// Every problem found, in source order. Parsing goes on at the next line after an error, so
     /// one mistake does not hide the ones after it.
-    std::vector<DiagnosticUVE> diagnostics;
+    std::vector<Diagnostic> diagnostics;
 
-    [[nodiscard]] bool IsSuccessUVE() const noexcept { return diagnostics.empty(); }
+    [[nodiscard]] bool IsSuccess() const noexcept { return diagnostics.empty(); }
 };
 
 /// Parses `.uvs` source text. The tree holds everything that parsed, even when there are
 /// diagnostics. Tabs count as four spaces. Line breaks inside (), [] are ignored.
-[[nodiscard]] ParseResultUVE ParseUVScriptUVE(std::string_view source);
+[[nodiscard]] ParseResult ParseUVScript(std::string_view source);
 
 /// The unit suffixes a number may carry: s, ms, m, cm, km, deg, rad.
-[[nodiscard]] bool IsUVScriptUnitUVE(std::string_view word) noexcept;
+[[nodiscard]] bool IsUVScriptUnit(std::string_view word) noexcept;
 
 } // namespace UVE::Blueprint

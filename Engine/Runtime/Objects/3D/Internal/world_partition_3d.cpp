@@ -17,33 +17,33 @@
 
 namespace UVE::Scene {
 
-bool IsWorldPartition3DObjectComponentValidUVE(const WorldPartition3DComponentUVE& value) noexcept {
+bool IsWorldPartition3DObjectComponentValid(const WorldPartition3DComponent& value) noexcept {
     if (!std::isfinite(value.cellSize) || value.cellSize <= 0.0F || value.maximumLoadedCells == 0U ||
-        value.maximumLoadedCells > kMaximumStreamedCellsUVE || value.loadedCellCount > value.maximumLoadedCells) {
+        value.maximumLoadedCells > kMaximumStreamedCells || value.loadedCellCount > value.maximumLoadedCells) {
         return false;
     }
     for (const std::uint32_t count : value.cellCounts) {
-        if (count == 0U || count > kMaximumStreamedCellsUVE) {
+        if (count == 0U || count > kMaximumStreamedCells) {
             return false;
         }
     }
     return true;
 }
 
-void ApplyWorldPartition3DObjectDefinitionUVE(IEntityManagerUVE& entityManager, const EntityUVE entity,
-                                              const WorldPartition3DObjectDefinitionUVE& value) {
-    ApplyObject3DRecipeUVE(entityManager, entity, WorldPartition3DObjectDefinitionUVE::defaultName);
-    if (entityManager.IsAliveUVE(entity) &&
-        !entityManager.HasComponentUVE<WorldPartition3DComponentUVE>(entity)) {
-        entityManager.AddComponentUVE<WorldPartition3DComponentUVE>(entity, value.partition);
+void ApplyWorldPartition3DObjectDefinition(IEntityManager& entityManager, const Entity entity,
+                                              const WorldPartition3DObjectDefinition& value) {
+    ApplyObject3DRecipe(entityManager, entity, WorldPartition3DObjectDefinition::defaultName);
+    if (entityManager.IsAlive(entity) &&
+        !entityManager.HasComponent<WorldPartition3DComponent>(entity)) {
+        entityManager.AddComponent<WorldPartition3DComponent>(entity, value.partition);
     }
 }
 
-std::optional<WorldPartition3DCellIdUVE> ResolveWorldPartition3DCellIdForPositionUVE(
-    const WorldPartition3DComponentUVE& config,
-    const Math::Vector3UVE& gridOriginWorld,
-    const Math::Vector3UVE& pointWorld) noexcept {
-    if (!IsWorldPartition3DObjectComponentValidUVE(config)) {
+std::optional<WorldPartition3DCellId> ResolveWorldPartition3DCellIdForPosition(
+    const WorldPartition3DComponent& config,
+    const Math::Vector3& gridOriginWorld,
+    const Math::Vector3& pointWorld) noexcept {
+    if (!IsWorldPartition3DObjectComponentValid(config)) {
         return std::nullopt;
     }
     const float localX = pointWorld.x - gridOriginWorld.x;
@@ -66,7 +66,7 @@ std::optional<WorldPartition3DCellIdUVE> ResolveWorldPartition3DCellIdForPositio
         outCoordinate = static_cast<std::int32_t>(std::floor(scaled));
         return true;
     };
-    WorldPartition3DCellIdUVE cell;
+    WorldPartition3DCellId cell;
     if (!cellCoordinate(localX, config.cellCounts[0U], cell.x) ||
         !cellCoordinate(localY, config.cellCounts[1U], cell.y) ||
         !cellCoordinate(localZ, config.cellCounts[2U], cell.z)) {
@@ -75,8 +75,8 @@ std::optional<WorldPartition3DCellIdUVE> ResolveWorldPartition3DCellIdForPositio
     return cell;
 }
 
-std::size_t ResolveWorldPartition3DCellLinearIndexUVE(
-    const WorldPartition3DCellIdUVE& cell,
+std::size_t ResolveWorldPartition3DCellLinearIndex(
+    const WorldPartition3DCellId& cell,
     const std::array<std::uint32_t, 3U>& cellCounts) noexcept {
     const std::uint32_t countX = cellCounts[0U];
     const std::uint32_t countY = cellCounts[1U];
@@ -86,29 +86,29 @@ std::size_t ResolveWorldPartition3DCellLinearIndexUVE(
                static_cast<std::size_t>(countY);
 }
 
-void SortWorldPartition3DOccupiedCellsUVE(std::span<WorldPartition3DOccupiedCellUVE> occupied,
+void SortWorldPartition3DOccupiedCells(std::span<WorldPartition3DOccupiedCell> occupied,
                                           const std::array<std::uint32_t, 3U>& cellCounts) {
     std::sort(occupied.begin(), occupied.end(),
-              [&cellCounts](const WorldPartition3DOccupiedCellUVE& lhs,
-                            const WorldPartition3DOccupiedCellUVE& rhs) {
+              [&cellCounts](const WorldPartition3DOccupiedCell& lhs,
+                            const WorldPartition3DOccupiedCell& rhs) {
                   if (lhs.nearestDistanceSquared != rhs.nearestDistanceSquared) {
                       return lhs.nearestDistanceSquared < rhs.nearestDistanceSquared;
                   }
-                  return ResolveWorldPartition3DCellLinearIndexUVE(lhs.id, cellCounts) <
-                         ResolveWorldPartition3DCellLinearIndexUVE(rhs.id, cellCounts);
+                  return ResolveWorldPartition3DCellLinearIndex(lhs.id, cellCounts) <
+                         ResolveWorldPartition3DCellLinearIndex(rhs.id, cellCounts);
               });
 }
 
-std::size_t CountWorldPartition3DAdmittedCellsUVE(const std::size_t occupiedCount,
+std::size_t CountWorldPartition3DAdmittedCells(const std::size_t occupiedCount,
                                                   const std::uint32_t maximumLoadedCells) noexcept {
     return std::min(occupiedCount, static_cast<std::size_t>(maximumLoadedCells));
 }
 
-bool IsWorldPartition3DCellAdmittedUVE(const WorldPartition3DCellIdUVE& cell,
-                                       const std::span<const WorldPartition3DOccupiedCellUVE> rankedNearestFirst,
+bool IsWorldPartition3DCellAdmitted(const WorldPartition3DCellId& cell,
+                                       const std::span<const WorldPartition3DOccupiedCell> rankedNearestFirst,
                                        const std::uint32_t maximumLoadedCells) noexcept {
     const std::size_t live =
-        CountWorldPartition3DAdmittedCellsUVE(rankedNearestFirst.size(), maximumLoadedCells);
+        CountWorldPartition3DAdmittedCells(rankedNearestFirst.size(), maximumLoadedCells);
     for (std::size_t i = 0U; i < live; ++i) {
         if (rankedNearestFirst[i].id == cell) {
             return true;
@@ -117,52 +117,52 @@ bool IsWorldPartition3DCellAdmittedUVE(const WorldPartition3DCellIdUVE& cell,
     return false;
 }
 
-Math::Vector3UVE ResolveWorldPartition3DVolumeSizeUVE(const WorldPartition3DComponentUVE& config) noexcept {
-    return Math::Vector3UVE{config.cellSize * static_cast<float>(config.cellCounts[0U]),
+Math::Vector3 ResolveWorldPartition3DVolumeSize(const WorldPartition3DComponent& config) noexcept {
+    return Math::Vector3{config.cellSize * static_cast<float>(config.cellCounts[0U]),
                             config.cellSize * static_cast<float>(config.cellCounts[1U]),
                             config.cellSize * static_cast<float>(config.cellCounts[2U])};
 }
 
-bool CarriesWorldPartition3DDrawableUVE(IEntityManagerUVE& entityManager, const EntityUVE entity) {
-    return entityManager.HasComponentUVE<MeshComponentUVE>(entity) ||
-           entityManager.HasComponentUVE<PrimitiveMeshComponentUVE>(entity) ||
-           entityManager.HasComponentUVE<Decal3DComponentUVE>(entity) ||
-           entityManager.HasComponentUVE<ParticleEmitterComponentUVE>(entity) ||
-           entityManager.HasComponentUVE<FogVolume3DComponentUVE>(entity);
+bool CarriesWorldPartition3DDrawable(IEntityManager& entityManager, const Entity entity) {
+    return entityManager.HasComponent<MeshComponent>(entity) ||
+           entityManager.HasComponent<PrimitiveMeshComponent>(entity) ||
+           entityManager.HasComponent<Decal3DComponent>(entity) ||
+           entityManager.HasComponent<ParticleEmitterComponent>(entity) ||
+           entityManager.HasComponent<FogVolume3DComponent>(entity);
 }
 
-bool IsWorldPartition3DDrawHiddenUVE(IEntityManagerUVE& entityManager, const EntityUVE entity) {
-    if (!entityManager.IsAliveUVE(entity)) {
+bool IsWorldPartition3DDrawHidden(IEntityManager& entityManager, const Entity entity) {
+    if (!entityManager.IsAlive(entity)) {
         return false;
     }
-    if (!entityManager.HasComponentUVE<WorldPartition3DMembershipComponentUVE>(entity)) {
+    if (!entityManager.HasComponent<WorldPartition3DMembershipComponent>(entity)) {
         return false;
     }
-    const WorldPartition3DMembershipComponentUVE& membership =
-        entityManager.GetComponentUVE<WorldPartition3DMembershipComponentUVE>(entity);
-    const bool ownerAlive = membership.partition != kInvalidEntityUVE &&
-                            entityManager.IsAliveUVE(membership.partition) &&
-                            entityManager.HasComponentUVE<WorldPartition3DComponentUVE>(membership.partition);
-    return !ResolveWorldPartition3DMembershipLiveUVE(ownerAlive, membership.live);
+    const WorldPartition3DMembershipComponent& membership =
+        entityManager.GetComponent<WorldPartition3DMembershipComponent>(entity);
+    const bool ownerAlive = membership.partition != kInvalidEntity &&
+                            entityManager.IsAlive(membership.partition) &&
+                            entityManager.HasComponent<WorldPartition3DComponent>(membership.partition);
+    return !ResolveWorldPartition3DMembershipLive(ownerAlive, membership.live);
 }
 
-void CollectWorldPartition3DGizmosUVE(IEntityManagerUVE& entityManager,
-                                      std::vector<WorldPartition3DGizmoUVE>& out) {
-    entityManager.ForEachUVE<WorldTransformComponentUVE, WorldPartition3DComponentUVE>(
-        [&entityManager, &out](const EntityUVE entity, const WorldTransformComponentUVE& world,
-                               const WorldPartition3DComponentUVE& config) {
-            if (entityManager.HasComponentUVE<EditorInternalEntityComponentUVE>(entity) || world.dirty ||
-                !IsWorldPartition3DObjectComponentValidUVE(config)) {
+void CollectWorldPartition3DGizmos(IEntityManager& entityManager,
+                                      std::vector<WorldPartition3DGizmo>& out) {
+    entityManager.ForEach<WorldTransformComponent, WorldPartition3DComponent>(
+        [&entityManager, &out](const Entity entity, const WorldTransformComponent& world,
+                               const WorldPartition3DComponent& config) {
+            if (entityManager.HasComponent<EditorInternalEntityComponent>(entity) || world.dirty ||
+                !IsWorldPartition3DObjectComponentValid(config)) {
                 return;
             }
-            WorldPartition3DGizmoUVE gizmo;
+            WorldPartition3DGizmo gizmo;
             gizmo.origin = world.worldPosition;
-            gizmo.size = ResolveWorldPartition3DVolumeSizeUVE(config);
+            gizmo.size = ResolveWorldPartition3DVolumeSize(config);
             gizmo.cellSize = config.cellSize;
             gizmo.cellCounts = config.cellCounts;
             gizmo.enabled = config.enabled;
-            gizmo.color = config.enabled ? Math::Vector3UVE{0.28F, 0.72F, 1.0F}
-                                         : Math::Vector3UVE{0.45F, 0.48F, 0.52F};
+            gizmo.color = config.enabled ? Math::Vector3{0.28F, 0.72F, 1.0F}
+                                         : Math::Vector3{0.45F, 0.48F, 0.52F};
             out.push_back(gizmo);
         });
 }

@@ -13,58 +13,58 @@
 namespace UVE::Scene::Tests {
 namespace {
 
-constexpr EntityUVE kHurtbox{1U, 1U};
-constexpr EntityUVE kHitboxA{2U, 1U};
-constexpr EntityUVE kHitboxB{3U, 1U};
-constexpr EntityUVE kOwner{4U, 1U};
+constexpr Entity kHurtbox{1U, 1U};
+constexpr Entity kHitboxA{2U, 1U};
+constexpr Entity kHitboxB{3U, 1U};
+constexpr Entity kOwner{4U, 1U};
 
-[[nodiscard]] Hurtbox3DHitUVE MakeIncomingUVE(const EntityUVE hitbox, const float depth) {
-    return Hurtbox3DHitUVE{hitbox, depth, Math::Vector3UVE{1.0F, 0.0F, 0.0F}};
+[[nodiscard]] Hurtbox3DHit MakeIncoming(const Entity hitbox, const float depth) {
+    return Hurtbox3DHit{hitbox, depth, Math::Vector3{1.0F, 0.0F, 0.0F}};
 }
 
-TEST(Hurtbox3DUVETest, DefaultComponentIsVulnerableAndIgnoresNobody) {
-    const Hurtbox3DComponentUVE hurtbox{};
-    EXPECT_TRUE(IsHurtbox3DObjectComponentValidUVE(hurtbox));
-    EXPECT_TRUE(Hurtbox3DUVE::IsVulnerableUVE(hurtbox));
-    EXPECT_EQ(hurtbox.ignoreEntity, kInvalidEntityUVE);
+TEST(Hurtbox3DTest, DefaultComponentIsVulnerableAndIgnoresNobody) {
+    const Hurtbox3DComponent hurtbox{};
+    EXPECT_TRUE(IsHurtbox3DObjectComponentValid(hurtbox));
+    EXPECT_TRUE(Hurtbox3D::IsVulnerable(hurtbox));
+    EXPECT_EQ(hurtbox.ignoreEntity, kInvalidEntity);
     EXPECT_EQ(hurtbox.hitCount, 0U);
     EXPECT_EQ(hurtbox.receivedCount, 0U);
 }
 
-TEST(Hurtbox3DUVETest, IsVulnerableUVE_FalseWhenDisabledOrInvalid) {
-    Hurtbox3DComponentUVE hurtbox{};
+TEST(Hurtbox3DTest, IsVulnerable_FalseWhenDisabledOrInvalid) {
+    Hurtbox3DComponent hurtbox{};
     hurtbox.enabled = false;
-    EXPECT_FALSE(Hurtbox3DUVE::IsVulnerableUVE(hurtbox));
+    EXPECT_FALSE(Hurtbox3D::IsVulnerable(hurtbox));
     hurtbox.enabled = true;
     hurtbox.collisionLayer = 0U;
-    EXPECT_FALSE(Hurtbox3DUVE::IsVulnerableUVE(hurtbox));
+    EXPECT_FALSE(Hurtbox3D::IsVulnerable(hurtbox));
 }
 
-TEST(Hurtbox3DUVETest, AcceptsAttackerUVE_SkipsSelfIgnoreLayerAndChannel) {
-    Hurtbox3DComponentUVE hurtbox{};
+TEST(Hurtbox3DTest, AcceptsAttacker_SkipsSelfIgnoreLayerAndChannel) {
+    Hurtbox3DComponent hurtbox{};
     hurtbox.collisionMask = 1U;
     hurtbox.damageChannel = "melee";
-    EXPECT_TRUE(Hurtbox3DUVE::AcceptsAttackerUVE(kHurtbox, hurtbox, kHitboxA, 1U, 0xFFFFFFFFU, "melee"));
-    EXPECT_FALSE(Hurtbox3DUVE::AcceptsAttackerUVE(kHurtbox, hurtbox, kHurtbox, 1U, 0xFFFFFFFFU, "melee"));
-    EXPECT_FALSE(Hurtbox3DUVE::AcceptsAttackerUVE(kHurtbox, hurtbox, kInvalidEntityUVE, 1U, 0xFFFFFFFFU, "melee"));
+    EXPECT_TRUE(Hurtbox3D::AcceptsAttacker(kHurtbox, hurtbox, kHitboxA, 1U, 0xFFFFFFFFU, "melee"));
+    EXPECT_FALSE(Hurtbox3D::AcceptsAttacker(kHurtbox, hurtbox, kHurtbox, 1U, 0xFFFFFFFFU, "melee"));
+    EXPECT_FALSE(Hurtbox3D::AcceptsAttacker(kHurtbox, hurtbox, kInvalidEntity, 1U, 0xFFFFFFFFU, "melee"));
 
     hurtbox.ignoreEntity = kOwner;
-    EXPECT_FALSE(Hurtbox3DUVE::AcceptsAttackerUVE(kHurtbox, hurtbox, kOwner, 1U, 0xFFFFFFFFU, "melee"));
-    EXPECT_TRUE(Hurtbox3DUVE::AcceptsAttackerUVE(kHurtbox, hurtbox, kHitboxA, 1U, 0xFFFFFFFFU, "melee"));
+    EXPECT_FALSE(Hurtbox3D::AcceptsAttacker(kHurtbox, hurtbox, kOwner, 1U, 0xFFFFFFFFU, "melee"));
+    EXPECT_TRUE(Hurtbox3D::AcceptsAttacker(kHurtbox, hurtbox, kHitboxA, 1U, 0xFFFFFFFFU, "melee"));
 
-    EXPECT_FALSE(Hurtbox3DUVE::AcceptsAttackerUVE(kHurtbox, hurtbox, kHitboxA, 2U, 0xFFFFFFFFU, "melee"));
-    EXPECT_FALSE(Hurtbox3DUVE::AcceptsAttackerUVE(kHurtbox, hurtbox, kHitboxA, 1U, 0x02U, "melee"));
-    EXPECT_FALSE(Hurtbox3DUVE::AcceptsAttackerUVE(kHurtbox, hurtbox, kHitboxA, 1U, 0xFFFFFFFFU, "projectile"));
+    EXPECT_FALSE(Hurtbox3D::AcceptsAttacker(kHurtbox, hurtbox, kHitboxA, 2U, 0xFFFFFFFFU, "melee"));
+    EXPECT_FALSE(Hurtbox3D::AcceptsAttacker(kHurtbox, hurtbox, kHitboxA, 1U, 0x02U, "melee"));
+    EXPECT_FALSE(Hurtbox3D::AcceptsAttacker(kHurtbox, hurtbox, kHitboxA, 1U, 0xFFFFFFFFU, "projectile"));
 }
 
-TEST(Hurtbox3DUVETest, CommitHitsUVE_UniquesDeepestFirstAndCaps) {
-    Hurtbox3DComponentUVE hurtbox{};
-    const Hurtbox3DHitUVE incoming[] = {
-        MakeIncomingUVE(kHitboxA, 0.25F),
-        MakeIncomingUVE(kHitboxB, 0.80F),
-        MakeIncomingUVE(kHitboxA, 0.40F),
+TEST(Hurtbox3DTest, CommitHits_UniquesDeepestFirstAndCaps) {
+    Hurtbox3DComponent hurtbox{};
+    const Hurtbox3DHit incoming[] = {
+        MakeIncoming(kHitboxA, 0.25F),
+        MakeIncoming(kHitboxB, 0.80F),
+        MakeIncoming(kHitboxA, 0.40F),
     };
-    Hurtbox3DUVE::CommitHitsUVE(hurtbox, incoming, 3U);
+    Hurtbox3D::CommitHits(hurtbox, incoming, 3U);
 
     ASSERT_EQ(hurtbox.hitCount, 2U);
     EXPECT_FALSE(hurtbox.hitsTruncated);
@@ -72,57 +72,57 @@ TEST(Hurtbox3DUVETest, CommitHitsUVE_UniquesDeepestFirstAndCaps) {
     EXPECT_FLOAT_EQ(hurtbox.hits[0].penetrationDepth, 0.80F);
     EXPECT_EQ(hurtbox.hits[1].hitboxEntity, kHitboxA);
     EXPECT_FLOAT_EQ(hurtbox.hits[1].penetrationDepth, 0.40F);
-    EXPECT_TRUE(Hurtbox3DUVE::HasHitFromUVE(hurtbox, kHitboxA));
-    EXPECT_EQ(Hurtbox3DUVE::GetHitUVE(hurtbox, 2U), nullptr);
+    EXPECT_TRUE(Hurtbox3D::HasHitFrom(hurtbox, kHitboxA));
+    EXPECT_EQ(Hurtbox3D::GetHit(hurtbox, 2U), nullptr);
 
-    std::vector<Hurtbox3DHitUVE> overflow;
-    overflow.reserve(kMaximumHurtbox3DHitsUVE + 1U);
-    for (std::uint32_t index = 0U; index < kMaximumHurtbox3DHitsUVE + 1U; ++index) {
-        overflow.push_back(MakeIncomingUVE(EntityUVE{10U + index, 1U}, 1.0F - static_cast<float>(index) * 0.01F));
+    std::vector<Hurtbox3DHit> overflow;
+    overflow.reserve(kMaximumHurtbox3DHits + 1U);
+    for (std::uint32_t index = 0U; index < kMaximumHurtbox3DHits + 1U; ++index) {
+        overflow.push_back(MakeIncoming(Entity{10U + index, 1U}, 1.0F - static_cast<float>(index) * 0.01F));
     }
-    Hurtbox3DUVE::ResetReceivedUVE(hurtbox);
-    Hurtbox3DUVE::CommitHitsUVE(hurtbox, overflow.data(), overflow.size());
-    EXPECT_EQ(hurtbox.hitCount, kMaximumHurtbox3DHitsUVE);
+    Hurtbox3D::ResetReceived(hurtbox);
+    Hurtbox3D::CommitHits(hurtbox, overflow.data(), overflow.size());
+    EXPECT_EQ(hurtbox.hitCount, kMaximumHurtbox3DHits);
     EXPECT_TRUE(hurtbox.hitsTruncated);
     EXPECT_EQ(hurtbox.hits[0].hitboxEntity, overflow.front().hitboxEntity);
 }
 
-TEST(Hurtbox3DUVETest, CommitHitsUVE_ReceivesOncePerEnableWhileKeepingTheHit) {
-    Hurtbox3DComponentUVE hurtbox{};
-    const Hurtbox3DHitUVE incoming[] = {MakeIncomingUVE(kHitboxA, 0.5F)};
+TEST(Hurtbox3DTest, CommitHits_ReceivesOncePerEnableWhileKeepingTheHit) {
+    Hurtbox3DComponent hurtbox{};
+    const Hurtbox3DHit incoming[] = {MakeIncoming(kHitboxA, 0.5F)};
 
-    Hurtbox3DUVE::CommitHitsUVE(hurtbox, incoming, 1U);
+    Hurtbox3D::CommitHits(hurtbox, incoming, 1U);
     ASSERT_EQ(hurtbox.hitCount, 1U);
     EXPECT_TRUE(hurtbox.hits[0].received);
-    EXPECT_TRUE(Hurtbox3DUVE::HasReceivedUVE(hurtbox, kHitboxA));
+    EXPECT_TRUE(Hurtbox3D::HasReceived(hurtbox, kHitboxA));
     EXPECT_EQ(hurtbox.receivedCount, 1U);
 
-    Hurtbox3DUVE::CommitHitsUVE(hurtbox, incoming, 1U);
+    Hurtbox3D::CommitHits(hurtbox, incoming, 1U);
     ASSERT_EQ(hurtbox.hitCount, 1U);
     EXPECT_FALSE(hurtbox.hits[0].received);
-    EXPECT_TRUE(Hurtbox3DUVE::HasHitFromUVE(hurtbox, kHitboxA));
+    EXPECT_TRUE(Hurtbox3D::HasHitFrom(hurtbox, kHitboxA));
     EXPECT_EQ(hurtbox.receivedCount, 1U);
 
-    Hurtbox3DUVE::ClearHitsUVE(hurtbox);
+    Hurtbox3D::ClearHits(hurtbox);
     EXPECT_EQ(hurtbox.hitCount, 0U);
-    EXPECT_TRUE(Hurtbox3DUVE::HasReceivedUVE(hurtbox, kHitboxA));
+    EXPECT_TRUE(Hurtbox3D::HasReceived(hurtbox, kHitboxA));
 
-    Hurtbox3DUVE::ResetReceivedUVE(hurtbox);
-    EXPECT_FALSE(Hurtbox3DUVE::HasReceivedUVE(hurtbox, kHitboxA));
-    Hurtbox3DUVE::CommitHitsUVE(hurtbox, incoming, 1U);
+    Hurtbox3D::ResetReceived(hurtbox);
+    EXPECT_FALSE(Hurtbox3D::HasReceived(hurtbox, kHitboxA));
+    Hurtbox3D::CommitHits(hurtbox, incoming, 1U);
     ASSERT_EQ(hurtbox.hitCount, 1U);
     EXPECT_TRUE(hurtbox.hits[0].received);
 }
 
-TEST(Hurtbox3DUVETest, CommitHitsUVE_DropsInvalidIncoming) {
-    Hurtbox3DComponentUVE hurtbox{};
-    const Hurtbox3DHitUVE incoming[] = {
-        MakeIncomingUVE(kInvalidEntityUVE, 0.5F),
-        MakeIncomingUVE(kHitboxA, 0.0F),
-        Hurtbox3DHitUVE{kHitboxB, std::numeric_limits<float>::infinity(), {1.0F, 0.0F, 0.0F}},
-        MakeIncomingUVE(kHitboxA, 0.3F),
+TEST(Hurtbox3DTest, CommitHits_DropsInvalidIncoming) {
+    Hurtbox3DComponent hurtbox{};
+    const Hurtbox3DHit incoming[] = {
+        MakeIncoming(kInvalidEntity, 0.5F),
+        MakeIncoming(kHitboxA, 0.0F),
+        Hurtbox3DHit{kHitboxB, std::numeric_limits<float>::infinity(), {1.0F, 0.0F, 0.0F}},
+        MakeIncoming(kHitboxA, 0.3F),
     };
-    Hurtbox3DUVE::CommitHitsUVE(hurtbox, incoming, 4U);
+    Hurtbox3D::CommitHits(hurtbox, incoming, 4U);
     ASSERT_EQ(hurtbox.hitCount, 1U);
     EXPECT_EQ(hurtbox.hits[0].hitboxEntity, kHitboxA);
     EXPECT_FLOAT_EQ(hurtbox.hits[0].penetrationDepth, 0.3F);

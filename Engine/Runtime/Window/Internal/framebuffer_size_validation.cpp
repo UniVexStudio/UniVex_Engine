@@ -3,7 +3,7 @@
 
 namespace UVE::Window {
 
-bool ValidateFramebufferSizeUVE(const int width, const int height, std::uint32_t& outWidth,
+bool ValidateFramebufferSize(const int width, const int height, std::uint32_t& outWidth,
                                std::uint32_t& outHeight) noexcept {
     if (width <= 0 || height <= 0) {
         return false;

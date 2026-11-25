@@ -6,19 +6,19 @@
 
 namespace UVE::Window {
 
-struct WindowSizeLimitsUVE final {
+struct WindowSizeLimits final {
     int minimumWidth = 0;
     int minimumHeight = 0;
     int maximumWidth = 0;
     int maximumHeight = 0;
 
-    [[nodiscard]] constexpr bool operator==(const WindowSizeLimitsUVE&) const noexcept = default;
+    [[nodiscard]] constexpr bool operator==(const WindowSizeLimits&) const noexcept = default;
 };
 
 /// Converts validated descriptor limits to a backend's integer dimensions. Zero means no limit
-/// in WindowDescUVE and is replaced with the backend-specific "don't care" sentinel. Callers must
+/// in WindowDesc and is replaced with the backend-specific "don't care" sentinel. Callers must
 /// validate the descriptor first so nonzero values fit in `int`.
-[[nodiscard]] constexpr WindowSizeLimitsUVE ResolveWindowSizeLimitsUVE(
+[[nodiscard]] constexpr WindowSizeLimits ResolveWindowSizeLimits(
     const std::uint32_t minimumWidth, const std::uint32_t minimumHeight,
     const std::uint32_t maximumWidth, const std::uint32_t maximumHeight,
     const int backendDontCare) noexcept {

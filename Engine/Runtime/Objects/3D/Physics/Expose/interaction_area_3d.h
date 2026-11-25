@@ -14,62 +14,62 @@
 
 namespace UVE::Scene {
 
-inline constexpr std::size_t kMaximumInteractionAreaCandidatesUVE = 16U;
+inline constexpr std::size_t kMaximumInteractionAreaCandidates = 16U;
 
-struct InteractionArea3DComponentUVE final {
-    Math::Vector3UVE halfExtents{1.0F, 1.0F, 1.0F};
+struct InteractionArea3DComponent final {
+    Math::Vector3 halfExtents{1.0F, 1.0F, 1.0F};
     std::uint32_t collisionLayer = 1U;
     std::uint32_t collisionMask = 0xFFFFFFFFU;
     std::string interactionTag = "interactable";
     std::uint32_t maximumCandidates = 16U;
     bool enabled = true;
-    EntityUVE ignoreEntity = kInvalidEntityUVE;
-    std::array<EntityUVE, kMaximumInteractionAreaCandidatesUVE> interactors =
-        MakeEmptyEntityReferencesUVE<kMaximumInteractionAreaCandidatesUVE>();
+    Entity ignoreEntity = kInvalidEntity;
+    std::array<Entity, kMaximumInteractionAreaCandidates> interactors =
+        MakeEmptyEntityReferences<kMaximumInteractionAreaCandidates>();
     std::uint8_t interactorCount = 0U;
     bool interactorsTruncated = false;
     bool focusedByPrimaryInteractor = false;
 };
 
-[[nodiscard]] bool IsInteractionArea3DObjectComponentValidUVE(const InteractionArea3DComponentUVE& value) noexcept;
+[[nodiscard]] bool IsInteractionArea3DObjectComponentValid(const InteractionArea3DComponent& value) noexcept;
 
-struct InteractionFocusCandidateUVE final {
-    EntityUVE areaEntity{};
+struct InteractionFocusCandidate final {
+    Entity areaEntity{};
     float distanceSquared = 0.0F;
 };
 
-[[nodiscard]] std::size_t ResolveInteractionAreaCandidateCapUVE(std::uint32_t authoredMaximumCandidates,
+[[nodiscard]] std::size_t ResolveInteractionAreaCandidateCap(std::uint32_t authoredMaximumCandidates,
                                                                 std::size_t storageBound) noexcept;
 
-[[nodiscard]] std::optional<EntityUVE> ResolvePrimaryInteractorUVE(
-    std::span<const EntityUVE> interactorCandidates) noexcept;
+[[nodiscard]] std::optional<Entity> ResolvePrimaryInteractor(
+    std::span<const Entity> interactorCandidates) noexcept;
 
-[[nodiscard]] std::optional<EntityUVE> ResolveInteractionFocusUVE(
-    std::span<const InteractionFocusCandidateUVE> candidates) noexcept;
+[[nodiscard]] std::optional<Entity> ResolveInteractionFocus(
+    std::span<const InteractionFocusCandidate> candidates) noexcept;
 
-class InteractionArea3DUVE final {
+class InteractionArea3D final {
 public:
-    [[nodiscard]] static bool IsArmedUVE(const InteractionArea3DComponentUVE& area) noexcept;
+    [[nodiscard]] static bool IsArmed(const InteractionArea3DComponent& area) noexcept;
 
-    [[nodiscard]] static bool AcceptsInteractorUVE(EntityUVE areaEntity, const InteractionArea3DComponentUVE& area,
-                                                   EntityUVE interactorEntity, std::uint32_t interactorLayer,
+    [[nodiscard]] static bool AcceptsInteractor(Entity areaEntity, const InteractionArea3DComponent& area,
+                                                   Entity interactorEntity, std::uint32_t interactorLayer,
                                                    std::uint32_t interactorMask) noexcept;
 
-    static void ClearInteractorsUVE(InteractionArea3DComponentUVE& area) noexcept;
-    static void CommitInteractorsUVE(InteractionArea3DComponentUVE& area, const EntityUVE* interactors,
+    static void ClearInteractors(InteractionArea3DComponent& area) noexcept;
+    static void CommitInteractors(InteractionArea3DComponent& area, const Entity* interactors,
                                      std::size_t interactorCount);
 
-    [[nodiscard]] static const EntityUVE* GetInteractorUVE(const InteractionArea3DComponentUVE& area,
+    [[nodiscard]] static const Entity* GetInteractor(const InteractionArea3DComponent& area,
                                                            std::size_t index) noexcept;
-    [[nodiscard]] static bool HasInteractorUVE(const InteractionArea3DComponentUVE& area,
-                                               EntityUVE interactor) noexcept;
+    [[nodiscard]] static bool HasInteractor(const InteractionArea3DComponent& area,
+                                               Entity interactor) noexcept;
 
-    [[nodiscard]] static std::size_t ResolveCandidateCapUVE(std::uint32_t authoredMaximumCandidates,
+    [[nodiscard]] static std::size_t ResolveCandidateCap(std::uint32_t authoredMaximumCandidates,
                                                             std::size_t storageBound) noexcept;
-    [[nodiscard]] static std::optional<EntityUVE> ResolvePrimaryInteractorUVE(
-        std::span<const EntityUVE> interactorCandidates) noexcept;
-    [[nodiscard]] static std::optional<EntityUVE> ResolveFocusUVE(
-        std::span<const InteractionFocusCandidateUVE> candidates) noexcept;
+    [[nodiscard]] static std::optional<Entity> ResolvePrimaryInteractor(
+        std::span<const Entity> interactorCandidates) noexcept;
+    [[nodiscard]] static std::optional<Entity> ResolveFocus(
+        std::span<const InteractionFocusCandidate> candidates) noexcept;
 };
 
 } // namespace UVE::Scene

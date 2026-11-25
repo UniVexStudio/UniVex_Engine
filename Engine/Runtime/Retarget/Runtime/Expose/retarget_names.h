@@ -19,11 +19,11 @@ namespace UVE::Retarget {
 ///   "mixamorig:LeftForeArm"-> "L|forearm"
 ///   "calf_kneeBack_r"      -> "R|shin knee back"
 ///   "pelvis"               -> "C|hips"
-[[nodiscard]] std::string MakeBoneKeyUVE(std::string_view name);
+[[nodiscard]] std::string MakeBoneKey(std::string_view name);
 
 /// The humanoid reference's own name for a key: PascalCase words with an _L or _R side suffix
 /// ("L|upperarm twist 1" -> "UpperArmTwist1_L", "C|com" -> "CenterOfMass"). Keying the result
 /// gives the same key back.
-[[nodiscard]] std::string MakeHumanoidBoneNameUVE(std::string_view key);
+[[nodiscard]] std::string MakeHumanoidBoneName(std::string_view key);
 
 } // namespace UVE::Retarget

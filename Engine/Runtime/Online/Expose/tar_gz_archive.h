@@ -12,23 +12,23 @@
 namespace UVE::Online {
 
 /// File name extension of a gzip-compressed tar archive.
-inline constexpr std::string_view kTarGzFileExtensionUVE = ".tar.gz";
+inline constexpr std::string_view kTarGzFileExtension = ".tar.gz";
 
 /// Default ceiling on what one archive may write: far above any engine package, far below a full disk.
-inline constexpr std::uint64_t kDefaultArchiveMaximumTotalBytesUVE = std::uint64_t{8} << 30U;
+inline constexpr std::uint64_t kDefaultArchiveMaximumTotalBytes = std::uint64_t{8} << 30U;
 /// Default ceiling on the number of entries one archive may hold.
-inline constexpr std::size_t kDefaultArchiveMaximumEntriesUVE = 200000U;
+inline constexpr std::size_t kDefaultArchiveMaximumEntries = 200000U;
 
 /// Bounds that keep a damaged or hostile archive from filling the disk.
-struct ArchiveLimitsUVE final {
-    std::uint64_t maximumTotalBytes = kDefaultArchiveMaximumTotalBytesUVE;
-    std::size_t maximumEntries = kDefaultArchiveMaximumEntriesUVE;
+struct ArchiveLimits final {
+    std::uint64_t maximumTotalBytes = kDefaultArchiveMaximumTotalBytes;
+    std::size_t maximumEntries = kDefaultArchiveMaximumEntries;
     /// When set, only entries whose archive path it accepts are written; the rest are skipped. The
     /// safety checks still apply to every entry.
     std::function<bool(const std::filesystem::path&)> include;
 };
 
-struct ArchiveExtractResultUVE final {
+struct ArchiveExtractResult final {
     bool extracted = false;
     std::string message;
     std::uint64_t bytesWritten = 0U;
@@ -40,8 +40,8 @@ struct ArchiveExtractResultUVE final {
 /// links, devices and any entry whose path is absolute or climbs out of `destination` fail the whole
 /// extraction. Executable permission bits are kept where the platform has them. On failure the
 /// destination may hold a partial tree; callers extract into a staging directory they can discard.
-[[nodiscard]] ArchiveExtractResultUVE ExtractTarGzUVE(const std::filesystem::path& archive,
+[[nodiscard]] ArchiveExtractResult ExtractTarGz(const std::filesystem::path& archive,
                                                       const std::filesystem::path& destination,
-                                                      const ArchiveLimitsUVE& limits = {});
+                                                      const ArchiveLimits& limits = {});
 
 } // namespace UVE::Online

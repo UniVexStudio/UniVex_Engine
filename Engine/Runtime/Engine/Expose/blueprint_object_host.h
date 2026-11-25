@@ -15,27 +15,27 @@
 #include "blueprint_host.h"
 
 namespace UVE::Input {
-class IInputSystemUVE;
+class IInputSystem;
 } // namespace UVE::Input
 
 namespace UVE::Scene {
-class IEntityManagerUVE;
+class IEntityManager;
 } // namespace UVE::Scene
 
 namespace UVE::Audio {
-class IAudioSourceSystemUVE;
-class IAudioSystemUVE;
+class IAudioSourceSystem;
+class IAudioSystem;
 } // namespace Audio
 
 namespace UVE::Blueprint {
-class ScriptInstanceUVE;
+class ScriptInstance;
 } // namespace UVE::Blueprint
 
 namespace UVE::Network {
-class NetworkRpcUVE;
-class NetworkLobbyClientUVE;
-class NetworkRelayUVE;
-class NetworkSessionUVE;
+class NetworkRpc;
+class NetworkLobbyClient;
+class NetworkRelay;
+class NetworkSession;
 } // namespace UVE::Network
 
 namespace UVE::Core {
@@ -43,51 +43,51 @@ namespace UVE::Core {
 /// Fired from the RPC peer's response callback when one of this host's script-initiated
 /// calls completes: the call id plus whether it succeeded. The game installs it to raise
 /// `rpc_response` on this host's instance; like the instance resolver, its lifetime is the
-/// installer's business. Call ids are the peer's RpcCallIdUVE, spelled here so this header
+/// installer's business. Call ids are the peer's RpcCallId, spelled here so this header
 /// stays forward-declared (asserted equal where the peer is complete).
-using RpcResponseSinkUVE = std::function<void(std::uint32_t, bool)>;
+using RpcResponseSink = std::function<void(std::uint32_t, bool)>;
 
 /// Fired from this host's lobby facade callbacks when one of its script-initiated calls
 /// completes: the call id plus whether it succeeded. The game installs it to raise
 /// `lobby_result` on this host's instance; like the instance resolver, its lifetime is the
 /// installer's business. Call ids are minted by the host from 1 (0 is invalid), so no peer
 /// type needs asserting here.
-using LobbyResultSinkUVE = std::function<void(std::uint32_t, bool)>;
+using LobbyResultSink = std::function<void(std::uint32_t, bool)>;
 /// Fired from the lobby peer's roster handler on every roster push for the current room:
 /// the room id, spelled uint32_t so this header stays forward-declared (asserted equal
 /// where the peer is complete). The game installs it to raise `lobby_roster`.
-using LobbyRosterSinkUVE = std::function<void(std::uint32_t)>;
+using LobbyRosterSink = std::function<void(std::uint32_t)>;
 
 /// The world a gameplay script reaches beyond its own object: traces, spawning, the clock, the
 /// game's state, saves, and messages to other scripts. One set is shared by every script of a game
 /// (the engine fills it); each entry may be empty, and a call to an empty one fails closed.
 /// Vectors are UVScript's, so this header stays free of engine maths.
-struct ScriptServicesUVE final {
+struct ScriptServices final {
     /// What a trace hit: the first collider along the segment.
-    struct TraceHitUVE final {
+    struct TraceHit final {
         bool hit = false;
-        Blueprint::Vec3ValueUVE point{};
-        Blueprint::Vec3ValueUVE normal{};
+        Blueprint::Vec3Value point{};
+        Blueprint::Vec3Value normal{};
         double distance = 0.0;
-        Scene::EntityUVE entity = Scene::kInvalidEntityUVE;
+        Scene::Entity entity = Scene::kInvalidEntity;
     };
     /// A line (radius 0) or sphere trace from `from` to `to`, skipping `ignore`.
-    std::function<TraceHitUVE(const Blueprint::Vec3ValueUVE& from, const Blueprint::Vec3ValueUVE& to, double radius,
-                              Scene::EntityUVE ignore)>
+    std::function<TraceHit(const Blueprint::Vec3Value& from, const Blueprint::Vec3Value& to, double radius,
+                              Scene::Entity ignore)>
         trace;
     /// Makes an entity or prefab file's objects at `position`, turned by `rotation` (degrees): the root, or none.
-    std::function<Scene::EntityUVE(const std::string& path, const Blueprint::Vec3ValueUVE& position,
-                                   const Blueprint::Vec3ValueUVE& rotation)>
+    std::function<Scene::Entity(const std::string& path, const Blueprint::Vec3Value& position,
+                                   const Blueprint::Vec3Value& rotation)>
         spawn;
     /// Removes an object (and what is under it) once every script has run this frame, so a script
     /// may destroy itself; it hears `destroyed` first.
-    std::function<void(Scene::EntityUVE)> destroy;
+    std::function<void(Scene::Entity)> destroy;
     /// Seconds of game time since play began (stops while paused, follows the time scale).
     std::function<double()> time;
     /// This frame's game seconds.
     std::function<double()> delta;
     /// Puts `child` under `parent` (none: back at the top of the level); false when it cannot be.
-    std::function<bool(Scene::EntityUVE child, Scene::EntityUVE parent)> setParent;
+    std::function<bool(Scene::Entity child, Scene::Entity parent)> setParent;
     std::function<double()> timeScale;
     std::function<void(double)> setTimeScale;
     std::function<bool()> paused;
@@ -98,21 +98,21 @@ struct ScriptServicesUVE final {
     std::function<bool(const std::string& path)> openLevel;
     std::function<std::string()> levelName;
     /// Raises `custom_event(name, payload)` on `target`'s script after the current handlers.
-    std::function<void(Scene::EntityUVE target, const std::string& name, const std::string& payload)> emit;
+    std::function<void(Scene::Entity target, const std::string& name, const std::string& payload)> emit;
     /// A one-shot sound (an audio file): at `position` when spatial, else heard everywhere.
-    std::function<bool(const std::string& path, const Blueprint::Vec3ValueUVE& position, double volume, bool spatial)> playSound;
+    std::function<bool(const std::string& path, const Blueprint::Vec3Value& position, double volume, bool spatial)> playSound;
     /// Particles at once from `emitter`'s ParticleEmitter, on top of its rate.
-    std::function<bool(Scene::EntityUVE emitter, std::int64_t count)> burstParticles;
+    std::function<bool(Scene::Entity emitter, std::int64_t count)> burstParticles;
     /// Makes `camera` the view (the others stop being current).
-    std::function<bool(Scene::EntityUVE camera)> activateCamera;
+    std::function<bool(Scene::Entity camera)> activateCamera;
     /// Shakes the view: `strength` metres at first, fading out over `seconds`.
     std::function<void(double strength, double seconds)> cameraShake;
     /// Where the view looks (unit), and where it is.
-    std::function<Blueprint::Vec3ValueUVE()> cameraForward;
-    std::function<Blueprint::Vec3ValueUVE()> cameraLocation;
+    std::function<Blueprint::Vec3Value()> cameraForward;
+    std::function<Blueprint::Vec3Value()> cameraLocation;
     /// Plays the AnimationSequencer `player`'s clip named `clip` (its file's name, from its own list;
     /// empty: the one it has) from the start.
-    std::function<bool(Scene::EntityUVE player, const std::string& clip)> playAnimation;
+    std::function<bool(Scene::Entity player, const std::string& clip)> playAnimation;
     /// Save slots: the game data below, written to and read from a named slot.
     std::function<bool(const std::string& slot)> saveSlot;
     std::function<bool(const std::string& slot)> loadSlot;
@@ -169,11 +169,11 @@ struct ScriptServicesUVE final {
 ///   read the project's input map; events `ready` and `tick(dt)`.
 /// - always: `node(name)` finds another object by name, and `ref.method(args)` calls one of its
 ///   script functions (or the built-in `hide()`/`show()`), fire-and-forget.
-class BlueprintObjectHostUVE final : public Blueprint::UVScriptHostUVE {
+class BlueprintObjectHost final : public Blueprint::UVScriptHost {
 public:
     /// Finds the running script of an entity, for routing cross-node calls at it. Null when the
     /// entity runs no script. Empty on check-only hosts, whose calls then only reach built-ins.
-    using InstanceResolverUVE = std::function<Blueprint::ScriptInstanceUVE*(Scene::EntityUVE)>;
+    using InstanceResolver = std::function<Blueprint::ScriptInstance*(Scene::Entity)>;
 
     /// `input` may be null (no input system): input calls then read as not pressed.
     /// `audioSources`/`audio` may be null (no audio): audio calls then fail closed as false. Both
@@ -191,127 +191,127 @@ public:
     /// or "unknown". `relaySession` may be null (no relay session): `relay.send` answers
     /// false and `relay.poll` answers "". Both must outlive the host; neither installs
     /// callbacks, so destruction unhooks nothing.
-    BlueprintObjectHostUVE(Scene::IEntityManagerUVE& entityManager, const Input::IInputSystemUVE* input,
-                          Scene::EntityUVE entity, Audio::IAudioSourceSystemUVE* audioSources = nullptr,
-                          Audio::IAudioSystemUVE* audio = nullptr,
-                          InstanceResolverUVE resolver = InstanceResolverUVE{},
-                          Network::NetworkRpcUVE* rpc = nullptr,
-                          RpcResponseSinkUVE sink = RpcResponseSinkUVE{},
-                          Network::NetworkLobbyClientUVE* lobby = nullptr,
-                          LobbyResultSinkUVE lobbySink = LobbyResultSinkUVE{},
-                          LobbyRosterSinkUVE rosterSink = LobbyRosterSinkUVE{},
-                          Network::NetworkRelayUVE* relay = nullptr,
-                          Network::NetworkSessionUVE* relaySession = nullptr) noexcept;
-    ~BlueprintObjectHostUVE() override;
+    BlueprintObjectHost(Scene::IEntityManager& entityManager, const Input::IInputSystem* input,
+                          Scene::Entity entity, Audio::IAudioSourceSystem* audioSources = nullptr,
+                          Audio::IAudioSystem* audio = nullptr,
+                          InstanceResolver resolver = InstanceResolver{},
+                          Network::NetworkRpc* rpc = nullptr,
+                          RpcResponseSink sink = RpcResponseSink{},
+                          Network::NetworkLobbyClient* lobby = nullptr,
+                          LobbyResultSink lobbySink = LobbyResultSink{},
+                          LobbyRosterSink rosterSink = LobbyRosterSink{},
+                          Network::NetworkRelay* relay = nullptr,
+                          Network::NetworkSession* relaySession = nullptr) noexcept;
+    ~BlueprintObjectHost() override;
 
-    [[nodiscard]] std::optional<Blueprint::HostPropertyUVE> DescribePropertyUVE(std::string_view name) const override;
-    [[nodiscard]] std::optional<Blueprint::HostFunctionUVE> DescribeFunctionUVE(std::string_view name) const override;
-    [[nodiscard]] std::optional<std::vector<Blueprint::TypeUVE>> DescribeEventUVE(std::string_view event) const override;
+    [[nodiscard]] std::optional<Blueprint::HostProperty> DescribeProperty(std::string_view name) const override;
+    [[nodiscard]] std::optional<Blueprint::HostFunction> DescribeFunction(std::string_view name) const override;
+    [[nodiscard]] std::optional<std::vector<Blueprint::Type>> DescribeEvent(std::string_view event) const override;
 
-    [[nodiscard]] Blueprint::ValueUVE GetPropertyUVE(std::string_view name) override;
-    void SetPropertyUVE(std::string_view name, const Blueprint::ValueUVE& value) override;
-    [[nodiscard]] Blueprint::ValueUVE CallFunctionUVE(std::string_view name,
-                                                      std::span<const Blueprint::ValueUVE> args) override;
-    void CallMethodUVE(Blueprint::ObjectRefUVE target, std::string_view method,
-                       std::span<const Blueprint::ValueUVE> args) override;
-    void PrintUVE(std::string_view text) override;
+    [[nodiscard]] Blueprint::Value GetProperty(std::string_view name) override;
+    void SetProperty(std::string_view name, const Blueprint::Value& value) override;
+    [[nodiscard]] Blueprint::Value CallFunction(std::string_view name,
+                                                      std::span<const Blueprint::Value> args) override;
+    void CallMethod(Blueprint::ObjectRef target, std::string_view method,
+                       std::span<const Blueprint::Value> args) override;
+    void Print(std::string_view text) override;
 
     /// Makes a Widget Blueprint's widgets (its `.uvwbp` path) in the world, hidden until
     /// `ui.add_to_viewport` shows them: the root Canvas, or none when the file cannot be made.
-    using WidgetFactoryUVE = std::function<Scene::EntityUVE(const std::string& path)>;
+    using WidgetFactory = std::function<Scene::Entity(const std::string& path)>;
     /// Without one, `ui.create` answers no object.
-    void SetWidgetFactoryUVE(WidgetFactoryUVE factory) { m_widgetFactory = std::move(factory); }
+    void SetWidgetFactory(WidgetFactory factory) { m_widgetFactory = std::move(factory); }
     /// `ui.show_cursor(show)`: shows and frees the pointer for UI, or hides and captures it for the game.
-    using CursorHandlerUVE = std::function<void(bool show)>;
-    void SetCursorHandlerUVE(CursorHandlerUVE handler) { m_cursorHandler = std::move(handler); }
+    using CursorHandler = std::function<void(bool show)>;
+    void SetCursorHandler(CursorHandler handler) { m_cursorHandler = std::move(handler); }
     /// The game's services (traces, spawning, the clock, saves, messages). Without them those calls fail closed.
-    void SetServicesUVE(ScriptServicesUVE* services) noexcept { m_services = services; }
+    void SetServices(ScriptServices* services) noexcept { m_services = services; }
 
     /// Moves this script's timers on by `dt` seconds: the ids of those that ran out, in order, for
     /// the caller to raise `timer(id)`. A looping timer starts again; a one-shot one is gone.
     /// A life span (`world.set_life_span`) that ran out destroys the object instead.
-    [[nodiscard]] std::vector<std::string> AdvanceTimersUVE(double dt);
-    [[nodiscard]] bool HasTimersUVE() const noexcept { return !m_timers.empty(); }
+    [[nodiscard]] std::vector<std::string> AdvanceTimers(double dt);
+    [[nodiscard]] bool HasTimers() const noexcept { return !m_timers.empty(); }
 
 private:
-    struct TimerUVE final {
+    struct Timer final {
         double remaining = 0.0;
         double period = 0.0;
         bool loop = false;
     };
-    [[nodiscard]] Blueprint::ValueUVE TextAndMathCallUVE(std::string_view name, std::span<const Blueprint::ValueUVE> args);
-    [[nodiscard]] Blueprint::ValueUVE WorldCallUVE(std::string_view name, std::span<const Blueprint::ValueUVE> args);
+    [[nodiscard]] Blueprint::Value TextAndMathCall(std::string_view name, std::span<const Blueprint::Value> args);
+    [[nodiscard]] Blueprint::Value WorldCall(std::string_view name, std::span<const Blueprint::Value> args);
     /// The object a script reference names, or none when it names nothing alive.
-    [[nodiscard]] Scene::EntityUVE EntityOfUVE(const Blueprint::ValueUVE& value) const;
+    [[nodiscard]] Scene::Entity EntityOf(const Blueprint::Value& value) const;
 
     /// Widget Blueprints: `ui.*`. The widget named `name` under this object's Canvas (the whole
     /// world when this object is no widget); none when there is no such widget.
-    [[nodiscard]] Scene::EntityUVE FindWidgetUVE(std::string_view name) const;
-    [[nodiscard]] Blueprint::ValueUVE WidgetCallUVE(std::string_view name, std::span<const Blueprint::ValueUVE> args);
+    [[nodiscard]] Scene::Entity FindWidget(std::string_view name) const;
+    [[nodiscard]] Blueprint::Value WidgetCall(std::string_view name, std::span<const Blueprint::Value> args);
 
-    struct StagedRpcCallUVE final {
+    struct StagedRpcCall final {
         std::string method;
-        std::vector<Blueprint::ValueUVE> args;
+        std::vector<Blueprint::Value> args;
     };
 
-    [[nodiscard]] Blueprint::ValueUVE GameplayCallUVE(std::string_view name, std::span<const Blueprint::ValueUVE> args);
-    [[nodiscard]] Blueprint::ValueUVE RpcCallUVE(std::string_view name,
-                                               std::span<const Blueprint::ValueUVE> args);
-    [[nodiscard]] std::uint32_t NextStagingIdUVE() noexcept;
+    [[nodiscard]] Blueprint::Value GameplayCall(std::string_view name, std::span<const Blueprint::Value> args);
+    [[nodiscard]] Blueprint::Value RpcCall(std::string_view name,
+                                               std::span<const Blueprint::Value> args);
+    [[nodiscard]] std::uint32_t NextStagingId() noexcept;
 
-    enum class LobbyCallKindUVE : std::uint8_t { List, Create, Join, Leave, Roster };
+    enum class LobbyCallKind : std::uint8_t { List, Create, Join, Leave, Roster };
 
-    struct LobbyRoomDescUVE final {
+    struct LobbyRoomDesc final {
         std::uint32_t id = 0U;
         std::string name;
         std::uint32_t players = 0U;
         std::uint32_t maxPlayers = 0U;
     };
 
-    struct LobbyCallStateUVE final {
-        LobbyCallKindUVE kind = LobbyCallKindUVE::List;
+    struct LobbyCallState final {
+        LobbyCallKind kind = LobbyCallKind::List;
         bool done = false;
         bool ok = false;
         bool settled = false;
         std::string error;
-        std::vector<LobbyRoomDescUVE> rooms;
+        std::vector<LobbyRoomDesc> rooms;
         std::uint32_t room = 0U;
         std::vector<std::string> roster;
         bool left = false;
     };
 
-    [[nodiscard]] Blueprint::ValueUVE LobbyCallUVE(std::string_view name,
-                                                 std::span<const Blueprint::ValueUVE> args);
-    [[nodiscard]] std::uint32_t StartLobbyCallUVE(LobbyCallKindUVE kind);
-    [[nodiscard]] Blueprint::ValueUVE FinishLobbyCallUVE(std::uint32_t id);
-    [[nodiscard]] std::uint32_t NextLobbyCallIdUVE() noexcept;
-    [[nodiscard]] Blueprint::ValueUVE RelayCallUVE(std::string_view name,
-                                                 std::span<const Blueprint::ValueUVE> args);
+    [[nodiscard]] Blueprint::Value LobbyCall(std::string_view name,
+                                                 std::span<const Blueprint::Value> args);
+    [[nodiscard]] std::uint32_t StartLobbyCall(LobbyCallKind kind);
+    [[nodiscard]] Blueprint::Value FinishLobbyCall(std::uint32_t id);
+    [[nodiscard]] std::uint32_t NextLobbyCallId() noexcept;
+    [[nodiscard]] Blueprint::Value RelayCall(std::string_view name,
+                                                 std::span<const Blueprint::Value> args);
 
-    Scene::IEntityManagerUVE& m_entityManager;
-    const Input::IInputSystemUVE* m_input = nullptr;
-    Scene::EntityUVE m_entity = Scene::kInvalidEntityUVE;
-    Audio::IAudioSourceSystemUVE* m_audioSources = nullptr;
-    Audio::IAudioSystemUVE* m_audio = nullptr;
-    InstanceResolverUVE m_resolver;
-    Network::NetworkRpcUVE* m_rpc = nullptr;
-    RpcResponseSinkUVE m_sink;
-    std::map<std::uint32_t, StagedRpcCallUVE> m_stagedRpc;
+    Scene::IEntityManager& m_entityManager;
+    const Input::IInputSystem* m_input = nullptr;
+    Scene::Entity m_entity = Scene::kInvalidEntity;
+    Audio::IAudioSourceSystem* m_audioSources = nullptr;
+    Audio::IAudioSystem* m_audio = nullptr;
+    InstanceResolver m_resolver;
+    Network::NetworkRpc* m_rpc = nullptr;
+    RpcResponseSink m_sink;
+    std::map<std::uint32_t, StagedRpcCall> m_stagedRpc;
     std::set<std::uint32_t> m_pendingRpc;
     std::uint32_t m_nextStagingId = 1U;
-    Network::NetworkLobbyClientUVE* m_lobby = nullptr;
-    LobbyResultSinkUVE m_lobbySink;
-    LobbyRosterSinkUVE m_rosterSink;
-    std::map<std::uint32_t, LobbyCallStateUVE> m_lobbyCalls;
+    Network::NetworkLobbyClient* m_lobby = nullptr;
+    LobbyResultSink m_lobbySink;
+    LobbyRosterSink m_rosterSink;
+    std::map<std::uint32_t, LobbyCallState> m_lobbyCalls;
     std::uint32_t m_nextLobbyCall = 1U;
-    Network::NetworkRelayUVE* m_relay = nullptr;
-    Network::NetworkSessionUVE* m_relaySession = nullptr;
-    WidgetFactoryUVE m_widgetFactory;
-    CursorHandlerUVE m_cursorHandler;
-    ScriptServicesUVE* m_services = nullptr;
-    std::map<std::string, TimerUVE> m_timers;
+    Network::NetworkRelay* m_relay = nullptr;
+    Network::NetworkSession* m_relaySession = nullptr;
+    WidgetFactory m_widgetFactory;
+    CursorHandler m_cursorHandler;
+    ScriptServices* m_services = nullptr;
+    std::map<std::string, Timer> m_timers;
     /// The last trace's result, read by `trace.location/normal/object/distance`.
-    ScriptServicesUVE::TraceHitUVE m_lastTrace;
+    ScriptServices::TraceHit m_lastTrace;
 };
 
 } // namespace UVE::Core

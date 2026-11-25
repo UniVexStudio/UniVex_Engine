@@ -14,16 +14,16 @@
 namespace UVE::Scene::Tests {
 namespace {
 
-class WorldEnvironmentUVETest : public ::testing::Test {
+class WorldEnvironmentTest : public ::testing::Test {
 protected:
-    Memory::MemoryManagerUVE memoryManager;
-    Events::EventSystemUVE eventSystem;
-    EntityManagerUVE entityManager{memoryManager.GetDefaultAllocatorUVE(), eventSystem};
+    Memory::MemoryManager memoryManager;
+    Events::EventSystem eventSystem;
+    EntityManager entityManager{memoryManager.GetDefaultAllocator(), eventSystem};
 };
 
-TEST_F(WorldEnvironmentUVETest, MissingEnvironmentKeepsTheFallbackAmbient) {
-    const Math::Vector3UVE fallback{0.1F, 0.2F, 0.3F};
-    const WorldEnvironmentFrameUVE frame = ResolveWorldEnvironmentFrameUVE(entityManager, fallback);
+TEST_F(WorldEnvironmentTest, MissingEnvironmentKeepsTheFallbackAmbient) {
+    const Math::Vector3 fallback{0.1F, 0.2F, 0.3F};
+    const WorldEnvironmentFrame frame = ResolveWorldEnvironmentFrame(entityManager, fallback);
     EXPECT_FALSE(frame.hasEnvironment);
     EXPECT_EQ(frame.ambientColor, fallback);
     EXPECT_EQ(frame.skyAmbient, fallback);
@@ -33,36 +33,36 @@ TEST_F(WorldEnvironmentUVETest, MissingEnvironmentKeepsTheFallbackAmbient) {
     EXPECT_FALSE(frame.postProcessingEnabled);
 }
 
-TEST_F(WorldEnvironmentUVETest, AmbientSourceSelectsNoneFlatSkyAndEnvironmentMapLighting) {
-    const EntityUVE environmentEntity = entityManager.CreateEntityUVE();
-    WorldEnvironment3DComponentUVE authored{};
-    authored.ambientColor = Math::Vector3UVE{0.2F, 0.3F, 0.4F};
+TEST_F(WorldEnvironmentTest, AmbientSourceSelectsNoneFlatSkyAndEnvironmentMapLighting) {
+    const Entity environmentEntity = entityManager.CreateEntity();
+    WorldEnvironment3DComponent authored{};
+    authored.ambientColor = Math::Vector3{0.2F, 0.3F, 0.4F};
     authored.ambientEnergy = 2.0F;
-    authored.skyColor = Math::Vector3UVE{0.5F, 0.6F, 0.7F};
-    authored.groundColor = Math::Vector3UVE{0.1F, 0.2F, 0.3F};
+    authored.skyColor = Math::Vector3{0.5F, 0.6F, 0.7F};
+    authored.groundColor = Math::Vector3{0.1F, 0.2F, 0.3F};
     authored.skyAssetPath = "environment/day.hdr";
-    entityManager.AddComponentUVE<WorldEnvironment3DComponentUVE>(environmentEntity, authored);
-    WorldEnvironment3DComponentUVE& environment =
-        entityManager.GetComponentUVE<WorldEnvironment3DComponentUVE>(environmentEntity);
+    entityManager.AddComponent<WorldEnvironment3DComponent>(environmentEntity, authored);
+    WorldEnvironment3DComponent& environment =
+        entityManager.GetComponent<WorldEnvironment3DComponent>(environmentEntity);
 
-    environment.ambientSource = WorldEnvironmentAmbientSourceUVE::None;
-    WorldEnvironmentFrameUVE frame = ResolveWorldEnvironmentFrameUVE(entityManager, Math::Vector3UVE{});
-    EXPECT_EQ(frame.ambientSource, WorldEnvironmentAmbientSourceUVE::None);
-    EXPECT_EQ(frame.ambientColor, Math::Vector3UVE{});
-    EXPECT_EQ(frame.skyAmbient, Math::Vector3UVE{});
-    EXPECT_EQ(frame.groundAmbient, Math::Vector3UVE{});
+    environment.ambientSource = WorldEnvironmentAmbientSource::None;
+    WorldEnvironmentFrame frame = ResolveWorldEnvironmentFrame(entityManager, Math::Vector3{});
+    EXPECT_EQ(frame.ambientSource, WorldEnvironmentAmbientSource::None);
+    EXPECT_EQ(frame.ambientColor, Math::Vector3{});
+    EXPECT_EQ(frame.skyAmbient, Math::Vector3{});
+    EXPECT_EQ(frame.groundAmbient, Math::Vector3{});
 
-    environment.ambientSource = WorldEnvironmentAmbientSourceUVE::FlatColor;
-    frame = ResolveWorldEnvironmentFrameUVE(entityManager, Math::Vector3UVE{});
-    EXPECT_EQ(frame.ambientSource, WorldEnvironmentAmbientSourceUVE::FlatColor);
-    EXPECT_EQ(frame.ambientColor, (Math::Vector3UVE{0.4F, 0.6F, 0.8F}));
-    EXPECT_EQ(frame.skyAmbient, Math::Vector3UVE{});
-    EXPECT_EQ(frame.groundAmbient, Math::Vector3UVE{});
+    environment.ambientSource = WorldEnvironmentAmbientSource::FlatColor;
+    frame = ResolveWorldEnvironmentFrame(entityManager, Math::Vector3{});
+    EXPECT_EQ(frame.ambientSource, WorldEnvironmentAmbientSource::FlatColor);
+    EXPECT_EQ(frame.ambientColor, (Math::Vector3{0.4F, 0.6F, 0.8F}));
+    EXPECT_EQ(frame.skyAmbient, Math::Vector3{});
+    EXPECT_EQ(frame.groundAmbient, Math::Vector3{});
 
-    environment.ambientSource = WorldEnvironmentAmbientSourceUVE::Sky;
-    frame = ResolveWorldEnvironmentFrameUVE(entityManager, Math::Vector3UVE{});
-    EXPECT_EQ(frame.ambientSource, WorldEnvironmentAmbientSourceUVE::Sky);
-    EXPECT_EQ(frame.ambientColor, (Math::Vector3UVE{0.4F, 0.6F, 0.8F}));
+    environment.ambientSource = WorldEnvironmentAmbientSource::Sky;
+    frame = ResolveWorldEnvironmentFrame(entityManager, Math::Vector3{});
+    EXPECT_EQ(frame.ambientSource, WorldEnvironmentAmbientSource::Sky);
+    EXPECT_EQ(frame.ambientColor, (Math::Vector3{0.4F, 0.6F, 0.8F}));
     EXPECT_NEAR(frame.skyAmbient.x, 0.2F, 1.0e-5F);
     EXPECT_NEAR(frame.skyAmbient.y, 0.36F, 1.0e-5F);
     EXPECT_NEAR(frame.skyAmbient.z, 0.56F, 1.0e-5F);
@@ -70,9 +70,9 @@ TEST_F(WorldEnvironmentUVETest, AmbientSourceSelectsNoneFlatSkyAndEnvironmentMap
     EXPECT_NEAR(frame.groundAmbient.y, 0.12F, 1.0e-5F);
     EXPECT_NEAR(frame.groundAmbient.z, 0.24F, 1.0e-5F);
 
-    environment.ambientSource = WorldEnvironmentAmbientSourceUVE::EnvironmentMap;
-    frame = ResolveWorldEnvironmentFrameUVE(entityManager, Math::Vector3UVE{});
-    EXPECT_EQ(frame.ambientSource, WorldEnvironmentAmbientSourceUVE::EnvironmentMap);
+    environment.ambientSource = WorldEnvironmentAmbientSource::EnvironmentMap;
+    frame = ResolveWorldEnvironmentFrame(entityManager, Math::Vector3{});
+    EXPECT_EQ(frame.ambientSource, WorldEnvironmentAmbientSource::EnvironmentMap);
     EXPECT_EQ(frame.skyAssetPath, authored.skyAssetPath);
     EXPECT_NEAR(frame.skyAmbient.x, 0.2F, 1.0e-5F); // Procedural fallback while the map is unavailable.
     EXPECT_NEAR(frame.skyAmbient.y, 0.36F, 1.0e-5F);
@@ -83,13 +83,13 @@ TEST_F(WorldEnvironmentUVETest, AmbientSourceSelectsNoneFlatSkyAndEnvironmentMap
 // on, so the act of adding an environment looked like a colour change; post-processing now starts
 // off, and an author turns on what they want. The sky and its ambient do resolve, because those are
 // the reason to add an environment in the first place.
-TEST_F(WorldEnvironmentUVETest, DefaultEnvironmentLightsTheSceneWithoutSwitchingTheEffectsOn) {
-    EXPECT_TRUE(IsWorldEnvironment3DObjectComponentValidUVE(WorldEnvironment3DComponentUVE{}));
-    const EntityUVE environment = entityManager.CreateEntityUVE();
-    entityManager.AddComponentUVE<WorldEnvironment3DComponentUVE>(environment, WorldEnvironment3DComponentUVE{});
+TEST_F(WorldEnvironmentTest, DefaultEnvironmentLightsTheSceneWithoutSwitchingTheEffectsOn) {
+    EXPECT_TRUE(IsWorldEnvironment3DObjectComponentValid(WorldEnvironment3DComponent{}));
+    const Entity environment = entityManager.CreateEntity();
+    entityManager.AddComponent<WorldEnvironment3DComponent>(environment, WorldEnvironment3DComponent{});
 
-    const WorldEnvironmentFrameUVE frame =
-        ResolveWorldEnvironmentFrameUVE(entityManager, Math::Vector3UVE{0.05F, 0.05F, 0.05F});
+    const WorldEnvironmentFrame frame =
+        ResolveWorldEnvironmentFrame(entityManager, Math::Vector3{0.05F, 0.05F, 0.05F});
     EXPECT_TRUE(frame.hasEnvironment);
     EXPECT_FALSE(frame.postProcessingEnabled);
     EXPECT_TRUE(frame.bloomEnabled);
@@ -101,8 +101,8 @@ TEST_F(WorldEnvironmentUVETest, DefaultEnvironmentLightsTheSceneWithoutSwitching
     EXPECT_FLOAT_EQ(frame.filmGrainIntensity, 0.0F);
     EXPECT_FLOAT_EQ(frame.lensDistortionIntensity, 0.0F);
     EXPECT_FALSE(frame.depthOfFieldEnabled);
-    EXPECT_EQ(frame.depthOfFieldFocusMode, WorldEnvironmentDepthOfFieldFocusModeUVE::Manual);
-    EXPECT_EQ(frame.depthOfFieldBokehShape, WorldEnvironmentDepthOfFieldBokehShapeUVE::Circular);
+    EXPECT_EQ(frame.depthOfFieldFocusMode, WorldEnvironmentDepthOfFieldFocusMode::Manual);
+    EXPECT_EQ(frame.depthOfFieldBokehShape, WorldEnvironmentDepthOfFieldBokehShape::Circular);
     EXPECT_FLOAT_EQ(frame.depthOfFieldFocusDistance, 10.0F);
     EXPECT_FLOAT_EQ(frame.depthOfFieldAperture, 0.5F);
     EXPECT_EQ(frame.depthOfFieldQuality, 1U);
@@ -110,24 +110,24 @@ TEST_F(WorldEnvironmentUVETest, DefaultEnvironmentLightsTheSceneWithoutSwitching
     EXPECT_FLOAT_EQ(frame.motionBlurStrength, 0.5F);
     EXPECT_EQ(frame.motionBlurSampleCount, 8U);
     EXPECT_TRUE(frame.ssaoEnabled);
-    EXPECT_EQ(frame.ambientSource, WorldEnvironmentAmbientSourceUVE::Sky);
-    EXPECT_EQ(frame.skyColor, (Math::Vector3UVE{0.31F, 0.54F, 0.91F}));
-    EXPECT_EQ(frame.groundColor, (Math::Vector3UVE{0.24F, 0.21F, 0.18F}));
-    EXPECT_EQ(frame.fogMode, WorldEnvironmentFogModeUVE::Height);
+    EXPECT_EQ(frame.ambientSource, WorldEnvironmentAmbientSource::Sky);
+    EXPECT_EQ(frame.skyColor, (Math::Vector3{0.31F, 0.54F, 0.91F}));
+    EXPECT_EQ(frame.groundColor, (Math::Vector3{0.24F, 0.21F, 0.18F}));
+    EXPECT_EQ(frame.fogMode, WorldEnvironmentFogMode::Height);
     EXPECT_EQ(frame.backgroundColor, frame.horizonColor);
     EXPECT_GT(frame.skyAmbient.z, frame.groundAmbient.z);
     EXPECT_GT(frame.groundAmbient.x, frame.skyAmbient.x * 0.5F);
 }
 
-TEST_F(WorldEnvironmentUVETest, FirstValidEnvironmentDrivesSkyGroundFogBloomAndGrade) {
-    const EntityUVE environment = entityManager.CreateEntityUVE();
-    WorldEnvironment3DComponentUVE authored{};
-    authored.ambientColor = Math::Vector3UVE{0.5F, 0.5F, 0.5F};
+TEST_F(WorldEnvironmentTest, FirstValidEnvironmentDrivesSkyGroundFogBloomAndGrade) {
+    const Entity environment = entityManager.CreateEntity();
+    WorldEnvironment3DComponent authored{};
+    authored.ambientColor = Math::Vector3{0.5F, 0.5F, 0.5F};
     authored.ambientEnergy = 2.0F;
-    authored.skyColor = Math::Vector3UVE{0.2F, 0.4F, 1.0F};
-    authored.horizonColor = Math::Vector3UVE{0.8F, 0.9F, 1.0F};
-    authored.groundColor = Math::Vector3UVE{0.4F, 0.2F, 0.1F};
-    authored.fogColor = Math::Vector3UVE{0.8F, 0.7F, 0.6F};
+    authored.skyColor = Math::Vector3{0.2F, 0.4F, 1.0F};
+    authored.horizonColor = Math::Vector3{0.8F, 0.9F, 1.0F};
+    authored.groundColor = Math::Vector3{0.4F, 0.2F, 0.1F};
+    authored.fogColor = Math::Vector3{0.8F, 0.7F, 0.6F};
     authored.fogDensity = 0.04F;
     authored.fogEnabled = true;
     authored.fogSkyAffect = 0.2F;
@@ -142,25 +142,25 @@ TEST_F(WorldEnvironmentUVETest, FirstValidEnvironmentDrivesSkyGroundFogBloomAndG
     authored.brightness = 0.05F;
     authored.contrast = 1.1F;
     authored.saturation = 0.9F;
-    authored.colorFilter = Math::Vector3UVE{1.0F, 0.95F, 0.9F};
+    authored.colorFilter = Math::Vector3{1.0F, 0.95F, 0.9F};
     authored.vignetteIntensity = 0.75F;
     authored.vignetteRadius = 0.55F;
     authored.chromaticAberrationIntensity = 0.4F;
     authored.filmGrainIntensity = 0.35F;
     authored.lensDistortionIntensity = 0.5F;
     authored.depthOfFieldEnabled = true;
-    authored.depthOfFieldFocusMode = WorldEnvironmentDepthOfFieldFocusModeUVE::ScreenCenter;
-    authored.depthOfFieldBokehShape = WorldEnvironmentDepthOfFieldBokehShapeUVE::Hexagonal;
+    authored.depthOfFieldFocusMode = WorldEnvironmentDepthOfFieldFocusMode::ScreenCenter;
+    authored.depthOfFieldBokehShape = WorldEnvironmentDepthOfFieldBokehShape::Hexagonal;
     authored.depthOfFieldFocusDistance = 24.0F;
     authored.depthOfFieldAperture = 0.8F;
     authored.depthOfFieldQuality = 2U;
     authored.motionBlurEnabled = true;
     authored.motionBlurStrength = 0.75F;
     authored.motionBlurSampleCount = 12U;
-    entityManager.AddComponentUVE<WorldEnvironment3DComponentUVE>(environment, authored);
+    entityManager.AddComponent<WorldEnvironment3DComponent>(environment, authored);
 
-    const WorldEnvironmentFrameUVE frame =
-        ResolveWorldEnvironmentFrameUVE(entityManager, Math::Vector3UVE{0.1F, 0.1F, 0.1F});
+    const WorldEnvironmentFrame frame =
+        ResolveWorldEnvironmentFrame(entityManager, Math::Vector3{0.1F, 0.1F, 0.1F});
     EXPECT_TRUE(frame.hasEnvironment);
     EXPECT_NEAR(frame.ambientColor.x, 1.0F, 1.0e-5F);
     EXPECT_NEAR(frame.skyAmbient.z, 1.0F, 1.0e-5F);
@@ -186,8 +186,8 @@ TEST_F(WorldEnvironmentUVETest, FirstValidEnvironmentDrivesSkyGroundFogBloomAndG
     EXPECT_FLOAT_EQ(frame.filmGrainIntensity, 0.35F);
     EXPECT_FLOAT_EQ(frame.lensDistortionIntensity, 0.5F);
     EXPECT_TRUE(frame.depthOfFieldEnabled);
-    EXPECT_EQ(frame.depthOfFieldFocusMode, WorldEnvironmentDepthOfFieldFocusModeUVE::ScreenCenter);
-    EXPECT_EQ(frame.depthOfFieldBokehShape, WorldEnvironmentDepthOfFieldBokehShapeUVE::Hexagonal);
+    EXPECT_EQ(frame.depthOfFieldFocusMode, WorldEnvironmentDepthOfFieldFocusMode::ScreenCenter);
+    EXPECT_EQ(frame.depthOfFieldBokehShape, WorldEnvironmentDepthOfFieldBokehShape::Hexagonal);
     EXPECT_FLOAT_EQ(frame.depthOfFieldFocusDistance, 24.0F);
     EXPECT_FLOAT_EQ(frame.depthOfFieldAperture, 0.8F);
     EXPECT_EQ(frame.depthOfFieldQuality, 2U);
@@ -198,262 +198,262 @@ TEST_F(WorldEnvironmentUVETest, FirstValidEnvironmentDrivesSkyGroundFogBloomAndG
     EXPECT_TRUE(frame.skyAssetPath.empty());
 }
 
-TEST_F(WorldEnvironmentUVETest, FogModeAndLinearRangeCopyOntoTheFrame) {
-    const EntityUVE environment = entityManager.CreateEntityUVE();
-    WorldEnvironment3DComponentUVE authored{};
+TEST_F(WorldEnvironmentTest, FogModeAndLinearRangeCopyOntoTheFrame) {
+    const Entity environment = entityManager.CreateEntity();
+    WorldEnvironment3DComponent authored{};
     authored.fogEnabled = true;
-    authored.fogMode = WorldEnvironmentFogModeUVE::Linear;
+    authored.fogMode = WorldEnvironmentFogMode::Linear;
     authored.fogStart = 12.5F;
     authored.fogEnd = 240.0F;
-    entityManager.AddComponentUVE<WorldEnvironment3DComponentUVE>(environment, authored);
+    entityManager.AddComponent<WorldEnvironment3DComponent>(environment, authored);
 
-    const WorldEnvironmentFrameUVE frame =
-        ResolveWorldEnvironmentFrameUVE(entityManager, Math::Vector3UVE{0.1F, 0.1F, 0.1F});
+    const WorldEnvironmentFrame frame =
+        ResolveWorldEnvironmentFrame(entityManager, Math::Vector3{0.1F, 0.1F, 0.1F});
     ASSERT_TRUE(frame.hasEnvironment);
     EXPECT_TRUE(frame.fogEnabled);
-    EXPECT_EQ(frame.fogMode, WorldEnvironmentFogModeUVE::Linear);
+    EXPECT_EQ(frame.fogMode, WorldEnvironmentFogMode::Linear);
     EXPECT_FLOAT_EQ(frame.fogStart, 12.5F);
     EXPECT_FLOAT_EQ(frame.fogEnd, 240.0F);
 }
 
-TEST_F(WorldEnvironmentUVETest, SkyAssetPathCopiesOntoTheFrame) {
-    const EntityUVE environment = entityManager.CreateEntityUVE();
-    WorldEnvironment3DComponentUVE authored{};
+TEST_F(WorldEnvironmentTest, SkyAssetPathCopiesOntoTheFrame) {
+    const Entity environment = entityManager.CreateEntity();
+    WorldEnvironment3DComponent authored{};
     authored.skyAssetPath = "environment/day.hdr";
-    entityManager.AddComponentUVE<WorldEnvironment3DComponentUVE>(environment, authored);
+    entityManager.AddComponent<WorldEnvironment3DComponent>(environment, authored);
 
-    const WorldEnvironmentFrameUVE frame =
-        ResolveWorldEnvironmentFrameUVE(entityManager, Math::Vector3UVE{0.1F, 0.1F, 0.1F});
+    const WorldEnvironmentFrame frame =
+        ResolveWorldEnvironmentFrame(entityManager, Math::Vector3{0.1F, 0.1F, 0.1F});
     EXPECT_TRUE(frame.hasEnvironment);
     EXPECT_EQ(frame.skyAssetPath, authored.skyAssetPath);
 }
 
-TEST_F(WorldEnvironmentUVETest, InvalidEnvironmentIsSkipped) {
-    const EntityUVE bad = entityManager.CreateEntityUVE();
-    WorldEnvironment3DComponentUVE invalid{};
+TEST_F(WorldEnvironmentTest, InvalidEnvironmentIsSkipped) {
+    const Entity bad = entityManager.CreateEntity();
+    WorldEnvironment3DComponent invalid{};
     invalid.exposure = 0.0F;
-    entityManager.AddComponentUVE<WorldEnvironment3DComponentUVE>(bad, invalid);
+    entityManager.AddComponent<WorldEnvironment3DComponent>(bad, invalid);
 
-    const EntityUVE good = entityManager.CreateEntityUVE();
-    WorldEnvironment3DComponentUVE authored{};
-    authored.ambientColor = Math::Vector3UVE{0.2F, 0.3F, 0.4F};
+    const Entity good = entityManager.CreateEntity();
+    WorldEnvironment3DComponent authored{};
+    authored.ambientColor = Math::Vector3{0.2F, 0.3F, 0.4F};
     authored.fogEnabled = false;
-    entityManager.AddComponentUVE<WorldEnvironment3DComponentUVE>(good, authored);
+    entityManager.AddComponent<WorldEnvironment3DComponent>(good, authored);
 
-    const WorldEnvironmentFrameUVE frame =
-        ResolveWorldEnvironmentFrameUVE(entityManager, Math::Vector3UVE{});
+    const WorldEnvironmentFrame frame =
+        ResolveWorldEnvironmentFrame(entityManager, Math::Vector3{});
     EXPECT_TRUE(frame.hasEnvironment);
     EXPECT_EQ(frame.ambientColor, authored.ambientColor);
     EXPECT_EQ(frame.backgroundColor, authored.horizonColor);
     EXPECT_FALSE(frame.fogEnabled);
 }
 
-TEST_F(WorldEnvironmentUVETest, HiddenEnvironmentIsSkipped) {
-    const EntityUVE hiddenEnv = entityManager.CreateEntityUVE();
-    entityManager.AddComponentUVE<WorldEnvironment3DComponentUVE>(
-        hiddenEnv, WorldEnvironment3DComponentUVE{});
-    VisibilityComponentUVE hidden{};
+TEST_F(WorldEnvironmentTest, HiddenEnvironmentIsSkipped) {
+    const Entity hiddenEnv = entityManager.CreateEntity();
+    entityManager.AddComponent<WorldEnvironment3DComponent>(
+        hiddenEnv, WorldEnvironment3DComponent{});
+    VisibilityComponent hidden{};
     hidden.visible = false;
     hidden.visibleInHierarchy = false;
-    entityManager.AddComponentUVE<VisibilityComponentUVE>(hiddenEnv, hidden);
+    entityManager.AddComponent<VisibilityComponent>(hiddenEnv, hidden);
 
-    const WorldEnvironmentFrameUVE frame =
-        ResolveWorldEnvironmentFrameUVE(entityManager, Math::Vector3UVE{0.1F, 0.2F, 0.3F});
+    const WorldEnvironmentFrame frame =
+        ResolveWorldEnvironmentFrame(entityManager, Math::Vector3{0.1F, 0.2F, 0.3F});
     EXPECT_FALSE(frame.hasEnvironment);
 }
 
-TEST(WorldEnvironmentValidationUVETest, RejectsBrokenSkyBloomAndGrade) {
-    WorldEnvironment3DComponentUVE environment{};
-    EXPECT_TRUE(IsWorldEnvironment3DObjectComponentValidUVE(environment));
-    environment.ambientSource = static_cast<WorldEnvironmentAmbientSourceUVE>(255U);
-    EXPECT_FALSE(IsWorldEnvironment3DObjectComponentValidUVE(environment));
+TEST(WorldEnvironmentValidationTest, RejectsBrokenSkyBloomAndGrade) {
+    WorldEnvironment3DComponent environment{};
+    EXPECT_TRUE(IsWorldEnvironment3DObjectComponentValid(environment));
+    environment.ambientSource = static_cast<WorldEnvironmentAmbientSource>(255U);
+    EXPECT_FALSE(IsWorldEnvironment3DObjectComponentValid(environment));
     environment = {};
     environment.skyCurve = 0.0F;
-    EXPECT_FALSE(IsWorldEnvironment3DObjectComponentValidUVE(environment));
+    EXPECT_FALSE(IsWorldEnvironment3DObjectComponentValid(environment));
     environment = {};
     environment.bloomIntensity = -0.1F;
-    EXPECT_FALSE(IsWorldEnvironment3DObjectComponentValidUVE(environment));
+    EXPECT_FALSE(IsWorldEnvironment3DObjectComponentValid(environment));
     environment = {};
     environment.bloomSoftKnee = -0.01F;
-    EXPECT_FALSE(IsWorldEnvironment3DObjectComponentValidUVE(environment));
+    EXPECT_FALSE(IsWorldEnvironment3DObjectComponentValid(environment));
     environment = {};
     environment.bloomSoftKnee = 1.01F;
-    EXPECT_FALSE(IsWorldEnvironment3DObjectComponentValidUVE(environment));
+    EXPECT_FALSE(IsWorldEnvironment3DObjectComponentValid(environment));
     environment = {};
     environment.bloomSoftKnee = std::numeric_limits<float>::quiet_NaN();
-    EXPECT_FALSE(IsWorldEnvironment3DObjectComponentValidUVE(environment));
+    EXPECT_FALSE(IsWorldEnvironment3DObjectComponentValid(environment));
     environment = {};
     environment.bloomMipCount = 0U;
-    EXPECT_FALSE(IsWorldEnvironment3DObjectComponentValidUVE(environment));
+    EXPECT_FALSE(IsWorldEnvironment3DObjectComponentValid(environment));
     environment = {};
-    environment.bloomMipCount = kMaximumWorldEnvironmentBloomMipCountUVE + 1U;
-    EXPECT_FALSE(IsWorldEnvironment3DObjectComponentValidUVE(environment));
+    environment.bloomMipCount = kMaximumWorldEnvironmentBloomMipCount + 1U;
+    EXPECT_FALSE(IsWorldEnvironment3DObjectComponentValid(environment));
     environment = {};
     environment.ssaoRadius = 0.0F;
-    EXPECT_FALSE(IsWorldEnvironment3DObjectComponentValidUVE(environment));
+    EXPECT_FALSE(IsWorldEnvironment3DObjectComponentValid(environment));
     environment = {};
     environment.contrast = -0.1F;
-    EXPECT_FALSE(IsWorldEnvironment3DObjectComponentValidUVE(environment));
+    EXPECT_FALSE(IsWorldEnvironment3DObjectComponentValid(environment));
     environment = {};
     environment.vignetteIntensity = -0.01F;
-    EXPECT_FALSE(IsWorldEnvironment3DObjectComponentValidUVE(environment));
+    EXPECT_FALSE(IsWorldEnvironment3DObjectComponentValid(environment));
     environment = {};
     environment.vignetteIntensity = 1.01F;
-    EXPECT_FALSE(IsWorldEnvironment3DObjectComponentValidUVE(environment));
+    EXPECT_FALSE(IsWorldEnvironment3DObjectComponentValid(environment));
     environment = {};
     environment.vignetteIntensity = std::numeric_limits<float>::quiet_NaN();
-    EXPECT_FALSE(IsWorldEnvironment3DObjectComponentValidUVE(environment));
+    EXPECT_FALSE(IsWorldEnvironment3DObjectComponentValid(environment));
     environment = {};
     environment.vignetteRadius = 1.01F;
-    EXPECT_FALSE(IsWorldEnvironment3DObjectComponentValidUVE(environment));
+    EXPECT_FALSE(IsWorldEnvironment3DObjectComponentValid(environment));
     environment = {};
     environment.vignetteRadius = std::numeric_limits<float>::quiet_NaN();
-    EXPECT_FALSE(IsWorldEnvironment3DObjectComponentValidUVE(environment));
+    EXPECT_FALSE(IsWorldEnvironment3DObjectComponentValid(environment));
     environment = {};
     environment.chromaticAberrationIntensity = -0.01F;
-    EXPECT_FALSE(IsWorldEnvironment3DObjectComponentValidUVE(environment));
+    EXPECT_FALSE(IsWorldEnvironment3DObjectComponentValid(environment));
     environment = {};
     environment.chromaticAberrationIntensity = 1.01F;
-    EXPECT_FALSE(IsWorldEnvironment3DObjectComponentValidUVE(environment));
+    EXPECT_FALSE(IsWorldEnvironment3DObjectComponentValid(environment));
     environment = {};
     environment.chromaticAberrationIntensity = std::numeric_limits<float>::quiet_NaN();
-    EXPECT_FALSE(IsWorldEnvironment3DObjectComponentValidUVE(environment));
+    EXPECT_FALSE(IsWorldEnvironment3DObjectComponentValid(environment));
     environment = {};
     environment.filmGrainIntensity = -0.01F;
-    EXPECT_FALSE(IsWorldEnvironment3DObjectComponentValidUVE(environment));
+    EXPECT_FALSE(IsWorldEnvironment3DObjectComponentValid(environment));
     environment = {};
     environment.filmGrainIntensity = 1.01F;
-    EXPECT_FALSE(IsWorldEnvironment3DObjectComponentValidUVE(environment));
+    EXPECT_FALSE(IsWorldEnvironment3DObjectComponentValid(environment));
     environment = {};
     environment.filmGrainIntensity = std::numeric_limits<float>::quiet_NaN();
-    EXPECT_FALSE(IsWorldEnvironment3DObjectComponentValidUVE(environment));
+    EXPECT_FALSE(IsWorldEnvironment3DObjectComponentValid(environment));
     environment = {};
     environment.lensDistortionIntensity = -0.01F;
-    EXPECT_FALSE(IsWorldEnvironment3DObjectComponentValidUVE(environment));
+    EXPECT_FALSE(IsWorldEnvironment3DObjectComponentValid(environment));
     environment = {};
     environment.lensDistortionIntensity = 1.01F;
-    EXPECT_FALSE(IsWorldEnvironment3DObjectComponentValidUVE(environment));
+    EXPECT_FALSE(IsWorldEnvironment3DObjectComponentValid(environment));
     environment = {};
     environment.lensDistortionIntensity = std::numeric_limits<float>::quiet_NaN();
-    EXPECT_FALSE(IsWorldEnvironment3DObjectComponentValidUVE(environment));
+    EXPECT_FALSE(IsWorldEnvironment3DObjectComponentValid(environment));
     environment = {};
-    environment.depthOfFieldFocusMode = static_cast<WorldEnvironmentDepthOfFieldFocusModeUVE>(255U);
-    EXPECT_FALSE(IsWorldEnvironment3DObjectComponentValidUVE(environment));
+    environment.depthOfFieldFocusMode = static_cast<WorldEnvironmentDepthOfFieldFocusMode>(255U);
+    EXPECT_FALSE(IsWorldEnvironment3DObjectComponentValid(environment));
     environment = {};
-    environment.depthOfFieldBokehShape = static_cast<WorldEnvironmentDepthOfFieldBokehShapeUVE>(255U);
-    EXPECT_FALSE(IsWorldEnvironment3DObjectComponentValidUVE(environment));
+    environment.depthOfFieldBokehShape = static_cast<WorldEnvironmentDepthOfFieldBokehShape>(255U);
+    EXPECT_FALSE(IsWorldEnvironment3DObjectComponentValid(environment));
     environment = {};
     environment.depthOfFieldFocusDistance = 0.09F;
-    EXPECT_FALSE(IsWorldEnvironment3DObjectComponentValidUVE(environment));
+    EXPECT_FALSE(IsWorldEnvironment3DObjectComponentValid(environment));
     environment = {};
     environment.depthOfFieldFocusDistance = std::numeric_limits<float>::quiet_NaN();
-    EXPECT_FALSE(IsWorldEnvironment3DObjectComponentValidUVE(environment));
+    EXPECT_FALSE(IsWorldEnvironment3DObjectComponentValid(environment));
     environment = {};
     environment.depthOfFieldAperture = -0.01F;
-    EXPECT_FALSE(IsWorldEnvironment3DObjectComponentValidUVE(environment));
+    EXPECT_FALSE(IsWorldEnvironment3DObjectComponentValid(environment));
     environment = {};
     environment.depthOfFieldAperture = 1.01F;
-    EXPECT_FALSE(IsWorldEnvironment3DObjectComponentValidUVE(environment));
+    EXPECT_FALSE(IsWorldEnvironment3DObjectComponentValid(environment));
     environment = {};
     environment.depthOfFieldQuality = 3U;
-    EXPECT_FALSE(IsWorldEnvironment3DObjectComponentValidUVE(environment));
+    EXPECT_FALSE(IsWorldEnvironment3DObjectComponentValid(environment));
     environment = {};
     environment.motionBlurStrength = 1.01F;
-    EXPECT_FALSE(IsWorldEnvironment3DObjectComponentValidUVE(environment));
+    EXPECT_FALSE(IsWorldEnvironment3DObjectComponentValid(environment));
     environment = {};
     environment.motionBlurStrength = std::numeric_limits<float>::quiet_NaN();
-    EXPECT_FALSE(IsWorldEnvironment3DObjectComponentValidUVE(environment));
+    EXPECT_FALSE(IsWorldEnvironment3DObjectComponentValid(environment));
     environment = {};
     environment.motionBlurSampleCount = 6U;
-    EXPECT_FALSE(IsWorldEnvironment3DObjectComponentValidUVE(environment));
+    EXPECT_FALSE(IsWorldEnvironment3DObjectComponentValid(environment));
     environment = {};
     environment.skyColor.x = std::numeric_limits<float>::quiet_NaN();
-    EXPECT_FALSE(IsWorldEnvironment3DObjectComponentValidUVE(environment));
+    EXPECT_FALSE(IsWorldEnvironment3DObjectComponentValid(environment));
     environment = {};
     environment.fogHeightFalloff = 0.0F;
-    EXPECT_FALSE(IsWorldEnvironment3DObjectComponentValidUVE(environment));
+    EXPECT_FALSE(IsWorldEnvironment3DObjectComponentValid(environment));
     environment = {};
-    environment.fogMode = static_cast<WorldEnvironmentFogModeUVE>(255U);
-    EXPECT_FALSE(IsWorldEnvironment3DObjectComponentValidUVE(environment));
+    environment.fogMode = static_cast<WorldEnvironmentFogMode>(255U);
+    EXPECT_FALSE(IsWorldEnvironment3DObjectComponentValid(environment));
     environment = {};
     environment.fogStart = environment.fogEnd;
-    EXPECT_FALSE(IsWorldEnvironment3DObjectComponentValidUVE(environment));
+    EXPECT_FALSE(IsWorldEnvironment3DObjectComponentValid(environment));
     environment = {};
     environment.fogEnd = std::numeric_limits<float>::quiet_NaN();
-    EXPECT_FALSE(IsWorldEnvironment3DObjectComponentValidUVE(environment));
+    EXPECT_FALSE(IsWorldEnvironment3DObjectComponentValid(environment));
 }
 
-TEST(WorldEnvironmentSunUVETest, NoonKeepsAmbientAndNightDarkens) {
-    WorldEnvironmentFrameUVE noon{};
+TEST(WorldEnvironmentSunTest, NoonKeepsAmbientAndNightDarkens) {
+    WorldEnvironmentFrame noon{};
     noon.hasEnvironment = true;
-    noon.skyAmbient = Math::Vector3UVE{0.2F, 0.3F, 0.5F};
-    noon.groundAmbient = Math::Vector3UVE{0.1F, 0.08F, 0.06F};
-    WorldEnvironmentFrameUVE night = noon;
-    ApplySunToWorldEnvironmentFrameUVE(noon, Math::Vector3UVE{0.0F, 1.0F, 0.0F}, Math::Vector3UVE{1.0F, 1.0F, 1.0F},
+    noon.skyAmbient = Math::Vector3{0.2F, 0.3F, 0.5F};
+    noon.groundAmbient = Math::Vector3{0.1F, 0.08F, 0.06F};
+    WorldEnvironmentFrame night = noon;
+    ApplySunToWorldEnvironmentFrame(noon, Math::Vector3{0.0F, 1.0F, 0.0F}, Math::Vector3{1.0F, 1.0F, 1.0F},
                                        1.0F);
-    ApplySunToWorldEnvironmentFrameUVE(night, Math::Vector3UVE{0.0F, -1.0F, 0.0F}, Math::Vector3UVE{1.0F, 1.0F, 1.0F},
+    ApplySunToWorldEnvironmentFrame(night, Math::Vector3{0.0F, -1.0F, 0.0F}, Math::Vector3{1.0F, 1.0F, 1.0F},
                                        1.0F);
     EXPECT_NEAR(noon.skyAmbient.z, 0.5F, 0.02F);
     EXPECT_LT(night.skyAmbient.z, noon.skyAmbient.z * 0.2F);
 }
 
-TEST(SkyEquirectUVETest, AxisDirectionsMapToStableUv) {
-    Math::Vector2UVE uv{};
-    ASSERT_TRUE(TryMakeSkyEquirectUvUVE(Math::Vector3UVE{1.0F, 0.0F, 0.0F}, uv));
+TEST(SkyEquirectTest, AxisDirectionsMapToStableUv) {
+    Math::Vector2 uv{};
+    ASSERT_TRUE(TryMakeSkyEquirectUv(Math::Vector3{1.0F, 0.0F, 0.0F}, uv));
     EXPECT_NEAR(uv.x, 0.5F, 1.0e-5F);
     EXPECT_NEAR(uv.y, 0.5F, 1.0e-5F);
-    ASSERT_TRUE(TryMakeSkyEquirectUvUVE(Math::Vector3UVE{0.0F, 1.0F, 0.0F}, uv));
+    ASSERT_TRUE(TryMakeSkyEquirectUv(Math::Vector3{0.0F, 1.0F, 0.0F}, uv));
     EXPECT_NEAR(uv.x, 0.5F, 1.0e-5F);
     EXPECT_NEAR(uv.y, 1.0F, 1.0e-5F);
-    ASSERT_TRUE(TryMakeSkyEquirectUvUVE(Math::Vector3UVE{0.0F, -1.0F, 0.0F}, uv));
+    ASSERT_TRUE(TryMakeSkyEquirectUv(Math::Vector3{0.0F, -1.0F, 0.0F}, uv));
     EXPECT_NEAR(uv.x, 0.5F, 1.0e-5F);
     EXPECT_NEAR(uv.y, 0.0F, 1.0e-5F);
-    ASSERT_TRUE(TryMakeSkyEquirectUvUVE(Math::Vector3UVE{0.0F, 0.0F, 1.0F}, uv));
+    ASSERT_TRUE(TryMakeSkyEquirectUv(Math::Vector3{0.0F, 0.0F, 1.0F}, uv));
     EXPECT_NEAR(uv.x, 0.75F, 1.0e-5F);
     EXPECT_NEAR(uv.y, 0.5F, 1.0e-5F);
 }
 
-TEST(SkyEquirectUVETest, ZeroAndNonFiniteDirectionsFailClosed) {
-    Math::Vector2UVE uv{1.0F, 1.0F};
-    EXPECT_FALSE(TryMakeSkyEquirectUvUVE(Math::Vector3UVE{}, uv));
-    EXPECT_EQ(uv, (Math::Vector2UVE{}));
-    EXPECT_FALSE(TryMakeSkyEquirectUvUVE(Math::Vector3UVE{std::numeric_limits<float>::quiet_NaN(), 0.0F, 0.0F}, uv));
+TEST(SkyEquirectTest, ZeroAndNonFiniteDirectionsFailClosed) {
+    Math::Vector2 uv{1.0F, 1.0F};
+    EXPECT_FALSE(TryMakeSkyEquirectUv(Math::Vector3{}, uv));
+    EXPECT_EQ(uv, (Math::Vector2{}));
+    EXPECT_FALSE(TryMakeSkyEquirectUv(Math::Vector3{std::numeric_limits<float>::quiet_NaN(), 0.0F, 0.0F}, uv));
 }
 
-TEST(WorldEnvironmentSunUVETest, HorizonSunWarmsTheGround) {
-    WorldEnvironmentFrameUVE frame{};
+TEST(WorldEnvironmentSunTest, HorizonSunWarmsTheGround) {
+    WorldEnvironmentFrame frame{};
     frame.hasEnvironment = true;
-    frame.skyAmbient = Math::Vector3UVE{0.2F, 0.2F, 0.4F};
-    frame.groundAmbient = Math::Vector3UVE{0.2F, 0.2F, 0.2F};
-    ApplySunToWorldEnvironmentFrameUVE(frame, Math::Vector3UVE{0.0F, 0.0F, 1.0F}, Math::Vector3UVE{1.0F, 0.8F, 0.4F},
+    frame.skyAmbient = Math::Vector3{0.2F, 0.2F, 0.4F};
+    frame.groundAmbient = Math::Vector3{0.2F, 0.2F, 0.2F};
+    ApplySunToWorldEnvironmentFrame(frame, Math::Vector3{0.0F, 0.0F, 1.0F}, Math::Vector3{1.0F, 0.8F, 0.4F},
                                        1.0F);
     EXPECT_GT(frame.groundAmbient.x, frame.groundAmbient.z);
 }
 
-TEST(WorldEnvironmentSunUVETest, VolumeBlendingAndCameraDefaultPreviewPrecedenceWorkDeterministically) {
-    WorldEnvironment3DComponentUVE envA{};
+TEST(WorldEnvironmentSunTest, VolumeBlendingAndCameraDefaultPreviewPrecedenceWorkDeterministically) {
+    WorldEnvironment3DComponent envA{};
     envA.exposure = 1.0F;
     envA.bloomIntensity = 0.2F;
-    WorldEnvironment3DComponentUVE envB{};
+    WorldEnvironment3DComponent envB{};
     envB.exposure = 2.0F;
     envB.bloomIntensity = 0.8F;
 
-    const WorldEnvironment3DComponentUVE blended = BlendWorldEnvironment3DComponentsUVE(envA, envB, 0.25F);
+    const WorldEnvironment3DComponent blended = BlendWorldEnvironment3DComponents(envA, envB, 0.25F);
     EXPECT_NEAR(blended.exposure, 1.25F, 1.0e-5F);
     EXPECT_NEAR(blended.bloomIntensity, 0.35F, 1.0e-5F);
 
-    WorldEnvironment3DComponentUVE preview{};
+    WorldEnvironment3DComponent preview{};
     preview.exposure = 0.9F;
-    WorldEnvironment3DComponentUVE projectDefault{};
+    WorldEnvironment3DComponent projectDefault{};
     projectDefault.exposure = 1.1F;
-    WorldEnvironment3DComponentUVE cameraOverride{};
+    WorldEnvironment3DComponent cameraOverride{};
     cameraOverride.exposure = 1.75F;
 
-    EXPECT_FLOAT_EQ(ResolveEffectiveWorldEnvironment3DUVE(&cameraOverride, &envB, &projectDefault, &preview).exposure,
+    EXPECT_FLOAT_EQ(ResolveEffectiveWorldEnvironment3D(&cameraOverride, &envB, &projectDefault, &preview).exposure,
                     1.75F);
-    EXPECT_FLOAT_EQ(ResolveEffectiveWorldEnvironment3DUVE(nullptr, &envB, &projectDefault, &preview).exposure, 2.0F);
-    EXPECT_FLOAT_EQ(ResolveEffectiveWorldEnvironment3DUVE(nullptr, nullptr, &projectDefault, &preview).exposure, 1.1F);
-    EXPECT_FLOAT_EQ(ResolveEffectiveWorldEnvironment3DUVE(nullptr, nullptr, nullptr, &preview).exposure, 0.9F);
+    EXPECT_FLOAT_EQ(ResolveEffectiveWorldEnvironment3D(nullptr, &envB, &projectDefault, &preview).exposure, 2.0F);
+    EXPECT_FLOAT_EQ(ResolveEffectiveWorldEnvironment3D(nullptr, nullptr, &projectDefault, &preview).exposure, 1.1F);
+    EXPECT_FLOAT_EQ(ResolveEffectiveWorldEnvironment3D(nullptr, nullptr, nullptr, &preview).exposure, 0.9F);
 }
 
 } // namespace

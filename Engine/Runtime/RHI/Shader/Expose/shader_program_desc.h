@@ -12,37 +12,37 @@
 
 namespace UVE::Render::Shader {
 
-/// Describes a linked vertex+fragment program to create via IShaderManagerUVE::CreateProgramUVE().
+/// Describes a linked vertex+fragment program to create via IShaderManager::CreateProgram().
 /// Both stages come from the *same* resolved source (see BuiltIn's single-file-per-program
-/// convention) — ShaderManagerUVE compiles it twice, injecting VERTEX_SHADER/FRAGMENT_SHADER
-/// respectively (see Detail::ApplyPreprocessorUVE()) so each stage's `#ifdef` block is the only
+/// convention) — ShaderManager compiles it twice, injecting VERTEX_SHADER/FRAGMENT_SHADER
+/// respectively (see Detail::ApplyPreprocessor()) so each stage's `#ifdef` block is the only
 /// one active. `virtualFilePath`/`embeddedFallbackSourceCode` follow the same automatic-fallback
-/// contract as ShaderSourceCompileDescUVE.
-struct ShaderProgramDescUVE {
+/// contract as ShaderSourceCompileDesc.
+struct ShaderProgramDesc {
     std::string virtualFilePath;
     std::string embeddedFallbackSourceCode;
     std::vector<std::pair<std::string, std::string>> extraDefines;
     std::string entryPointName = "main";
 
-    std::vector<VertexAttributeUVE> vertexLayout;
+    std::vector<VertexAttribute> vertexLayout;
     std::uint32_t vertexStride = 0;
-    PrimitiveTopologyUVE topology = PrimitiveTopologyUVE::Triangles;
+    PrimitiveTopology topology = PrimitiveTopology::Triangles;
     bool depthTestEnabled = true;
     bool depthWriteEnabled = true;
-    PipelineBlendModeUVE blendMode = PipelineBlendModeUVE::Opaque;
+    PipelineBlendMode blendMode = PipelineBlendMode::Opaque;
 
-    bool hotReloadEnabledUVE = true;
-    std::string debugNameUVE;
+    bool hotReloadEnabled = true;
+    std::string debugName;
 
-    // Appended rasterizer tail mirroring PipelineDescUVE (Tier 2.1): same fields, same defaults,
-    // threaded through ShaderManagerUVE into both the compiled and binary-cache pipeline paths.
-    CullModeUVE cullMode = CullModeUVE::None;
-    FrontFaceUVE frontFace = FrontFaceUVE::CounterClockwise;
-    FillModeUVE fillMode = FillModeUVE::Fill;
+    // Appended rasterizer tail mirroring PipelineDesc (Tier 2.1): same fields, same defaults,
+    // threaded through ShaderManager into both the compiled and binary-cache pipeline paths.
+    CullMode cullMode = CullMode::None;
+    FrontFace frontFace = FrontFace::CounterClockwise;
+    FillMode fillMode = FillMode::Fill;
     bool depthBiasEnabled = false;
     float depthBiasConstantFactor = 0.0F;
     float depthBiasSlopeFactor = 0.0F;
-    DepthCompareUVE depthCompare = DepthCompareUVE::Less;
+    DepthCompare depthCompare = DepthCompare::Less;
 };
 
 } // namespace UVE::Render::Shader

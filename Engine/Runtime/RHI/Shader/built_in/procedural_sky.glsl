@@ -81,7 +81,7 @@ uniform float uSkyGroundShadowBias;
 //
 // Shared by both skies below, because the disc belongs to the light in either case. It is a 0
 // when the light asks for no disc, so the caller can add it unconditionally.
-float SunDiscUVE(float mu, float sunY) {
+float SunDisc(float mu, float sunY) {
     float sunRadius = radians(max(uSunAngularDiameter, 0.0)) * 0.5;
     if (sunRadius <= 0.0) {
         return 0.0;
@@ -96,7 +96,7 @@ float SunDiscUVE(float mu, float sunY) {
     return mask * limb * smoothstep(-0.02, 0.04, sunY) * max(uSunDiscIntensity, 0.0);
 }
 
-vec3 AtmosphereUpperUVE(vec3 dir, vec3 sun) {
+vec3 AtmosphereUpper(vec3 dir, vec3 sun) {
     float mu = clamp(dot(dir, sun), -1.0, 1.0);
     float sunY = sun.y;
     float viewY = dir.y;
@@ -127,7 +127,7 @@ vec3 AtmosphereUpperUVE(vec3 dir, vec3 sun) {
     vec3 sunCol = max(uSunColor, vec3(0.0)) * max(uSunEnergy, 0.0);
     sky += sunCol * mie * mix(0.012, 0.09, sunset) * day;
 
-    sky += sunCol * SunDiscUVE(mu, sunY) * mix(7.5, 16.0, sunset);
+    sky += sunCol * SunDisc(mu, sunY) * mix(7.5, 16.0, sunset);
     return max(sky, vec3(0.0));
 }
 
@@ -140,35 +140,35 @@ vec3 AtmosphereUpperUVE(vec3 dir, vec3 sun) {
 // The numbers are Earth's, in metres and inverse metres, because that is the only way the model
 // stays honest - the planet's radius sets how fast the air thins, and a coefficient in invented
 // units would produce a sky that only looks right at one sun angle.
-const float kPlanetRadiusUVE = 6360000.0;
-const float kAtmosphereRadiusUVE = 6420000.0;
-const float kRayleighScaleHeightUVE = 8000.0;
-const float kMieScaleHeightUVE = 1200.0;
-const float kOzoneCenterUVE = 25000.0;
-const float kOzoneWidthUVE = 15000.0;
+const float kPlanetRadius = 6360000.0;
+const float kAtmosphereRadius = 6420000.0;
+const float kRayleighScaleHeight = 8000.0;
+const float kMieScaleHeight = 1200.0;
+const float kOzoneCenter = 25000.0;
+const float kOzoneWidth = 15000.0;
 // Rayleigh scattering per metre at sea level, by channel. Blue scatters roughly six times as
 // strongly as red, which is the entire reason the sky is blue.
-const vec3 kRayleighScatterUVE = vec3(5.8e-6, 13.5e-6, 33.1e-6);
+const vec3 kRayleighScatter = vec3(5.8e-6, 13.5e-6, 33.1e-6);
 // Ozone absorbs in the Chappuis band - mostly green, some red - and almost nowhere else. Its tent
 // profile sits high in the stratosphere, and it is what turns a twilight sky from grey to violet.
-const vec3 kOzoneAbsorbUVE = vec3(0.650e-6, 1.881e-6, 0.085e-6);
-const float kMieScatterUVE = 21.0e-6;
+const vec3 kOzoneAbsorb = vec3(0.650e-6, 1.881e-6, 0.085e-6);
+const float kMieScatter = 21.0e-6;
 // Haze both scatters and absorbs; the ratio is its single-scattering albedo, here about 0.91.
-const float kMieExtinctionUVE = 1.1;
+const float kMieExtinction = 1.1;
 // The sun's radiance into this model. Chosen so a noon sky lands in the same range as the lit
 // surfaces around it, which keeps exposure and bloom settings from needing two answers.
-const float kSkySunRadianceUVE = 14.0;
+const float kSkySunRadiance = 14.0;
 // Where the eye sits above the ground, in metres. The air above a person is what a person sees.
-const float kObserverHeightUVE = 120.0;
-const int kLightStepsUVE = 4;
+const float kObserverHeight = 120.0;
+const int kLightSteps = 4;
 // How much of the extinction the multiple-scattering stand-in is allowed to feel. Re-scattered
 // light arrives by many paths, so its own path is not the straight line to the sun.
-const float kMultiScatterTauUVE = 0.12;
-const float kMultiScatterGainUVE = 0.9;
+const float kMultiScatterTau = 0.12;
+const float kMultiScatterGain = 0.9;
 // Above this much direct light the sky is already bright and the stand-in contributes nothing.
-const float kMultiScatterFillUVE = 0.5;
+const float kMultiScatterFill = 0.5;
 
-struct AtmosphereDepthUVE {
+struct AtmosphereDepth {
     float rayleigh;
     float mie;
     float ozone;
@@ -176,7 +176,7 @@ struct AtmosphereDepthUVE {
 
 // Entry and exit distances of a ray through a sphere centred on the planet. False when the ray
 // misses it entirely; either root may be negative depending on where the ray starts.
-bool RaySphereUVE(vec3 origin, vec3 dir, float radius, out float tNear, out float tFar) {
+bool RaySphere(vec3 origin, vec3 dir, float radius, out float tNear, out float tFar) {
     float b = dot(origin, dir);
     float c = dot(origin, origin) - radius * radius;
     float discriminant = b * b - c;
@@ -192,9 +192,9 @@ bool RaySphereUVE(vec3 origin, vec3 dir, float radius, out float tNear, out floa
 }
 
 // How much air one path passes through, in the same units the coefficients are per.
-AtmosphereDepthUVE AtmosphereOpticalDepthUVE(vec3 origin, vec3 dir, float pathLength, const int steps,
+AtmosphereDepth AtmosphereOpticalDepth(vec3 origin, vec3 dir, float pathLength, const int steps,
                                              const float rayleigh, const float mie, const float ozone) {
-    AtmosphereDepthUVE depth;
+    AtmosphereDepth depth;
     depth.rayleigh = 0.0;
     depth.mie = 0.0;
     depth.ozone = 0.0;
@@ -209,25 +209,25 @@ AtmosphereDepthUVE AtmosphereOpticalDepthUVE(vec3 origin, vec3 dir, float pathLe
         // Clamped at the ground: a sample that lands a centimetre under the surface is a rounding
         // artifact of the ray's exit point, not air at negative altitude, and exp() of a negative
         // height would hand back a density larger than the ground itself has.
-        float height = max(length(point) - kPlanetRadiusUVE, -1.0);
-        depth.rayleigh += exp(-height / kRayleighScaleHeightUVE) * rayleigh * segment;
-        depth.mie += exp(-height / kMieScaleHeightUVE) * mie * segment;
-        depth.ozone += max(0.0, 1.0 - abs(height - kOzoneCenterUVE) / kOzoneWidthUVE) * ozone * segment;
+        float height = max(length(point) - kPlanetRadius, -1.0);
+        depth.rayleigh += exp(-height / kRayleighScaleHeight) * rayleigh * segment;
+        depth.mie += exp(-height / kMieScaleHeight) * mie * segment;
+        depth.ozone += max(0.0, 1.0 - abs(height - kOzoneCenter) / kOzoneWidth) * ozone * segment;
     }
     return depth;
 }
 
-vec3 PhysicalSkyUVE(vec3 viewDir, vec3 sunDir) {
+vec3 PhysicalSky(vec3 viewDir, vec3 sunDir) {
     vec3 dir = normalize(viewDir);
     vec3 sun = length(sunDir) > 1.0e-5 ? normalize(sunDir) : vec3(0.0, 1.0, 0.0);
-    vec3 eye = vec3(0.0, kPlanetRadiusUVE + kObserverHeightUVE, 0.0);
+    vec3 eye = vec3(0.0, kPlanetRadius + kObserverHeight, 0.0);
 
     float day = uSunEnergy > 0.0 ? smoothstep(-0.08, 0.18, sun.y) : 1.0;
     vec3 ground = max(uGroundColor, vec3(0.0)) * mix(0.35, 1.0, day);
 
     float groundNear = 0.0;
     float groundFar = 0.0;
-    if (RaySphereUVE(eye, dir, kPlanetRadiusUVE, groundNear, groundFar) && groundNear > 0.0) {
+    if (RaySphere(eye, dir, kPlanetRadius, groundNear, groundFar) && groundNear > 0.0) {
         // The ray meets the ground: there is no sky along it, only terrain the level may or may
         // not have drawn. The band stands in for the missing geometry.
         return ground;
@@ -235,7 +235,7 @@ vec3 PhysicalSkyUVE(vec3 viewDir, vec3 sunDir) {
 
     float skyNear = 0.0;
     float skyFar = 0.0;
-    if (!RaySphereUVE(eye, dir, kAtmosphereRadiusUVE, skyNear, skyFar)) {
+    if (!RaySphere(eye, dir, kAtmosphereRadius, skyNear, skyFar)) {
         return ground;
     }
 
@@ -254,10 +254,10 @@ vec3 PhysicalSkyUVE(vec3 viewDir, vec3 sunDir) {
 
     for (int i = 0; i < steps; ++i) {
         vec3 point = eye + dir * (segment * (float(i) + 0.5));
-        float height = max(length(point) - kPlanetRadiusUVE, -1.0);
-        float densityRayleigh = exp(-height / kRayleighScaleHeightUVE) * rayleigh;
-        float densityMie = exp(-height / kMieScaleHeightUVE) * mie;
-        float densityOzone = max(0.0, 1.0 - abs(height - kOzoneCenterUVE) / kOzoneWidthUVE) * ozone;
+        float height = max(length(point) - kPlanetRadius, -1.0);
+        float densityRayleigh = exp(-height / kRayleighScaleHeight) * rayleigh;
+        float densityMie = exp(-height / kMieScaleHeight) * mie;
+        float densityOzone = max(0.0, 1.0 - abs(height - kOzoneCenter) / kOzoneWidth) * ozone;
         travelledRayleigh += densityRayleigh * segment;
         travelledMie += densityMie * segment;
         travelledOzone += densityOzone * segment;
@@ -266,26 +266,26 @@ vec3 PhysicalSkyUVE(vec3 viewDir, vec3 sunDir) {
         // light at all, which is what makes the sunset terminator a sharp edge on the ground.
         float sunNear = 0.0;
         float sunFar = 0.0;
-        if (RaySphereUVE(point, sun, kPlanetRadiusUVE, sunNear, sunFar) && sunNear > 0.0) {
+        if (RaySphere(point, sun, kPlanetRadius, sunNear, sunFar) && sunNear > 0.0) {
             continue;
         }
         float lightNear = 0.0;
         float lightFar = 0.0;
-        float lightPath = RaySphereUVE(point, sun, kAtmosphereRadiusUVE, lightNear, lightFar) ? lightFar : 0.0;
-        AtmosphereDepthUVE toSun =
-            AtmosphereOpticalDepthUVE(point, sun, lightPath, kLightStepsUVE, rayleigh, mie, ozone);
+        float lightPath = RaySphere(point, sun, kAtmosphereRadius, lightNear, lightFar) ? lightFar : 0.0;
+        AtmosphereDepth toSun =
+            AtmosphereOpticalDepth(point, sun, lightPath, kLightSteps, rayleigh, mie, ozone);
 
-        vec3 extinction = kRayleighScatterUVE * (travelledRayleigh + toSun.rayleigh) +
-                          vec3(kMieScatterUVE * kMieExtinctionUVE) * (travelledMie + toSun.mie) +
-                          kOzoneAbsorbUVE * (travelledOzone + toSun.ozone);
+        vec3 extinction = kRayleighScatter * (travelledRayleigh + toSun.rayleigh) +
+                          vec3(kMieScatter * kMieExtinction) * (travelledMie + toSun.mie) +
+                          kOzoneAbsorb * (travelledOzone + toSun.ozone);
         vec3 transmittance = exp(-extinction);
         scatteredRayleigh += densityRayleigh * segment * transmittance;
         scatteredMie += densityMie * segment * transmittance;
         // The stand-in: the same air, but its light is allowed only part of the extinction it
         // would have earned on a straight path, because it did not take one.
         scatteredMultiple +=
-            (densityRayleigh * kRayleighScatterUVE + vec3(densityMie * kMieScatterUVE)) *
-            exp(-extinction * kMultiScatterTauUVE) * segment;
+            (densityRayleigh * kRayleighScatter + vec3(densityMie * kMieScatter)) *
+            exp(-extinction * kMultiScatterTau) * segment;
     }
 
     // Rayleigh scatters almost evenly in both directions; the 1 + mu^2 is its charge-dipole
@@ -299,24 +299,24 @@ vec3 PhysicalSkyUVE(vec3 viewDir, vec3 sunDir) {
     float phaseMie = (3.0 / (8.0 * 3.14159265358979323846)) * ((1.0 - g2) * (1.0 + mu * mu)) /
                      ((2.0 + g2) * pow(max(1.0 + g2 - 2.0 * g * mu, 1.0e-4), 1.5));
 
-    float radiance = max(uAtmosphereIntensity, 0.0) * kSkySunRadianceUVE * (uSunEnergy > 0.0 ? uSunEnergy : 1.0);
-    vec3 direct = radiance * (scatteredRayleigh * kRayleighScatterUVE * phaseRayleigh +
-                              scatteredMie * (kMieScatterUVE * phaseMie));
+    float radiance = max(uAtmosphereIntensity, 0.0) * kSkySunRadiance * (uSunEnergy > 0.0 ? uSunEnergy : 1.0);
+    vec3 direct = radiance * (scatteredRayleigh * kRayleighScatter * phaseRayleigh +
+                              scatteredMie * (kMieScatter * phaseMie));
 
     // Gated on where single scattering came up short instead of added everywhere: added flat, it
     // whitens the sunset it should be filling in, and the reddest part of the sky is exactly the
     // part that needs it least.
     float luminance = dot(direct, vec3(0.2126, 0.7152, 0.0722));
-    float fill = clamp(1.0 - luminance / kMultiScatterFillUVE, 0.0, 1.0);
+    float fill = clamp(1.0 - luminance / kMultiScatterFill, 0.0, 1.0);
     vec3 multiple = radiance * scatteredMultiple *
-                    (kMultiScatterGainUVE * max(uAtmosphereMultiScatter, 0.0) /
+                    (kMultiScatterGain * max(uAtmosphereMultiScatter, 0.0) /
                      (4.0 * 3.14159265358979323846)) *
                     fill;
 
     vec3 sky = direct + multiple;
     // The disc is added inside the atmosphere, not on top of it, so its own light is dimmed by the
     // same air the rest of the sky came through. At the horizon that is what reddens it.
-    sky += max(uSunColor, vec3(0.0)) * max(uSunEnergy, 0.0) * SunDiscUVE(mu, sun.y) * mix(7.5, 16.0, 1.0 - day);
+    sky += max(uSunColor, vec3(0.0)) * max(uSunEnergy, 0.0) * SunDisc(mu, sun.y) * mix(7.5, 16.0, 1.0 - day);
     vec3 nightSky = vec3(0.004, 0.006, 0.018);
     return max(sky * day + nightSky * (1.0 - day), vec3(0.0));
 }
@@ -331,7 +331,7 @@ vec3 PhysicalSkyUVE(vec3 viewDir, vec3 sunDir) {
 // A cheap integer hash. Written with 32-bit multiplies instead of sin(): sin() is fast to type and
 // slow to run, and on some drivers its low bits are not random enough for a star field, which
 // shows up as visible diagonal banding in the noise.
-uint SkyHashUVE(uint x) {
+uint SkyHash(uint x) {
     x ^= x >> 16;
     x *= 0x7feb352dU;
     x ^= x >> 15;
@@ -340,66 +340,66 @@ uint SkyHashUVE(uint x) {
     return x;
 }
 
-float SkyHashUnitUVE(uint x) {
+float SkyHashUnit(uint x) {
     return float(x & 0x00FFFFFFU) * (1.0 / 16777215.0);
 }
 
-float SkyCellNoiseUVE(ivec3 cell) {
-    uint h = SkyHashUVE(uint(cell.x) * 0x9e3779b1U);
-    h = SkyHashUVE(h ^ (uint(cell.y) * 0x85ebca77U));
-    h = SkyHashUVE(h ^ (uint(cell.z) * 0xc2b2ae3dU));
-    return SkyHashUnitUVE(h);
+float SkyCellNoise(ivec3 cell) {
+    uint h = SkyHash(uint(cell.x) * 0x9e3779b1U);
+    h = SkyHash(h ^ (uint(cell.y) * 0x85ebca77U));
+    h = SkyHash(h ^ (uint(cell.z) * 0xc2b2ae3dU));
+    return SkyHashUnit(h);
 }
 
-vec4 SkyCellRandomsUVE(ivec3 cell, float seed) {
-    uint h = SkyHashUVE(uint(cell.x) * 0x9e3779b1U);
-    h = SkyHashUVE(h ^ (uint(cell.y) * 0x85ebca77U));
-    h = SkyHashUVE(h ^ (uint(cell.z) * 0xc2b2ae3dU));
-    h = SkyHashUVE(h ^ uint(max(seed, 0.0)));
-    return vec4(SkyHashUnitUVE(h), SkyHashUnitUVE(SkyHashUVE(h)),
-                SkyHashUnitUVE(SkyHashUVE(h ^ 0x68bc21ebU)),
-                SkyHashUnitUVE(SkyHashUVE(h ^ 0x02e5be93U)));
+vec4 SkyCellRandoms(ivec3 cell, float seed) {
+    uint h = SkyHash(uint(cell.x) * 0x9e3779b1U);
+    h = SkyHash(h ^ (uint(cell.y) * 0x85ebca77U));
+    h = SkyHash(h ^ (uint(cell.z) * 0xc2b2ae3dU));
+    h = SkyHash(h ^ uint(max(seed, 0.0)));
+    return vec4(SkyHashUnit(h), SkyHashUnit(SkyHash(h)),
+                SkyHashUnit(SkyHash(h ^ 0x68bc21ebU)),
+                SkyHashUnit(SkyHash(h ^ 0x02e5be93U)));
 }
 
 // Value noise, 2D and 3D. Smoothstep-interpolated hashes rather than a gradient noise: the
 // difference is invisible at cloud frequency, and this way the whole thing is integer hashing with
 // no table to upload or keep in sync.
-float SkyNoiseUVE(vec2 p) {
+float SkyNoise(vec2 p) {
     vec2 cell = floor(p);
     vec2 f = fract(p);
     vec2 u = f * f * (3.0 - 2.0 * f);
     ivec3 base = ivec3(int(cell.x), int(cell.y), 0);
-    float a = SkyCellNoiseUVE(base);
-    float b = SkyCellNoiseUVE(base + ivec3(1, 0, 0));
-    float c = SkyCellNoiseUVE(base + ivec3(0, 1, 0));
-    float d = SkyCellNoiseUVE(base + ivec3(1, 1, 0));
+    float a = SkyCellNoise(base);
+    float b = SkyCellNoise(base + ivec3(1, 0, 0));
+    float c = SkyCellNoise(base + ivec3(0, 1, 0));
+    float d = SkyCellNoise(base + ivec3(1, 1, 0));
     return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
 }
 
-float SkyNoiseUVE(vec3 p) {
+float SkyNoise(vec3 p) {
     vec3 cell = floor(p);
     vec3 f = fract(p);
     vec3 u = f * f * (3.0 - 2.0 * f);
     ivec3 base = ivec3(cell);
-    float c000 = SkyCellNoiseUVE(base);
-    float c100 = SkyCellNoiseUVE(base + ivec3(1, 0, 0));
-    float c010 = SkyCellNoiseUVE(base + ivec3(0, 1, 0));
-    float c110 = SkyCellNoiseUVE(base + ivec3(1, 1, 0));
-    float c001 = SkyCellNoiseUVE(base + ivec3(0, 0, 1));
-    float c101 = SkyCellNoiseUVE(base + ivec3(1, 0, 1));
-    float c011 = SkyCellNoiseUVE(base + ivec3(0, 1, 1));
-    float c111 = SkyCellNoiseUVE(base + ivec3(1, 1, 1));
+    float c000 = SkyCellNoise(base);
+    float c100 = SkyCellNoise(base + ivec3(1, 0, 0));
+    float c010 = SkyCellNoise(base + ivec3(0, 1, 0));
+    float c110 = SkyCellNoise(base + ivec3(1, 1, 0));
+    float c001 = SkyCellNoise(base + ivec3(0, 0, 1));
+    float c101 = SkyCellNoise(base + ivec3(1, 0, 1));
+    float c011 = SkyCellNoise(base + ivec3(0, 1, 1));
+    float c111 = SkyCellNoise(base + ivec3(1, 1, 1));
     float bottom = mix(mix(c000, c100, u.x), mix(c010, c110, u.x), u.y);
     float top = mix(mix(c001, c101, u.x), mix(c011, c111, u.x), u.y);
     return mix(bottom, top, u.z);
 }
 
-float SkyFbmUVE(vec2 p, const int octaves) {
+float SkyFbm(vec2 p, const int octaves) {
     float sum = 0.0;
     float amplitude = 0.5;
     float total = 0.0;
     for (int i = 0; i < octaves; ++i) {
-        sum += SkyNoiseUVE(p) * amplitude;
+        sum += SkyNoise(p) * amplitude;
         total += amplitude;
         p = p * 2.03 + vec2(17.1, 9.7);
         amplitude *= 0.5;
@@ -407,12 +407,12 @@ float SkyFbmUVE(vec2 p, const int octaves) {
     return sum / max(total, 1.0e-5);
 }
 
-float SkyFbmUVE(vec3 p, const int octaves) {
+float SkyFbm(vec3 p, const int octaves) {
     float sum = 0.0;
     float amplitude = 0.5;
     float total = 0.0;
     for (int i = 0; i < octaves; ++i) {
-        sum += SkyNoiseUVE(p) * amplitude;
+        sum += SkyNoise(p) * amplitude;
         total += amplitude;
         p = p * 2.03 + vec3(5.3, 11.7, 3.1);
         amplitude *= 0.5;
@@ -424,7 +424,7 @@ float SkyFbmUVE(vec3 p, const int octaves) {
 // all the same angular size and the field has no seam or pole where they bunch up. The neighbours
 // are checked too, because a star placed near a cell boundary is partly in the next cell and would
 // otherwise be cut in half.
-float StarFieldUVE(vec3 dir) {
+float StarField(vec3 dir) {
     if (uStarBrightness <= 0.0 || uStarDensity <= 0.0) {
         return 0.0;
     }
@@ -435,7 +435,7 @@ float StarFieldUVE(vec3 dir) {
         for (int y = -1; y <= 1; ++y) {
             for (int z = -1; z <= 1; ++z) {
                 ivec3 cell = base + ivec3(x, y, z);
-                vec4 r = SkyCellRandomsUVE(cell, uStarSeed);
+                vec4 r = SkyCellRandoms(cell, uStarSeed);
                 // Most cells are empty; this threshold is what makes the sky mostly dark. It uses
                 // a different channel from the size and the brightness on purpose - sharing one
                 // would make every star the same, because a cell that passes the threshold already
@@ -460,7 +460,7 @@ float StarFieldUVE(vec3 dir) {
 // The galactic band: a great circle of concentrated starlight, with dust lanes through it. The
 // band is the plane through the eye whose normal is fixed, so it passes through the zenith at a
 // set tilt rather than sitting at a constant altitude.
-float MilkyWayUVE(vec3 dir) {
+float MilkyWay(vec3 dir) {
     if (uMilkyWayStrength <= 0.0) {
         return 0.0;
     }
@@ -471,9 +471,9 @@ float MilkyWayUVE(vec3 dir) {
         return 0.0;
     }
     // Stretched noise along the band: a rift reads as structure, isotropic noise reads as fog.
-    float broad = SkyFbmUVE(dir * 5.0, 4);
-    float fine = SkyFbmUVE(dir * 14.0, 3);
-    float stars = SkyFbmUVE(dir * 40.0, 2);
+    float broad = SkyFbm(dir * 5.0, 4);
+    float fine = SkyFbm(dir * 14.0, 3);
+    float stars = SkyFbm(dir * 40.0, 2);
     float dust = smoothstep(0.30, 0.80, broad * 0.62 + fine * 0.38);
     return band * dust * (0.55 + 0.45 * stars);
 }
@@ -481,7 +481,7 @@ float MilkyWayUVE(vec3 dir) {
 // The cloud deck: a plane at uCloudAltitude, sampled where the view ray crosses it. Flat rather
 // than volumetric, which is the honest trade - it is one texture lookup's worth of cost and it
 // reads correctly at every angle except straight up through a broken deck.
-vec4 CloudsUVE(vec3 dir, vec3 sun, float day) {
+vec4 Clouds(vec3 dir, vec3 sun, float day) {
     if (uCloudsEnabled == 0 || dir.y <= 0.004 || uCloudAltitude <= 0.0) {
         return vec4(0.0);
     }
@@ -495,8 +495,8 @@ vec4 CloudsUVE(vec3 dir, vec3 sun, float day) {
     // rather than as a smear.
     vec2 uv = (crossing.xz + uCloudWind * uSkyTime) * 0.0012;
 
-    float broad = SkyFbmUVE(uv, 4);
-    float detail = SkyFbmUVE(uv * 3.7 + vec2(31.4, 12.9), 3);
+    float broad = SkyFbm(uv, 4);
+    float detail = SkyFbm(uv * 3.7 + vec2(31.4, 12.9), 3);
     // The threshold is the coverage: raising it pushes the noise field further under the cut, so
     // more of the sky is clear. Erring the field by a second, finer noise is what stops the deck
     // reading as one smooth blob and gives it ragged edges.
@@ -539,20 +539,20 @@ vec4 CloudsUVE(vec3 dir, vec3 sun, float day) {
 // Draws the two night layers and the deck in the order light arrives at the eye: stars and the
 // band are behind the air, cloud is in front of it. Called by both sky models, so a scene that
 // switches source keeps its stars and its weather.
-vec3 ApplySkyOverlaysUVE(vec3 base, vec3 dir, vec3 sun, float day) {
+vec3 ApplySkyOverlays(vec3 base, vec3 dir, vec3 sun, float day) {
     float night = uSunEnergy > 0.0 ? (1.0 - smoothstep(-0.08, 0.18, sun.y)) : 0.0;
     if (uStarBrightness > 0.0 && night > 0.002) {
         // Slightly cool white: real starlight is not neutral, and a pure white field reads as
         // noise rather than as sky.
         vec3 tint = vec3(0.86, 0.92, 1.0);
-        base += tint * (StarFieldUVE(dir) * uStarBrightness * night);
-        base += tint * (MilkyWayUVE(dir) * uMilkyWayStrength * night * 0.35);
+        base += tint * (StarField(dir) * uStarBrightness * night);
+        base += tint * (MilkyWay(dir) * uMilkyWayStrength * night * 0.35);
     }
-    vec4 cloud = CloudsUVE(dir, sun, day);
+    vec4 cloud = Clouds(dir, sun, day);
     return mix(base, cloud.rgb, cloud.a);
 }
 
-vec3 ProceduralSkyUVE(vec3 viewDir) {
+vec3 ProceduralSky(vec3 viewDir) {
     vec3 dir = normalize(viewDir);
     vec3 sun = length(uSunDirection) > 1.0e-5 ? normalize(uSunDirection) : vec3(0.0, 1.0, 0.0);
 
@@ -561,7 +561,7 @@ vec3 ProceduralSkyUVE(vec3 viewDir) {
     // changes how the sky is built without changing what it is lit by.
     float day = uSunEnergy > 0.0 ? smoothstep(-0.08, 0.18, sun.y) : 1.0;
     if (uAtmosphericSky != 0) {
-        return ApplySkyOverlaysUVE(PhysicalSkyUVE(dir, sun), dir, sun, day);
+        return ApplySkyOverlays(PhysicalSky(dir, sun), dir, sun, day);
     }
     vec3 groundBase = max(uGroundColor, vec3(0.0));
     vec3 groundLit = groundBase * mix(0.40, 1.0, day);
@@ -576,25 +576,25 @@ vec3 ProceduralSkyUVE(vec3 viewDir) {
         return mix(ground, horizonLit, seamBlend);
     }
 
-    vec3 upperSky = AtmosphereUpperUVE(dir, sun);
+    vec3 upperSky = AtmosphereUpper(dir, sun);
     float horizonBlend = smoothstep(0.0, 0.015, dir.y);
     return mix(horizonLit, upperSky, horizonBlend);
 }
 
 /// The gradient sky with the night and cloud overlays on top. Separate from the body above so the
 /// ground branch below the horizon can return early without skipping them.
-vec3 GradientSkyWithOverlaysUVE(vec3 dir, vec3 sun) {
+vec3 GradientSkyWithOverlays(vec3 dir, vec3 sun) {
     float day = uSunEnergy > 0.0 ? smoothstep(-0.08, 0.18, sun.y) : 1.0;
-    vec3 base = ProceduralSkyUVE(dir);
+    vec3 base = ProceduralSky(dir);
     // Below the horizon there is no sky to overlay: the ground band already stands in for the
     // terrain, and stars under it would be visible through the floor.
     if (dir.y < -0.001) {
         return base;
     }
-    return ApplySkyOverlaysUVE(base, dir, sun, day);
+    return ApplySkyOverlays(base, dir, sun, day);
 }
 
-vec2 SkyEquirectUvUVE(vec3 dir) {
+vec2 SkyEquirectUv(vec3 dir) {
     vec3 d = normalize(dir);
     float longitude = 0.0;
     if (abs(d.x) + abs(d.z) >= 1.0e-8) {
@@ -608,13 +608,13 @@ vec2 SkyEquirectUvUVE(vec3 dir) {
 // Ground-plane shadow (y = 0) through the same three directional cascades the lit pass uses. The
 // first cascade whose map contains the point wins, so a shadow far from the camera is no longer
 // dropped for lying outside the near cascade.
-float SkyGroundCascadeDepthUVE(int cascade, vec2 uv) {
+float SkyGroundCascadeDepth(int cascade, vec2 uv) {
     if (cascade == 0) { return texture(uSkyGroundShadowMap0, uv).r; }
     if (cascade == 1) { return texture(uSkyGroundShadowMap1, uv).r; }
     return texture(uSkyGroundShadowMap2, uv).r;
 }
 
-vec2 SkyGroundCascadeTexelUVE(int cascade) {
+vec2 SkyGroundCascadeTexel(int cascade) {
     ivec2 sz;
     if (cascade == 0) { sz = textureSize(uSkyGroundShadowMap0, 0); }
     else if (cascade == 1) { sz = textureSize(uSkyGroundShadowMap1, 0); }
@@ -622,7 +622,7 @@ vec2 SkyGroundCascadeTexelUVE(int cascade) {
     return 1.0 / max(vec2(sz), vec2(1.0));
 }
 
-float SkyGroundShadowUVE(vec3 groundPos, float viewDist) {
+float SkyGroundShadow(vec3 groundPos, float viewDist) {
     for (int cascade = 0; cascade < 3; ++cascade) {
         float splitFar = cascade == 0 ? uSkyGroundCascadeSplits.x
                        : (cascade == 1 ? uSkyGroundCascadeSplits.y : uSkyGroundCascadeSplits.z);
@@ -638,12 +638,12 @@ float SkyGroundShadowUVE(vec3 groundPos, float viewDist) {
             proj.z <= 0.0 || proj.z >= 1.0) {
             return 0.0;
         }
-        vec2 texel = SkyGroundCascadeTexelUVE(cascade);
+        vec2 texel = SkyGroundCascadeTexel(cascade);
         float bias = max(uSkyGroundShadowBias, 0.0008);
         float shadow = 0.0;
         for (int sx = -1; sx <= 1; ++sx) {
             for (int sy = -1; sy <= 1; ++sy) {
-                float closest = SkyGroundCascadeDepthUVE(cascade, proj.xy + vec2(float(sx), float(sy)) * texel);
+                float closest = SkyGroundCascadeDepth(cascade, proj.xy + vec2(float(sx), float(sy)) * texel);
                 shadow += (proj.z - bias > closest) ? 1.0 : 0.0;
             }
         }
@@ -668,26 +668,26 @@ void main() {
             float mu = clamp(dot(worldDir, sunDir), -1.0, 1.0);
             float sunset = exp(-pow(sunDir.y * 6.0, 2.0)) * smoothstep(-0.15, 0.0, sunDir.y);
             vec3 sunCol = max(uSunColor, vec3(0.0)) * max(uSunEnergy, 0.0);
-            color += sunCol * SunDiscUVE(mu, sunDir.y) * mix(7.5, 16.0, sunset);
+            color += sunCol * SunDisc(mu, sunDir.y) * mix(7.5, 16.0, sunset);
         }
     } else if (uSkyTextureEnabled != 0) {
         // A panorama replaces the sky, not the weather: cloud and stars still sit in front of and
         // behind it, so a photographed sky can have a moving deck over it.
-        color = texture(uSkyTexture, SkyEquirectUvUVE(worldDir)).rgb;
+        color = texture(uSkyTexture, SkyEquirectUv(worldDir)).rgb;
         if (worldDir.y > -0.001) {
             float day = uSunEnergy > 0.0 ? smoothstep(-0.08, 0.18, sunDir.y) : 1.0;
-            color = ApplySkyOverlaysUVE(color, worldDir, sunDir, day);
+            color = ApplySkyOverlays(color, worldDir, sunDir, day);
         }
     } else if (uAtmosphericSky != 0) {
-        color = ProceduralSkyUVE(worldDir);
+        color = ProceduralSky(worldDir);
     } else {
-        color = GradientSkyWithOverlaysUVE(worldDir, sunDir);
+        color = GradientSkyWithOverlays(worldDir, sunDir);
     }
     if (uSkyGroundShadowEnabled != 0 && worldDir.y < -0.001 && uCameraPosition.y > 0.001 && sunDir.y > 0.01) {
         float groundDist = -uCameraPosition.y / worldDir.y;
         if (groundDist > 0.0 && groundDist < 120.0) {
             vec3 groundPos = uCameraPosition + worldDir * groundDist;
-            float shadow = SkyGroundShadowUVE(groundPos, groundDist);
+            float shadow = SkyGroundShadow(groundPos, groundDist);
             float distFade = 1.0 - smoothstep(60.0, 120.0, groundDist);
             float shadowFactor =
                 clamp(shadow * clamp(uSkyGroundShadowOpacity, 0.0, 1.0) * distFade, 0.0, 1.0);

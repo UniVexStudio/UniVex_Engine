@@ -29,16 +29,16 @@
 
 namespace UVE::Asset::Detail {
 
-struct GltfMaterialImportResultUVE final {
+struct GltfMaterialImportResult final {
     /// Every material the imported mesh's primitives reference, in first-reference order. A
     /// mesh surface's `materialSlot` indexes THIS vector, which is why the order is defined rather
     /// than incidental: it is the order the importer walked the primitives.
-    std::vector<AssetGuidUVE> materialGuids;
+    std::vector<AssetGuid> materialGuids;
     /// glTF material index -> slot in `materialGuids`. A material the document describes badly is
     /// absent from both, which is how a surface ends up with no material instead of a broken one.
     std::unordered_map<std::uint64_t, std::uint32_t> materialIndexToSlot;
-    /// The published material of the mesh's FIRST primitive, or `kInvalidAssetGuidUVE`.
-    AssetGuidUVE primitiveMaterialGuid = kInvalidAssetGuidUVE;
+    /// The published material of the mesh's FIRST primitive, or `kInvalidAssetGuid`.
+    AssetGuid primitiveMaterialGuid = kInvalidAssetGuid;
 };
 
 /// Publishes every material the imported mesh's primitives reference, plus the textures they
@@ -46,10 +46,10 @@ struct GltfMaterialImportResultUVE final {
 /// image the document merely describes badly is skipped with a warning and simply left out of
 /// `outResult`, so the caller can still publish the geometry and shade that surface with the
 /// object's material instead.
-[[nodiscard]] bool ImportGltfMaterialsUVE(const nlohmann::json& document, const std::vector<std::byte>& buffer,
+[[nodiscard]] bool ImportGltfMaterials(const nlohmann::json& document, const std::vector<std::byte>& buffer,
                                           const std::filesystem::path& sourcePath,
                                           const std::filesystem::path& destinationPath,
-                                          IAssetDatabaseUVE& assetDatabase,
-                                          GltfMaterialImportResultUVE& outResult);
+                                          IAssetDatabase& assetDatabase,
+                                          GltfMaterialImportResult& outResult);
 
 } // namespace UVE::Asset::Detail

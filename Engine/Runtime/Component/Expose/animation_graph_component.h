@@ -16,20 +16,20 @@
 
 namespace UVE::Scene {
 
-inline constexpr std::size_t kMaximumAnimationGraphNodesUVE = 256U;
-inline constexpr std::size_t kMaximumAnimationParametersUVE = 128U;
-inline constexpr std::size_t kMaximumAnimationObjectInputsUVE = 32U;
-inline constexpr std::size_t kMaximumAnimationTransitionsUVE = 128U;
-inline constexpr std::size_t kMaximumAnimationNameBytesUVE = 128U;
-inline constexpr std::size_t kMaximumAnimationTransitionConditionsUVE = 16U;
+inline constexpr std::size_t kMaximumAnimationGraphNodes = 256U;
+inline constexpr std::size_t kMaximumAnimationParameters = 128U;
+inline constexpr std::size_t kMaximumAnimationObjectInputs = 32U;
+inline constexpr std::size_t kMaximumAnimationTransitions = 128U;
+inline constexpr std::size_t kMaximumAnimationNameBytes = 128U;
+inline constexpr std::size_t kMaximumAnimationTransitionConditions = 16U;
 /// LayeredBlend: most bone branches one node can name.
-inline constexpr std::size_t kMaximumAnimationLayerBonesUVE = 256U;
+inline constexpr std::size_t kMaximumAnimationLayerBones = 256U;
 /// A transition whose From is this leaves whichever state is active: an "any state" transition.
-inline constexpr std::uint32_t kAnyAnimationStateUVE = 0xFFFFFFFFU;
+inline constexpr std::uint32_t kAnyAnimationState = 0xFFFFFFFFU;
 
 /// One node of an animation graph. Every kind produces a pose from its inputs; the graph's single
 /// Output node's pose is what the target shows.
-enum class AnimationGraphNodeKindUVE : std::uint8_t {
+enum class AnimationGraphNodeKind : std::uint8_t {
     /// The result. Exactly one per graph, with one input.
     Output = 0,
     /// Plays a clip.
@@ -81,7 +81,7 @@ enum class AnimationGraphNodeKindUVE : std::uint8_t {
 };
 
 /// Where a Two Bone IK's effector or a Look At's target comes from.
-enum class AnimationGraphTargetSourceUVE : std::uint8_t {
+enum class AnimationGraphTargetSource : std::uint8_t {
     /// `target`, as set on the node.
     Fixed = 0,
     /// The Vector3 parameter named `parameter` (a script sets it each frame).
@@ -91,7 +91,7 @@ enum class AnimationGraphTargetSourceUVE : std::uint8_t {
 };
 
 /// How a Modify Bone node applies its transform.
-enum class AnimationBoneModifyModeUVE : std::uint8_t {
+enum class AnimationBoneModifyMode : std::uint8_t {
     /// On top of the pose: the translation adds, the rotation turns, the scale multiplies.
     Add = 0,
     /// Instead of the pose.
@@ -99,7 +99,7 @@ enum class AnimationBoneModifyModeUVE : std::uint8_t {
 };
 
 /// The space a Modify Bone node's transform is in.
-enum class AnimationBoneSpaceUVE : std::uint8_t {
+enum class AnimationBoneSpace : std::uint8_t {
     /// The bone's parent's (its local pose).
     Local = 0,
     /// The skeleton's.
@@ -107,22 +107,22 @@ enum class AnimationBoneSpaceUVE : std::uint8_t {
 };
 
 /// One bone of a montage's pose, handed to a Slot node (runtime only).
-struct AnimationGraphSlotBoneUVE final {
-    Math::Vector3UVE position{};
-    Math::QuaternionUVE rotation{};
-    Math::Vector3UVE scale{1.0F, 1.0F, 1.0F};
-    [[nodiscard]] bool operator==(const AnimationGraphSlotBoneUVE&) const = default;
+struct AnimationGraphSlotBone final {
+    Math::Vector3 position{};
+    Math::Quaternion rotation{};
+    Math::Vector3 scale{1.0F, 1.0F, 1.0F};
+    [[nodiscard]] bool operator==(const AnimationGraphSlotBone&) const = default;
 };
 
 /// What plays on one slot this step: the montage's pose (one entry per skeleton bone) and weight.
-struct AnimationGraphSlotPoseUVE final {
+struct AnimationGraphSlotPose final {
     std::string slot;
     float weight = 0.0F;
-    std::vector<AnimationGraphSlotBoneUVE> bones;
-    [[nodiscard]] bool operator==(const AnimationGraphSlotPoseUVE&) const = default;
+    std::vector<AnimationGraphSlotBone> bones;
+    [[nodiscard]] bool operator==(const AnimationGraphSlotPose&) const = default;
 };
 
-enum class AnimationParameterTypeUVE : std::uint8_t {
+enum class AnimationParameterType : std::uint8_t {
     Float = 0,
     Bool,
     /// Set by a script or the Inspector; cleared by the first transition or one-shot that uses it.
@@ -135,7 +135,7 @@ enum class AnimationParameterTypeUVE : std::uint8_t {
 /// written by the engine every frame from the character the graph animates (its Character
 /// Controller): its ground speed, its heading against its facing in degrees (-180..180, positive to
 /// the right), and whether it is off or on the ground.
-enum class AnimationParameterSourceUVE : std::uint8_t {
+enum class AnimationParameterSource : std::uint8_t {
     Script = 0,
     CharacterSpeed,
     CharacterDirection,
@@ -145,18 +145,18 @@ enum class AnimationParameterSourceUVE : std::uint8_t {
 
 /// A named value the graph reads - speed, grounded, attack. Scripts and the Inspector set them;
 /// nodes and transitions only read them.
-struct AnimationParameterUVE final {
+struct AnimationParameter final {
     std::string name;
-    AnimationParameterTypeUVE type = AnimationParameterTypeUVE::Float;
+    AnimationParameterType type = AnimationParameterType::Float;
     float value = 0.0F;
     /// Vector3 parameters: the value.
-    Math::Vector3UVE vector{};
-    AnimationParameterSourceUVE source = AnimationParameterSourceUVE::Script;
+    Math::Vector3 vector{};
+    AnimationParameterSource source = AnimationParameterSource::Script;
 
-    [[nodiscard]] bool operator==(const AnimationParameterUVE&) const = default;
+    [[nodiscard]] bool operator==(const AnimationParameter&) const = default;
 };
 
-enum class AnimationConditionUVE : std::uint8_t {
+enum class AnimationCondition : std::uint8_t {
     /// Holds always. Kept so older saves read back; a transition with no conditions is the same.
     Always = 0,
     /// When the From state's animation reaches its end.
@@ -170,16 +170,16 @@ enum class AnimationConditionUVE : std::uint8_t {
 };
 
 /// One test a transition makes. A transition's tests must all hold for it to be taken.
-struct AnimationTransitionConditionUVE final {
-    AnimationConditionUVE condition = AnimationConditionUVE::ParameterTrue;
+struct AnimationTransitionCondition final {
+    AnimationCondition condition = AnimationCondition::ParameterTrue;
     std::string parameter;
     float threshold = 0.0F;
 
-    [[nodiscard]] bool operator==(const AnimationTransitionConditionUVE&) const = default;
+    [[nodiscard]] bool operator==(const AnimationTransitionCondition&) const = default;
 };
 
 /// Where the state entered starts playing.
-enum class AnimationTransitionStartUVE : std::uint8_t {
+enum class AnimationTransitionStart : std::uint8_t {
     /// From its beginning.
     Restart = 0,
     /// At the phase the state it leaves had reached, so a stride carries on through the change.
@@ -189,7 +189,7 @@ enum class AnimationTransitionStartUVE : std::uint8_t {
 };
 
 /// The shape of a crossfade's weight over its length. Inertialized transitions keep their own decay.
-enum class AnimationTransitionCurveUVE : std::uint8_t {
+enum class AnimationTransitionCurve : std::uint8_t {
     Linear = 0,
     EaseIn,
     EaseOut,
@@ -198,27 +198,27 @@ enum class AnimationTransitionCurveUVE : std::uint8_t {
 
 /// A move between two states of a StateMachine node. States are indices into the node's inputs.
 /// Transitions out of a state are tried in list order, so the first is the most important.
-struct AnimationGraphTransitionUVE final {
-    std::uint32_t fromState = kAnyAnimationStateUVE;
+struct AnimationGraphTransition final {
+    std::uint32_t fromState = kAnyAnimationState;
     std::uint32_t toState = 0U;
     /// All must hold. None: the transition is taken as soon as it may be.
-    std::vector<AnimationTransitionConditionUVE> conditions;
+    std::vector<AnimationTransitionCondition> conditions;
     /// When set (0..1), the From state must have played at least this far through its cycle first.
     float exitPhase = -1.0F;
-    AnimationTransitionStartUVE start = AnimationTransitionStartUVE::Restart;
+    AnimationTransitionStart start = AnimationTransitionStart::Restart;
     /// Crossfade length in seconds; 0 cuts.
     float fadeSeconds = 0.2F;
-    AnimationTransitionCurveUVE curve = AnimationTransitionCurveUVE::Linear;
+    AnimationTransitionCurve curve = AnimationTransitionCurve::Linear;
     /// Whether another transition may take over while this one is still fading.
     bool interruptible = true;
     /// Off: kept, but never taken.
     bool enabled = true;
 
-    [[nodiscard]] bool operator==(const AnimationGraphTransitionUVE&) const = default;
+    [[nodiscard]] bool operator==(const AnimationGraphTransition&) const = default;
 };
 
 /// How a Blend Space turns its position into what plays.
-enum class AnimationBlendModeUVE : std::uint8_t {
+enum class AnimationBlendMode : std::uint8_t {
     /// Mixes the points around the position: the two either side on a line, the three corners of
     /// the triangle it is in on a plane.
     Blend = 0,
@@ -233,28 +233,28 @@ enum class AnimationBlendModeUVE : std::uint8_t {
 /// One animation of a Blend Space, where it sits. A blend space holds its animations itself, the
 /// way a Clip holds its clip: they are not graph inputs, so the graph shows the space as one box
 /// and its editor shows the points.
-struct AnimationBlendPointUVE final {
+struct AnimationBlendPoint final {
     /// On the line (1D uses x only) or the plane.
-    Math::Vector2UVE position{};
-    Asset::AssetGuidUVE clip{};
+    Math::Vector2 position{};
+    Asset::AssetGuid clip{};
     float speed = 1.0F;
     bool loop = true;
 
-    [[nodiscard]] bool operator==(const AnimationBlendPointUVE&) const = default;
+    [[nodiscard]] bool operator==(const AnimationBlendPoint&) const = default;
 };
 
-struct AnimationGraphNodeUVE final {
+struct AnimationGraphNode final {
     /// Unique within the graph and never 0; inputs refer to nodes by it.
     std::uint32_t id = 0U;
-    AnimationGraphNodeKindUVE kind = AnimationGraphNodeKindUVE::Clip;
+    AnimationGraphNodeKind kind = AnimationGraphNodeKind::Clip;
     std::string name;
     /// Where the graph editor draws it.
-    Math::Vector2UVE position{};
+    Math::Vector2 position{};
     /// Child node ids, in the order the kind gives them meaning. 0 is an empty slot.
     std::vector<std::uint32_t> inputs;
 
     // Clip
-    Asset::AssetGuidUVE clip{};
+    Asset::AssetGuid clip{};
     bool loop = true;
     /// Clip playback rate, and TimeScale's rate when it has no parameter.
     float speed = 1.0F;
@@ -265,15 +265,15 @@ struct AnimationGraphNodeUVE final {
     /// The weight or position used when there is no parameter.
     float value = 0.5F;
     /// Blend Space 1D / 2D: its animations. A 1D space keeps them in rising x.
-    std::vector<AnimationBlendPointUVE> blendPoints;
+    std::vector<AnimationBlendPoint> blendPoints;
     /// Blend Space 1D / 2D: the area its editor shows (1D uses X only). Points may sit outside it.
-    Math::Vector2UVE areaMin{-1.0F, -1.0F};
-    Math::Vector2UVE areaMax{1.0F, 1.0F};
+    Math::Vector2 areaMin{-1.0F, -1.0F};
+    Math::Vector2 areaMax{1.0F, 1.0F};
     /// BlendSpace2D: the second axis's parameter, and its value when there is none.
     std::string parameterY;
     float valueY = 0.0F;
     /// Blend Space 1D / 2D: how the position picks what plays.
-    AnimationBlendModeUVE blendMode = AnimationBlendModeUVE::Blend;
+    AnimationBlendMode blendMode = AnimationBlendMode::Blend;
     /// Blend Space 1D / 2D: how long the position takes to follow its parameters, as the time to
     /// close half the gap (a critically damped spring, so it never overshoots). 0 follows at once.
     float smoothingSeconds = 0.0F;
@@ -288,12 +288,12 @@ struct AnimationGraphNodeUVE final {
     bool sync = false;
     /// StateMachine: the state it starts in, and the moves between states.
     std::uint32_t entryState = 0U;
-    std::vector<AnimationGraphTransitionUVE> transitions;
+    std::vector<AnimationGraphTransition> transitions;
     /// StateMachine: where its state view draws each state (by slot), and its Entry and Any boxes.
     /// Fewer positions than states is fine: the rest are laid out on a grid.
-    std::vector<Math::Vector2UVE> statePositions;
-    Math::Vector2UVE entryPosition{-240.0F, 0.0F};
-    Math::Vector2UVE anyPosition{-240.0F, 120.0F};
+    std::vector<Math::Vector2> statePositions;
+    Math::Vector2 entryPosition{-240.0F, 0.0F};
+    Math::Vector2 anyPosition{-240.0F, 120.0F};
     /// StateMachine: each state's name, by slot (empty: named after what it plays).
     std::vector<std::string> stateNames;
     /// The graph the editor shows this node in when no wire says (a node not wired yet): a State
@@ -309,17 +309,17 @@ struct AnimationGraphNodeUVE final {
     std::string axisNameY;
     /// TwoBoneIK / LookAt: the effector or target when `targetSource` is Fixed. ModifyBone: the
     /// translation. In the skeleton's space (ModifyBone: in `space`).
-    Math::Vector3UVE target{};
+    Math::Vector3 target{};
     /// TwoBoneIK: the direction the middle joint bends toward (zero: keep the pose's bend).
     /// LookAt: the bone's own axis that points at the target.
-    Math::Vector3UVE pole{0.0F, 0.0F, 1.0F};
+    Math::Vector3 pole{0.0F, 0.0F, 1.0F};
     /// ModifyBone: rotation (XYZ Euler, degrees) and scale.
-    Math::Vector3UVE rotationDegrees{};
-    Math::Vector3UVE boneScale{1.0F, 1.0F, 1.0F};
-    AnimationGraphTargetSourceUVE targetSource = AnimationGraphTargetSourceUVE::Fixed;
+    Math::Vector3 rotationDegrees{};
+    Math::Vector3 boneScale{1.0F, 1.0F, 1.0F};
+    AnimationGraphTargetSource targetSource = AnimationGraphTargetSource::Fixed;
     std::string targetBone;
-    AnimationBoneModifyModeUVE modifyMode = AnimationBoneModifyModeUVE::Add;
-    AnimationBoneSpaceUVE space = AnimationBoneSpaceUVE::Local;
+    AnimationBoneModifyMode modifyMode = AnimationBoneModifyMode::Add;
+    AnimationBoneSpace space = AnimationBoneSpace::Local;
     /// LookAt: the most the bone turns away from its pose.
     float clampDegrees = 180.0F;
     /// TwoBoneIK / ModifyBone / LookAt: a Float parameter for the alpha, instead of `value`.
@@ -335,25 +335,25 @@ struct AnimationGraphNodeUVE final {
     bool autoRestart = false;
     float autoRestartDelaySeconds = 1.0F;
 
-    [[nodiscard]] bool operator==(const AnimationGraphNodeUVE&) const = default;
+    [[nodiscard]] bool operator==(const AnimationGraphNode&) const = default;
 };
 
 /// What a node remembers between steps. Kept beside the graph, index for index, and rebuilt
 /// whenever the graph's shape changes; never saved.
-struct AnimationGraphNodeStateUVE final {
+struct AnimationGraphNodeState final {
     /// Clip: seconds into the clip.
     double timeSeconds = 0.0;
     /// StateMachine: the active state and the one fading out.
     std::uint32_t activeState = 0U;
-    std::uint32_t previousState = kAnyAnimationStateUVE;
+    std::uint32_t previousState = kAnyAnimationState;
     float fadeElapsedSeconds = 0.0F;
     float fadeSeconds = 0.0F;
     /// StateMachine: the curve of the crossfade under way, whether it may be interrupted, the last
-    /// transition taken (an index into `transitions`, kAnyAnimationStateUVE for none) and how long
+    /// transition taken (an index into `transitions`, kAnyAnimationState for none) and how long
     /// the active state has been active.
-    AnimationTransitionCurveUVE fadeCurve = AnimationTransitionCurveUVE::Linear;
+    AnimationTransitionCurve fadeCurve = AnimationTransitionCurve::Linear;
     bool fadeInterruptible = true;
-    std::uint32_t lastTransition = kAnyAnimationStateUVE;
+    std::uint32_t lastTransition = kAnyAnimationState;
     float stateSeconds = 0.0F;
     /// OneShot: playing, and for how long.
     bool shotActive = false;
@@ -365,90 +365,90 @@ struct AnimationGraphNodeStateUVE final {
     std::vector<double> pointTimes;
     std::vector<bool> pointStarted;
     /// Blend Space: the smoothed position and how fast it is moving; `blendAtSet` once it has one.
-    Math::Vector2UVE blendAt{};
-    Math::Vector2UVE blendVelocity{};
+    Math::Vector2 blendAt{};
+    Math::Vector2 blendVelocity{};
     bool blendAtSet = false;
     /// Blend Space: how much each point counted in the last step (what the editor shows).
     std::vector<float> pointWeights;
-    /// Blend Space, Nearest: the point playing; kAnyAnimationStateUVE before the first step.
-    std::uint32_t nearestPoint = kAnyAnimationStateUVE;
+    /// Blend Space, Nearest: the point playing; kAnyAnimationState before the first step.
+    std::uint32_t nearestPoint = kAnyAnimationState;
     /// Blend Space 2D: its triangles (point indices), and the points they were made from.
     std::vector<std::array<std::uint32_t, 3>> triangles;
-    std::vector<Math::Vector2UVE> triangulatedPoints;
+    std::vector<Math::Vector2> triangulatedPoints;
     /// How much this node counted in the last step's output, 0..1: what the editor shows on wires.
     float weight = 0.0F;
     /// StateMachine, inertialized transition: how far the pose that was showing is from the state
     /// just entered, per channel, fading out over `inertialSeconds`.
-    std::vector<Math::Vector3UVE> inertialPosition;
-    std::vector<Math::QuaternionUVE> inertialRotation;
-    std::vector<Math::Vector3UVE> inertialScale;
+    std::vector<Math::Vector3> inertialPosition;
+    std::vector<Math::Quaternion> inertialRotation;
+    std::vector<Math::Vector3> inertialScale;
     float inertialElapsedSeconds = 0.0F;
     float inertialSeconds = 0.0F;
 
-    [[nodiscard]] bool operator==(const AnimationGraphNodeStateUVE&) const = default;
+    [[nodiscard]] bool operator==(const AnimationGraphNodeState&) const = default;
 };
 
 /// AnimationGraph's own state: an animation graph evaluated every frame. What it moves, which
-/// channels and whether it runs live in its AnimationDriver base (AnimationDriverComponentUVE).
+/// channels and whether it runs live in its AnimationDriver base (AnimationDriverComponent).
 /// A comment box on the graph editor's canvas (editor only: the runtime never reads it).
-struct AnimationGraphCommentUVE final {
+struct AnimationGraphComment final {
     std::string title = "Comment";
-    Math::Vector2UVE position{};
-    Math::Vector2UVE size{260.0F, 160.0F};
+    Math::Vector2 position{};
+    Math::Vector2 size{260.0F, 160.0F};
     /// RGBA, 0..255.
     std::uint32_t color = 0x1E50822DU;
     /// The graph it is drawn in: 0 the top tree, else a State Machine's id and the state's slot.
     std::uint32_t owner = 0U;
     std::uint32_t ownerState = 0U;
-    [[nodiscard]] bool operator==(const AnimationGraphCommentUVE&) const = default;
+    [[nodiscard]] bool operator==(const AnimationGraphComment&) const = default;
 };
 
-struct AnimationGraphComponentUVE final {
-    /// Outliner entity with AnimationSequencerComponentUVE supplying clips to this graph.
-    EntityUVE sequencer = kInvalidEntityUVE;
+struct AnimationGraphComponent final {
+    /// Outliner entity with AnimationSequencerComponent supplying clips to this graph.
+    Entity sequencer = kInvalidEntity;
     /// Optional: the MontageSequencer whose montages play on this graph's Slot nodes. Unset, any
     /// MontageSequencer posing the same skeleton does.
-    EntityUVE montageSequencer = kInvalidEntityUVE;
-    std::vector<AnimationParameterUVE> parameters;
+    Entity montageSequencer = kInvalidEntity;
+    std::vector<AnimationParameter> parameters;
     /// A new tree starts as Output fed by one Clip, so picking a clip is all it takes to play.
-    std::vector<AnimationGraphNodeUVE> nodes = MakeDefaultAnimationGraphUVE();
+    std::vector<AnimationGraphNode> nodes = MakeDefaultAnimationGraph();
     /// The editor's comment boxes around groups of nodes.
-    std::vector<AnimationGraphCommentUVE> comments;
+    std::vector<AnimationGraphComment> comments;
 
     // ---- Runtime state, written by the tree; never saved ----------------------------------------
-    std::vector<AnimationGraphNodeStateUVE> nodeStates;
+    std::vector<AnimationGraphNodeState> nodeStates;
     /// The state machine state names currently active, for the Inspector while playing.
     std::string activeStates;
     /// The root bone's ground travel over the last step, in the skeleton's space (root motion on).
-    Math::Vector3UVE rootMotionDelta{};
+    Math::Vector3 rootMotionDelta{};
     /// Clip events the last step passed, in the clips that counted most (weight at least a half).
     std::vector<std::string> firedEvents;
     /// Montages playing on this graph's Slot nodes, set by the engine before each step.
-    std::vector<AnimationGraphSlotPoseUVE> slotPoses;
+    std::vector<AnimationGraphSlotPose> slotPoses;
     /// True when the last step had a Slot node that took a montage's pose.
     bool slotUsed = false;
 
-    [[nodiscard]] static std::vector<AnimationGraphNodeUVE> MakeDefaultAnimationGraphUVE() {
-        AnimationGraphNodeUVE output;
+    [[nodiscard]] static std::vector<AnimationGraphNode> MakeDefaultAnimationGraph() {
+        AnimationGraphNode output;
         output.id = 1U;
-        output.kind = AnimationGraphNodeKindUVE::Output;
+        output.kind = AnimationGraphNodeKind::Output;
         output.name = "Output";
-        output.position = Math::Vector2UVE{320.0F, 0.0F};
+        output.position = Math::Vector2{320.0F, 0.0F};
         output.inputs = {2U};
-        AnimationGraphNodeUVE clip;
+        AnimationGraphNode clip;
         clip.id = 2U;
-        clip.kind = AnimationGraphNodeKindUVE::Clip;
+        clip.kind = AnimationGraphNodeKind::Clip;
         clip.name = "Clip";
         return {output, clip};
     }
 
     /// Authored data only: runtime state is ignored.
-    [[nodiscard]] bool HasSameSettingsUVE(const AnimationGraphComponentUVE& other) const {
+    [[nodiscard]] bool HasSameSettings(const AnimationGraphComponent& other) const {
         return sequencer == other.sequencer && montageSequencer == other.montageSequencer && parameters == other.parameters &&
                nodes == other.nodes && comments == other.comments;
     }
 
-    [[nodiscard]] bool operator==(const AnimationGraphComponentUVE&) const = default;
+    [[nodiscard]] bool operator==(const AnimationGraphComponent&) const = default;
 };
 
 /// Why a graph is malformed, or empty when it is not: exactly one Output, unique non-zero ids, every
@@ -456,19 +456,19 @@ struct AnimationGraphComponentUVE final {
 /// counts, ascending blend-space points, transitions between real states, unique parameter names,
 /// and everything within its bounds. An empty slot or a parameter name nobody declared is allowed -
 /// a graph half-built in the editor is still a graph - and simply reads as no pose / its default.
-[[nodiscard]] std::string DescribeAnimationGraphProblemUVE(const AnimationGraphComponentUVE& component);
+[[nodiscard]] std::string DescribeAnimationGraphProblem(const AnimationGraphComponent& component);
 
-/// DescribeAnimationGraphProblemUVE finds nothing. False, too, if checking runs out of memory.
-[[nodiscard]] bool IsAnimationGraphComponentValidUVE(const AnimationGraphComponentUVE& component) noexcept;
+/// DescribeAnimationGraphProblem finds nothing. False, too, if checking runs out of memory.
+[[nodiscard]] bool IsAnimationGraphComponentValid(const AnimationGraphComponent& component) noexcept;
 
 /// Older graphs fed a Blend Space's points through input slots. Moves each Clip on such a slot into
 /// the space's own points (its clip, speed and loop) and removes the Clip node; any other node on a
 /// slot is left in the graph, unconnected, and its point keeps its place with no animation.
 /// Returns how many inputs could not be folded in (0 when all were Clips or empty).
-std::size_t MigrateBlendSpaceInputsUVE(std::vector<AnimationGraphNodeUVE>& nodes,
-                                       const std::vector<std::vector<Math::Vector2UVE>>& legacyPositions);
+std::size_t MigrateBlendSpaceInputs(std::vector<AnimationGraphNode>& nodes,
+                                       const std::vector<std::vector<Math::Vector2>>& legacyPositions);
 
 /// A fresh id one past the highest in use.
-[[nodiscard]] std::uint32_t NextAnimationGraphNodeIdUVE(const std::vector<AnimationGraphNodeUVE>& nodes) noexcept;
+[[nodiscard]] std::uint32_t NextAnimationGraphNodeId(const std::vector<AnimationGraphNode>& nodes) noexcept;
 
 } // namespace UVE::Scene

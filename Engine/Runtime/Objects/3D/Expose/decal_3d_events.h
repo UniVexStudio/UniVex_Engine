@@ -16,14 +16,14 @@ namespace UVE::Scene {
 /// split the strike and projectile events use: the engine owns the edge, gameplay owns the
 /// consequence. The material path travels with the event because the entity may already be gone by
 /// the time a pooled system collects the report.
-struct Decal3DExpiredEventUVE final {
+struct Decal3DExpiredEvent final {
     /// The entity the expired decal lives on. Still alive when this is queued; a listener that
     /// wants to remove it can, and one that only wants to recycle its slot needs nothing else.
-    EntityUVE decal = kInvalidEntityUVE;
+    Entity decal = kInvalidEntity;
     /// The material the decal was projecting, copied at the moment it expired.
     std::string materialAssetPath;
 
-    [[nodiscard]] bool operator==(const Decal3DExpiredEventUVE&) const = default;
+    [[nodiscard]] bool operator==(const Decal3DExpiredEvent&) const = default;
 };
 
 } // namespace UVE::Scene

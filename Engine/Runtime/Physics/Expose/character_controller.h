@@ -12,21 +12,21 @@
 namespace UVE::Physics {
 
 /// Caller-owned kinematic movement request. The entity must have a valid transform, collider,
-/// and either no rigid body or a valid kinematic rigid body; CharacterControllerUVE never adds,
+/// and either no rigid body or a valid kinematic rigid body; CharacterController never adds,
 /// removes, or serializes components.
-enum class CcdEligibilityStatusUVE : std::uint8_t { Invalid = 0, Disabled, Enabled };
+enum class CcdEligibilityStatus : std::uint8_t { Invalid = 0, Disabled, Enabled };
 
 /// Classifies whether a finite displacement warrants a caller-owned continuous sweep.
-[[nodiscard]] CcdEligibilityStatusUVE EvaluateCcdEligibilityUVE(
-    Math::Vector3UVE displacement, float minimumSweepDistance) noexcept;
+[[nodiscard]] CcdEligibilityStatus EvaluateCcdEligibility(
+    Math::Vector3 displacement, float minimumSweepDistance) noexcept;
 
-struct CharacterControllerInputUVE final {
-    Scene::EntityUVE entity;
-    Math::Vector3UVE desiredDisplacement{};
+struct CharacterControllerInput final {
+    Scene::Entity entity;
+    Math::Vector3 desiredDisplacement{};
     std::size_t maximumSubsteps = 8U;
     float maximumSubstepDistance = 0.25F;
     float maximumGroundSlopeDegrees = 45.0F;
-    /// Opt-in maximum vertical step height for MoveWithToIUVE; zero preserves the no-step behavior.
+    /// Opt-in maximum vertical step height for MoveWithToI; zero preserves the no-step behavior.
     float maximumStepHeight = 0.0F;
     /// Opt-in controller-driven push for non-kinematic positive-mass contact targets.
     bool pushDynamicBodies = false;
@@ -38,7 +38,7 @@ struct CharacterControllerInputUVE final {
     float dynamicBodyPushDeltaTimeSeconds = 1.0F / 60.0F;
 };
 
-enum class CharacterControllerMoveCodeUVE : std::uint8_t {
+enum class CharacterControllerMoveCode : std::uint8_t {
     Moved = 0,
     InvalidEntity,
     MissingTransform,
@@ -47,11 +47,11 @@ enum class CharacterControllerMoveCodeUVE : std::uint8_t {
     InvalidInput,
 };
 
-struct CharacterControllerMoveResultUVE final {
-    CharacterControllerMoveCodeUVE code = CharacterControllerMoveCodeUVE::InvalidInput;
-    Math::Vector3UVE requestedDisplacement{};
-    Math::Vector3UVE appliedDisplacement{};
-    Math::Vector3UVE remainingDisplacement{};
+struct CharacterControllerMoveResult final {
+    CharacterControllerMoveCode code = CharacterControllerMoveCode::InvalidInput;
+    Math::Vector3 requestedDisplacement{};
+    Math::Vector3 appliedDisplacement{};
+    Math::Vector3 remainingDisplacement{};
     std::size_t substeps = 0U;
     std::size_t contactCount = 0U;
     bool blocked = false;
@@ -62,37 +62,37 @@ struct CharacterControllerMoveResultUVE final {
     bool dynamicBodyPushClamped = false;
     std::size_t pushedBodyCount = 0U;
     bool grounded = false;
-    Math::Vector3UVE groundNormal{};
+    Math::Vector3 groundNormal{};
     float earliestImpactTime = 1.0F;
 
-    [[nodiscard]] bool IsAcceptedUVE() const noexcept {
-        return code == CharacterControllerMoveCodeUVE::Moved;
+    [[nodiscard]] bool IsAccepted() const noexcept {
+        return code == CharacterControllerMoveCode::Moved;
     }
 };
 
 /// Bounded main-thread kinematic movement over the existing AABB collision/layer contracts.
-/// The default MoveUVE path advances in capped discrete substeps, then existing minimum-translation-
+/// The default Move path advances in capped discrete substeps, then existing minimum-translation-
 /// vector contacts are applied and remaining displacement is projected away from contacted normals.
-/// The opt-in MoveWithToIUVE path adds capped conservative swept-AABB TOI and, when
+/// The opt-in MoveWithToI path adds capped conservative swept-AABB TOI and, when
 /// `maximumStepHeight` is positive, one failure-atomic vertical lift/clearance/drop attempt for a
 /// wall-like impact. Neither path owns exact non-box narrow phases, dynamic-body push policy,
 /// locomotion state, or persistent controller history.
-class CharacterControllerUVE final {
+class CharacterController final {
 public:
-    static constexpr std::size_t kMaximumSubstepsUVE = 32U;
-    static constexpr std::size_t kMaximumContactsUVE = 64U;
-    static constexpr float kMinimumMovementDistanceUVE = 1.0e-5F;
-    static constexpr float kDefaultMaximumSubstepDistanceUVE = 0.25F;
-    static constexpr float kDefaultMaximumGroundSlopeDegreesUVE = 45.0F;
-    static constexpr float kMaximumGroundSlopeDegreesUVE = 89.0F;
-    static constexpr std::size_t kMaximumToIIterationsUVE = 8U;
-    static constexpr std::size_t kMaximumToITargetsUVE = 256U;
-    static constexpr std::size_t kMaximumStepSearchIterationsUVE = 8U;
-    static constexpr float kToIEpsilonUVE = 1.0e-4F;
+    static constexpr std::size_t kMaximumSubsteps = 32U;
+    static constexpr std::size_t kMaximumContacts = 64U;
+    static constexpr float kMinimumMovementDistance = 1.0e-5F;
+    static constexpr float kDefaultMaximumSubstepDistance = 0.25F;
+    static constexpr float kDefaultMaximumGroundSlopeDegrees = 45.0F;
+    static constexpr float kMaximumGroundSlopeDegrees = 89.0F;
+    static constexpr std::size_t kMaximumToIIterations = 8U;
+    static constexpr std::size_t kMaximumToITargets = 256U;
+    static constexpr std::size_t kMaximumStepSearchIterations = 8U;
+    static constexpr float kToIEpsilon = 1.0e-4F;
 
-    [[nodiscard]] static CharacterControllerMoveResultUVE MoveUVE(
-        Scene::IEntityManagerUVE& entityManager, Scene::ISceneGraphUVE& sceneGraph,
-        ICollisionSystemUVE& collisionSystem, const CharacterControllerInputUVE& input);
+    [[nodiscard]] static CharacterControllerMoveResult Move(
+        Scene::IEntityManager& entityManager, Scene::ISceneGraph& sceneGraph,
+        ICollisionSystem& collisionSystem, const CharacterControllerInput& input);
 
     /// Opt-in bounded TOI-assisted movement. It scans the shared conservative world-AABB cache,
     /// advances to the earliest swept-AABB impact, removes the contacted normal from remaining
@@ -100,9 +100,9 @@ public:
     /// overlap resolver or claim backend-wide CCD, exact non-box narrow phases, or backend-wide
     /// dynamic-body continuous response. When enabled in the input, a bounded per-contact target
     /// velocity push is applied to validated non-kinematic positive-mass bodies.
-    [[nodiscard]] static CharacterControllerMoveResultUVE MoveWithToIUVE(
-        Scene::IEntityManagerUVE& entityManager, Scene::ISceneGraphUVE& sceneGraph,
-        ICollisionSystemUVE& collisionSystem, const CharacterControllerInputUVE& input);
+    [[nodiscard]] static CharacterControllerMoveResult MoveWithToI(
+        Scene::IEntityManager& entityManager, Scene::ISceneGraph& sceneGraph,
+        ICollisionSystem& collisionSystem, const CharacterControllerInput& input);
 };
 
 } // namespace UVE::Physics

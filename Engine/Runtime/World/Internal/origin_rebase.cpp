@@ -13,8 +13,8 @@
 
 namespace UVE::World {
 
-bool TryRebaseWorldOriginUVE(Scene::IEntityManagerUVE& entityManager, Math::Vector3UVE& inOutCameraLocalPosition,
-                             OriginRebaseStateUVE& state) {
+bool TryRebaseWorldOrigin(UVE::Scene::IEntityManager& entityManager, Math::Vector3& inOutCameraLocalPosition,
+                             OriginRebaseState& state) {
     if (state.rebaseThresholdMeters <= 0.0F) {
         return false;
     }
@@ -26,7 +26,7 @@ bool TryRebaseWorldOriginUVE(Scene::IEntityManagerUVE& entityManager, Math::Vect
         return false;
     }
 
-    const Math::Vector3UVE shift{
+    const Math::Vector3 shift{
         std::floor(inOutCameraLocalPosition.x),
         std::floor(inOutCameraLocalPosition.y),
         std::floor(inOutCameraLocalPosition.z),
@@ -35,20 +35,20 @@ bool TryRebaseWorldOriginUVE(Scene::IEntityManagerUVE& entityManager, Math::Vect
         return false;
     }
 
-    entityManager.ForEachUVE<Scene::TransformComponentUVE>(
-        [&](const Scene::EntityUVE entity, Scene::TransformComponentUVE& transform) {
+    entityManager.ForEach<UVE::Scene::TransformComponent>(
+        [&](const UVE::Scene::Entity entity, UVE::Scene::TransformComponent& transform) {
             bool isRoot = true;
-            if (entityManager.HasComponentUVE<Scene::HierarchyComponentUVE>(entity)) {
-                const auto& hierarchy = entityManager.GetComponentUVE<Scene::HierarchyComponentUVE>(entity);
-                isRoot = (hierarchy.parent == Scene::kInvalidEntityUVE);
+            if (entityManager.HasComponent<UVE::Scene::HierarchyComponent>(entity)) {
+                const auto& hierarchy = entityManager.GetComponent<UVE::Scene::HierarchyComponent>(entity);
+                isRoot = (hierarchy.parent == UVE::Scene::kInvalidEntity);
             }
             if (isRoot) {
                 transform.localPosition = transform.localPosition - shift;
             }
         });
 
-    entityManager.ForEachUVE<Scene::WorldTransformComponentUVE>(
-        [&](const Scene::EntityUVE, const Scene::WorldTransformComponentUVE& worldTransform) {
+    entityManager.ForEach<UVE::Scene::WorldTransformComponent>(
+        [&](const UVE::Scene::Entity, const UVE::Scene::WorldTransformComponent& worldTransform) {
             worldTransform.dirty = true;
         });
 
@@ -60,10 +60,10 @@ bool TryRebaseWorldOriginUVE(Scene::IEntityManagerUVE& entityManager, Math::Vect
     return true;
 }
 
-void AsyncWorldStreamQueueUVE::RequestLoadUVE(std::string cellKey, std::filesystem::path sourcePath) {
+void AsyncWorldStreamQueue::RequestLoad(std::string cellKey, std::filesystem::path sourcePath) {
     m_pending.push_back(std::async(std::launch::async,
                                    [key = std::move(cellKey), path = std::move(sourcePath)]() mutable {
-                                       StreamedCellPayloadUVE payload{};
+                                       StreamedCellPayload payload{};
                                        payload.cellKey = std::move(key);
                                        payload.sourcePath = std::move(path);
                                        std::ifstream in(payload.sourcePath, std::ios::binary | std::ios::ate);
@@ -84,8 +84,8 @@ void AsyncWorldStreamQueueUVE::RequestLoadUVE(std::string cellKey, std::filesyst
                                    }));
 }
 
-std::vector<StreamedCellPayloadUVE> AsyncWorldStreamQueueUVE::PollCompletedUVE(const std::size_t maxCommits) {
-    std::vector<StreamedCellPayloadUVE> ready;
+std::vector<StreamedCellPayload> AsyncWorldStreamQueue::PollCompleted(const std::size_t maxCommits) {
+    std::vector<StreamedCellPayload> ready;
     if (maxCommits == 0U) {
         return ready;
     }

@@ -14,18 +14,18 @@
 #include "collider_world_aabb_cache.h"
 
 namespace UVE::Scene {
-class IEntityManagerUVE;
-class ISceneGraphUVE;
+class IEntityManager;
+class ISceneGraph;
 } // namespace UVE::Scene
 
 namespace UVE::Physics {
 
-class ICollisionSystemUVE;
+class ICollisionSystem;
 
 /// The collision world, as a Character3D sees it.
 ///
-/// Character3DUVE (the node layer) deliberately knows nothing about colliders, broad phases or scene
-/// graphs: it moves a body through an ICharacterWorldQueryUVE, which is why the same mover can be
+/// Character3D (the node layer) deliberately knows nothing about colliders, broad phases or scene
+/// graphs: it moves a body through an ICharacterWorldQuery, which is why the same mover can be
 /// unit-tested against a handful of boxes. This is the other half of that seam - the implementation
 /// backed by the engine's real collision world.
 ///
@@ -42,66 +42,66 @@ class ICollisionSystemUVE;
 /// The collider list is cached the first time it is needed and reused for the rest of the step: a
 /// step moves one body through a world that is not moving under it, so the list cannot go stale
 /// while a move is in progress, and a step that never collides never pays for the cache at all.
-class CharacterWorldQueryUVE final : public Scene::ICharacterWorldQueryUVE {
+class CharacterWorldQuery final : public Scene::ICharacterWorldQuery {
 public:
     /// `entity` is the body being moved. `shapeEntity` is the entity whose collider describes it,
     /// when those are not the same object - a character whose shape is a Collider3D of its own
     /// under it. It defaults to the body itself, and that entity is then always ignored by the
     /// query's own sweeps, so a body never collides with the shape it is built from.
-    CharacterWorldQueryUVE(Scene::IEntityManagerUVE& entityManager, ICollisionSystemUVE& collisionSystem,
-                           Scene::EntityUVE entity,
-                           Scene::EntityUVE shapeEntity = Scene::kInvalidEntityUVE);
+    CharacterWorldQuery(Scene::IEntityManager& entityManager, ICollisionSystem& collisionSystem,
+                           Scene::Entity entity,
+                           Scene::Entity shapeEntity = Scene::kInvalidEntity);
 
     /// An entity this query must never report - the body being carried, a trigger the caller has
     /// already decided to ignore. Never the query's own entity, which is always ignored.
-    void SetIgnoredEntityUVE(Scene::EntityUVE entity) noexcept;
+    void SetIgnoredEntity(Scene::Entity entity) noexcept;
 
-    [[nodiscard]] Scene::EntityUVE GetEntityUVE() const noexcept;
+    [[nodiscard]] Scene::Entity GetEntity() const noexcept;
 
     /// True when the entity has what a character needs: a collider, a world transform, and a rigid
     /// body that is either absent or kinematic. Everything else is refused, and a refused query
     /// answers every question with "nothing".
-    [[nodiscard]] bool IsMovableCharacterUVE() const noexcept;
+    [[nodiscard]] bool IsMovableCharacter() const noexcept;
 
     /// The body's world half extents: its collider's, which is what every sweep is built from.
-    [[nodiscard]] Math::Vector3UVE GetHalfExtentsUVE() const noexcept;
+    [[nodiscard]] Math::Vector3 GetHalfExtents() const noexcept;
 
-    [[nodiscard]] Math::Vector3UVE GetCenterUVE() const override;
-    [[nodiscard]] std::vector<Scene::CharacterSlideCollisionUVE> GetOverlapsAtUVE(
-        const Math::Vector3UVE& center) const override;
-    [[nodiscard]] std::optional<Scene::CharacterSlideCollisionUVE> SweepUVE(
-        const Math::Vector3UVE& center, const Math::Vector3UVE& motion, float margin) const override;
-    [[nodiscard]] Math::Vector3UVE GetSurfaceVelocityUVE(Scene::EntityUVE entity) const override;
-    [[nodiscard]] std::optional<Math::Vector3UVE> TryGetEntityCenterUVE(
-        Scene::EntityUVE entity) const override;
+    [[nodiscard]] Math::Vector3 GetCenter() const override;
+    [[nodiscard]] std::vector<Scene::CharacterSlideCollision> GetOverlapsAt(
+        const Math::Vector3& center) const override;
+    [[nodiscard]] std::optional<Scene::CharacterSlideCollision> Sweep(
+        const Math::Vector3& center, const Math::Vector3& motion, float margin) const override;
+    [[nodiscard]] Math::Vector3 GetSurfaceVelocity(Scene::Entity entity) const override;
+    [[nodiscard]] std::optional<Math::Vector3> TryGetEntityCenter(
+        Scene::Entity entity) const override;
 
 private:
     /// The layer/mask test the collision system itself applies to a pair, both directions: the
     /// character has to accept the target's layer, and the target has to accept the character's.
-    [[nodiscard]] bool IsCollidableUVE(const Detail::ColliderWorldAabbUVE& collider) const noexcept;
+    [[nodiscard]] bool IsCollidable(const Detail::ColliderWorldAabb& collider) const noexcept;
 
     /// Kept as a reference to the entity manager so the cache can be built lazily; the entity
     /// manager outlives the query, which lives for one step.
-    Scene::IEntityManagerUVE* m_entityManager = nullptr;
-    ICollisionSystemUVE* m_collisionSystem = nullptr;
-    Scene::EntityUVE m_entity{};
-    Scene::EntityUVE m_ignoredEntity{};
-    Math::Vector3UVE m_center{};
-    Math::Vector3UVE m_halfExtents{};
+    Scene::IEntityManager* m_entityManager = nullptr;
+    ICollisionSystem* m_collisionSystem = nullptr;
+    Scene::Entity m_entity{};
+    Scene::Entity m_ignoredEntity{};
+    Math::Vector3 m_center{};
+    Math::Vector3 m_halfExtents{};
     std::uint32_t m_layer = 0U;
     std::uint32_t m_mask = 0U;
     bool m_isMovable = false;
-    mutable std::optional<std::vector<Detail::ColliderWorldAabbUVE>> m_colliders;
+    mutable std::optional<std::vector<Detail::ColliderWorldAabb>> m_colliders;
 };
 
-/// Why StepCharacter3DUVE() refused to move a body, or that it moved one.
-enum class Character3DStepCodeUVE : std::uint8_t {
+/// Why StepCharacter3D() refused to move a body, or that it moved one.
+enum class Character3DStepCode : std::uint8_t {
     Stepped = 0,
     /// The step's duration was zero, negative or not finite.
     InvalidDeltaTime,
     /// No such entity.
     UnknownEntity,
-    /// The entity is not a character: no CharacterControllerComponentUVE.
+    /// The entity is not a character: no CharacterControllerComponent.
     NotAController,
     /// A character needs a collider to collide with, and a transform to be somewhere.
     MissingCollider,
@@ -113,8 +113,8 @@ enum class Character3DStepCodeUVE : std::uint8_t {
     /// The step ran and the move stopped for a reason of its own - a wall, a ceiling, a body out of
     /// slides. The move's own report says which.
     Blocked,
-    /// The body is predicted by the network predictor (PredictedCharacterComponentUVE): step it
-    /// through TickPredictedPawnUVE()/SyncPredictedPawnUVE() instead. The local mover never
+    /// The body is predicted by the network predictor (PredictedCharacterComponent): step it
+    /// through TickPredictedPawn()/SyncPredictedPawn() instead. The local mover never
     /// touches it, so the two cannot double-step it.
     PredictedElsewhere,
     /// The body has no shape - no Collider3D of its own, and none under it - so there is nothing
@@ -125,15 +125,15 @@ enum class Character3DStepCodeUVE : std::uint8_t {
 };
 
 /// The step's outcome: the code, and the mover's own report when the move ran at all.
-struct Character3DStepResultUVE final {
-    Character3DStepCodeUVE code = Character3DStepCodeUVE::UnknownEntity;
+struct Character3DStepResult final {
+    Character3DStepCode code = Character3DStepCode::UnknownEntity;
     /// True when the whole step ran, from intent through the component write-back.
     bool stepped = false;
     /// True when the built-in movement jumped this step.
     bool jumped = false;
     /// The mover's report: contacts, per-source motion breakdown, floor/wall/ceiling state,
     /// platform bookkeeping.
-    Scene::CharacterMotionResultUVE motion{};
+    Scene::CharacterMotionResult motion{};
 };
 
 /// One fixed step of one Character3D, start to finish.
@@ -155,14 +155,14 @@ struct Character3DStepResultUVE final {
 /// A body that cannot be stepped is refused with a code and left *exactly* where it was: no half
 /// moves, no velocity quietly zeroed. `gravityY` is the engine's gravity as a signed y, so a world
 /// that flips gravity passes the flip along and nothing here needs to know about it.
-[[nodiscard]] Character3DStepResultUVE StepCharacter3DUVE(
-    Scene::IEntityManagerUVE& entityManager, Scene::ISceneGraphUVE& sceneGraph,
-    ICollisionSystemUVE& collisionSystem, Scene::EntityUVE entity, const CharacterMotionInputUVE& input,
+[[nodiscard]] Character3DStepResult StepCharacter3D(
+    Scene::IEntityManager& entityManager, Scene::ISceneGraph& sceneGraph,
+    ICollisionSystem& collisionSystem, Scene::Entity entity, const CharacterMotionInput& input,
     float gravityY, float deltaTimeSeconds);
 
 /// How a Character3D pushes the rigid bodies it runs into. Mirrors the authored Pushing settings on
 /// the controller; a policy with `enabled` false does nothing at all.
-struct CharacterDynamicPushPolicyUVE final {
+struct CharacterDynamicPushPolicy final {
     bool enabled = false;
     /// How hard the character pushes, relative to how fast it was going into the surface.
     float strength = 1.0F;
@@ -184,9 +184,9 @@ struct CharacterDynamicPushPolicyUVE final {
 /// faces the character touched.
 ///
 /// Static geometry, kinematic bodies, massless bodies and non-finite state are all left untouched.
-[[nodiscard]] std::size_t PushBodiesFromCharacterMoveUVE(
-    Scene::IEntityManagerUVE& entityManager,
-    const std::vector<Scene::CharacterSlideCollisionUVE>& contacts,
-    const CharacterDynamicPushPolicyUVE& policy);
+[[nodiscard]] std::size_t PushBodiesFromCharacterMove(
+    Scene::IEntityManager& entityManager,
+    const std::vector<Scene::CharacterSlideCollision>& contacts,
+    const CharacterDynamicPushPolicy& policy);
 
 } // namespace UVE::Physics

@@ -17,16 +17,16 @@ namespace UVE::Editor {
 /// The Widget Editor's Designer: a Widget Blueprint's screen at its design resolution, scaled to
 /// fit, every widget drawn the way the game draws it (text, buttons, images, bars, sliders, check
 /// boxes, text boxes). Clicking picks a widget; dragging moves it (one undo step, made by the
-/// owner through onMoved). What it shows is given to it (SetItemsUVE) from the open document.
-class WidgetDesignerViewUVE final : public prism::Widget {
+/// owner through onMoved). What it shows is given to it (SetItems) from the open document.
+class WidgetDesignerView final : public prism::Widget {
 public:
-    using KindUVE = WidgetKindUVE;
+    using Kind = WidgetKind;
 
-    struct ItemUVE {
-        Scene::EntityUVE entity = Scene::kInvalidEntityUVE;
+    struct Item {
+        Scene::Entity entity = Scene::kInvalidEntity;
         /// The widget it sits in (a Button's label sits in the Button), or none.
-        Scene::EntityUVE parent = Scene::kInvalidEntityUVE;
-        KindUVE kind = KindUVE::Image;
+        Scene::Entity parent = Scene::kInvalidEntity;
+        Kind kind = Kind::Image;
         std::string name;
         /// Design pixels: top-left origin, as the runtime lays them out.
         prism::Rect rect{};
@@ -45,28 +45,28 @@ public:
         bool visible = true;
     };
 
-    WidgetDesignerViewUVE();
+    WidgetDesignerView();
     /// The width of `text` at `fontSize` design pixels, in the Designer's own font.
-    [[nodiscard]] static float MeasureTextUVE(std::string_view text, float fontSize);
+    [[nodiscard]] static float MeasureText(std::string_view text, float fontSize);
 
-    void SetItemsUVE(std::vector<ItemUVE> items);
-    [[nodiscard]] const std::vector<ItemUVE>& ItemsUVE() const noexcept { return m_items; }
-    void SetSelectedUVE(Scene::EntityUVE entity);
+    void SetItems(std::vector<Item> items);
+    [[nodiscard]] const std::vector<Item>& Items() const noexcept { return m_items; }
+    void SetSelected(Scene::Entity entity);
     /// The 3D View whose live picture the owner draws under the Designer: its rect is left open.
-    void SetLivePreviewUVE(Scene::EntityUVE entity);
-    [[nodiscard]] Scene::EntityUVE LivePreviewUVE() const noexcept { return m_livePreview; }
+    void SetLivePreview(Scene::Entity entity);
+    [[nodiscard]] Scene::Entity LivePreview() const noexcept { return m_livePreview; }
     /// Where a widget is drawn, in window pixels, cut to the visible canvas (empty when it is not shown).
-    [[nodiscard]] prism::Rect ViewRectOfUVE(Scene::EntityUVE entity) const;
-    void SetResolutionUVE(float width, float height);
-    [[nodiscard]] float WidthUVE() const noexcept { return m_designW; }
-    [[nodiscard]] float HeightUVE() const noexcept { return m_designH; }
+    [[nodiscard]] prism::Rect ViewRectOf(Scene::Entity entity) const;
+    void SetResolution(float width, float height);
+    [[nodiscard]] float Width() const noexcept { return m_designW; }
+    [[nodiscard]] float Height() const noexcept { return m_designH; }
 
-    /// A widget clicked (kInvalidEntityUVE: the empty canvas).
-    std::function<void(Scene::EntityUVE)> onPicked;
+    /// A widget clicked (kInvalidEntity: the empty canvas).
+    std::function<void(Scene::Entity)> onPicked;
     /// A widget dragged by `delta` design pixels: live while held, `finished` when let go.
-    std::function<void(Scene::EntityUVE, float dx, float dy, bool finished)> onMoved;
+    std::function<void(Scene::Entity, float dx, float dy, bool finished)> onMoved;
     /// A widget resized from one of its corner handles to `rect` (design pixels): live, then `finished`.
-    std::function<void(Scene::EntityUVE, prism::Rect rect, bool finished)> onResized;
+    std::function<void(Scene::Entity, prism::Rect rect, bool finished)> onResized;
 
     prism::Vec2 measure(prism::Vec2 available) override;
     void paint(prism::Canvas& c) override;
@@ -77,18 +77,18 @@ public:
 
 private:
     /// Where the design canvas sits in the view, and its scale.
-    [[nodiscard]] prism::Rect CanvasRectUVE() const;
-    [[nodiscard]] float ScaleUVE() const;
-    [[nodiscard]] prism::Rect ToViewUVE(const prism::Rect& design) const;
-    [[nodiscard]] Scene::EntityUVE HitUVE(prism::Vec2 p) const;
+    [[nodiscard]] prism::Rect CanvasRect() const;
+    [[nodiscard]] float Scale() const;
+    [[nodiscard]] prism::Rect ToView(const prism::Rect& design) const;
+    [[nodiscard]] Scene::Entity Hit(prism::Vec2 p) const;
 
-    std::vector<ItemUVE> m_items;
-    Scene::EntityUVE m_selected = Scene::kInvalidEntityUVE;
-    Scene::EntityUVE m_hover = Scene::kInvalidEntityUVE;
-    Scene::EntityUVE m_livePreview = Scene::kInvalidEntityUVE;
+    std::vector<Item> m_items;
+    Scene::Entity m_selected = Scene::kInvalidEntity;
+    Scene::Entity m_hover = Scene::kInvalidEntity;
+    Scene::Entity m_livePreview = Scene::kInvalidEntity;
     /// The selected widget's corner handle under `p` (0 top-left, 1 top-right, 2 bottom-left,
     /// 3 bottom-right), or -1.
-    [[nodiscard]] int HandleAtUVE(prism::Vec2 p) const;
+    [[nodiscard]] int HandleAt(prism::Vec2 p) const;
     int m_resizeCorner = -1;
     int m_hoverCorner = -1;
     prism::Rect m_resizeStart{};

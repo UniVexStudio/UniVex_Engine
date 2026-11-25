@@ -23,43 +23,43 @@ namespace UVE::World {
 /// Structural world mutation during callbacks fails Busy. Mutating an unloading scene from its
 /// entity-destruction notifications is not permitted. Scene/entity borrows expire at unload;
 /// all operations and lifetimes are controlled by one owning thread.
-class WorldUVE final {
+class World final {
   public:
-    static constexpr std::size_t kMaximumSystemsUVE = 128U;
-    static constexpr std::size_t kMaximumScenesUVE = 256U;
-    WorldUVE(Memory::IAllocatorUVE &allocator, Events::IEventSystemUVE &eventSystem);
-    ~WorldUVE();
-    WorldUVE(const WorldUVE &) = delete;
-    WorldUVE &operator=(const WorldUVE &) = delete;
+    static constexpr std::size_t kMaximumSystems = 128U;
+    static constexpr std::size_t kMaximumScenes = 256U;
+    World(Memory::IAllocator &allocator, Events::IEventSystem &eventSystem);
+    ~World();
+    World(const World &) = delete;
+    World &operator=(const World &) = delete;
 
-    [[nodiscard]] WorldResultUVE RegisterSystemUVE(WorldSystemDescUVE system);
-    [[nodiscard]] WorldResultUVE UnregisterSystemUVE(std::string_view name);
-    [[nodiscard]] WorldResultUVE StartUVE();
-    [[nodiscard]] WorldResultUVE TryTickUVE(float deltaTimeSeconds);
+    [[nodiscard]] WorldResult RegisterSystem(WorldSystemDesc system);
+    [[nodiscard]] WorldResult UnregisterSystem(std::string_view name);
+    [[nodiscard]] WorldResult Start();
+    [[nodiscard]] WorldResult TryTick(float deltaTimeSeconds);
     /// Legacy wrapper: invalid deltas assert in Debug and clamp to zero in Release as before;
     /// lifecycle/system failure is logged rather than silently reported as a successful tick.
-    void TickUVE(float deltaTimeSeconds);
-    [[nodiscard]] WorldResultUVE ShutdownUVE() noexcept;
+    void Tick(float deltaTimeSeconds);
+    [[nodiscard]] WorldResult Shutdown() noexcept;
 
-    /// Optional population callback can use SceneSerializerUVE/PrefabSystemUVE on the new scene.
+    /// Optional population callback can use SceneSerializer/PrefabSystem on the new scene.
     /// Rejection/exception discards that scene without altering existing scenes or outHandle.
-    [[nodiscard]] WorldResultUVE CreateSceneUVE(std::string name, SceneHandleUVE &outHandle,
-                                                std::function<bool(SceneUVE &)> populate = {});
-    [[nodiscard]] WorldResultUVE UnloadSceneUVE(SceneHandleUVE handle);
-    [[nodiscard]] WorldResultUVE SetSceneEnabledUVE(SceneHandleUVE handle, bool enabled);
-    [[nodiscard]] SceneUVE *GetSceneUVE(SceneHandleUVE handle) noexcept;
-    [[nodiscard]] const SceneUVE *GetSceneUVE(SceneHandleUVE handle) const noexcept;
-    [[nodiscard]] SceneHandleUVE GetPrimarySceneHandleUVE() const noexcept;
-    [[nodiscard]] std::size_t GetSceneCountUVE() const noexcept;
-    [[nodiscard]] WorldStateUVE GetStateUVE() const noexcept;
+    [[nodiscard]] WorldResult CreateScene(std::string name, SceneHandle &outHandle,
+                                                std::function<bool(Scene &)> populate = {});
+    [[nodiscard]] WorldResult UnloadScene(SceneHandle handle);
+    [[nodiscard]] WorldResult SetSceneEnabled(SceneHandle handle, bool enabled);
+    [[nodiscard]] Scene *GetScene(SceneHandle handle) noexcept;
+    [[nodiscard]] const Scene *GetScene(SceneHandle handle) const noexcept;
+    [[nodiscard]] SceneHandle GetPrimarySceneHandle() const noexcept;
+    [[nodiscard]] std::size_t GetSceneCount() const noexcept;
+    [[nodiscard]] WorldState GetState() const noexcept;
     /// Persistent primary storage, retained (empty) after Shutdown for legacy reference stability.
-    [[nodiscard]] Scene::IEntityManagerUVE &GetEntityManagerUVE() noexcept;
-    [[nodiscard]] const Scene::IEntityManagerUVE &GetEntityManagerUVE() const noexcept;
-    [[nodiscard]] std::uint64_t GetFrameCountUVE() const noexcept;
-    [[nodiscard]] float GetTotalTimeSecondsUVE() const noexcept;
+    [[nodiscard]] UVE::Scene::IEntityManager &GetEntityManager() noexcept;
+    [[nodiscard]] const UVE::Scene::IEntityManager &GetEntityManager() const noexcept;
+    [[nodiscard]] std::uint64_t GetFrameCount() const noexcept;
+    [[nodiscard]] float GetTotalTimeSeconds() const noexcept;
 
   private:
-    struct ImplUVE;
-    std::unique_ptr<ImplUVE> m_impl;
+    struct Impl;
+    std::unique_ptr<Impl> m_impl;
 };
 } // namespace UVE::World

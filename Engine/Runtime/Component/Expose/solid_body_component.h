@@ -8,14 +8,14 @@ namespace UVE::Scene {
 /// that is stopped by what it hits, as opposed to an area, which only notices overlaps. No object is
 /// a SolidBody3D on its own; its kinds (Character3D, and the other bodies as they join the
 /// chain) carry this component and add their own.
-struct SolidBodyComponentUVE final {
+struct SolidBodyComponent final {
     /// Keeps the body from moving along a world axis at all - a side-scroller's character locked
     /// to the X/Y plane locks Z. The body's own motion along a locked axis is dropped, not scaled.
     bool lockMotionX = false;
     bool lockMotionY = false;
     bool lockMotionZ = false;
 
-    [[nodiscard]] bool operator==(const SolidBodyComponentUVE&) const = default;
+    [[nodiscard]] bool operator==(const SolidBodyComponent&) const = default;
 };
 
 } // namespace UVE::Scene

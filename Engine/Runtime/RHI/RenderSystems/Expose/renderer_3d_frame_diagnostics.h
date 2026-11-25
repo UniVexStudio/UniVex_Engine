@@ -6,7 +6,7 @@
 
 namespace UVE::Render {
 
-// Convenience alias / header export for Renderer3DFrameDiagnosticsUVE.
-// Canonical definition is declared in i_renderer_3d_uve.h alongside IRenderer3DUVE.
+// Convenience alias / header export for Renderer3DFrameDiagnostics.
+// Canonical definition is declared in i_renderer_3d_uve.h alongside IRenderer3D.
 
 } // namespace UVE::Render

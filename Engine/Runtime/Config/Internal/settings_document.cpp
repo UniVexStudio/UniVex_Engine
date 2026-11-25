@@ -13,12 +13,12 @@
 namespace UVE::Config {
 namespace {
 
-[[nodiscard]] SettingValueUVE NormalizeForDocumentUVE(const SettingDescriptorUVE& descriptor,
-                                                       SettingValueUVE value) {
+[[nodiscard]] SettingValue NormalizeForDocument(const SettingDescriptor& descriptor,
+                                                       SettingValue value) {
     // Alpha is not part of an opaque colour's value. Canonicalize it before comparing with stored
     // or default values, otherwise an ignored alpha channel can make a no-op look like a change.
-    if (descriptor.type == SettingTypeUVE::Color && !descriptor.colorHasAlpha) {
-        if (auto* color = std::get_if<SettingColorUVE>(&value)) {
+    if (descriptor.type == SettingType::Color && !descriptor.colorHasAlpha) {
+        if (auto* color = std::get_if<SettingColor>(&value)) {
             color->a = 1.0F;
         }
     }
@@ -27,7 +27,7 @@ namespace {
 
 } // namespace
 
-bool SettingsDocumentUVE::SetCurrentVersionUVE(const std::uint32_t version) noexcept {
+bool SettingsDocument::SetCurrentVersion(const std::uint32_t version) noexcept {
     if (m_versioningFrozen || version == 0U || version < m_currentVersion) {
         return false;
     }
@@ -35,8 +35,8 @@ bool SettingsDocumentUVE::SetCurrentVersionUVE(const std::uint32_t version) noex
     return true;
 }
 
-bool SettingsDocumentUVE::RegisterMigrationUVE(const std::uint32_t fromVersion,
-                                               SettingsMigrationFunctionUVE migration) {
+bool SettingsDocument::RegisterMigration(const std::uint32_t fromVersion,
+                                               SettingsMigrationFunction migration) {
     if (m_versioningFrozen || !migration || fromVersion >= m_currentVersion || m_migrations.contains(fromVersion)) {
         return false;
     }
@@ -44,12 +44,12 @@ bool SettingsDocumentUVE::RegisterMigrationUVE(const std::uint32_t fromVersion,
     return true;
 }
 
-bool SettingsDocumentUVE::LoadUVE(const std::filesystem::path& path) {
-    const std::vector<const SettingDescriptorUVE*> descriptors = m_registry.GetAllUVE();
-    std::vector<std::pair<std::string, SettingValueUVE>> previousValues;
+bool SettingsDocument::Load(const std::filesystem::path& path) {
+    const std::vector<const SettingDescriptor*> descriptors = m_registry.GetAll();
+    std::vector<std::pair<std::string, SettingValue>> previousValues;
     previousValues.reserve(descriptors.size());
-    for (const SettingDescriptorUVE* descriptor : descriptors) {
-        if (const std::optional<SettingValueUVE> value = m_registry.GetValueUVE(m_store, descriptor->id)) {
+    for (const SettingDescriptor* descriptor : descriptors) {
+        if (const std::optional<SettingValue> value = m_registry.GetValue(m_store, descriptor->id)) {
             previousValues.emplace_back(descriptor->id, *value);
         }
     }
@@ -61,9 +61,9 @@ bool SettingsDocumentUVE::LoadUVE(const std::filesystem::path& path) {
     }
 
     // Load and migrate a separate candidate so a failed parser, future schema or migration never
-    // leaves this document half-replaced. ConfigManagerUVE keeps JSON private behind its PIMPL.
-    ConfigManagerUVE candidate;
-    if (exists && !candidate.LoadUVE(path)) {
+    // leaves this document half-replaced. ConfigManager keeps JSON private behind its PIMPL.
+    ConfigManager candidate;
+    if (exists && !candidate.Load(path)) {
         std::error_code retryError;
         if (std::filesystem::exists(path, retryError) || retryError) {
             return false;
@@ -72,15 +72,15 @@ bool SettingsDocumentUVE::LoadUVE(const std::filesystem::path& path) {
     }
 
     std::uint32_t version = 0U; // Unversioned settings files are the version-zero format.
-    if (candidate.HasNodeUVE(kSettingsDocumentVersionKeyUVE)) {
+    if (candidate.HasNode(kSettingsDocumentVersionKey)) {
         constexpr std::int64_t kInvalidVersion = -1;
-        const std::int64_t storedVersion = candidate.GetIntUVE(kSettingsDocumentVersionKeyUVE, kInvalidVersion);
+        const std::int64_t storedVersion = candidate.GetInt(kSettingsDocumentVersionKey, kInvalidVersion);
         if (storedVersion < 0) {
-            UVE_ERROR("SettingsDocumentUVE: \"{}\" has invalid version metadata", path.string());
+            UVE_ERROR("SettingsDocument: \"{}\" has invalid version metadata", path.string());
             return false;
         }
         if (static_cast<std::uint64_t>(storedVersion) > static_cast<std::uint64_t>(m_currentVersion)) {
-            UVE_WARNING("SettingsDocumentUVE: \"{}\" uses newer version {} (this engine supports {})",
+            UVE_WARNING("SettingsDocument: \"{}\" uses newer version {} (this engine supports {})",
                         path.string(), storedVersion, m_currentVersion);
             return false;
         }
@@ -95,130 +95,130 @@ bool SettingsDocumentUVE::LoadUVE(const std::filesystem::path& path) {
             try {
                 migrationSucceeded = migration->second(candidate);
             } catch (const std::exception& exception) {
-                UVE_ERROR("SettingsDocumentUVE: migration from version {} for \"{}\" threw: {}", version,
+                UVE_ERROR("SettingsDocument: migration from version {} for \"{}\" threw: {}", version,
                           path.string(), exception.what());
                 return false;
             } catch (...) {
-                UVE_ERROR("SettingsDocumentUVE: migration from version {} for \"{}\" threw an unknown exception",
+                UVE_ERROR("SettingsDocument: migration from version {} for \"{}\" threw an unknown exception",
                           version, path.string());
                 return false;
             }
             if (!migrationSucceeded) {
-                UVE_ERROR("SettingsDocumentUVE: migration from version {} failed for \"{}\"", version,
+                UVE_ERROR("SettingsDocument: migration from version {} failed for \"{}\"", version,
                           path.string());
                 return false;
             }
         }
         ++version;
-        candidate.SetIntUVE(kSettingsDocumentVersionKeyUVE, static_cast<std::int64_t>(version));
+        candidate.SetInt(kSettingsDocumentVersionKey, static_cast<std::int64_t>(version));
     }
 
-    migrated = m_registry.MigrateDeprecatedValuesUVE(candidate) || migrated;
-    candidate.SetIntUVE(kSettingsDocumentVersionKeyUVE, static_cast<std::int64_t>(m_currentVersion));
-    m_store.ReplaceDocumentUVE(candidate);
+    migrated = m_registry.MigrateDeprecatedValues(candidate) || migrated;
+    candidate.SetInt(kSettingsDocumentVersionKey, static_cast<std::int64_t>(m_currentVersion));
+    m_store.ReplaceDocument(candidate);
     m_path = path;
     m_dirty = exists && migrated;
     m_versioningFrozen = true;
 
     for (const auto& [id, previousValue] : previousValues) {
-        if (const std::optional<SettingValueUVE> newValue = GetValueUVE(id);
+        if (const std::optional<SettingValue> newValue = GetValue(id);
             newValue && previousValue != *newValue) {
-            m_observers.NotifyChangedUVE(id, previousValue, *newValue);
+            m_observers.NotifyChanged(id, previousValue, *newValue);
         }
     }
     return true;
 }
 
-bool SettingsDocumentUVE::SaveUVE() {
-    if (m_path.empty() || !m_store.SaveUVE(m_path)) {
+bool SettingsDocument::Save() {
+    if (m_path.empty() || !m_store.Save(m_path)) {
         return false;
     }
     m_dirty = false;
     return true;
 }
 
-std::optional<SettingValueUVE> SettingsDocumentUVE::GetValueUVE(const std::string_view id) const {
-    return m_registry.GetValueUVE(m_store, id);
+std::optional<SettingValue> SettingsDocument::GetValue(const std::string_view id) const {
+    return m_registry.GetValue(m_store, id);
 }
 
-std::optional<SettingValueUVE> SettingsDocumentUVE::GetStoredValueUVE(const std::string_view id) const {
-    return m_registry.GetStoredValueUVE(m_store, id);
+std::optional<SettingValue> SettingsDocument::GetStoredValue(const std::string_view id) const {
+    return m_registry.GetStoredValue(m_store, id);
 }
 
-bool SettingsDocumentUVE::SetValueUVE(const std::string_view id, const SettingValueUVE& value) {
-    const SettingDescriptorUVE* descriptor = m_registry.FindUVE(id);
-    if (descriptor == nullptr || descriptor->HasFlagUVE(kSettingFlagDeprecatedUVE) ||
-        !IsSettingValueValidUVE(*descriptor, value)) {
+bool SettingsDocument::SetValue(const std::string_view id, const SettingValue& value) {
+    const SettingDescriptor* descriptor = m_registry.Find(id);
+    if (descriptor == nullptr || descriptor->HasFlag(kSettingFlagDeprecated) ||
+        !IsSettingValueValid(*descriptor, value)) {
         return false;
     }
 
-    const SettingValueUVE normalizedValue = NormalizeForDocumentUVE(*descriptor, value);
-    const std::optional<SettingValueUVE> previousValue = GetValueUVE(id);
+    const SettingValue normalizedValue = NormalizeForDocument(*descriptor, value);
+    const std::optional<SettingValue> previousValue = GetValue(id);
     if (!previousValue) {
         return false;
     }
 
     if (normalizedValue != descriptor->defaultValue &&
-        m_registry.GetStoredValueUVE(m_store, id) == normalizedValue) {
+        m_registry.GetStoredValue(m_store, id) == normalizedValue) {
         return true;
     }
 
     if (normalizedValue == descriptor->defaultValue) {
         // Also clears an illegal leftover or a hand-written redundant default. Neither causes a
         // notification unless the effective value actually changes.
-        const bool removed = m_registry.ClearValueUVE(m_store, id);
+        const bool removed = m_registry.ClearValue(m_store, id);
         m_dirty = removed || m_dirty;
-        if (const std::optional<SettingValueUVE> newValue = GetValueUVE(id);
+        if (const std::optional<SettingValue> newValue = GetValue(id);
             newValue && *previousValue != *newValue) {
-            m_observers.NotifyChangedUVE(id, *previousValue, *newValue);
+            m_observers.NotifyChanged(id, *previousValue, *newValue);
         }
         return true;
     }
 
-    if (!m_registry.SetValueUVE(m_store, id, normalizedValue)) {
+    if (!m_registry.SetValue(m_store, id, normalizedValue)) {
         return false;
     }
     m_dirty = true;
-    if (const std::optional<SettingValueUVE> newValue = GetValueUVE(id);
+    if (const std::optional<SettingValue> newValue = GetValue(id);
         newValue && *previousValue != *newValue) {
-        m_observers.NotifyChangedUVE(id, *previousValue, *newValue);
+        m_observers.NotifyChanged(id, *previousValue, *newValue);
     }
     return true;
 }
 
-bool SettingsDocumentUVE::ResetUVE(const std::string_view id) {
-    const std::optional<SettingValueUVE> previousValue = GetValueUVE(id);
+bool SettingsDocument::Reset(const std::string_view id) {
+    const std::optional<SettingValue> previousValue = GetValue(id);
     if (!previousValue) {
         return false;
     }
 
-    const bool removed = m_registry.ClearValueUVE(m_store, id);
+    const bool removed = m_registry.ClearValue(m_store, id);
     m_dirty = removed || m_dirty;
     if (removed) {
-        if (const std::optional<SettingValueUVE> newValue = GetValueUVE(id);
+        if (const std::optional<SettingValue> newValue = GetValue(id);
             newValue && *previousValue != *newValue) {
-            m_observers.NotifyChangedUVE(id, *previousValue, *newValue);
+            m_observers.NotifyChanged(id, *previousValue, *newValue);
         }
     }
     return removed;
 }
 
-bool SettingsDocumentUVE::IsModifiedUVE(const std::string_view id) const {
-    return m_registry.IsModifiedUVE(m_store, id);
+bool SettingsDocument::IsModified(const std::string_view id) const {
+    return m_registry.IsModified(m_store, id);
 }
 
-SettingsObserverSubscriptionUVE SettingsDocumentUVE::SubscribeToSettingUVE(
-    const std::string_view id, SettingsObserverCallbackUVE callback) {
-    return m_observers.SubscribeToSettingUVE(id, std::move(callback));
+SettingsObserverSubscription SettingsDocument::SubscribeToSetting(
+    const std::string_view id, SettingsObserverCallback callback) {
+    return m_observers.SubscribeToSetting(id, std::move(callback));
 }
 
-SettingsObserverSubscriptionUVE SettingsDocumentUVE::SubscribeToCategoryUVE(
-    const std::string_view categoryPrefix, SettingsObserverCallbackUVE callback) {
-    return m_observers.SubscribeToCategoryUVE(categoryPrefix, std::move(callback));
+SettingsObserverSubscription SettingsDocument::SubscribeToCategory(
+    const std::string_view categoryPrefix, SettingsObserverCallback callback) {
+    return m_observers.SubscribeToCategory(categoryPrefix, std::move(callback));
 }
 
-bool SettingsDocumentUVE::UnsubscribeUVE(const SettingsObserverSubscriptionUVE subscription) {
-    return m_observers.UnsubscribeUVE(subscription);
+bool SettingsDocument::Unsubscribe(const SettingsObserverSubscription subscription) {
+    return m_observers.Unsubscribe(subscription);
 }
 
 } // namespace UVE::Config

@@ -4,14 +4,14 @@
 
 namespace UVE::Asset {
 
-bool CompressTextureAssetWithBasisUVE(TextureAssetUVE& texture, const TextureCompressionModeUVE mode,
+bool CompressTextureAssetWithBasis(TextureAsset& texture, const TextureCompressionMode mode,
                                       const std::uint8_t quality, const std::uint8_t effort) {
     (void)quality;
     (void)effort;
     // Mobile/runtime builds keep the Basis transcoder for loading already-compressed assets, but do
     // not carry the much larger authoring encoder. Asset imports requesting new compression fail
     // explicitly rather than silently writing a raw payload.
-    return mode == TextureCompressionModeUVE::None && IsTextureAssetValidUVE(texture);
+    return mode == TextureCompressionMode::None && IsTextureAssetValid(texture);
 }
 
 } // namespace UVE::Asset

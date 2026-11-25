@@ -2,35 +2,35 @@
 #include "i_window_manager.h"
 #include "window_desc.h"
 #include <memory>
-namespace UVE::Events { class IEventSystemUVE; }
+namespace UVE::Events { class IEventSystem; }
 namespace UVE::Window {
-class AndroidWindowManagerUVE final : public IWindowManagerUVE {
+class AndroidWindowManager final : public IWindowManager {
 public:
-    AndroidWindowManagerUVE(Events::IEventSystemUVE&, void* window, const WindowDescUVE&);
-    ~AndroidWindowManagerUVE() override;
-    AndroidWindowManagerUVE(const AndroidWindowManagerUVE&) = delete;
-    AndroidWindowManagerUVE& operator=(const AndroidWindowManagerUVE&) = delete;
-    bool IsValidUVE() const noexcept override;
-    void AttachInputSystemUVE(Input::IInputSystemUVE*) noexcept override {}
-    void PollEventsUVE() override;
-    void SetFocusedUVE(bool focused);
-    bool IsFocusedUVE() const noexcept override;
-    void SwapBuffersUVE() override;
-    bool AttachNativeWindowUVE(void* window);
+    AndroidWindowManager(Events::IEventSystem&, void* window, const WindowDesc&);
+    ~AndroidWindowManager() override;
+    AndroidWindowManager(const AndroidWindowManager&) = delete;
+    AndroidWindowManager& operator=(const AndroidWindowManager&) = delete;
+    bool IsValid() const noexcept override;
+    void AttachInputSystem(Input::IInputSystem*) noexcept override {}
+    void PollEvents() override;
+    void SetFocused(bool focused);
+    bool IsFocused() const noexcept override;
+    void SwapBuffers() override;
+    bool AttachNativeWindow(void* window);
     // Successful EGL swaps; visible pixels are verified separately by the native smoke test.
-    std::uint64_t GetPresentationCountUVE() const noexcept;
-    void DetachNativeWindowUVE();
-    bool TryRecoverSurfaceUVE() noexcept override;
-    bool IsCloseRequestedUVE() const noexcept override { return false; }
-    void SetVSyncEnabledUVE(bool enabled) override;
-    bool IsVSyncEnabledUVE() const noexcept override;
-    void SetFullscreenUVE(bool) override {}
-    bool IsFullscreenUVE() const noexcept override { return true; }
-    std::uint32_t GetWidthUVE() const noexcept override;
-    std::uint32_t GetHeightUVE() const noexcept override;
-    std::vector<MonitorInfoUVE> EnumerateMonitorsUVE() const override { return {}; }
-    void* GetNativeWindowHandleUVE() const noexcept override;
-    std::string_view GetBackendNameUVE() const noexcept override { return "Android EGL/GLES"; }
+    std::uint64_t GetPresentationCount() const noexcept;
+    void DetachNativeWindow();
+    bool TryRecoverSurface() noexcept override;
+    bool IsCloseRequested() const noexcept override { return false; }
+    void SetVSyncEnabled(bool enabled) override;
+    bool IsVSyncEnabled() const noexcept override;
+    void SetFullscreen(bool) override {}
+    bool IsFullscreen() const noexcept override { return true; }
+    std::uint32_t GetWidth() const noexcept override;
+    std::uint32_t GetHeight() const noexcept override;
+    std::vector<MonitorInfo> EnumerateMonitors() const override { return {}; }
+    void* GetNativeWindowHandle() const noexcept override;
+    std::string_view GetBackendName() const noexcept override { return "Android EGL/GLES"; }
 private:
     struct Impl;
     std::unique_ptr<Impl> m_impl;

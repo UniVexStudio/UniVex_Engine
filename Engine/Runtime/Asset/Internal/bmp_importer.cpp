@@ -20,49 +20,49 @@
 namespace UVE::Asset {
 namespace {
 
-constexpr const char* kBmpImporterNameUVE = "BmpImporterUVE";
-constexpr std::uint64_t kMaximumBmpImporterSourceBytesUVE = 64ULL * 1024ULL * 1024ULL;
-constexpr std::string_view kBmpTemporarySuffixUVE = ".uve_bmp_tmp";
+constexpr const char* kBmpImporterName = "BmpImporter";
+constexpr std::uint64_t kMaximumBmpImporterSourceBytes = 64ULL * 1024ULL * 1024ULL;
+constexpr std::string_view kBmpTemporarySuffix = ".uve_bmp_tmp";
 
-[[nodiscard]] bool ImportBmpSourceUVE(const std::filesystem::path& sourcePath,
+[[nodiscard]] bool ImportBmpSource(const std::filesystem::path& sourcePath,
                                       const std::filesystem::path& destinationPath,
-                                      const AssetImportSettingsUVE& settings) {
+                                      const AssetImportSettings& settings) {
     if (destinationPath.extension() != ".uvtex") {
-        UVE_ERROR("BmpImporterUVE: destination \"{}\" must use the .uvtex extension", destinationPath.string());
+        UVE_ERROR("BmpImporter: destination \"{}\" must use the .uvtex extension", destinationPath.string());
         return false;
     }
     std::vector<std::byte> sourceBytes;
-    if (!Detail::ReadBoundedSourceBytesUVE(sourcePath, kBmpImporterNameUVE, kMaximumBmpImporterSourceBytesUVE,
+    if (!Detail::ReadBoundedSourceBytes(sourcePath, kBmpImporterName, kMaximumBmpImporterSourceBytes,
                                            sourceBytes)) {
         return false;
     }
-    BmpRgba8ImageUVE decoded;
-    if (!DecodeBmpRgba8ImageUVE(sourceBytes, decoded)) {
-        UVE_ERROR("BmpImporterUVE: source \"{}\" failed bounded BMP RGBA8 decoding", sourcePath.string());
+    BmpRgba8Image decoded;
+    if (!DecodeBmpRgba8Image(sourceBytes, decoded)) {
+        UVE_ERROR("BmpImporter: source \"{}\" failed bounded BMP RGBA8 decoding", sourcePath.string());
         return false;
     }
-    TextureAssetUVE texture;
+    TextureAsset texture;
     texture.width = decoded.width;
     texture.height = decoded.height;
-    texture.format = TextureAssetFormatUVE::RGBA8Unorm;
-    const TextureImportSettingsUVE importSettings = ResolveTextureImportSettingsUVE(settings);
+    texture.format = TextureAssetFormat::RGBA8Unorm;
+    const TextureImportSettings importSettings = ResolveTextureImportSettings(settings);
     texture.colorSpace = importSettings.colorSpace;
     texture.usage = importSettings.usage;
     texture.pixels = std::move(decoded.pixels);
-    if (!Detail::PrepareTextureForImportUVE(texture, importSettings)) {
-        UVE_ERROR("BmpImporterUVE: failed to prepare mip chain or compress texture for \"{}\"",
+    if (!Detail::PrepareTextureForImport(texture, importSettings)) {
+        UVE_ERROR("BmpImporter: failed to prepare mip chain or compress texture for \"{}\"",
                   sourcePath.string());
         return false;
     }
-    return Detail::PublishAssetAtomicallyUVE(
-        destinationPath, kBmpImporterNameUVE, kBmpTemporarySuffixUVE,
-        [&texture](const std::filesystem::path& temporaryPath) { return SaveTextureAssetUVE(texture, temporaryPath); });
+    return Detail::PublishAssetAtomically(
+        destinationPath, kBmpImporterName, kBmpTemporarySuffix,
+        [&texture](const std::filesystem::path& temporaryPath) { return SaveTextureAsset(texture, temporaryPath); });
 }
 
 } // namespace
 
-void RegisterBmpImporterUVE(IAssetImporterUVE& importer) {
-    importer.RegisterImporterUVE("bmp", &ImportBmpSourceUVE);
+void RegisterBmpImporter(IAssetImporter& importer) {
+    importer.RegisterImporter("bmp", &ImportBmpSource);
 }
 
 } // namespace UVE::Asset

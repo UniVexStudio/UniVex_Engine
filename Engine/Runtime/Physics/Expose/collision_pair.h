@@ -8,21 +8,21 @@
 
 namespace UVE::Physics {
 
-/// One overlapping pair reported by ICollisionSystemUVE::DetectCollisionsUVE(). Deliberately a
+/// One overlapping pair reported by ICollisionSystem::DetectCollisions(). Deliberately a
 /// plain, backend-agnostic value type — `separationAxis`/`penetrationDepth` are exactly the
 /// minimum-translation-vector shape any convex-vs-convex narrow phase (box-vs-box today; GJK/EPA
 /// for other shapes in the future) would produce, so this shape does not need to change when
-/// CollisionSystemUVE's internals grow beyond axis-aligned boxes.
+/// CollisionSystem's internals grow beyond axis-aligned boxes.
 /// Thread-safety: value type; safe to copy/pass freely, no shared state.
-struct CollisionPairUVE {
-    Scene::EntityUVE first;
-    Scene::EntityUVE second;
+struct CollisionPair {
+    Scene::Entity first;
+    Scene::Entity second;
     /// Unit vector, points from `first` toward `second`.
-    Math::Vector3UVE separationAxis;
+    Math::Vector3 separationAxis;
     /// Minimum-translation-vector depth along separationAxis.
     float penetrationDepth = 0.0F;
 
-    [[nodiscard]] bool operator==(const CollisionPairUVE&) const noexcept = default;
+    [[nodiscard]] bool operator==(const CollisionPair&) const noexcept = default;
 };
 
 } // namespace UVE::Physics

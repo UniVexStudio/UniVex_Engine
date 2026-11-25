@@ -29,34 +29,34 @@
 
 namespace UVE::Editor {
 
-constexpr float kToolRowUVE = 22.0F;
+constexpr float kToolRow = 22.0F;
 
 // ------------------------------------------------------------------------------ network capture
 
 /// The captured packets as rows (the filtered ones, newest at the bottom); a click picks one.
-class PacketListUVE final : public prism::Widget {
+class PacketList final : public prism::Widget {
 public:
-    explicit PacketListUVE(EditorNetworkCaptureWindowUVE& window) : m_window(window) {}
+    explicit PacketList(EditorNetworkCaptureWindow& window) : m_window(window) {}
     prism::Vec2 measure(prism::Vec2 avail) override { return m_desired = constrain(avail); }
     void paint(prism::Canvas& c) override {
         const prism::Theme& t = prism::theme();
         c.fillRect(m_rect, t.panel);
-        EditorUVE& editor = m_window.EditorRefUVE();
-        const std::vector<std::size_t>& rows = m_window.RowsUVE();
-        const auto visible = static_cast<std::size_t>(std::max(1.0F, std::floor(m_rect.h / kToolRowUVE)));
+        Editor& editor = m_window.EditorRef();
+        const std::vector<std::size_t>& rows = m_window.Rows();
+        const auto visible = static_cast<std::size_t>(std::max(1.0F, std::floor(m_rect.h / kToolRow)));
         // Follows the newest packets unless one is picked.
         const std::size_t first = rows.size() > visible ? rows.size() - visible : 0U;
         c.pushClip(m_rect);
         for (std::size_t i = first; i < rows.size(); ++i) {
-            const Network::InspectedPacketUVE* const packet = editor.m_packetCapture.TryAtUVE(rows[i]);
+            const Network::InspectedPacket* const packet = editor.m_packetCapture.TryAt(rows[i]);
             if (packet == nullptr) {
                 continue;
             }
-            const prism::Rect row{m_rect.x, m_rect.y + kToolRowUVE * static_cast<float>(i - first), m_rect.w, kToolRowUVE};
+            const prism::Rect row{m_rect.x, m_rect.y + kToolRow * static_cast<float>(i - first), m_rect.w, kToolRow};
             if (rows[i] == editor.m_captureSelected) {
                 c.fillRect(row, t.rowSelected);
             }
-            c.textIn(*t.mono, prism::Rect{row.x + 8.0F, row.y, row.w - 16.0F, row.h}, Network::DescribePacketUVE(*packet),
+            c.textIn(*t.mono, prism::Rect{row.x + 8.0F, row.y, row.w - 16.0F, row.h}, Network::DescribePacket(*packet),
                      packet->malformed ? t.error : t.text);
         }
         if (rows.empty()) {
@@ -67,31 +67,31 @@ public:
         m_first = first;
     }
     bool onMouseDown(const prism::MouseEvent& e) override {
-        const std::vector<std::size_t>& rows = m_window.RowsUVE();
-        const auto row = static_cast<std::size_t>(std::max(0.0F, (e.pos.y - m_rect.y) / kToolRowUVE)) + m_first;
+        const std::vector<std::size_t>& rows = m_window.Rows();
+        const auto row = static_cast<std::size_t>(std::max(0.0F, (e.pos.y - m_rect.y) / kToolRow)) + m_first;
         if (row < rows.size()) {
-            m_window.EditorRefUVE().m_captureSelected = rows[row];
+            m_window.EditorRef().m_captureSelected = rows[row];
             invalidate();
         }
         return true;
     }
 
 private:
-    EditorNetworkCaptureWindowUVE& m_window;
+    EditorNetworkCaptureWindow& m_window;
     std::size_t m_first = 0U;
 };
 
 /// The picked packet: its line, its time and size, its bytes.
-class PacketDetailUVE final : public prism::Widget {
+class PacketDetail final : public prism::Widget {
 public:
-    explicit PacketDetailUVE(EditorUVE& editor) : m_editor(editor) {}
+    explicit PacketDetail(Editor& editor) : m_editor(editor) {}
     prism::Vec2 measure(prism::Vec2 avail) override { return m_desired = constrain(avail); }
     void paint(prism::Canvas& c) override {
         const prism::Theme& t = prism::theme();
         c.fillRect(m_rect, t.panel);
-        const Network::InspectedPacketUVE* const packet = m_editor.m_captureSelected == EditorUVE::kNoCaptureSelectionUVE
+        const Network::InspectedPacket* const packet = m_editor.m_captureSelected == Editor::kNoCaptureSelection
                                                               ? nullptr
-                                                              : m_editor.m_packetCapture.TryAtUVE(m_editor.m_captureSelected);
+                                                              : m_editor.m_packetCapture.TryAt(m_editor.m_captureSelected);
         const float x = m_rect.x + 10.0F;
         const float w = m_rect.w - 20.0F;
         if (packet == nullptr) {
@@ -100,13 +100,13 @@ public:
         }
         c.pushClip(m_rect);
         float y = m_rect.y + 6.0F;
-        c.textIn(*t.ui, prism::Rect{x, y, w, 20.0F}, Network::DescribePacketUVE(*packet), t.textBright);
+        c.textIn(*t.ui, prism::Rect{x, y, w, 20.0F}, Network::DescribePacket(*packet), t.textBright);
         y += 22.0F;
         const std::string meta = "t=" + std::to_string(packet->timestampMs) + " ms, " + std::to_string(packet->raw.size()) + " bytes" +
                                  (packet->malformed ? ", MALFORMED" : "");
         c.textIn(*t.small, prism::Rect{x, y, w, 18.0F}, meta, packet->malformed ? t.error : t.textDim);
         y += 24.0F;
-        const std::string dump = Network::HexdumpPacketUVE(packet->raw);
+        const std::string dump = Network::HexdumpPacket(packet->raw);
         std::size_t start = 0U;
         while (start < dump.size() && y < m_rect.bottom()) {
             std::size_t end = dump.find('\n', start);
@@ -121,39 +121,39 @@ public:
     }
 
 private:
-    EditorUVE& m_editor;
+    Editor& m_editor;
 };
 
 // ------------------------------------------------------------------------------ audio mixer
 
 /// Every bus as a row: name, Mute, Solo, volume (drag), level meter. Drawn from a fresh snapshot of
 /// the mix each frame, so the meters move and nothing is rebuilt.
-class MixerTableUVE final : public prism::Widget {
+class MixerTable final : public prism::Widget {
 public:
-    explicit MixerTableUVE(EditorUVE& editor) : m_editor(editor) {}
+    explicit MixerTable(Editor& editor) : m_editor(editor) {}
     prism::Vec2 measure(prism::Vec2 avail) override { return m_desired = constrain(avail); }
 
     void paint(prism::Canvas& c) override {
         const prism::Theme& t = prism::theme();
         c.fillRect(m_rect, t.panel);
-        const EditorAudioMixerSnapshotUVE snapshot = SnapshotUVE();
+        const EditorAudioMixerSnapshot snapshot = Snapshot();
         c.pushClip(m_rect);
         // Header.
-        const Columns col = ColumnsUVE();
-        c.fillRect(prism::Rect{m_rect.x, m_rect.y, m_rect.w, kToolRowUVE}, t.header);
-        c.textIn(*t.small, prism::Rect{col.name, m_rect.y, 200.0F, kToolRowUVE}, "Bus", t.textDim);
-        c.textIn(*t.small, prism::Rect{col.mute, m_rect.y, 20.0F, kToolRowUVE}, "M", t.textDim, prism::HAlign::Center);
-        c.textIn(*t.small, prism::Rect{col.solo, m_rect.y, 20.0F, kToolRowUVE}, "S", t.textDim, prism::HAlign::Center);
-        c.textIn(*t.small, prism::Rect{col.volume, m_rect.y, col.volumeW, kToolRowUVE}, "Volume", t.textDim);
-        c.textIn(*t.small, prism::Rect{col.level, m_rect.y, col.levelW, kToolRowUVE}, "Level", t.textDim);
+        const Columns col = ComputeColumns();
+        c.fillRect(prism::Rect{m_rect.x, m_rect.y, m_rect.w, kToolRow}, t.header);
+        c.textIn(*t.small, prism::Rect{col.name, m_rect.y, 200.0F, kToolRow}, "Bus", t.textDim);
+        c.textIn(*t.small, prism::Rect{col.mute, m_rect.y, 20.0F, kToolRow}, "M", t.textDim, prism::HAlign::Center);
+        c.textIn(*t.small, prism::Rect{col.solo, m_rect.y, 20.0F, kToolRow}, "S", t.textDim, prism::HAlign::Center);
+        c.textIn(*t.small, prism::Rect{col.volume, m_rect.y, col.volumeW, kToolRow}, "Volume", t.textDim);
+        c.textIn(*t.small, prism::Rect{col.level, m_rect.y, col.levelW, kToolRow}, "Level", t.textDim);
         for (std::size_t i = 0U; i < snapshot.rows.size(); ++i) {
-            const EditorAudioMixerRowUVE& row = snapshot.rows[i];
-            const float y = m_rect.y + kToolRowUVE * static_cast<float>(i + 1U);
+            const EditorAudioMixerRow& row = snapshot.rows[i];
+            const float y = m_rect.y + kToolRow * static_cast<float>(i + 1U);
             const prism::Color nameColour = row.isSilencedWithSources ? t.warning : t.text;
-            c.textIn(*t.ui, prism::Rect{col.name + 14.0F * static_cast<float>(row.depth), y, col.mute - col.name - 8.0F, kToolRowUVE}, row.name,
+            c.textIn(*t.ui, prism::Rect{col.name + 14.0F * static_cast<float>(row.depth), y, col.mute - col.name - 8.0F, kToolRow}, row.name,
                      nameColour);
             const auto toggle = [&](const float x, const bool on, const prism::Color colour, const char* letter) {
-                const prism::Rect box{x, y + 2.0F, 20.0F, kToolRowUVE - 4.0F};
+                const prism::Rect box{x, y + 2.0F, 20.0F, kToolRow - 4.0F};
                 c.fillRoundRect(box, 3.0F, on ? colour : t.control);
                 c.textIn(*t.small, box, letter, on ? t.window : t.textDim, prism::HAlign::Center);
             };
@@ -162,43 +162,43 @@ public:
             const prism::Rect track{col.volume, y + 8.0F, col.volumeW, 6.0F};
             c.fillRoundRect(track, 3.0F, t.field);
             c.fillRoundRect(prism::Rect{track.x, track.y, std::max(6.0F, track.w * std::clamp(row.volume, 0.0F, 1.0F)), track.h}, 3.0F, t.highlight);
-            c.textIn(*t.small, prism::Rect{col.volume + col.volumeW + 4.0F, y, 36.0F, kToolRowUVE},
+            c.textIn(*t.small, prism::Rect{col.volume + col.volumeW + 4.0F, y, 36.0F, kToolRow},
                      std::to_string(static_cast<int>(std::lround(row.volume * 100.0F))) + "%", t.textDim);
             const prism::Rect meter{col.level, y + 8.0F, col.levelW - 70.0F, 6.0F};
             c.fillRoundRect(meter, 3.0F, t.field);
             c.fillRoundRect(prism::Rect{meter.x, meter.y, meter.w * std::clamp(row.levelNormalized, 0.0F, 1.0F), meter.h}, 3.0F,
                             row.isClipping ? t.error : t.success);
-            c.textIn(*t.small, prism::Rect{meter.x + meter.w + 6.0F, y, 64.0F, kToolRowUVE}, row.levelText, t.textDim);
+            c.textIn(*t.small, prism::Rect{meter.x + meter.w + 6.0F, y, 64.0F, kToolRow}, row.levelText, t.textDim);
         }
         if (snapshot.rows.empty()) {
-            c.textIn(*t.ui, prism::Rect{m_rect.x + 12.0F, m_rect.y + kToolRowUVE + 8.0F, m_rect.w - 24.0F, 20.0F}, "No buses yet.", t.textDim);
+            c.textIn(*t.ui, prism::Rect{m_rect.x + 12.0F, m_rect.y + kToolRow + 8.0F, m_rect.w - 24.0F, 20.0F}, "No buses yet.", t.textDim);
         }
         c.popClip();
     }
 
     bool onMouseDown(const prism::MouseEvent& e) override {
-        const EditorAudioMixerSnapshotUVE snapshot = SnapshotUVE();
-        const int row = static_cast<int>((e.pos.y - m_rect.y) / kToolRowUVE) - 1;
+        const EditorAudioMixerSnapshot snapshot = Snapshot();
+        const int row = static_cast<int>((e.pos.y - m_rect.y) / kToolRow) - 1;
         if (row < 0 || static_cast<std::size_t>(row) >= snapshot.rows.size()) {
             return true;
         }
-        const EditorAudioMixerRowUVE& bus = snapshot.rows[static_cast<std::size_t>(row)];
-        Audio::IAudioSystemUVE& audio = m_editor.m_services->GetAudioSystemUVE();
-        const Columns col = ColumnsUVE();
+        const EditorAudioMixerRow& bus = snapshot.rows[static_cast<std::size_t>(row)];
+        Audio::IAudioSystem& audio = m_editor.m_services->GetAudioSystem();
+        const Columns col = ComputeColumns();
         if (e.pos.x >= col.mute && e.pos.x < col.mute + 20.0F) {
-            static_cast<void>(audio.SetMixerGroupMutedUVE(bus.name, !bus.muted));
+            static_cast<void>(audio.SetMixerGroupMuted(bus.name, !bus.muted));
         } else if (e.pos.x >= col.solo && e.pos.x < col.solo + 20.0F) {
-            static_cast<void>(audio.SetMixerGroupSoloedUVE(bus.name, !bus.soloed));
+            static_cast<void>(audio.SetMixerGroupSoloed(bus.name, !bus.soloed));
         } else if (e.pos.x >= col.volume - 4.0F && e.pos.x <= col.volume + col.volumeW + 4.0F) {
             m_dragBus = bus.name;
-            SetVolumeAtUVE(e.pos.x);
+            SetVolumeAt(e.pos.x);
         }
         invalidate();
         return true;
     }
     bool onMouseMove(const prism::MouseEvent& e) override {
         if (!m_dragBus.empty()) {
-            SetVolumeAtUVE(e.pos.x);
+            SetVolumeAt(e.pos.x);
             invalidate();
         }
         return true;
@@ -212,7 +212,7 @@ private:
     struct Columns final {
         float name = 0.0F, mute = 0.0F, solo = 0.0F, volume = 0.0F, volumeW = 0.0F, level = 0.0F, levelW = 0.0F;
     };
-    [[nodiscard]] Columns ColumnsUVE() const {
+    [[nodiscard]] Columns ComputeColumns() const {
         Columns col;
         col.name = m_rect.x + 10.0F;
         col.mute = m_rect.x + std::max(160.0F, m_rect.w * 0.30F);
@@ -223,35 +223,35 @@ private:
         col.levelW = std::max(100.0F, m_rect.right() - col.level - 10.0F);
         return col;
     }
-    [[nodiscard]] EditorAudioMixerSnapshotUVE SnapshotUVE() const {
-        Audio::IAudioSystemUVE& audio = m_editor.m_services->GetAudioSystemUVE();
-        return BuildEditorAudioMixerSnapshotUVE(audio.GetMixerDiagnosticsUVE(),
-                                                [&audio](const std::string_view name) { return audio.GetMixerGroupMeterUVE(name); });
+    [[nodiscard]] EditorAudioMixerSnapshot Snapshot() const {
+        Audio::IAudioSystem& audio = m_editor.m_services->GetAudioSystem();
+        return BuildEditorAudioMixerSnapshot(audio.GetMixerDiagnostics(),
+                                                [&audio](const std::string_view name) { return audio.GetMixerGroupMeter(name); });
     }
-    void SetVolumeAtUVE(const float x) {
-        const Columns col = ColumnsUVE();
+    void SetVolumeAt(const float x) {
+        const Columns col = ComputeColumns();
         const float volume = std::clamp((x - col.volume) / std::max(1.0F, col.volumeW), 0.0F, 1.0F);
         // Kept in the project's audio settings when the bus has one; session-only otherwise.
-        const std::string_view settingId = EditorAudioBusVolumeSettingIdUVE(m_dragBus);
+        const std::string_view settingId = EditorAudioBusVolumeSettingId(m_dragBus);
         if (!settingId.empty()) {
-            static_cast<void>(m_editor.m_services->GetProjectSettingsUVE().SetValueUVE(settingId, static_cast<double>(volume)));
+            static_cast<void>(m_editor.m_services->GetProjectSettings().SetValue(settingId, static_cast<double>(volume)));
         } else {
-            static_cast<void>(m_editor.m_services->GetAudioSystemUVE().SetMixerGroupVolumeUVE(m_dragBus, volume));
+            static_cast<void>(m_editor.m_services->GetAudioSystem().SetMixerGroupVolume(m_dragBus, volume));
         }
     }
 
-    EditorUVE& m_editor;
+    Editor& m_editor;
     std::string m_dragBus;
 };
 
 // ------------------------------------------------------------------------------ network capture
 
-EditorNetworkCaptureWindowUVE::EditorNetworkCaptureWindowUVE(EditorUVE& editor, EditorHostUVE& host) : m_editor(editor), m_host(host) {}
-EditorNetworkCaptureWindowUVE::~EditorNetworkCaptureWindowUVE() = default;
+EditorNetworkCaptureWindow::EditorNetworkCaptureWindow(Editor& editor, EditorHost& host) : m_editor(editor), m_host(host) {}
+EditorNetworkCaptureWindow::~EditorNetworkCaptureWindow() = default;
 
-prism::Ref<prism::Widget> EditorNetworkCaptureWindowUVE::BuildUVE() {
+prism::Ref<prism::Widget> EditorNetworkCaptureWindow::Build() {
     auto window = prism::vbox();
-    window->add(BuildToolWindowTitleBarUVE("Network Capture", prism::Icon::Globe, [this] {
+    window->add(BuildToolWindowTitleBar("Network Capture", prism::Icon::Globe, [this] {
         m_editor.m_showCaptureWindow = false;
         m_closePending = true;
     }));
@@ -259,8 +259,8 @@ prism::Ref<prism::Widget> EditorNetworkCaptureWindowUVE::BuildUVE() {
     toolbar->setPadding(prism::Margin(8.0F, 6.0F, 8.0F, 6.0F));
     auto clear = prism::make<prism::Button>("Clear", prism::Icon::Close, prism::ButtonStyle::Default);
     clear->onClick = [this] {
-        m_editor.ClearCapturedPacketsUVE();
-        m_editor.m_captureSelected = EditorUVE::kNoCaptureSelectionUVE;
+        m_editor.ClearCapturedPackets();
+        m_editor.m_captureSelected = Editor::kNoCaptureSelection;
     };
     toolbar->add(clear, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
     auto direction = prism::make<prism::ComboBox>(std::vector<std::string>{"Both", "Out", "In"}, m_editor.m_captureDirection);
@@ -286,24 +286,24 @@ prism::Ref<prism::Widget> EditorNetworkCaptureWindowUVE::BuildUVE() {
     statsRow->setPadding(prism::Margin(10.0F, 0.0F, 10.0F, 4.0F));
     statsRow->add(m_stats, prism::Slot{1.0F});
     window->add(statsRow);
-    auto list = prism::make<PacketListUVE>(*this);
-    auto detail = prism::make<PacketDetailUVE>(m_editor);
+    auto list = prism::make<PacketList>(*this);
+    auto detail = prism::make<PacketDetail>(m_editor);
     m_live = {list, detail};
     auto body = prism::make<prism::Splitter>(prism::Orientation::Vertical);
-    body->add(PanelUVE(list), prism::Splitter::Pane{240.0F, 100.0F, 1e9F, true});
-    body->add(PanelUVE(detail), prism::Splitter::Pane{220.0F, 100.0F, 1e9F, false});
+    body->add(Panel(list), prism::Splitter::Pane{240.0F, 100.0F, 1e9F, true});
+    body->add(Panel(detail), prism::Splitter::Pane{220.0F, 100.0F, 1e9F, false});
     window->add(body, prism::Slot{1.0F});
     return window;
 }
 
-void EditorNetworkCaptureWindowUVE::FrameUVE() {
+void EditorNetworkCaptureWindow::Frame() {
     bool& visible = m_editor.m_showCaptureWindow;
-    if (m_window != 0 && m_host.WindowCloseRequestedUVE(m_window)) {
-        m_host.ClearCloseRequestUVE(m_window);
+    if (m_window != 0 && m_host.WindowCloseRequested(m_window)) {
+        m_host.ClearCloseRequest(m_window);
         visible = false;
     }
     if (m_window != 0 && (m_closePending || !visible)) {
-        m_host.CloseWindowUVE(m_window);
+        m_host.CloseWindow(m_window);
         m_window = 0;
         m_closePending = false;
         m_stats.reset();
@@ -316,7 +316,7 @@ void EditorNetworkCaptureWindowUVE::FrameUVE() {
     }
     const bool freshlyOpened = (m_window == 0);
     if (freshlyOpened) {
-        m_window = m_host.OpenWindowUVE(BuildUVE(), "Network Capture", 900, 600);
+        m_window = m_host.OpenWindow(Build(), "Network Capture", 900, 600);
         if (m_window == 0) {
             visible = false;
             return;
@@ -324,29 +324,29 @@ void EditorNetworkCaptureWindowUVE::FrameUVE() {
     }
     if (freshlyOpened || m_editor.m_captureFocusPending) {
         m_editor.m_captureFocusPending = false;
-        m_host.FocusWindowUVE(m_window);
+        m_host.FocusWindow(m_window);
     }
     // The filter and the rows a few times a second: packets arrive live.
     const auto now = std::chrono::steady_clock::now();
     if (now - m_refreshedAt > std::chrono::milliseconds(200)) {
         m_refreshedAt = now;
         m_editor.m_captureFilter.text = std::string(m_editor.m_captureText.data());
-        m_editor.m_captureFilter.direction = static_cast<Network::PacketCaptureDirectionUVE>(m_editor.m_captureDirection);
+        m_editor.m_captureFilter.direction = static_cast<Network::PacketCaptureDirection>(m_editor.m_captureDirection);
         if (m_editor.m_captureChannel == 0) {
             m_editor.m_captureFilter.channel.reset();
         } else {
-            m_editor.m_captureFilter.channel = static_cast<Network::InspectedChannelUVE>(m_editor.m_captureChannel - 1);
+            m_editor.m_captureFilter.channel = static_cast<Network::InspectedChannel>(m_editor.m_captureChannel - 1);
         }
         m_editor.m_captureFilter.malformedOnly = m_editor.m_captureMalformedOnly;
-        m_rows = m_editor.m_packetCapture.FilteredUVE(m_editor.m_captureFilter);
-        if (m_editor.m_captureSelected != EditorUVE::kNoCaptureSelectionUVE &&
-            m_editor.m_packetCapture.TryAtUVE(m_editor.m_captureSelected) == nullptr) {
-            m_editor.m_captureSelected = EditorUVE::kNoCaptureSelectionUVE;
+        m_rows = m_editor.m_packetCapture.Filtered(m_editor.m_captureFilter);
+        if (m_editor.m_captureSelected != Editor::kNoCaptureSelection &&
+            m_editor.m_packetCapture.TryAt(m_editor.m_captureSelected) == nullptr) {
+            m_editor.m_captureSelected = Editor::kNoCaptureSelection;
         }
-        const Network::PacketCaptureUVE& capture = m_editor.m_packetCapture;
-        const std::string stats = std::to_string(capture.SizeUVE()) + "/" + std::to_string(capture.CapacityUVE()) + " packets (" +
-                                  std::to_string(capture.DropsUVE()) + " dropped, " + std::to_string(capture.MalformedUVE()) + " malformed)";
-        m_host.AppUVE().runInWindow(m_window, [this, stats] {
+        const Network::PacketCapture& capture = m_editor.m_packetCapture;
+        const std::string stats = std::to_string(capture.Size()) + "/" + std::to_string(capture.Capacity()) + " packets (" +
+                                  std::to_string(capture.Drops()) + " dropped, " + std::to_string(capture.Malformed()) + " malformed)";
+        m_host.App().runInWindow(m_window, [this, stats] {
             if (m_stats && m_stats->text() != stats) {
                 m_stats->setText(stats);
             }
@@ -355,17 +355,17 @@ void EditorNetworkCaptureWindowUVE::FrameUVE() {
             }
         });
     }
-    m_host.RenderWindowUVE(m_window, {});
+    m_host.RenderWindow(m_window, {});
 }
 
 // ------------------------------------------------------------------------------ audio mixer
 
-EditorAudioMixerWindowUVE::EditorAudioMixerWindowUVE(EditorUVE& editor, EditorHostUVE& host) : m_editor(editor), m_host(host) {}
-EditorAudioMixerWindowUVE::~EditorAudioMixerWindowUVE() = default;
+EditorAudioMixerWindow::EditorAudioMixerWindow(Editor& editor, EditorHost& host) : m_editor(editor), m_host(host) {}
+EditorAudioMixerWindow::~EditorAudioMixerWindow() = default;
 
-prism::Ref<prism::Widget> EditorAudioMixerWindowUVE::BuildUVE() {
+prism::Ref<prism::Widget> EditorAudioMixerWindow::Build() {
     auto window = prism::vbox();
-    window->add(BuildToolWindowTitleBarUVE("Audio Mixer", prism::Icon::NodeMixer, [this] {
+    window->add(BuildToolWindowTitleBar("Audio Mixer", prism::Icon::NodeMixer, [this] {
         m_editor.m_showAudioMixerWindow = false;
         m_closePending = true;
     }));
@@ -375,8 +375,8 @@ prism::Ref<prism::Widget> EditorAudioMixerWindowUVE::BuildUVE() {
     summaryRow->setPadding(prism::Margin(10.0F, 6.0F, 10.0F, 6.0F));
     summaryRow->add(m_summary, prism::Slot{1.0F});
     window->add(summaryRow);
-    m_table = prism::make<MixerTableUVE>(m_editor);
-    window->add(PanelUVE(m_table), prism::Slot{1.0F});
+    m_table = prism::make<MixerTable>(m_editor);
+    window->add(Panel(m_table), prism::Slot{1.0F});
     auto hintRow = prism::hbox();
     hintRow->setPadding(prism::Margin(10.0F, 4.0F, 10.0F, 8.0F));
     auto hint = prism::make<prism::Label>("A source's own volume and falloff are in its Inspector.", prism::FontRole::Small);
@@ -386,14 +386,14 @@ prism::Ref<prism::Widget> EditorAudioMixerWindowUVE::BuildUVE() {
     return window;
 }
 
-void EditorAudioMixerWindowUVE::FrameUVE() {
+void EditorAudioMixerWindow::Frame() {
     bool& visible = m_editor.m_showAudioMixerWindow;
-    if (m_window != 0 && m_host.WindowCloseRequestedUVE(m_window)) {
-        m_host.ClearCloseRequestUVE(m_window);
+    if (m_window != 0 && m_host.WindowCloseRequested(m_window)) {
+        m_host.ClearCloseRequest(m_window);
         visible = false;
     }
     if (m_window != 0 && (m_closePending || !visible)) {
-        m_host.CloseWindowUVE(m_window);
+        m_host.CloseWindow(m_window);
         m_window = 0;
         m_closePending = false;
         m_table.reset();
@@ -406,7 +406,7 @@ void EditorAudioMixerWindowUVE::FrameUVE() {
     }
     const bool freshlyOpened = (m_window == 0);
     if (freshlyOpened) {
-        m_window = m_host.OpenWindowUVE(BuildUVE(), "Audio Mixer", 760, 460);
+        m_window = m_host.OpenWindow(Build(), "Audio Mixer", 760, 460);
         if (m_window == 0) {
             visible = false;
             return;
@@ -414,15 +414,15 @@ void EditorAudioMixerWindowUVE::FrameUVE() {
     }
     if (freshlyOpened || m_editor.m_audioMixerFocusPending) {
         m_editor.m_audioMixerFocusPending = false;
-        m_host.FocusWindowUVE(m_window);
+        m_host.FocusWindow(m_window);
     }
-    Audio::IAudioSystemUVE& audio = m_editor.m_services->GetAudioSystemUVE();
-    const Audio::AudioMixerDiagnosticsUVE diagnostics = audio.GetMixerDiagnosticsUVE();
+    Audio::IAudioSystem& audio = m_editor.m_services->GetAudioSystem();
+    const Audio::AudioMixerDiagnostics diagnostics = audio.GetMixerDiagnostics();
     std::string summary = std::to_string(diagnostics.routedSourceCount) + " sources";
     if (diagnostics.anySoloed) {
         summary += "   Solo active: buses outside every soloed chain are silent.";
     }
-    m_host.AppUVE().runInWindow(m_window, [this, summary] {
+    m_host.App().runInWindow(m_window, [this, summary] {
         if (m_summary && m_summary->text() != summary) {
             m_summary->setText(summary);
         }
@@ -430,7 +430,7 @@ void EditorAudioMixerWindowUVE::FrameUVE() {
             m_table->invalidate();   // the meters move
         }
     });
-    m_host.RenderWindowUVE(m_window, {});
+    m_host.RenderWindow(m_window, {});
 }
 
 } // namespace UVE::Editor

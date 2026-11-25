@@ -10,24 +10,24 @@
 
 namespace UVE::Scene {
 
-[[nodiscard]] bool IsLightTypeValidUVE(const LightTypeUVE type) noexcept {
-    return type == LightTypeUVE::Directional || type == LightTypeUVE::Point || type == LightTypeUVE::Spot;
+[[nodiscard]] bool IsLightTypeValid(const LightType type) noexcept {
+    return type == LightType::Directional || type == LightType::Point || type == LightType::Spot;
 }
 
-[[nodiscard]] bool IsLightComponentValidUVE(const LightComponentUVE& light) noexcept {
+[[nodiscard]] bool IsLightComponentValid(const LightComponent& light) noexcept {
     return std::isfinite(light.color.r) && std::isfinite(light.color.g) && std::isfinite(light.color.b) &&
            light.color.r >= 0.0F && light.color.g >= 0.0F && light.color.b >= 0.0F &&
-           std::isfinite(light.intensity) && light.intensity >= 0.0F && IsLightTypeValidUVE(light.type) &&
+           std::isfinite(light.intensity) && light.intensity >= 0.0F && IsLightTypeValid(light.type) &&
            std::isfinite(light.range) && light.range > 0.0F && std::isfinite(light.spotAngleDegrees) &&
            light.spotAngleDegrees > 0.0F && light.spotAngleDegrees < 180.0F;
 }
 
-LightComponentUVE SanitizeLightComponentUVE(const LightComponentUVE& light) noexcept {
-    LightComponentUVE out = light;
-    if (!IsLightTypeValidUVE(out.type)) {
-        out.type = LightTypeUVE::Directional;
+LightComponent SanitizeLightComponent(const LightComponent& light) noexcept {
+    LightComponent out = light;
+    if (!IsLightTypeValid(out.type)) {
+        out.type = LightType::Directional;
     }
-    out.color = Math::ColorUVE{
+    out.color = Math::Color{
         (std::isfinite(out.color.r) && out.color.r >= 0.0F) ? out.color.r : 1.0F,
         (std::isfinite(out.color.g) && out.color.g >= 0.0F) ? out.color.g : 1.0F,
         (std::isfinite(out.color.b) && out.color.b >= 0.0F) ? out.color.b : 1.0F,
@@ -41,19 +41,19 @@ LightComponentUVE SanitizeLightComponentUVE(const LightComponentUVE& light) noex
     return out;
 }
 
-Math::ColorUVE EvaluateLightRadiantColorUVE(const LightComponentUVE& light) noexcept {
-    const LightComponentUVE safe = SanitizeLightComponentUVE(light);
-    return Math::ColorUVE{
+Math::Color EvaluateLightRadiantColor(const LightComponent& light) noexcept {
+    const LightComponent safe = SanitizeLightComponent(light);
+    return Math::Color{
         safe.color.r * safe.intensity,
         safe.color.g * safe.intensity,
         safe.color.b * safe.intensity,
     };
 }
 
-float EvaluateLightDistanceAttenuationUVE(const LightComponentUVE& light,
+float EvaluateLightDistanceAttenuation(const LightComponent& light,
                                           const float distanceMeters) noexcept {
-    const LightComponentUVE safe = SanitizeLightComponentUVE(light);
-    if (safe.type == LightTypeUVE::Directional) {
+    const LightComponent safe = SanitizeLightComponent(light);
+    if (safe.type == LightType::Directional) {
         return 1.0F;
     }
     if (!std::isfinite(distanceMeters) || distanceMeters < 0.0F || distanceMeters >= safe.range) {
@@ -64,9 +64,9 @@ float EvaluateLightDistanceAttenuationUVE(const LightComponentUVE& light,
     return window * window;
 }
 
-float ResolveSpotLightConeCosineUVE(const LightComponentUVE& light) noexcept {
-    const LightComponentUVE safe = SanitizeLightComponentUVE(light);
-    return std::cos(Math::DegToRadUVE(safe.spotAngleDegrees));
+float ResolveSpotLightConeCosine(const LightComponent& light) noexcept {
+    const LightComponent safe = SanitizeLightComponent(light);
+    return std::cos(Math::DegToRad(safe.spotAngleDegrees));
 }
 
 } // namespace UVE::Scene

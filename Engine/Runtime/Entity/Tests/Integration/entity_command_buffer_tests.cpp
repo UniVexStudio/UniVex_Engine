@@ -13,88 +13,88 @@
 namespace UVE::Scene::Tests {
 namespace {
 
-struct HealthUVE final {
+struct Health final {
     int hitPoints = 0;
 };
 
-struct LabelUVE final {
+struct Label final {
     std::string text;
 };
 
-class EntityCommandBufferUVETest : public ::testing::Test {
+class EntityCommandBufferTest : public ::testing::Test {
 protected:
-    Memory::MemoryManagerUVE memoryManager;
-    Events::EventSystemUVE eventSystem;
-    EntityManagerUVE entityManager{memoryManager.GetDefaultAllocatorUVE(), eventSystem};
+    Memory::MemoryManager memoryManager;
+    Events::EventSystem eventSystem;
+    EntityManager entityManager{memoryManager.GetDefaultAllocator(), eventSystem};
 };
 
-TEST_F(EntityCommandBufferUVETest, DeferredCreate_PlaysBackWithPayloadsAttached) {
-    EntityCommandBufferUVE commands;
-    EXPECT_TRUE(commands.IsEmptyUVE());
-    const DeferredEntityUVE deferred = commands.CreateEntityUVE();
-    commands.AddComponentUVE<HealthUVE>(deferred, 42);
-    commands.AddComponentUVE<LabelUVE>(deferred, LabelUVE{"spawned"});
-    EXPECT_EQ(commands.GetCommandCountUVE(), 3U);
+TEST_F(EntityCommandBufferTest, DeferredCreate_PlaysBackWithPayloadsAttached) {
+    EntityCommandBuffer commands;
+    EXPECT_TRUE(commands.IsEmpty());
+    const DeferredEntity deferred = commands.CreateEntity();
+    commands.AddComponent<Health>(deferred, 42);
+    commands.AddComponent<Label>(deferred, Label{"spawned"});
+    EXPECT_EQ(commands.GetCommandCount(), 3U);
     // Nothing applied yet: playback is what creates.
-    EXPECT_EQ(entityManager.GetEntityCountUVE(), 0U);
-    commands.PlaybackUVE(entityManager);
-    EXPECT_TRUE(commands.IsEmptyUVE());
-    const EntityUVE entity = commands.ResolveUVE(deferred);
-    EXPECT_TRUE(entityManager.IsAliveUVE(entity));
-    EXPECT_EQ(entityManager.GetComponentUVE<HealthUVE>(entity).hitPoints, 42);
-    EXPECT_EQ(entityManager.GetComponentUVE<LabelUVE>(entity).text, "spawned");
+    EXPECT_EQ(entityManager.GetEntityCount(), 0U);
+    commands.Playback(entityManager);
+    EXPECT_TRUE(commands.IsEmpty());
+    const Entity entity = commands.Resolve(deferred);
+    EXPECT_TRUE(entityManager.IsAlive(entity));
+    EXPECT_EQ(entityManager.GetComponent<Health>(entity).hitPoints, 42);
+    EXPECT_EQ(entityManager.GetComponent<Label>(entity).text, "spawned");
 }
 
-TEST_F(EntityCommandBufferUVETest, RecordDuringForEach_StructuralChangesApplyAfterTheLoop) {
+TEST_F(EntityCommandBufferTest, RecordDuringForEach_StructuralChangesApplyAfterTheLoop) {
     for (int i = 0; i < 4; ++i) {
-        const EntityUVE entity = entityManager.CreateEntityUVE();
-        entityManager.AddComponentUVE<HealthUVE>(entity, i % 2 == 0 ? 0 : 10);
+        const Entity entity = entityManager.CreateEntity();
+        entityManager.AddComponent<Health>(entity, i % 2 == 0 ? 0 : 10);
     }
-    EntityCommandBufferUVE commands;
-    entityManager.ForEachUVE<HealthUVE>([&commands](const EntityUVE entity, const HealthUVE& health) {
+    EntityCommandBuffer commands;
+    entityManager.ForEach<Health>([&commands](const Entity entity, const Health& health) {
         if (health.hitPoints == 0) {
-            commands.DestroyEntityUVE(entity); // Deferred: the loop keeps iterating safely.
+            commands.DestroyEntity(entity); // Deferred: the loop keeps iterating safely.
         } else {
-            commands.RemoveComponentUVE<HealthUVE>(entity);
+            commands.RemoveComponent<Health>(entity);
         }
     });
-    EXPECT_EQ(commands.GetCommandCountUVE(), 4U);
-    commands.PlaybackUVE(entityManager);
-    EXPECT_EQ(entityManager.GetEntityCountUVE(), 2U);
-    entityManager.ForEachUVE<HealthUVE>(
-        [](const EntityUVE, const HealthUVE&) { FAIL() << "All HealthUVE components were removed."; });
+    EXPECT_EQ(commands.GetCommandCount(), 4U);
+    commands.Playback(entityManager);
+    EXPECT_EQ(entityManager.GetEntityCount(), 2U);
+    entityManager.ForEach<Health>(
+        [](const Entity, const Health&) { FAIL() << "All Health components were removed."; });
 }
 
-TEST_F(EntityCommandBufferUVETest, AddToLiveEntity_StagesPayloadByValue) {
-    const EntityUVE entity = entityManager.CreateEntityUVE();
-    EntityCommandBufferUVE commands;
-    LabelUVE staged{"original"};
-    commands.AddComponentUVE<LabelUVE>(entity, staged);
+TEST_F(EntityCommandBufferTest, AddToLiveEntity_StagesPayloadByValue) {
+    const Entity entity = entityManager.CreateEntity();
+    EntityCommandBuffer commands;
+    Label staged{"original"};
+    commands.AddComponent<Label>(entity, staged);
     staged.text = "mutated-after-record"; // Must not leak into the staged payload.
-    commands.PlaybackUVE(entityManager);
-    EXPECT_EQ(entityManager.GetComponentUVE<LabelUVE>(entity).text, "original");
+    commands.Playback(entityManager);
+    EXPECT_EQ(entityManager.GetComponent<Label>(entity).text, "original");
 }
 
-TEST_F(EntityCommandBufferUVETest, CreateThenDestroy_NetsNothingAlive) {
-    EntityCommandBufferUVE commands;
-    const DeferredEntityUVE deferred = commands.CreateEntityUVE();
-    commands.DestroyEntityUVE(deferred);
-    commands.PlaybackUVE(entityManager);
-    EXPECT_EQ(entityManager.GetEntityCountUVE(), 0U);
+TEST_F(EntityCommandBufferTest, CreateThenDestroy_NetsNothingAlive) {
+    EntityCommandBuffer commands;
+    const DeferredEntity deferred = commands.CreateEntity();
+    commands.DestroyEntity(deferred);
+    commands.Playback(entityManager);
+    EXPECT_EQ(entityManager.GetEntityCount(), 0U);
     // The mapping still resolves (to a now-dead handle): resolve-after-playback is unconditional.
-    EXPECT_FALSE(entityManager.IsAliveUVE(commands.ResolveUVE(deferred)));
+    EXPECT_FALSE(entityManager.IsAlive(commands.Resolve(deferred)));
 }
 
-TEST_F(EntityCommandBufferUVETest, Clear_DiscardsWithoutRunning) {
-    const EntityUVE entity = entityManager.CreateEntityUVE();
-    EntityCommandBufferUVE commands;
-    commands.DestroyEntityUVE(entity);
-    commands.CreateEntityUVE();
-    commands.ClearUVE();
-    EXPECT_TRUE(commands.IsEmptyUVE());
-    commands.PlaybackUVE(entityManager); // Empty playback is a safe no-op.
-    EXPECT_TRUE(entityManager.IsAliveUVE(entity));
-    EXPECT_EQ(entityManager.GetEntityCountUVE(), 1U);
+TEST_F(EntityCommandBufferTest, Clear_DiscardsWithoutRunning) {
+    const Entity entity = entityManager.CreateEntity();
+    EntityCommandBuffer commands;
+    commands.DestroyEntity(entity);
+    commands.CreateEntity();
+    commands.Clear();
+    EXPECT_TRUE(commands.IsEmpty());
+    commands.Playback(entityManager); // Empty playback is a safe no-op.
+    EXPECT_TRUE(entityManager.IsAlive(entity));
+    EXPECT_EQ(entityManager.GetEntityCount(), 1U);
 }
 
 } // namespace

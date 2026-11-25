@@ -8,7 +8,7 @@
 
 namespace UVE::Scene {
 
-inline constexpr std::size_t kMaximumEditorDescriptionBytesUVE = 4096U;
+inline constexpr std::size_t kMaximumEditorDescriptionBytes = 4096U;
 
 /// Free-text author notes attached to a scene entity: why this object exists, what a magic number
 /// on it means, which bug it works around.
@@ -24,33 +24,33 @@ inline constexpr std::size_t kMaximumEditorDescriptionBytesUVE = 4096U;
 /// Bounded at 4 KB. Not a technical limit but an honest one: a description longer than that is
 /// documentation that belongs in the project's own files, where it can be searched and reviewed,
 /// rather than buried in a scene object's metadata.
-struct EditorDescriptionComponentUVE final {
+struct EditorDescriptionComponent final {
     std::string description;
 };
 
-/// True when `text` is within `kMaximumEditorDescriptionBytesUVE` and contains no embedded NULs.
-[[nodiscard]] bool IsEditorDescriptionTextValidUVE(std::string_view text) noexcept;
+/// True when `text` is within `kMaximumEditorDescriptionBytes` and contains no embedded NULs.
+[[nodiscard]] bool IsEditorDescriptionTextValid(std::string_view text) noexcept;
 
-[[nodiscard]] bool IsEditorDescriptionComponentValidUVE(
-    const EditorDescriptionComponentUVE& component) noexcept;
+[[nodiscard]] bool IsEditorDescriptionComponentValid(
+    const EditorDescriptionComponent& component) noexcept;
 
 /// True when `component.description` contains at least one non-whitespace character.
-[[nodiscard]] bool HasNonEmptyEditorDescriptionUVE(
-    const EditorDescriptionComponentUVE& component) noexcept;
+[[nodiscard]] bool HasNonEmptyEditorDescription(
+    const EditorDescriptionComponent& component) noexcept;
 
 /// Counts the number of lines in `component.description` (`0` when empty).
-[[nodiscard]] std::size_t CountEditorDescriptionLinesUVE(
-    const EditorDescriptionComponentUVE& component) noexcept;
+[[nodiscard]] std::size_t CountEditorDescriptionLines(
+    const EditorDescriptionComponent& component) noexcept;
 
-/// Strips embedded NUL bytes and truncates to `kMaximumEditorDescriptionBytesUVE`.
-[[nodiscard]] std::string SanitizeEditorDescriptionTextUVE(std::string_view text);
+/// Strips embedded NUL bytes and truncates to `kMaximumEditorDescriptionBytes`.
+[[nodiscard]] std::string SanitizeEditorDescriptionText(std::string_view text);
 
-/// Returns a sanitized copy of `component` guaranteed to pass `IsEditorDescriptionComponentValidUVE`.
-[[nodiscard]] EditorDescriptionComponentUVE SanitizeEditorDescriptionComponentUVE(
-    const EditorDescriptionComponentUVE& component);
+/// Returns a sanitized copy of `component` guaranteed to pass `IsEditorDescriptionComponentValid`.
+[[nodiscard]] EditorDescriptionComponent SanitizeEditorDescriptionComponent(
+    const EditorDescriptionComponent& component);
 
 /// Builds a single-line summary preview of the first non-empty line, bounded to `maxPreviewBytes`.
-[[nodiscard]] std::string BuildEditorDescriptionPreviewUVE(
-    const EditorDescriptionComponentUVE& component, std::size_t maxPreviewBytes = 80U);
+[[nodiscard]] std::string BuildEditorDescriptionPreview(
+    const EditorDescriptionComponent& component, std::size_t maxPreviewBytes = 80U);
 
 } // namespace UVE::Scene

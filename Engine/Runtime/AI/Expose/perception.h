@@ -30,10 +30,10 @@ namespace UVE::Scene {
 // where it last saw them, not to the origin. Hearing ignores occlusion in v1: walls deafen
 // nothing yet.
 
-inline constexpr std::size_t kMaximumWatchedTagBytesUVE = 32U;
-inline constexpr float kPerceptionOmnidirectionalDegreesUVE = 360.0F;
+inline constexpr std::size_t kMaximumWatchedTagBytes = 32U;
+inline constexpr float kPerceptionOmnidirectionalDegrees = 360.0F;
 
-struct PerceptionComponentUVE final {
+struct PerceptionComponent final {
     /// Gameplay tag this sensor watches, within 32 bytes.
     std::string watchedTag;
     float sightRangeMetres = 20.0F;
@@ -43,82 +43,82 @@ struct PerceptionComponentUVE final {
     float hearingRadiusMetres = 15.0F;
     bool requiresLineOfSight = true;
 
-    [[nodiscard]] bool operator==(const PerceptionComponentUVE&) const = default;
+    [[nodiscard]] bool operator==(const PerceptionComponent&) const = default;
 };
 
 /// A continuous or decaying sound in the world: a machine drones (decay 0), a gunshot bangs (the
 /// game sets loudness; the sync decays it back to silence).
-struct NoiseEmitterComponentUVE final {
+struct NoiseEmitterComponent final {
     float loudness = 1.0F;
     float decayPerSecond = 0.0F;
 
-    [[nodiscard]] bool operator==(const NoiseEmitterComponentUVE&) const = default;
+    [[nodiscard]] bool operator==(const NoiseEmitterComponent&) const = default;
 };
 
-struct SightTargetUVE final {
-    EntityUVE entity = kInvalidEntityUVE;
-    Math::Vector3UVE position{};
+struct SightTarget final {
+    Entity entity = kInvalidEntity;
+    Math::Vector3 position{};
 
-    [[nodiscard]] bool operator==(const SightTargetUVE&) const = default;
+    [[nodiscard]] bool operator==(const SightTarget&) const = default;
 };
 
-struct HeardNoiseUVE final {
-    Math::Vector3UVE position{};
+struct HeardNoise final {
+    Math::Vector3 position{};
     float loudness = 0.0F;
 
-    [[nodiscard]] bool operator==(const HeardNoiseUVE&) const = default;
+    [[nodiscard]] bool operator==(const HeardNoise&) const = default;
 };
 
-struct SightResultUVE final {
+struct SightResult final {
     bool visible = false;
     float distance01 = 1.0F;
-    Math::Vector3UVE position{};
-    EntityUVE entity = kInvalidEntityUVE;
+    Math::Vector3 position{};
+    Entity entity = kInvalidEntity;
 
-    [[nodiscard]] bool operator==(const SightResultUVE&) const = default;
+    [[nodiscard]] bool operator==(const SightResult&) const = default;
 };
 
-struct HearingResultUVE final {
+struct HearingResult final {
     float loudness = 0.0F;
-    Math::Vector3UVE position{};
+    Math::Vector3 position{};
 
-    [[nodiscard]] bool operator==(const HearingResultUVE&) const = default;
+    [[nodiscard]] bool operator==(const HearingResult&) const = default;
 };
 
 /// True when something other than `self` and `target` stands between `from` and `to`. The engine
 /// answers with a raycast; tests answer with a script.
-using SightOcclusionQueryUVE =
-    std::function<bool(const Math::Vector3UVE& from, const Math::Vector3UVE& to, EntityUVE target)>;
+using SightOcclusionQuery =
+    std::function<bool(const Math::Vector3& from, const Math::Vector3& to, Entity target)>;
 
 /// A usable watched tag, a positive finite sight range, a 0..360 field of view, a finite
 /// non-negative hearing radius.
-[[nodiscard]] bool IsPerceptionComponentValidUVE(const PerceptionComponentUVE& sensor) noexcept;
+[[nodiscard]] bool IsPerceptionComponentValid(const PerceptionComponent& sensor) noexcept;
 /// Loudness in 0..1, decay finite and non-negative.
-[[nodiscard]] bool IsNoiseEmitterComponentValidUVE(const NoiseEmitterComponentUVE& emitter) noexcept;
+[[nodiscard]] bool IsNoiseEmitterComponentValid(const NoiseEmitterComponent& emitter) noexcept;
 
 /// Decays loudness toward silence, clamping at zero. A non-positive or non-finite step, or a
 /// zero decay, leaves the emitter untouched.
-void DecayNoiseEmitterUVE(NoiseEmitterComponentUVE& emitter, float deltaSeconds) noexcept;
+void DecayNoiseEmitter(NoiseEmitterComponent& emitter, float deltaSeconds) noexcept;
 
 /// The nearest candidate inside range and cone with a clear ray, if any: candidates sort by
 /// distance and test nearest-first, so the common case costs one occlusion query. A candidate at
 /// the sensor's own position is seen without a query. Never calls `occlusion` when the sensor
 /// does not require line of sight.
-[[nodiscard]] SightResultUVE SenseSightUVE(const Math::Vector3UVE& sensorPosition,
-                                           const Math::Vector3UVE& sensorForward,
-                                           const PerceptionComponentUVE& sensor,
-                                           std::span<const SightTargetUVE> candidates,
-                                           const SightOcclusionQueryUVE& occlusion);
+[[nodiscard]] SightResult SenseSight(const Math::Vector3& sensorPosition,
+                                           const Math::Vector3& sensorForward,
+                                           const PerceptionComponent& sensor,
+                                           std::span<const SightTarget> candidates,
+                                           const SightOcclusionQuery& occlusion);
 
 /// The loudest noise inside radius times loudness, perceived with distance falloff (full loudness
 /// at the sensor's feet, silence at the edge of reach). First wins ties.
-[[nodiscard]] HearingResultUVE SenseHearingUVE(const Math::Vector3UVE& sensorPosition,
+[[nodiscard]] HearingResult SenseHearing(const Math::Vector3& sensorPosition,
                                                float hearingRadiusMetres,
-                                               std::span<const HeardNoiseUVE> noises) noexcept;
+                                               std::span<const HeardNoise> noises) noexcept;
 
 /// Writes both results into the sensor's blackboard under the key convention above. A full board
 /// keeps stale senses rather than failing.
-void WritePerceptionResultsUVE(BlackboardComponentUVE& board, std::string_view watchedTag,
-                               const SightResultUVE& sight, const HearingResultUVE& hearing);
+void WritePerceptionResults(BlackboardComponent& board, std::string_view watchedTag,
+                               const SightResult& sight, const HearingResult& hearing);
 
 } // namespace UVE::Scene

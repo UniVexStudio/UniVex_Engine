@@ -11,49 +11,49 @@
 
 namespace UVE::Scene {
 
-/// EntityUVE is a generational handle identifying an entity managed by an IEntityManagerUVE:
+/// Entity is a generational handle identifying an entity managed by an IEntityManager:
 /// `index` names a slot, `generation` disambiguates that slot's current occupant from any
 /// previously-destroyed occupant of the same slot (whose index may have been reused). This is
 /// the standard, smallest-footprint way to catch use-after-destroy bugs cheaply — comparing an
-/// old EntityUVE against a slot now occupied by a different entity fails the generation check
-/// instead of silently aliasing unrelated data. EntityUVE itself is a data-only handle: it owns
-/// no data or behavior, and carries no dependency on any specific IEntityManagerUVE instance.
+/// old Entity against a slot now occupied by a different entity fails the generation check
+/// instead of silently aliasing unrelated data. Entity itself is a data-only handle: it owns
+/// no data or behavior, and carries no dependency on any specific IEntityManager instance.
 /// Thread-safety: value type; safe to copy/compare/hash freely, no shared state.
-struct EntityUVE {
+struct Entity {
     std::uint32_t index = std::numeric_limits<std::uint32_t>::max();
     std::uint32_t generation = 0;
 };
 
-/// The sentinel "no entity" value: an EntityUVE with the maximum possible index and generation
-/// 0. No valid entity ever has this index, so comparing against kInvalidEntityUVE never
+/// The sentinel "no entity" value: an Entity with the maximum possible index and generation
+/// 0. No valid entity ever has this index, so comparing against kInvalidEntity never
 /// accidentally matches a real entity.
-inline constexpr EntityUVE kInvalidEntityUVE{};
+inline constexpr Entity kInvalidEntity{};
 
-[[nodiscard]] constexpr bool operator==(const EntityUVE& lhs, const EntityUVE& rhs) noexcept {
+[[nodiscard]] constexpr bool operator==(const Entity& lhs, const Entity& rhs) noexcept {
     return lhs.index == rhs.index && lhs.generation == rhs.generation;
 }
 
-[[nodiscard]] constexpr bool operator!=(const EntityUVE& lhs, const EntityUVE& rhs) noexcept {
+[[nodiscard]] constexpr bool operator!=(const Entity& lhs, const Entity& rhs) noexcept {
     return !(lhs == rhs);
 }
 
-/// A fixed-size reference array with every slot empty. EntityUVE's own default is index 0 - a real
+/// A fixed-size reference array with every slot empty. Entity's own default is index 0 - a real
 /// slot in any entity pool - so a slot an author never touched must be filled explicitly: an
 /// authored component that default-initializes an array of references would otherwise start life
 /// claiming a reference to whatever happens to live at index 0, and an Inspector that draws the
 /// array would show that as a real exclusion.
 template <std::size_t Count>
-[[nodiscard]] constexpr std::array<EntityUVE, Count> MakeEmptyEntityReferencesUVE() noexcept {
-    std::array<EntityUVE, Count> references{};
-    references.fill(kInvalidEntityUVE);
+[[nodiscard]] constexpr std::array<Entity, Count> MakeEmptyEntityReferences() noexcept {
+    std::array<Entity, Count> references{};
+    references.fill(kInvalidEntity);
     return references;
 }
 
 } // namespace UVE::Scene
 
 template <>
-struct std::hash<UVE::Scene::EntityUVE> {
-    [[nodiscard]] std::size_t operator()(const UVE::Scene::EntityUVE& entity) const noexcept {
+struct std::hash<UVE::Scene::Entity> {
+    [[nodiscard]] std::size_t operator()(const UVE::Scene::Entity& entity) const noexcept {
         const std::uint64_t combined =
             (static_cast<std::uint64_t>(entity.index) << 32) | static_cast<std::uint64_t>(entity.generation);
         return std::hash<std::uint64_t>{}(combined);

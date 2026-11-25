@@ -10,65 +10,65 @@
 
 namespace UVE::Scene {
 
-class IEntityManagerUVE;
+class IEntityManager;
 
 /// Overrides the world-space point and orientation from which 3D spatial audio is heard.
-/// When an enabled entity carries a valid `AudioListener3DComponentUVE` with `current == true` and
-/// a valid `WorldTransformComponentUVE`, the engine routes listener position and orientation from
+/// When an enabled entity carries a valid `AudioListener3DComponent` with `current == true` and
+/// a valid `WorldTransformComponent`, the engine routes listener position and orientation from
 /// this object instead of the active camera. When `ignoreRotation` is true, the listener keeps a
 /// fixed world-aligned orientation (`forward = (0, 0, -1)`, `up = (0, 1, 0)`) so camera roll or
 /// boom orbit does not pan audio unexpectedly.
-struct AudioListener3DComponentUVE final {
+struct AudioListener3DComponent final {
     bool current = true;
     bool ignoreRotation = false;
-    Math::Vector3UVE positionOffset{0.0F, 0.0F, 0.0F};
+    Math::Vector3 positionOffset{0.0F, 0.0F, 0.0F};
 
-    [[nodiscard]] bool operator==(const AudioListener3DComponentUVE&) const = default;
+    [[nodiscard]] bool operator==(const AudioListener3DComponent&) const = default;
 };
 
-[[nodiscard]] bool IsAudioListener3DComponentValidUVE(
-    const AudioListener3DComponentUVE& value) noexcept;
+[[nodiscard]] bool IsAudioListener3DComponentValid(
+    const AudioListener3DComponent& value) noexcept;
 
-[[nodiscard]] AudioListener3DComponentUVE SanitizeAudioListener3DComponentUVE(
-    const AudioListener3DComponentUVE& value) noexcept;
+[[nodiscard]] AudioListener3DComponent SanitizeAudioListener3DComponent(
+    const AudioListener3DComponent& value) noexcept;
 
-struct AudioListener3DObjectDefinitionUVE final {
+struct AudioListener3DObjectDefinition final {
     static constexpr std::string_view defaultName = "AudioListener3D";
-    AudioListener3DComponentUVE listener{};
+    AudioListener3DComponent listener{};
 };
 
-[[nodiscard]] bool IsAudioListener3DObjectDefinitionValidUVE(
-    const AudioListener3DObjectDefinitionUVE& value) noexcept;
+[[nodiscard]] bool IsAudioListener3DObjectDefinitionValid(
+    const AudioListener3DObjectDefinition& value) noexcept;
 
-void ApplyAudioListener3DObjectDefinitionUVE(IEntityManagerUVE& entityManager, EntityUVE entity,
-                                             const AudioListener3DObjectDefinitionUVE& value);
+void ApplyAudioListener3DObjectDefinition(IEntityManager& entityManager, Entity entity,
+                                             const AudioListener3DObjectDefinition& value);
 
-struct ResolvedAudioListener3DPoseUVE final {
-    EntityUVE entity = kInvalidEntityUVE;
-    Math::Vector3UVE position{0.0F, 0.0F, 0.0F};
-    Math::Vector3UVE forward{0.0F, 0.0F, -1.0F};
-    Math::Vector3UVE up{0.0F, 0.0F, 1.0F};
+struct ResolvedAudioListener3DPose final {
+    Entity entity = kInvalidEntity;
+    Math::Vector3 position{0.0F, 0.0F, 0.0F};
+    Math::Vector3 forward{0.0F, 0.0F, -1.0F};
+    Math::Vector3 up{0.0F, 0.0F, 1.0F};
 };
 
-class AudioListener3DUVE final {
+class AudioListener3D final {
 public:
-    AudioListener3DUVE() = delete;
+    AudioListener3D() = delete;
 
     /// Marks `listenerEntity` as `current = true` and clears `current` on all other document
-    /// `AudioListener3DComponentUVE` entities.
-    static void MakeCurrentUVE(IEntityManagerUVE& entityManager, EntityUVE listenerEntity);
+    /// `AudioListener3DComponent` entities.
+    static void MakeCurrent(IEntityManager& entityManager, Entity listenerEntity);
 
     /// Resolves the world-space listener pose for `listener` + `worldTransform`.
-    [[nodiscard]] static ResolvedAudioListener3DPoseUVE ResolvePoseFromWorldTransformUVE(
-        EntityUVE entity, const AudioListener3DComponentUVE& listener,
-        const WorldTransformComponentUVE& worldTransform) noexcept;
+    [[nodiscard]] static ResolvedAudioListener3DPose ResolvePoseFromWorldTransform(
+        Entity entity, const AudioListener3DComponent& listener,
+        const WorldTransformComponent& worldTransform) noexcept;
 
-    /// Finds the active `AudioListener3DComponentUVE` in `entityManager` (or falls back to
-    /// `fallbackCameraEntity`'s `WorldTransformComponentUVE`). Returns false when neither yields a
+    /// Finds the active `AudioListener3DComponent` in `entityManager` (or falls back to
+    /// `fallbackCameraEntity`'s `WorldTransformComponent`). Returns false when neither yields a
     /// valid world pose.
-    [[nodiscard]] static bool TryResolveActiveListenerPoseUVE(
-        IEntityManagerUVE& entityManager, EntityUVE fallbackCameraEntity,
-        ResolvedAudioListener3DPoseUVE& outPose);
+    [[nodiscard]] static bool TryResolveActiveListenerPose(
+        IEntityManager& entityManager, Entity fallbackCameraEntity,
+        ResolvedAudioListener3DPose& outPose);
 };
 
 } // namespace UVE::Scene

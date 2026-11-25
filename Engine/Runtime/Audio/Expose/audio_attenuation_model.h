@@ -8,12 +8,12 @@
 
 namespace UVE::Audio {
 
-/// The distance-attenuation curve shape a spatial audio source uses (the spec's AudioSourceUVE —
+/// The distance-attenuation curve shape a spatial audio source uses (the spec's AudioSource —
 /// "Spatial audio with distance attenuation curves"). Deliberately two curves this increment — the
 /// two universally-understood basics (a straight linear falloff, and physically-motivated
 /// inverse-square falloff); a full custom-curve/animation-curve system is future work, not
 /// invented ahead of a real consumer needing it.
-enum class AudioAttenuationModelUVE : std::uint8_t { Linear, InverseSquare };
+enum class AudioAttenuationModel : std::uint8_t { Linear, InverseSquare };
 
 /// Returns the linear gain multiplier in [0, 1] for a sound at `distance` from the listener.
 /// `distance <= minDistance` always returns 1.0F (full volume). `distance >= maxDistance` always
@@ -25,17 +25,17 @@ enum class AudioAttenuationModelUVE : std::uint8_t { Linear, InverseSquare };
 /// - InverseSquare: `(minDistance / distance)^2`, clamped into [0, 1]
 /// Precondition: `minDistance` must be > 0 (a real consumer must not construct a spatial source
 /// with `minDistance == 0`, or InverseSquare divides by zero) — callers' responsibility to ensure,
-/// matching Math::NormalizeUVE's "caller must already guarantee this" precedent; not itself
+/// matching Math::Normalize's "caller must already guarantee this" precedent; not itself
 /// runtime-checked here.
-[[nodiscard]] constexpr float ComputeDistanceAttenuationUVE(float distance, float minDistance, float maxDistance,
-                                                              AudioAttenuationModelUVE model) noexcept {
+[[nodiscard]] constexpr float ComputeDistanceAttenuation(float distance, float minDistance, float maxDistance,
+                                                              AudioAttenuationModel model) noexcept {
     if (distance <= minDistance) {
         return 1.0F;
     }
     if (distance >= maxDistance) {
         return 0.0F;
     }
-    if (model == AudioAttenuationModelUVE::Linear) {
+    if (model == AudioAttenuationModel::Linear) {
         return 1.0F - (distance - minDistance) / (maxDistance - minDistance);
     }
     const float ratio = minDistance / distance;

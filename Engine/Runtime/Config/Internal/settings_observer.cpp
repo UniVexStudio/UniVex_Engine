@@ -8,7 +8,7 @@
 namespace UVE::Config {
 namespace {
 
-[[nodiscard]] bool IsWithinCategoryPrefixUVE(const std::string_view category,
+[[nodiscard]] bool IsWithinCategoryPrefix(const std::string_view category,
                                              const std::string_view categoryPrefix) noexcept {
     return category.starts_with(categoryPrefix) &&
            (category.size() == categoryPrefix.size() || category[categoryPrefix.size()] == '/');
@@ -16,39 +16,39 @@ namespace {
 
 } // namespace
 
-SettingsObserverHubUVE::SettingsObserverHubUVE(const SettingsRegistryUVE& registry) noexcept
+SettingsObserverHub::SettingsObserverHub(const SettingsRegistry& registry) noexcept
     : m_registry(&registry) {}
 
-SettingsObserverSubscriptionUVE SettingsObserverHubUVE::SubscribeToSettingUVE(
-    const std::string_view id, SettingsObserverCallbackUVE callback) {
-    if (!callback || m_registry == nullptr || m_registry->FindUVE(id) == nullptr) {
+SettingsObserverSubscription SettingsObserverHub::SubscribeToSetting(
+    const std::string_view id, SettingsObserverCallback callback) {
+    if (!callback || m_registry == nullptr || m_registry->Find(id) == nullptr) {
         return {};
     }
-    return AddObserverUVE(ObserverFilterKindUVE::SettingId, std::string(id), std::move(callback));
+    return AddObserver(ObserverFilterKind::SettingId, std::string(id), std::move(callback));
 }
 
-SettingsObserverSubscriptionUVE SettingsObserverHubUVE::SubscribeToCategoryUVE(
-    const std::string_view categoryPrefix, SettingsObserverCallbackUVE callback) {
+SettingsObserverSubscription SettingsObserverHub::SubscribeToCategory(
+    const std::string_view categoryPrefix, SettingsObserverCallback callback) {
     if (categoryPrefix.empty() || !callback || m_registry == nullptr) {
         return {};
     }
-    const std::vector<const SettingDescriptorUVE*> descriptors = m_registry->GetAllUVE();
+    const std::vector<const SettingDescriptor*> descriptors = m_registry->GetAll();
     const bool hasMatchingCategory =
-        std::any_of(descriptors.begin(), descriptors.end(), [categoryPrefix](const SettingDescriptorUVE* descriptor) {
-            return IsWithinCategoryPrefixUVE(descriptor->category, categoryPrefix);
+        std::any_of(descriptors.begin(), descriptors.end(), [categoryPrefix](const SettingDescriptor* descriptor) {
+            return IsWithinCategoryPrefix(descriptor->category, categoryPrefix);
         });
     if (!hasMatchingCategory) {
         return {};
     }
-    return AddObserverUVE(ObserverFilterKindUVE::CategoryPrefix, std::string(categoryPrefix), std::move(callback));
+    return AddObserver(ObserverFilterKind::CategoryPrefix, std::string(categoryPrefix), std::move(callback));
 }
 
-bool SettingsObserverHubUVE::UnsubscribeUVE(const SettingsObserverSubscriptionUVE subscription) {
-    if (!subscription.IsValidUVE() || subscription.owner != this) {
+bool SettingsObserverHub::Unsubscribe(const SettingsObserverSubscription subscription) {
+    if (!subscription.IsValid() || subscription.owner != this) {
         return false;
     }
     const auto observer =
-        std::find_if(m_observers.begin(), m_observers.end(), [subscription](const ObserverUVE& entry) {
+        std::find_if(m_observers.begin(), m_observers.end(), [subscription](const Observer& entry) {
             return entry.id == subscription.id;
         });
     if (observer == m_observers.end()) {
@@ -58,11 +58,11 @@ bool SettingsObserverHubUVE::UnsubscribeUVE(const SettingsObserverSubscriptionUV
     return true;
 }
 
-SettingsObserverSubscriptionUVE SettingsObserverHubUVE::AddObserverUVE(
-    const ObserverFilterKindUVE filterKind, std::string filter, SettingsObserverCallbackUVE callback) {
+SettingsObserverSubscription SettingsObserverHub::AddObserver(
+    const ObserverFilterKind filterKind, std::string filter, SettingsObserverCallback callback) {
     std::uint64_t id = m_nextObserverId == 0U ? 1U : m_nextObserverId;
     const std::uint64_t firstCandidate = id;
-    while (std::any_of(m_observers.begin(), m_observers.end(), [id](const ObserverUVE& observer) {
+    while (std::any_of(m_observers.begin(), m_observers.end(), [id](const Observer& observer) {
         return observer.id == id;
     })) {
         ++id;
@@ -77,35 +77,35 @@ SettingsObserverSubscriptionUVE SettingsObserverHubUVE::AddObserverUVE(
     if (m_nextObserverId == 0U) {
         m_nextObserverId = 1U;
     }
-    m_observers.push_back(ObserverUVE{id, filterKind, std::move(filter), std::move(callback)});
-    return SettingsObserverSubscriptionUVE{id, this};
+    m_observers.push_back(Observer{id, filterKind, std::move(filter), std::move(callback)});
+    return SettingsObserverSubscription{id, this};
 }
 
-void SettingsObserverHubUVE::NotifyChangedUVE(const std::string_view id,
-                                              const SettingValueUVE& previousValue,
-                                              const SettingValueUVE& newValue) {
+void SettingsObserverHub::NotifyChanged(const std::string_view id,
+                                              const SettingValue& previousValue,
+                                              const SettingValue& newValue) {
     if (previousValue == newValue || m_registry == nullptr) {
         return;
     }
-    const SettingDescriptorUVE* descriptor = m_registry->FindUVE(id);
+    const SettingDescriptor* descriptor = m_registry->Find(id);
     if (descriptor == nullptr) {
         return;
     }
 
-    const SettingChangedEventUVE event{std::string(id), previousValue, newValue};
-    const std::vector<ObserverUVE> snapshot = m_observers;
-    for (const ObserverUVE& observer : snapshot) {
+    const SettingChangedEvent event{std::string(id), previousValue, newValue};
+    const std::vector<Observer> snapshot = m_observers;
+    for (const Observer& observer : snapshot) {
         const bool stillSubscribed =
-            std::any_of(m_observers.begin(), m_observers.end(), [&observer](const ObserverUVE& entry) {
+            std::any_of(m_observers.begin(), m_observers.end(), [&observer](const Observer& entry) {
                 return entry.id == observer.id;
             });
         if (!stillSubscribed) {
             continue;
         }
 
-        const bool matches = observer.filterKind == ObserverFilterKindUVE::SettingId
+        const bool matches = observer.filterKind == ObserverFilterKind::SettingId
                                  ? observer.filter == id
-                                 : IsWithinCategoryPrefixUVE(descriptor->category, observer.filter);
+                                 : IsWithinCategoryPrefix(descriptor->category, observer.filter);
         if (matches) {
             observer.callback(event);
         }

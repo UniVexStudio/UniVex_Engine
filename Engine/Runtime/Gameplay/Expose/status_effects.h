@@ -35,10 +35,10 @@ namespace UVE::Scene {
 // passive drift fires no Damaged events - except that a pool emptied by decay still reports
 // Depleted, since "stamina hit zero" is worth reacting to whatever the cause.
 
-inline constexpr std::size_t kMaximumStatusEffectsUVE = 8U;
-inline constexpr std::size_t kMaximumStatusEffectIdBytesUVE = 48U;
+inline constexpr std::size_t kMaximumStatusEffects = 8U;
+inline constexpr std::size_t kMaximumStatusEffectIdBytes = 48U;
 
-enum class StatusEffectStackingUVE : std::uint8_t {
+enum class StatusEffectStacking : std::uint8_t {
     /// Reapplying overwrites target, magnitude, clock and cap, and resets to one stack.
     Refresh = 0U,
     /// Reapplying adds a stack (up to the latest cap), refreshes the shared clock and
@@ -46,30 +46,30 @@ enum class StatusEffectStackingUVE : std::uint8_t {
     Stack = 1U,
 };
 
-struct StatusEffectUVE final {
+struct StatusEffect final {
     std::string effectId;
     std::string attributeId;
     float magnitudePerSecond = 0.0F;
     float remainingSeconds = 0.0F;
-    StatusEffectStackingUVE stacking = StatusEffectStackingUVE::Refresh;
+    StatusEffectStacking stacking = StatusEffectStacking::Refresh;
     std::uint32_t stacks = 1U;
     std::uint32_t maxStacks = 1U;
     /// Maximum shift while live; applied means the target pool has already taken it.
     float maxDelta = 0.0F;
     bool maxApplied = false;
 
-    [[nodiscard]] bool operator==(const StatusEffectUVE&) const = default;
+    [[nodiscard]] bool operator==(const StatusEffect&) const = default;
 };
 
-struct StatusEffectsComponentUVE final {
-    std::vector<StatusEffectUVE> effects;
+struct StatusEffectsComponent final {
+    std::vector<StatusEffect> effects;
 
-    [[nodiscard]] bool operator==(const StatusEffectsComponentUVE&) const = default;
+    [[nodiscard]] bool operator==(const StatusEffectsComponent&) const = default;
 };
 
 /// Bounded count, usable ids, a named target pool, finite magnitude, non-negative time left, a
 /// known stacking policy, sane stack counts (at least one, within cap) and a finite maxDelta.
-[[nodiscard]] bool IsStatusEffectsComponentValidUVE(const StatusEffectsComponentUVE& value) noexcept;
+[[nodiscard]] bool IsStatusEffectsComponentValid(const StatusEffectsComponent& value) noexcept;
 
 /// Adds `effectId`, or refreshes the held one (target, magnitude, clock and cap all come from
 /// the latest application; a Stack reapply also adds a stack up to `maxStacks`, a Refresh one
@@ -77,19 +77,19 @@ struct StatusEffectsComponentUVE final {
 /// stays pending until the pool exists. False for bad ids, non-finite magnitude, non-positive
 /// duration, an unknown stacking policy, a zero cap, a non-finite maxDelta, a maxDelta aimed at
 /// health, a broken target pool, or a full set.
-[[nodiscard]] bool ApplyStatusEffectUVE(GameplayAttributesComponentUVE& attributes,
-                                        StatusEffectsComponentUVE& effects, std::string effectId,
+[[nodiscard]] bool ApplyStatusEffect(GameplayAttributesComponent& attributes,
+                                        StatusEffectsComponent& effects, std::string effectId,
                                         std::string attributeId, float magnitudePerSecond,
                                         float durationSeconds,
-                                        StatusEffectStackingUVE stacking = StatusEffectStackingUVE::Refresh,
+                                        StatusEffectStacking stacking = StatusEffectStacking::Refresh,
                                         std::uint32_t maxStacks = 1U, float maxDelta = 0.0F);
 
 /// Removes `effectId` with every stack it holds, unwinding a settled maxDelta first. False when
 /// it was never there.
-[[nodiscard]] bool RemoveStatusEffectUVE(GameplayAttributesComponentUVE& attributes,
-                                         StatusEffectsComponentUVE& effects, std::string_view effectId);
+[[nodiscard]] bool RemoveStatusEffect(GameplayAttributesComponent& attributes,
+                                         StatusEffectsComponent& effects, std::string_view effectId);
 
-struct GameplayAttributeTickResultUVE final {
+struct GameplayAttributeTickResult final {
     /// What caused this entry: an effect id, or empty for passive regen drift.
     std::string effectId;
     std::string attributeId;
@@ -102,7 +102,7 @@ struct GameplayAttributeTickResultUVE final {
     bool expired = false;
     bool depleted = false;
 
-    [[nodiscard]] bool operator==(const GameplayAttributeTickResultUVE&) const = default;
+    [[nodiscard]] bool operator==(const GameplayAttributeTickResult&) const = default;
 };
 
 /// Advances `status` (may be null: pools without effects still regen) and `attributes` by
@@ -112,7 +112,7 @@ struct GameplayAttributeTickResultUVE final {
 /// (health-bound included); pending maxDeltas settle against late pools, and an expiring effect
 /// unwinds its maximum before it is dropped, flagging Depleted when the restored ceiling zeroes a
 /// pool that still held something.
-[[nodiscard]] std::vector<GameplayAttributeTickResultUVE> TickGameplayAttributesUVE(
-    GameplayAttributesComponentUVE& attributes, StatusEffectsComponentUVE* status, float deltaSeconds);
+[[nodiscard]] std::vector<GameplayAttributeTickResult> TickGameplayAttributes(
+    GameplayAttributesComponent& attributes, StatusEffectsComponent* status, float deltaSeconds);
 
 } // namespace UVE::Scene

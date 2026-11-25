@@ -14,34 +14,34 @@
 namespace UVE::Asset {
 namespace {
 
-[[nodiscard]] bool IsTextureMipmapFilterValidUVE(const TextureMipmapFilterUVE filter) noexcept {
+[[nodiscard]] bool IsTextureMipmapFilterValid(const TextureMipmapFilter filter) noexcept {
     switch (filter) {
-        case TextureMipmapFilterUVE::Box:
-        case TextureMipmapFilterUVE::Nearest:
+        case TextureMipmapFilter::Box:
+        case TextureMipmapFilter::Nearest:
             return true;
     }
     return false;
 }
 
-[[nodiscard]] double SrgbToLinearUVE(const double value) noexcept {
+[[nodiscard]] double SrgbToLinear(const double value) noexcept {
     return value <= 0.04045 ? value / 12.92 : std::pow((value + 0.055) / 1.055, 2.4);
 }
 
-[[nodiscard]] double LinearToSrgbUVE(const double value) noexcept {
+[[nodiscard]] double LinearToSrgb(const double value) noexcept {
     return value <= 0.0031308 ? value * 12.92 : 1.055 * std::pow(value, 1.0 / 2.4) - 0.055;
 }
 
-[[nodiscard]] std::uint8_t QuantizeUnorm8UVE(const double value) noexcept {
+[[nodiscard]] std::uint8_t QuantizeUnorm8(const double value) noexcept {
     const double clamped = std::clamp(value, 0.0, 1.0);
     return static_cast<std::uint8_t>(std::lround(clamped * 255.0));
 }
 
-[[nodiscard]] TextureMipLevelUVE GenerateNearestMipLevelUVE(const std::uint32_t sourceWidth,
+[[nodiscard]] TextureMipLevel GenerateNearestMipLevel(const std::uint32_t sourceWidth,
                                                               const std::uint32_t sourceHeight,
                                                               const std::vector<std::byte>& sourcePixels,
                                                               const std::uint32_t targetWidth,
                                                               const std::uint32_t targetHeight) {
-    TextureMipLevelUVE target;
+    TextureMipLevel target;
     target.width = targetWidth;
     target.height = targetHeight;
     const std::size_t targetByteCount = static_cast<std::size_t>(targetWidth) * targetHeight * 4U;
@@ -63,13 +63,13 @@ namespace {
     return target;
 }
 
-[[nodiscard]] TextureMipLevelUVE GenerateBoxMipLevelUVE(const std::uint32_t sourceWidth,
+[[nodiscard]] TextureMipLevel GenerateBoxMipLevel(const std::uint32_t sourceWidth,
                                                          const std::uint32_t sourceHeight,
                                                          const std::vector<std::byte>& sourcePixels,
                                                          const std::uint32_t targetWidth,
                                                          const std::uint32_t targetHeight,
                                                          const bool sourceIsSrgb) {
-    TextureMipLevelUVE target;
+    TextureMipLevel target;
     target.width = targetWidth;
     target.height = targetHeight;
     const std::size_t targetByteCount = static_cast<std::size_t>(targetWidth) * targetHeight * 4U;
@@ -110,7 +110,7 @@ namespace {
                         double value = std::to_integer<std::uint8_t>(sourcePixels[sourceOffset + channel]) /
                                        255.0;
                         if (sourceIsSrgb && channel < 3U) {
-                            value = SrgbToLinearUVE(value);
+                            value = SrgbToLinear(value);
                         }
                         weightedSums[channel] += value * weight;
                     }
@@ -122,10 +122,10 @@ namespace {
             for (std::size_t channel = 0U; channel < 4U; ++channel) {
                 double value = weightedSums[channel] / totalWeight;
                 if (sourceIsSrgb && channel < 3U) {
-                    value = LinearToSrgbUVE(value);
+                    value = LinearToSrgb(value);
                 }
                 target.pixels[targetOffset + channel] =
-                    static_cast<std::byte>(QuantizeUnorm8UVE(value));
+                    static_cast<std::byte>(QuantizeUnorm8(value));
             }
         }
     }
@@ -134,10 +134,10 @@ namespace {
 
 } // namespace
 
-bool GenerateTextureMipmapsUVE(TextureAssetUVE& texture, const TextureMipmapFilterUVE filter,
+bool GenerateTextureMipmaps(TextureAsset& texture, const TextureMipmapFilter filter,
                                const std::uint32_t maxMipLevels) {
-    if (!IsTextureAssetMetadataValidUVE(texture) || texture.format != TextureAssetFormatUVE::RGBA8Unorm ||
-        texture.width == 0U || texture.height == 0U || !IsTextureMipmapFilterValidUVE(filter)) {
+    if (!IsTextureAssetMetadataValid(texture) || texture.format != TextureAssetFormat::RGBA8Unorm ||
+        texture.width == 0U || texture.height == 0U || !IsTextureMipmapFilterValid(filter)) {
         return false;
     }
     const std::uint64_t basePixelCount = static_cast<std::uint64_t>(texture.width) * texture.height;
@@ -158,9 +158,9 @@ bool GenerateTextureMipmapsUVE(TextureAssetUVE& texture, const TextureMipmapFilt
                                                   ? fullMipLevelCount
                                                   : std::min(maxMipLevels, fullMipLevelCount);
 
-    std::vector<TextureMipLevelUVE> generatedMipLevels;
+    std::vector<TextureMipLevel> generatedMipLevels;
     generatedMipLevels.reserve(static_cast<std::size_t>(targetMipLevelCount - 1U));
-    const bool sourceIsSrgb = texture.colorSpace == TextureAssetColorSpaceUVE::Srgb;
+    const bool sourceIsSrgb = texture.colorSpace == TextureAssetColorSpace::Srgb;
     std::uint32_t sourceWidth = texture.width;
     std::uint32_t sourceHeight = texture.height;
     const std::vector<std::byte>* sourcePixels = &texture.pixels;
@@ -168,12 +168,12 @@ bool GenerateTextureMipmapsUVE(TextureAssetUVE& texture, const TextureMipmapFilt
     while (generatedMipLevels.size() + 1U < targetMipLevelCount) {
         const std::uint32_t targetWidth = std::max(1U, sourceWidth / 2U);
         const std::uint32_t targetHeight = std::max(1U, sourceHeight / 2U);
-        TextureMipLevelUVE target = filter == TextureMipmapFilterUVE::Nearest
-            ? GenerateNearestMipLevelUVE(sourceWidth, sourceHeight, *sourcePixels, targetWidth, targetHeight)
-            : GenerateBoxMipLevelUVE(sourceWidth, sourceHeight, *sourcePixels, targetWidth, targetHeight,
+        TextureMipLevel target = filter == TextureMipmapFilter::Nearest
+            ? GenerateNearestMipLevel(sourceWidth, sourceHeight, *sourcePixels, targetWidth, targetHeight)
+            : GenerateBoxMipLevel(sourceWidth, sourceHeight, *sourcePixels, targetWidth, targetHeight,
                                      sourceIsSrgb);
         generatedMipLevels.push_back(std::move(target));
-        const TextureMipLevelUVE& generated = generatedMipLevels.back();
+        const TextureMipLevel& generated = generatedMipLevels.back();
         sourceWidth = generated.width;
         sourceHeight = generated.height;
         sourcePixels = &generated.pixels;

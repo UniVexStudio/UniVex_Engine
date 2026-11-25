@@ -21,32 +21,32 @@
 namespace UVE::Pack {
 namespace {
 
-using JsonUVE = nlohmann::json;
+using Json = nlohmann::json;
 
 /// Prefix and marker of the hidden directory a project is assembled in before it is moved into
 /// place; a leftover one is recognizable as an interrupted creation.
-inline constexpr std::string_view kStagingDirectoryPrefixUVE = ".";
-inline constexpr std::string_view kStagingDirectoryMarkerUVE = ".creating-";
+inline constexpr std::string_view kStagingDirectoryPrefix = ".";
+inline constexpr std::string_view kStagingDirectoryMarker = ".creating-";
 /// Separates the readable part of a generated project ID from its unique suffix.
-inline constexpr char kProjectIdSeparatorUVE = '-';
+inline constexpr char kProjectIdSeparator = '-';
 /// Hex digits of the unique suffix: the full width of a generated GUID.
-inline constexpr std::size_t kUniqueSuffixDigitsUVE = 16U;
+inline constexpr std::size_t kUniqueSuffixDigits = 16U;
 /// Replaces a character that is not portable in a file name.
-inline constexpr char kFileNameReplacementUVE = '_';
+inline constexpr char kFileNameReplacement = '_';
 /// Suffix of the temporary sibling a starter scene is written through.
-inline constexpr std::string_view kTemporaryFileSuffixUVE = ".tmp";
+inline constexpr std::string_view kTemporaryFileSuffix = ".tmp";
 
-[[nodiscard]] ProjectTemplateLoadResultUVE TemplateFailureUVE(const ProjectTemplateCodeUVE code,
+[[nodiscard]] ProjectTemplateLoadResult TemplateFailure(const ProjectTemplateCode code,
                                                               std::string message) {
     return {code, std::move(message), std::nullopt};
 }
 
-[[nodiscard]] ProjectCreationResultUVE CreationFailureUVE(const ProjectCreationCodeUVE code, std::string message) {
+[[nodiscard]] ProjectCreationResult CreationFailure(const ProjectCreationCode code, std::string message) {
     return {code, std::move(message), {}};
 }
 
 /// A relative path that stays inside the directory it is resolved against.
-[[nodiscard]] bool IsContainedRelativePathUVE(const std::filesystem::path& path) {
+[[nodiscard]] bool IsContainedRelativePath(const std::filesystem::path& path) {
     if (path.empty() || path.is_absolute() || path.has_root_name()) {
         return false;
     }
@@ -54,7 +54,7 @@ inline constexpr std::string_view kTemporaryFileSuffixUVE = ".tmp";
     return !normal.empty() && *normal.begin() != "..";
 }
 
-[[nodiscard]] bool ReadBoundedTextFileUVE(const std::filesystem::path& path, const std::uintmax_t maximumBytes,
+[[nodiscard]] bool ReadBoundedTextFile(const std::filesystem::path& path, const std::uintmax_t maximumBytes,
                                           std::string& text) {
     std::error_code error;
     const std::uintmax_t size = std::filesystem::file_size(path, error);
@@ -69,17 +69,17 @@ inline constexpr std::string_view kTemporaryFileSuffixUVE = ".tmp";
     return !input.bad();
 }
 
-[[nodiscard]] bool ParseVector3UVE(const JsonUVE& json, const char* key, Math::Vector3UVE& out) {
+[[nodiscard]] bool ParseVector3(const Json& json, const char* key, Math::Vector3& out) {
     if (!json.contains(key)) {
         return true;
     }
-    const JsonUVE& value = json.at(key);
-    constexpr std::size_t kComponentsUVE = 3U;
-    if (!value.is_array() || value.size() != kComponentsUVE) {
+    const Json& value = json.at(key);
+    constexpr std::size_t kComponents = 3U;
+    if (!value.is_array() || value.size() != kComponents) {
         return false;
     }
-    std::array<float, kComponentsUVE> components{};
-    for (std::size_t index = 0U; index < kComponentsUVE; ++index) {
+    std::array<float, kComponents> components{};
+    for (std::size_t index = 0U; index < kComponents; ++index) {
         if (!value[index].is_number()) {
             return false;
         }
@@ -92,23 +92,23 @@ inline constexpr std::string_view kTemporaryFileSuffixUVE = ".tmp";
     return true;
 }
 
-[[nodiscard]] JsonUVE Vector3ToJsonUVE(const Math::Vector3UVE& value) {
-    return JsonUVE::array({value.x, value.y, value.z});
+[[nodiscard]] Json Vector3ToJson(const Math::Vector3& value) {
+    return Json::array({value.x, value.y, value.z});
 }
 
 /// Parses the object list shared by template descriptors and starter scene files.
-[[nodiscard]] bool ParseStarterObjectsUVE(const JsonUVE& json, StarterSceneUVE& scene, std::string& message) {
+[[nodiscard]] bool ParseStarterObjects(const Json& json, StarterScene& scene, std::string& message) {
     if (!json.contains("starterObjects")) {
         return true;
     }
-    const JsonUVE& objects = json.at("starterObjects");
-    if (!objects.is_array() || objects.size() > kMaximumStarterObjectsUVE) {
-        message = "starterObjects must be an array of at most " + std::to_string(kMaximumStarterObjectsUVE) +
+    const Json& objects = json.at("starterObjects");
+    if (!objects.is_array() || objects.size() > kMaximumStarterObjects) {
+        message = "starterObjects must be an array of at most " + std::to_string(kMaximumStarterObjects) +
                   " objects.";
         return false;
     }
-    for (const JsonUVE& entry : objects) {
-        StarterObjectUVE object;
+    for (const Json& entry : objects) {
+        StarterObject object;
         if (!entry.is_object() || !entry.contains("kind") || !entry.at("kind").is_string()) {
             message = "Every starter object needs a kind.";
             return false;
@@ -125,9 +125,9 @@ inline constexpr std::string_view kTemporaryFileSuffixUVE = ".tmp";
             }
             object.name = entry.at("name").get<std::string>();
         }
-        if (!ParseVector3UVE(entry, "position", object.position) ||
-            !ParseVector3UVE(entry, "rotationDegrees", object.rotationDegrees) ||
-            !ParseVector3UVE(entry, "scale", object.scale)) {
+        if (!ParseVector3(entry, "position", object.position) ||
+            !ParseVector3(entry, "rotationDegrees", object.rotationDegrees) ||
+            !ParseVector3(entry, "scale", object.scale)) {
             message = "A starter object's position, rotationDegrees and scale must each be three finite numbers.";
             return false;
         }
@@ -136,53 +136,53 @@ inline constexpr std::string_view kTemporaryFileSuffixUVE = ".tmp";
     return true;
 }
 
-[[nodiscard]] JsonUVE StarterObjectsToJsonUVE(const StarterSceneUVE& scene) {
-    JsonUVE objects = JsonUVE::array();
-    for (const StarterObjectUVE& object : scene.objects) {
+[[nodiscard]] Json StarterObjectsToJson(const StarterScene& scene) {
+    Json objects = Json::array();
+    for (const StarterObject& object : scene.objects) {
         objects.push_back({{"kind", object.kind},
                            {"name", object.name},
-                           {"position", Vector3ToJsonUVE(object.position)},
-                           {"rotationDegrees", Vector3ToJsonUVE(object.rotationDegrees)},
-                           {"scale", Vector3ToJsonUVE(object.scale)}});
+                           {"position", Vector3ToJson(object.position)},
+                           {"rotationDegrees", Vector3ToJson(object.rotationDegrees)},
+                           {"scale", Vector3ToJson(object.scale)}});
     }
     return objects;
 }
 
-[[nodiscard]] std::string UniqueSuffixUVE() {
-    const Asset::AssetGuidUVE guid = Asset::GenerateAssetGuidUVE();
-    std::array<char, kUniqueSuffixDigitsUVE> digits{};
-    constexpr int kHexBaseUVE = 16;
-    const auto [end, error] = std::to_chars(digits.data(), digits.data() + digits.size(), guid.value, kHexBaseUVE);
+[[nodiscard]] std::string UniqueSuffix() {
+    const Asset::AssetGuid guid = Asset::GenerateAssetGuid();
+    std::array<char, kUniqueSuffixDigits> digits{};
+    constexpr int kHexBase = 16;
+    const auto [end, error] = std::to_chars(digits.data(), digits.data() + digits.size(), guid.value, kHexBase);
     std::string text(digits.data(), end);
     // Fixed width keeps generated IDs uniform and sortable.
-    text.insert(text.begin(), kUniqueSuffixDigitsUVE - text.size(), '0');
+    text.insert(text.begin(), kUniqueSuffixDigits - text.size(), '0');
     return text;
 }
 
 /// A project ID from the file stem: lower-case, restricted to the characters the manifest allows,
 /// followed by a unique suffix, and within the manifest's length bound.
-[[nodiscard]] std::string MakeProjectIdUVE(const std::string_view stem) {
+[[nodiscard]] std::string MakeProjectId(const std::string_view stem) {
     std::string readable;
     for (const char raw : stem) {
         const auto character = static_cast<unsigned char>(raw);
         if (std::isalnum(character) != 0) {
             readable.push_back(static_cast<char>(std::tolower(character)));
-        } else if (!readable.empty() && readable.back() != kProjectIdSeparatorUVE) {
-            readable.push_back(kProjectIdSeparatorUVE);
+        } else if (!readable.empty() && readable.back() != kProjectIdSeparator) {
+            readable.push_back(kProjectIdSeparator);
         }
     }
-    while (!readable.empty() && readable.back() == kProjectIdSeparatorUVE) {
+    while (!readable.empty() && readable.back() == kProjectIdSeparator) {
         readable.pop_back();
     }
-    const std::string suffix = UniqueSuffixUVE();
-    const std::size_t readableLimit = Platform::kMaximumEditorProjectIdBytesUVE - suffix.size() - 1U;
+    const std::string suffix = UniqueSuffix();
+    const std::size_t readableLimit = Platform::kMaximumEditorProjectIdBytes - suffix.size() - 1U;
     if (readable.size() > readableLimit) {
         readable.resize(readableLimit);
     }
-    return readable.empty() ? suffix : readable + kProjectIdSeparatorUVE + suffix;
+    return readable.empty() ? suffix : readable + kProjectIdSeparator + suffix;
 }
 
-[[nodiscard]] bool IsDirectoryEmptyOrMissingUVE(const std::filesystem::path& directory) {
+[[nodiscard]] bool IsDirectoryEmptyOrMissing(const std::filesystem::path& directory) {
     std::error_code error;
     if (!std::filesystem::exists(directory, error)) {
         return !error;
@@ -190,9 +190,9 @@ inline constexpr std::string_view kTemporaryFileSuffixUVE = ".tmp";
     return std::filesystem::is_directory(directory, error) && std::filesystem::is_empty(directory, error) && !error;
 }
 
-[[nodiscard]] bool WriteTextAtomicallyUVE(const std::filesystem::path& path, const std::string& text) {
+[[nodiscard]] bool WriteTextAtomically(const std::filesystem::path& path, const std::string& text) {
     std::filesystem::path temporary = path;
-    temporary += kTemporaryFileSuffixUVE;
+    temporary += kTemporaryFileSuffix;
     {
         std::ofstream output(temporary, std::ios::binary | std::ios::trunc);
         if (!output.is_open()) {
@@ -213,19 +213,19 @@ inline constexpr std::string_view kTemporaryFileSuffixUVE = ".tmp";
 }
 
 /// Removes a staging directory when creation stops early, unless creation succeeded.
-class StagingDirectoryUVE final {
+class StagingDirectory final {
 public:
-    explicit StagingDirectoryUVE(std::filesystem::path path) : m_path(std::move(path)) {}
-    StagingDirectoryUVE(const StagingDirectoryUVE&) = delete;
-    StagingDirectoryUVE& operator=(const StagingDirectoryUVE&) = delete;
-    ~StagingDirectoryUVE() {
+    explicit StagingDirectory(std::filesystem::path path) : m_path(std::move(path)) {}
+    StagingDirectory(const StagingDirectory&) = delete;
+    StagingDirectory& operator=(const StagingDirectory&) = delete;
+    ~StagingDirectory() {
         if (!m_kept) {
             std::error_code error;
             std::filesystem::remove_all(m_path, error);
         }
     }
-    [[nodiscard]] const std::filesystem::path& PathUVE() const noexcept { return m_path; }
-    void KeepUVE() noexcept { m_kept = true; }
+    [[nodiscard]] const std::filesystem::path& Path() const noexcept { return m_path; }
+    void Keep() noexcept { m_kept = true; }
 
 private:
     std::filesystem::path m_path;
@@ -234,40 +234,40 @@ private:
 
 } // namespace
 
-ProjectTemplateLoadResultUVE LoadProjectTemplateUVE(const std::filesystem::path& templateDirectory) {
+ProjectTemplateLoadResult LoadProjectTemplate(const std::filesystem::path& templateDirectory) {
     std::error_code error;
     const std::filesystem::path directory = std::filesystem::absolute(templateDirectory, error).lexically_normal();
     if (error) {
-        return TemplateFailureUVE(ProjectTemplateCodeUVE::InvalidPath,
+        return TemplateFailure(ProjectTemplateCode::InvalidPath,
                                   "Unable to resolve the template directory: " + error.message());
     }
-    const std::filesystem::path descriptorPath = directory / kProjectTemplateManifestFileNameUVE;
+    const std::filesystem::path descriptorPath = directory / kProjectTemplateManifestFileName;
     std::string text;
     if (!std::filesystem::is_regular_file(descriptorPath, error) ||
-        !ReadBoundedTextFileUVE(descriptorPath, kMaximumProjectTemplateManifestBytesUVE, text)) {
-        return TemplateFailureUVE(ProjectTemplateCodeUVE::MissingDescriptor,
-                                  "The template has no readable " + std::string(kProjectTemplateManifestFileNameUVE) +
+        !ReadBoundedTextFile(descriptorPath, kMaximumProjectTemplateManifestBytes, text)) {
+        return TemplateFailure(ProjectTemplateCode::MissingDescriptor,
+                                  "The template has no readable " + std::string(kProjectTemplateManifestFileName) +
                                       ": " + directory.string());
     }
 
-    const JsonUVE json = JsonUVE::parse(text, nullptr, false);
-    if (json.is_discarded() || !json.is_object() || json.value("format", std::string{}) != kProjectTemplateFormatUVE) {
-        return TemplateFailureUVE(ProjectTemplateCodeUVE::InvalidDescriptor,
-                                  "The template descriptor is not a " + std::string(kProjectTemplateFormatUVE) +
+    const Json json = Json::parse(text, nullptr, false);
+    if (json.is_discarded() || !json.is_object() || json.value("format", std::string{}) != kProjectTemplateFormat) {
+        return TemplateFailure(ProjectTemplateCode::InvalidDescriptor,
+                                  "The template descriptor is not a " + std::string(kProjectTemplateFormat) +
                                       " document: " + descriptorPath.string());
     }
     try {
-        if (json.at("schemaVersion").get<std::uint32_t>() != kCurrentProjectTemplateSchemaVersionUVE) {
-            return TemplateFailureUVE(ProjectTemplateCodeUVE::UnsupportedSchema,
+        if (json.at("schemaVersion").get<std::uint32_t>() != kCurrentProjectTemplateSchemaVersion) {
+            return TemplateFailure(ProjectTemplateCode::UnsupportedSchema,
                                       "The template descriptor uses an unsupported schema: " + descriptorPath.string());
         }
-        ProjectTemplateUVE projectTemplate;
+        ProjectTemplate projectTemplate;
         projectTemplate.directory = directory;
         projectTemplate.id = json.at("id").get<std::string>();
         projectTemplate.displayName = json.at("displayName").get<std::string>();
         projectTemplate.description = json.value("description", std::string{});
         if (projectTemplate.id.empty() || projectTemplate.displayName.empty()) {
-            return TemplateFailureUVE(ProjectTemplateCodeUVE::InvalidDescriptor,
+            return TemplateFailure(ProjectTemplateCode::InvalidDescriptor,
                                       "A template needs an id and a display name: " + descriptorPath.string());
         }
 
@@ -275,21 +275,21 @@ ProjectTemplateLoadResultUVE LoadProjectTemplateUVE(const std::filesystem::path&
         const std::filesystem::path contentDirectory = json.value("contentDirectory", std::string{});
         const std::filesystem::path startupScenePath = json.value("startupScenePath", std::string{});
         for (const std::filesystem::path* const path : {&previewImage, &contentDirectory, &startupScenePath}) {
-            if (!path->empty() && !IsContainedRelativePathUVE(*path)) {
-                return TemplateFailureUVE(ProjectTemplateCodeUVE::InvalidPath,
+            if (!path->empty() && !IsContainedRelativePath(*path)) {
+                return TemplateFailure(ProjectTemplateCode::InvalidPath,
                                           "A template path must stay inside its directory: " + path->string());
             }
         }
         if (!previewImage.empty()) {
             projectTemplate.previewImage = directory / previewImage;
             if (!std::filesystem::is_regular_file(projectTemplate.previewImage, error)) {
-                return TemplateFailureUVE(ProjectTemplateCodeUVE::InvalidPath,
+                return TemplateFailure(ProjectTemplateCode::InvalidPath,
                                           "The template preview image is missing: " +
                                               projectTemplate.previewImage.string());
             }
         }
         if (!contentDirectory.empty() && !std::filesystem::is_directory(directory / contentDirectory, error)) {
-            return TemplateFailureUVE(ProjectTemplateCodeUVE::InvalidPath,
+            return TemplateFailure(ProjectTemplateCode::InvalidPath,
                                       "The template content directory is missing: " +
                                           (directory / contentDirectory).string());
         }
@@ -297,26 +297,26 @@ ProjectTemplateLoadResultUVE LoadProjectTemplateUVE(const std::filesystem::path&
         projectTemplate.startupScenePath = startupScenePath.lexically_normal();
 
         std::string message;
-        if (!ParseStarterObjectsUVE(json, projectTemplate.starterScene, message)) {
-            return TemplateFailureUVE(ProjectTemplateCodeUVE::InvalidDescriptor,
+        if (!ParseStarterObjects(json, projectTemplate.starterScene, message)) {
+            return TemplateFailure(ProjectTemplateCode::InvalidDescriptor,
                                       message + " (" + descriptorPath.string() + ")");
         }
         if (!projectTemplate.starterScene.objects.empty() && projectTemplate.startupScenePath.empty()) {
-            return TemplateFailureUVE(ProjectTemplateCodeUVE::InvalidDescriptor,
+            return TemplateFailure(ProjectTemplateCode::InvalidDescriptor,
                                       "A template with starter objects needs a startup scene: " +
                                           descriptorPath.string());
         }
-        return {ProjectTemplateCodeUVE::Loaded, "Loaded template " + projectTemplate.id + ".",
+        return {ProjectTemplateCode::Loaded, "Loaded template " + projectTemplate.id + ".",
                 std::move(projectTemplate)};
-    } catch (const JsonUVE::exception& exception) {
-        return TemplateFailureUVE(ProjectTemplateCodeUVE::InvalidDescriptor,
+    } catch (const Json::exception& exception) {
+        return TemplateFailure(ProjectTemplateCode::InvalidDescriptor,
                                   "The template descriptor is malformed (" + std::string(exception.what()) +
                                       "): " + descriptorPath.string());
     }
 }
 
-ProjectTemplateDiscoveryUVE DiscoverProjectTemplatesUVE(const std::filesystem::path& templatesRoot) {
-    ProjectTemplateDiscoveryUVE discovery;
+ProjectTemplateDiscovery DiscoverProjectTemplates(const std::filesystem::path& templatesRoot) {
+    ProjectTemplateDiscovery discovery;
     std::error_code error;
     std::filesystem::directory_iterator iterator(templatesRoot, error);
     if (error) {
@@ -328,29 +328,29 @@ ProjectTemplateDiscoveryUVE DiscoverProjectTemplatesUVE(const std::filesystem::p
         if (!entry.is_directory(error)) {
             continue;
         }
-        ProjectTemplateLoadResultUVE loaded = LoadProjectTemplateUVE(entry.path());
-        if (loaded.IsLoadedUVE()) {
+        ProjectTemplateLoadResult loaded = LoadProjectTemplate(entry.path());
+        if (loaded.IsLoaded()) {
             discovery.templates.push_back(std::move(*loaded.projectTemplate));
         } else {
             discovery.problems.push_back(std::move(loaded.message));
         }
     }
     std::sort(discovery.templates.begin(), discovery.templates.end(),
-              [](const ProjectTemplateUVE& lhs, const ProjectTemplateUVE& rhs) {
+              [](const ProjectTemplate& lhs, const ProjectTemplate& rhs) {
                   return lhs.displayName < rhs.displayName;
               });
     return discovery;
 }
 
-std::string MakeProjectFileStemUVE(const std::string_view displayName) {
+std::string MakeProjectFileStem(const std::string_view displayName) {
     // Characters reserved on at least one desktop file system, plus control characters.
-    constexpr std::string_view kReservedCharactersUVE = "<>:\"/\\|?*";
+    constexpr std::string_view kReservedCharacters = "<>:\"/\\|?*";
     std::string stem;
     stem.reserve(displayName.size());
     for (const char raw : displayName) {
         const auto character = static_cast<unsigned char>(raw);
-        const bool reserved = std::iscntrl(character) != 0 || kReservedCharactersUVE.find(raw) != std::string_view::npos;
-        stem.push_back(reserved ? kFileNameReplacementUVE : raw);
+        const bool reserved = std::iscntrl(character) != 0 || kReservedCharacters.find(raw) != std::string_view::npos;
+        stem.push_back(reserved ? kFileNameReplacement : raw);
     }
     const auto isTrimmed = [](const unsigned char character) {
         return std::isspace(character) != 0 || character == '.';
@@ -364,126 +364,126 @@ std::string MakeProjectFileStemUVE(const std::string_view displayName) {
     }
     stem.erase(0U, first);
     const bool onlyReplacements = std::all_of(stem.begin(), stem.end(), [](const char c) {
-        return c == kFileNameReplacementUVE;
+        return c == kFileNameReplacement;
     });
     return onlyReplacements ? std::string{} : stem;
 }
 
-ProjectCreationResultUVE CreateProjectFromTemplateUVE(const ProjectTemplateUVE& projectTemplate,
+ProjectCreationResult CreateProjectFromTemplate(const ProjectTemplate& projectTemplate,
                                                       const std::filesystem::path& parentDirectory,
                                                       const std::string_view displayName,
-                                                      const Core::VersionUVE& engineVersion,
-                                                      const Platform::RendererProfileUVE rendererProfile) {
-    const std::string stem = MakeProjectFileStemUVE(displayName);
-    if (stem.empty() || displayName.size() > Platform::kMaximumEditorProjectNameBytesUVE) {
-        return CreationFailureUVE(ProjectCreationCodeUVE::InvalidName,
+                                                      const Core::Version& engineVersion,
+                                                      const Platform::RendererProfile rendererProfile) {
+    const std::string stem = MakeProjectFileStem(displayName);
+    if (stem.empty() || displayName.size() > Platform::kMaximumEditorProjectNameBytes) {
+        return CreationFailure(ProjectCreationCode::InvalidName,
                                   "The project name is empty, too long, or has no usable characters.");
     }
     std::error_code error;
     const std::filesystem::path parent = std::filesystem::absolute(parentDirectory, error).lexically_normal();
     if (error || !std::filesystem::is_directory(parent, error)) {
-        return CreationFailureUVE(ProjectCreationCodeUVE::InvalidLocation,
+        return CreationFailure(ProjectCreationCode::InvalidLocation,
                                   "The project location is not an existing directory: " + parentDirectory.string());
     }
     const std::filesystem::path destination = parent / stem;
-    if (!IsDirectoryEmptyOrMissingUVE(destination)) {
-        return CreationFailureUVE(ProjectCreationCodeUVE::DestinationNotEmpty,
+    if (!IsDirectoryEmptyOrMissing(destination)) {
+        return CreationFailure(ProjectCreationCode::DestinationNotEmpty,
                                   "A project location must be new or empty: " + destination.string());
     }
 
-    StagingDirectoryUVE staging(parent / (std::string(kStagingDirectoryPrefixUVE) + stem +
-                                          std::string(kStagingDirectoryMarkerUVE) + UniqueSuffixUVE()));
+    StagingDirectory staging(parent / (std::string(kStagingDirectoryPrefix) + stem +
+                                          std::string(kStagingDirectoryMarker) + UniqueSuffix()));
     const std::filesystem::path contentRoot = projectTemplate.contentDirectory.empty()
-                                                  ? std::filesystem::path(kDefaultProjectContentDirectoryNameUVE)
+                                                  ? std::filesystem::path(kDefaultProjectContentDirectoryName)
                                                   : projectTemplate.contentDirectory.filename();
-    std::filesystem::create_directories(staging.PathUVE() / contentRoot, error);
+    std::filesystem::create_directories(staging.Path() / contentRoot, error);
     if (error) {
-        return CreationFailureUVE(ProjectCreationCodeUVE::WriteFailed,
+        return CreationFailure(ProjectCreationCode::WriteFailed,
                                   "Unable to create the project directory: " + error.message());
     }
     if (!projectTemplate.contentDirectory.empty()) {
         std::filesystem::copy(projectTemplate.directory / projectTemplate.contentDirectory,
-                              staging.PathUVE() / contentRoot, std::filesystem::copy_options::recursive, error);
+                              staging.Path() / contentRoot, std::filesystem::copy_options::recursive, error);
         if (error) {
-            return CreationFailureUVE(ProjectCreationCodeUVE::CopyFailed,
+            return CreationFailure(ProjectCreationCode::CopyFailed,
                                       "Unable to copy the template content: " + error.message());
         }
     }
 
     if (!projectTemplate.starterScene.objects.empty()) {
-        const JsonUVE starter{{"format", kProjectStarterSceneFormatUVE},
-                              {"schemaVersion", kCurrentProjectStarterSceneSchemaVersionUVE},
-                              {"starterObjects", StarterObjectsToJsonUVE(projectTemplate.starterScene)}};
-        if (!WriteTextAtomicallyUVE(staging.PathUVE() / kProjectStarterSceneFileNameUVE, starter.dump(kPackJsonIndentUVE))) {
-            return CreationFailureUVE(ProjectCreationCodeUVE::WriteFailed, "Unable to write the starter scene.");
+        const Json starter{{"format", kProjectStarterSceneFormat},
+                              {"schemaVersion", kCurrentProjectStarterSceneSchemaVersion},
+                              {"starterObjects", StarterObjectsToJson(projectTemplate.starterScene)}};
+        if (!WriteTextAtomically(staging.Path() / kProjectStarterSceneFileName, starter.dump(kPackJsonIndent))) {
+            return CreationFailure(ProjectCreationCode::WriteFailed, "Unable to write the starter scene.");
         }
     }
 
-    Platform::EditorProjectPackageUVE package;
-    package.projectId = MakeProjectIdUVE(stem);
+    Platform::EditorProjectPackage package;
+    package.projectId = MakeProjectId(stem);
     package.displayName = std::string(displayName);
     package.engineVersion = {engineVersion.major, engineVersion.minor, engineVersion.patch, engineVersion.build};
     package.contentRoot = contentRoot;
     // The project keeps the file names the engine uses by default, in its own root.
-    static const Core::EngineConfigUVE kDefaultConfigUVE{};
-    package.assetDatabasePath = kDefaultConfigUVE.assetDatabaseFilePath.filename();
-    package.settingsPath = kDefaultConfigUVE.projectSettingsFilePath.filename();
+    static const Core::EngineConfig kDefaultConfig{};
+    package.assetDatabasePath = kDefaultConfig.assetDatabaseFilePath.filename();
+    package.settingsPath = kDefaultConfig.projectSettingsFilePath.filename();
     package.startupScenePath = projectTemplate.startupScenePath;
     package.rendererProfile = rendererProfile;
     const std::filesystem::path stagedManifest =
-        staging.PathUVE() / (stem + std::string(Platform::kEditorProjectFileExtensionUVE));
-    const Platform::EditorProjectPackageResultUVE saved =
-        Platform::EditorProjectPackageCodecUVE::SaveUVE(stagedManifest, package);
-    if (!saved.IsAcceptedUVE()) {
-        return CreationFailureUVE(ProjectCreationCodeUVE::WriteFailed,
+        staging.Path() / (stem + std::string(Platform::kEditorProjectFileExtension));
+    const Platform::EditorProjectPackageResult saved =
+        Platform::EditorProjectPackageCodec::Save(stagedManifest, package);
+    if (!saved.IsAccepted()) {
+        return CreationFailure(ProjectCreationCode::WriteFailed,
                                   "Unable to write the project manifest: " + saved.message);
     }
 
     // An empty destination directory is replaced by the assembled project.
     std::filesystem::remove(destination, error);
     error.clear();
-    std::filesystem::rename(staging.PathUVE(), destination, error);
+    std::filesystem::rename(staging.Path(), destination, error);
     if (error) {
-        return CreationFailureUVE(ProjectCreationCodeUVE::WriteFailed,
+        return CreationFailure(ProjectCreationCode::WriteFailed,
                                   "Unable to move the new project into place: " + error.message());
     }
-    staging.KeepUVE();
-    return {ProjectCreationCodeUVE::Created, "Created project " + package.displayName + ".",
+    staging.Keep();
+    return {ProjectCreationCode::Created, "Created project " + package.displayName + ".",
             destination / stagedManifest.filename()};
 }
 
-StarterSceneLoadResultUVE LoadProjectStarterSceneUVE(const std::filesystem::path& projectRoot) {
-    StarterSceneLoadResultUVE result;
-    const std::filesystem::path path = projectRoot / kProjectStarterSceneFileNameUVE;
+StarterSceneLoadResult LoadProjectStarterScene(const std::filesystem::path& projectRoot) {
+    StarterSceneLoadResult result;
+    const std::filesystem::path path = projectRoot / kProjectStarterSceneFileName;
     std::error_code error;
     if (!std::filesystem::exists(path, error)) {
-        result.code = StarterSceneCodeUVE::Absent;
+        result.code = StarterSceneCode::Absent;
         return result;
     }
-    result.code = StarterSceneCodeUVE::Invalid;
+    result.code = StarterSceneCode::Invalid;
     std::string text;
-    if (!ReadBoundedTextFileUVE(path, kMaximumProjectTemplateManifestBytesUVE, text)) {
+    if (!ReadBoundedTextFile(path, kMaximumProjectTemplateManifestBytes, text)) {
         result.message = "Unable to read the starter scene: " + path.string();
         return result;
     }
-    const JsonUVE json = JsonUVE::parse(text, nullptr, false);
+    const Json json = Json::parse(text, nullptr, false);
     if (json.is_discarded() || !json.is_object() ||
-        json.value("format", std::string{}) != kProjectStarterSceneFormatUVE ||
-        json.value("schemaVersion", 0U) != kCurrentProjectStarterSceneSchemaVersionUVE) {
-        result.message = "The starter scene is not a supported " + std::string(kProjectStarterSceneFormatUVE) +
+        json.value("format", std::string{}) != kProjectStarterSceneFormat ||
+        json.value("schemaVersion", 0U) != kCurrentProjectStarterSceneSchemaVersion) {
+        result.message = "The starter scene is not a supported " + std::string(kProjectStarterSceneFormat) +
                          " document: " + path.string();
         return result;
     }
-    if (!ParseStarterObjectsUVE(json, result.scene, result.message)) {
+    if (!ParseStarterObjects(json, result.scene, result.message)) {
         return result;
     }
-    result.code = StarterSceneCodeUVE::Loaded;
+    result.code = StarterSceneCode::Loaded;
     return result;
 }
 
-bool RemoveProjectStarterSceneUVE(const std::filesystem::path& projectRoot) {
+bool RemoveProjectStarterScene(const std::filesystem::path& projectRoot) {
     std::error_code error;
-    std::filesystem::remove(projectRoot / kProjectStarterSceneFileNameUVE, error);
+    std::filesystem::remove(projectRoot / kProjectStarterSceneFileName, error);
     return !error;
 }
 

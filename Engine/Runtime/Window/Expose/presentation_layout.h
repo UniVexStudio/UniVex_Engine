@@ -10,7 +10,7 @@ namespace UVE::Window {
 
 /// Pixel-space destination rectangle plus the logical content extent used by stretch/aspect policy.
 /// `x`/`y` are top-left-origin coordinates, matching the engine's editor viewport rectangles.
-struct PresentationLayoutUVE final {
+struct PresentationLayout final {
     std::uint32_t x = 0U;
     std::uint32_t y = 0U;
     std::uint32_t width = 0U;
@@ -21,7 +21,7 @@ struct PresentationLayoutUVE final {
     double scaleY = 0.0;
     bool integerScaleAvailable = true;
 
-    [[nodiscard]] bool operator==(const PresentationLayoutUVE&) const = default;
+    [[nodiscard]] bool operator==(const PresentationLayout&) const = default;
 };
 
 /// Computes a letterboxed viewport and logical content extent without touching the graphics API.
@@ -29,9 +29,9 @@ struct PresentationLayoutUVE final {
 /// Integer-only scaling keeps whole-number magnification; when the output is smaller than the
 /// reference resolution, the returned flag is false and the caller should report/fallback rather
 /// than silently inventing a fractional pixel scale.
-[[nodiscard]] PresentationLayoutUVE ComputePresentationLayoutUVE(
+[[nodiscard]] PresentationLayout ComputePresentationLayout(
     std::uint32_t framebufferWidth, std::uint32_t framebufferHeight,
     std::uint32_t referenceWidth, std::uint32_t referenceHeight,
-    Platform::AspectPolicyUVE aspectPolicy, bool integerOnlyScaling) noexcept;
+    Platform::AspectPolicy aspectPolicy, bool integerOnlyScaling) noexcept;
 
 } // namespace UVE::Window

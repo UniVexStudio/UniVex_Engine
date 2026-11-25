@@ -4,65 +4,65 @@
 
 namespace UVE::Scene {
 
-bool IsLocalizeModeValidUVE(const LocalizeModeUVE mode) noexcept {
+bool IsLocalizeModeValid(const LocalizeMode mode) noexcept {
     switch (mode) {
-        case LocalizeModeUVE::Inherit:
-        case LocalizeModeUVE::Localized:
-        case LocalizeModeUVE::Literal:
+        case LocalizeMode::Inherit:
+        case LocalizeMode::Localized:
+        case LocalizeMode::Literal:
             return true;
     }
     return false;
 }
 
-bool IsAutoTranslateComponentValidUVE(const AutoTranslateComponentUVE& component) noexcept {
-    return IsLocalizeModeValidUVE(component.mode) &&
-           IsLocalizeModeValidUVE(component.resolvedModeInHierarchy);
+bool IsAutoTranslateComponentValid(const AutoTranslateComponent& component) noexcept {
+    return IsLocalizeModeValid(component.mode) &&
+           IsLocalizeModeValid(component.resolvedModeInHierarchy);
 }
 
-LocalizeModeUVE ResolveLocalizeModeUVE(const LocalizeModeUVE mode,
-                                       const LocalizeModeUVE parentMode) noexcept {
-    const LocalizeModeUVE safeParent =
-        (!IsLocalizeModeValidUVE(parentMode) || parentMode == LocalizeModeUVE::Inherit)
-            ? LocalizeModeUVE::Localized
+LocalizeMode ResolveLocalizeMode(const LocalizeMode mode,
+                                       const LocalizeMode parentMode) noexcept {
+    const LocalizeMode safeParent =
+        (!IsLocalizeModeValid(parentMode) || parentMode == LocalizeMode::Inherit)
+            ? LocalizeMode::Localized
             : parentMode;
-    if (!IsLocalizeModeValidUVE(mode) || mode == LocalizeModeUVE::Inherit) {
+    if (!IsLocalizeModeValid(mode) || mode == LocalizeMode::Inherit) {
         return safeParent;
     }
     return mode;
 }
 
-LocalizeModeUVE ResolveHierarchyLocalizeModeUVE(
-    AutoTranslateComponentUVE* const component,
-    const LocalizeModeUVE parentResolvedMode) noexcept {
+LocalizeMode ResolveHierarchyLocalizeMode(
+    AutoTranslateComponent* const component,
+    const LocalizeMode parentResolvedMode) noexcept {
     if (component == nullptr) {
-        return ResolveLocalizeModeUVE(LocalizeModeUVE::Inherit, parentResolvedMode);
+        return ResolveLocalizeMode(LocalizeMode::Inherit, parentResolvedMode);
     }
-    const LocalizeModeUVE resolved = ResolveLocalizeModeUVE(component->mode, parentResolvedMode);
+    const LocalizeMode resolved = ResolveLocalizeMode(component->mode, parentResolvedMode);
     component->resolvedModeInHierarchy = resolved;
     return resolved;
 }
 
-bool ShouldTranslateEntityTextUVE(const AutoTranslateComponentUVE* const component) noexcept {
+bool ShouldTranslateEntityText(const AutoTranslateComponent* const component) noexcept {
     if (component == nullptr) {
         return true;
     }
-    const LocalizeModeUVE effective =
-        component->resolvedModeInHierarchy == LocalizeModeUVE::Inherit
-            ? ResolveLocalizeModeUVE(component->mode, LocalizeModeUVE::Localized)
+    const LocalizeMode effective =
+        component->resolvedModeInHierarchy == LocalizeMode::Inherit
+            ? ResolveLocalizeMode(component->mode, LocalizeMode::Localized)
             : component->resolvedModeInHierarchy;
-    return effective == LocalizeModeUVE::Localized;
+    return effective == LocalizeMode::Localized;
 }
 
-AutoTranslateComponentUVE SanitizeAutoTranslateComponentUVE(
-    const AutoTranslateComponentUVE& component) noexcept {
-    const LocalizeModeUVE safeMode =
-        IsLocalizeModeValidUVE(component.mode) ? component.mode : LocalizeModeUVE::Inherit;
-    const LocalizeModeUVE safeResolved =
-        (IsLocalizeModeValidUVE(component.resolvedModeInHierarchy) &&
-         component.resolvedModeInHierarchy != LocalizeModeUVE::Inherit)
+AutoTranslateComponent SanitizeAutoTranslateComponent(
+    const AutoTranslateComponent& component) noexcept {
+    const LocalizeMode safeMode =
+        IsLocalizeModeValid(component.mode) ? component.mode : LocalizeMode::Inherit;
+    const LocalizeMode safeResolved =
+        (IsLocalizeModeValid(component.resolvedModeInHierarchy) &&
+         component.resolvedModeInHierarchy != LocalizeMode::Inherit)
             ? component.resolvedModeInHierarchy
-            : ResolveLocalizeModeUVE(safeMode, LocalizeModeUVE::Localized);
-    return AutoTranslateComponentUVE{
+            : ResolveLocalizeMode(safeMode, LocalizeMode::Localized);
+    return AutoTranslateComponent{
         .mode = safeMode,
         .resolvedModeInHierarchy = safeResolved,
     };

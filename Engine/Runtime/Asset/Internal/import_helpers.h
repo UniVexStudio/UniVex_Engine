@@ -35,37 +35,37 @@ namespace UVE::Asset::Detail {
 /// Reads a source file into memory under a hard byte cap, logging with the caller's importer name
 /// so diagnostics stay format-specific. Returns false (and logs) when the file cannot be opened,
 /// exceeds maximumBytes, or cannot be read completely.
-[[nodiscard]] bool ReadBoundedSourceBytesUVE(const std::filesystem::path& sourcePath,
+[[nodiscard]] bool ReadBoundedSourceBytes(const std::filesystem::path& sourcePath,
                                              const char* importerName,
                                              std::uint64_t maximumBytes,
                                              std::vector<std::byte>& outBytes);
 
 /// Foundation WP7: turns a texture filename authored inside a model file (FBX today, MTL when it
-/// adopts this) into the GUID of an ALREADY IMPORTED texture, or `kInvalidAssetGuidUVE`.
+/// adopts this) into the GUID of an ALREADY IMPORTED texture, or `kInvalidAssetGuid`.
 /// The only evidence accepted is a registered `.uvtex` record whose stem equals the authored
 /// file's stem and whose directory is the destination's directory (the import's siblings):
 /// first match in the database's deterministic order wins. Nothing is registered, created or
 /// guessed - an unresolved reference stays empty and the caller reports it, because inventing a
 /// GUID for a texture nobody imported would be a dangling reference with a confident face.
-[[nodiscard]] AssetGuidUVE ResolveImportedSiblingTextureGuidUVE(const std::filesystem::path& destinationPath,
+[[nodiscard]] AssetGuid ResolveImportedSiblingTextureGuid(const std::filesystem::path& destinationPath,
                                                                 std::string_view authoredTextureFile,
-                                                                const IAssetDatabaseUVE& assetDatabase);
+                                                                const IAssetDatabase& assetDatabase);
 
 /// Decodes image bytes that did not come from a file on disk - an FBX's embedded payload - by
 /// sniffing the format from the bytes themselves: PNG and JPEG are what the engine has bounded
 /// decoders for, and what model files embed. `outTexture` comes out as validated RGBA8 carrying the
 /// caller's colour space, usage and mip policy. False (and the reason logged) when the bytes are
 /// neither format or fail to decode.
-[[nodiscard]] bool DecodeImageBytesUVE(const std::vector<std::byte>& bytes,
-                                       const TextureImportSettingsUVE& settings,
-                                       TextureAssetUVE& outTexture);
+[[nodiscard]] bool DecodeImageBytes(const std::vector<std::byte>& bytes,
+                                       const TextureImportSettings& settings,
+                                       TextureAsset& outTexture);
 
 /// Publishes an image carried inside another file as a `.uvtex`, through the same decode -> mip
 /// chain -> validate -> atomic-publish path an image on disk takes, so a texture that arrived inside
 /// a model is indistinguishable from one the author imported by hand.
-[[nodiscard]] bool PublishEmbeddedTextureUVE(const std::filesystem::path& destinationPath,
+[[nodiscard]] bool PublishEmbeddedTexture(const std::filesystem::path& destinationPath,
                                              const std::vector<std::byte>& bytes,
-                                             const TextureImportSettingsUVE& settings,
+                                             const TextureImportSettings& settings,
                                              const char* importerName,
                                              std::string_view describeSource);
 
@@ -77,7 +77,7 @@ namespace UVE::Asset::Detail {
 /// `<model-stem>.fbm/`, exactly first and then case-insensitively, because a Windows-authored model
 /// routinely names `Wood.PNG` while the file on a case-sensitive filesystem is `wood.png`.
 /// `std::nullopt` when no such file exists: nothing is guessed and nothing is created.
-[[nodiscard]] std::optional<std::filesystem::path> ResolveAuthoredTextureFileUVE(
+[[nodiscard]] std::optional<std::filesystem::path> ResolveAuthoredTextureFile(
     const std::filesystem::path& modelDirectory, std::string_view modelFileStem,
     std::string_view authoredTextureFile);
 
@@ -85,17 +85,17 @@ namespace UVE::Asset::Detail {
 /// one of the model's own materials. The name is reduced to [A-Za-z0-9_-], falls back to
 /// `fallbackPrefix_<index>` when nothing survives, and gains `_<n>` on a clash so two authored
 /// materials of one model can never publish over each other. Deterministic for a given file, which
-/// is what makes a re-import land on the same paths - and therefore, through RegisterUVE, on the
+/// is what makes a re-import land on the same paths - and therefore, through Register, on the
 /// same GUIDs. Lives here rather than in one importer because FBX, glTF and OBJ all publish
 /// per-material assets beside the model and must name them the same way.
-[[nodiscard]] std::string MakeMaterialFileStemUVE(std::string_view modelStem, std::string_view materialName,
+[[nodiscard]] std::string MakeMaterialFileStem(std::string_view modelStem, std::string_view materialName,
                                                   std::size_t materialIndex, std::string_view fallbackPrefix,
                                                   std::vector<std::string>& usedStems);
 
 /// Applies the shared texture post-decode pipeline: generate configured mip levels, encode the
 /// optional portable Basis/KTX2 payload, then validate the complete asset before publication.
-[[nodiscard]] bool PrepareTextureForImportUVE(TextureAssetUVE& texture,
-                                               const TextureImportSettingsUVE& settings);
+[[nodiscard]] bool PrepareTextureForImport(TextureAsset& texture,
+                                               const TextureImportSettings& settings);
 
 /// Publishes a converted asset atomically: creates the destination's parent directories, asks
 /// saveAsset to persist to "<destination><temporarySuffix>", then renames onto the destination.
@@ -103,7 +103,7 @@ namespace UVE::Asset::Detail {
 /// cleaned up. importerName prefixes every logged diagnostic, exactly as the per-importer private
 /// copies did.
 template <typename SaveAssetFn>
-[[nodiscard]] bool PublishAssetAtomicallyUVE(const std::filesystem::path& destinationPath,
+[[nodiscard]] bool PublishAssetAtomically(const std::filesystem::path& destinationPath,
                                              const char* importerName,
                                              const std::string_view temporarySuffix,
                                              SaveAssetFn&& saveAsset) {

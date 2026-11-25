@@ -18,7 +18,7 @@ namespace UVE::Editor {
 ///
 /// An empty query matches everything. That is the behaviour every caller depends on - it is what
 /// makes an empty filter box show the full list rather than nothing.
-[[nodiscard]] inline bool ContainsCaseInsensitiveUVE(const std::string_view text,
+[[nodiscard]] inline bool ContainsCaseInsensitive(const std::string_view text,
                                                      const std::string_view query) noexcept {
     if (query.empty()) {
         return true;

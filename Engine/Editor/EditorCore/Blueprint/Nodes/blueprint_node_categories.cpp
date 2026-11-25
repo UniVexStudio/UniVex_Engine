@@ -8,7 +8,7 @@
 namespace UVE::Blueprint::Nodes {
 namespace {
 
-[[nodiscard]] std::string ToLowerCopyUVE(const std::string_view text) {
+[[nodiscard]] std::string ToLowerCopy(const std::string_view text) {
     std::string out;
     out.reserve(text.size());
     for (const char c : text) {
@@ -17,18 +17,18 @@ namespace {
     return out;
 }
 
-[[nodiscard]] bool ContainsCaseInsensitiveUVE(const std::string_view haystack, const std::string& needleLower) {
+[[nodiscard]] bool ContainsCaseInsensitive(const std::string_view haystack, const std::string& needleLower) {
     if (needleLower.empty()) {
         return true;
     }
-    const std::string hayLower = ToLowerCopyUVE(haystack);
+    const std::string hayLower = ToLowerCopy(haystack);
     return hayLower.find(needleLower) != std::string::npos;
 }
 
 } // namespace
 
-std::string_view BlueprintNodeDomainNameUVE(const BlueprintNodeDomainUVE domain) noexcept {
-    using D = BlueprintNodeDomainUVE;
+std::string_view BlueprintNodeDomainName(const BlueprintNodeDomain domain) noexcept {
+    using D = BlueprintNodeDomain;
     switch (domain) {
         case D::Event: return "Event";
         case D::Flow: return "Flow";
@@ -61,8 +61,8 @@ std::string_view BlueprintNodeDomainNameUVE(const BlueprintNodeDomainUVE domain)
     return "Utility";
 }
 
-BlueprintNodeDomainUVE ClassifyBlueprintNodeDomainUVE(const Asset::BlueprintNodeTypeUVE& node) noexcept {
-    using D = BlueprintNodeDomainUVE;
+BlueprintNodeDomain ClassifyBlueprintNodeDomain(const Asset::BlueprintNodeType& node) noexcept {
+    using D = BlueprintNodeDomain;
     const std::string_view c = node.category;
     const std::string_view k = node.key;
 
@@ -115,20 +115,20 @@ BlueprintNodeDomainUVE ClassifyBlueprintNodeDomainUVE(const Asset::BlueprintNode
     return D::Utility;
 }
 
-std::vector<const Asset::BlueprintNodeTypeUVE*> GetBlueprintNodesByDomainUVE(const BlueprintNodeDomainUVE domain) {
-    BlueprintNodeQueryUVE query;
+std::vector<const Asset::BlueprintNodeType*> GetBlueprintNodesByDomain(const BlueprintNodeDomain domain) {
+    BlueprintNodeQuery query;
     query.domain = domain;
-    return SearchBlueprintNodesUVE(query);
+    return SearchBlueprintNodes(query);
 }
 
-std::vector<const Asset::BlueprintNodeTypeUVE*> SearchBlueprintNodesUVE(const BlueprintNodeQueryUVE& query) {
-    const std::string needle = ToLowerCopyUVE(query.searchText);
-    std::vector<const Asset::BlueprintNodeTypeUVE*> matches;
-    for (const Asset::BlueprintNodeTypeUVE& node : Asset::GetBlueprintNodeTypesUVE()) {
-        if (query.domain.has_value() && ClassifyBlueprintNodeDomainUVE(node) != *query.domain) {
+std::vector<const Asset::BlueprintNodeType*> SearchBlueprintNodes(const BlueprintNodeQuery& query) {
+    const std::string needle = ToLowerCopy(query.searchText);
+    std::vector<const Asset::BlueprintNodeType*> matches;
+    for (const Asset::BlueprintNodeType& node : Asset::GetBlueprintNodeTypes()) {
+        if (query.domain.has_value() && ClassifyBlueprintNodeDomain(node) != *query.domain) {
             continue;
         }
-        if (query.graphKind.has_value() && !Asset::IsBlueprintNodeForGraphUVE(node, *query.graphKind)) {
+        if (query.graphKind.has_value() && !Asset::IsBlueprintNodeForGraph(node, *query.graphKind)) {
             continue;
         }
         if (query.availableComponents.has_value() && !node.needs.empty() &&
@@ -136,11 +136,11 @@ std::vector<const Asset::BlueprintNodeTypeUVE*> SearchBlueprintNodesUVE(const Bl
             continue;
         }
         if (!needle.empty()) {
-            const bool hit = ContainsCaseInsensitiveUVE(node.title, needle) ||
-                             ContainsCaseInsensitiveUVE(node.key, needle) ||
-                             ContainsCaseInsensitiveUVE(node.category, needle) ||
-                             ContainsCaseInsensitiveUVE(node.keywords, needle) ||
-                             ContainsCaseInsensitiveUVE(node.tooltip, needle);
+            const bool hit = ContainsCaseInsensitive(node.title, needle) ||
+                             ContainsCaseInsensitive(node.key, needle) ||
+                             ContainsCaseInsensitive(node.category, needle) ||
+                             ContainsCaseInsensitive(node.keywords, needle) ||
+                             ContainsCaseInsensitive(node.tooltip, needle);
             if (!hit) {
                 continue;
             }
@@ -150,10 +150,10 @@ std::vector<const Asset::BlueprintNodeTypeUVE*> SearchBlueprintNodesUVE(const Bl
     return matches;
 }
 
-std::map<BlueprintNodeDomainUVE, std::size_t> GetBlueprintNodeDomainCountsUVE() {
-    std::map<BlueprintNodeDomainUVE, std::size_t> counts;
-    for (const Asset::BlueprintNodeTypeUVE& node : Asset::GetBlueprintNodeTypesUVE()) {
-        ++counts[ClassifyBlueprintNodeDomainUVE(node)];
+std::map<BlueprintNodeDomain, std::size_t> GetBlueprintNodeDomainCounts() {
+    std::map<BlueprintNodeDomain, std::size_t> counts;
+    for (const Asset::BlueprintNodeType& node : Asset::GetBlueprintNodeTypes()) {
+        ++counts[ClassifyBlueprintNodeDomain(node)];
     }
     return counts;
 }

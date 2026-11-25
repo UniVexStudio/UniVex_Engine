@@ -18,7 +18,7 @@ namespace UVE::Blueprint::Profiling {
 // Execution Profiling
 // ---------------------------------------------------------------------------
 
-struct BlueprintNodeProfileSampleUVE final {
+struct BlueprintNodeProfileSample final {
     std::uint32_t nodeId = 0U;
     std::string label;
     std::uint64_t callCount = 0U;
@@ -26,40 +26,40 @@ struct BlueprintNodeProfileSampleUVE final {
     double minMicros = 0.0;
     double maxMicros = 0.0;
 
-    [[nodiscard]] double AverageMicrosUVE() const noexcept {
+    [[nodiscard]] double AverageMicros() const noexcept {
         return callCount > 0U ? (totalMicros / static_cast<double>(callCount)) : 0.0;
     }
 };
 
-class BlueprintExecutionProfilerUVE final {
+class BlueprintExecutionProfiler final {
 public:
-    void SetEnabledUVE(bool enabled) noexcept { m_enabled = enabled; }
-    [[nodiscard]] bool IsEnabledUVE() const noexcept { return m_enabled; }
+    void SetEnabled(bool enabled) noexcept { m_enabled = enabled; }
+    [[nodiscard]] bool IsEnabled() const noexcept { return m_enabled; }
 
-    void RecordSampleUVE(std::uint32_t nodeId, std::string_view label, double durationMicros);
-    void ResetUVE() noexcept;
+    void RecordSample(std::uint32_t nodeId, std::string_view label, double durationMicros);
+    void Reset() noexcept;
 
-    [[nodiscard]] std::vector<BlueprintNodeProfileSampleUVE> GetSamplesSortedByTotalTimeUVE() const;
-    [[nodiscard]] const BlueprintNodeProfileSampleUVE* FindSampleUVE(std::uint32_t nodeId) const noexcept;
-    [[nodiscard]] double TotalRecordedMicrosUVE() const noexcept;
-    [[nodiscard]] std::uint64_t TotalCallCountUVE() const noexcept;
+    [[nodiscard]] std::vector<BlueprintNodeProfileSample> GetSamplesSortedByTotalTime() const;
+    [[nodiscard]] const BlueprintNodeProfileSample* FindSample(std::uint32_t nodeId) const noexcept;
+    [[nodiscard]] double TotalRecordedMicros() const noexcept;
+    [[nodiscard]] std::uint64_t TotalCallCount() const noexcept;
 
 private:
     bool m_enabled = true;
-    std::map<std::uint32_t, BlueprintNodeProfileSampleUVE> m_samples;
+    std::map<std::uint32_t, BlueprintNodeProfileSample> m_samples;
 };
 
 /// RAII timer that records elapsed microseconds into `profiler` upon destruction.
-class BlueprintScopedProfileUVE final {
+class BlueprintScopedProfile final {
 public:
-    BlueprintScopedProfileUVE(BlueprintExecutionProfilerUVE& profiler, std::uint32_t nodeId,
+    BlueprintScopedProfile(BlueprintExecutionProfiler& profiler, std::uint32_t nodeId,
                               std::string_view label);
-    ~BlueprintScopedProfileUVE();
-    BlueprintScopedProfileUVE(const BlueprintScopedProfileUVE&) = delete;
-    BlueprintScopedProfileUVE& operator=(const BlueprintScopedProfileUVE&) = delete;
+    ~BlueprintScopedProfile();
+    BlueprintScopedProfile(const BlueprintScopedProfile&) = delete;
+    BlueprintScopedProfile& operator=(const BlueprintScopedProfile&) = delete;
 
 private:
-    BlueprintExecutionProfilerUVE& m_profiler;
+    BlueprintExecutionProfiler& m_profiler;
     std::uint32_t m_nodeId = 0U;
     std::string m_label;
     std::chrono::steady_clock::time_point m_start;
@@ -70,7 +70,7 @@ private:
 // Memory Profiling
 // ---------------------------------------------------------------------------
 
-struct BlueprintMemoryStatsUVE final {
+struct BlueprintMemoryStats final {
     std::size_t variablesBytes = 0U;
     std::size_t nodesBytes = 0U;
     std::size_t wiresBytes = 0U;
@@ -78,13 +78,13 @@ struct BlueprintMemoryStatsUVE final {
     std::size_t totalEstimatedBytes = 0U;
 };
 
-[[nodiscard]] BlueprintMemoryStatsUVE EstimateBlueprintAssetMemoryUVE(const Asset::BlueprintAssetUVE& blueprint);
+[[nodiscard]] BlueprintMemoryStats EstimateBlueprintAssetMemory(const Asset::BlueprintAsset& blueprint);
 
 // ---------------------------------------------------------------------------
 // Graph Complexity & Performance Analysis
 // ---------------------------------------------------------------------------
 
-struct BlueprintGraphComplexityUVE final {
+struct BlueprintGraphComplexity final {
     std::size_t nodeCount = 0U;
     std::size_t wireCount = 0U;
     std::size_t variableCount = 0U;
@@ -97,21 +97,21 @@ struct BlueprintGraphComplexityUVE final {
     std::size_t cyclomaticComplexity = 1U;
 };
 
-[[nodiscard]] BlueprintGraphComplexityUVE AnalyzeBlueprintGraphComplexityUVE(
-    const Asset::BlueprintAssetUVE& blueprint);
+[[nodiscard]] BlueprintGraphComplexity AnalyzeBlueprintGraphComplexity(
+    const Asset::BlueprintAsset& blueprint);
 
-struct BlueprintPerformanceReportUVE final {
-    BlueprintGraphComplexityUVE complexity;
-    BlueprintMemoryStatsUVE memory;
-    std::vector<BlueprintNodeProfileSampleUVE> hottestNodes;
+struct BlueprintPerformanceReport final {
+    BlueprintGraphComplexity complexity;
+    BlueprintMemoryStats memory;
+    std::vector<BlueprintNodeProfileSample> hottestNodes;
     double totalExecutionMicros = 0.0;
     std::uint64_t totalCalls = 0U;
 };
 
-[[nodiscard]] BlueprintPerformanceReportUVE BuildBlueprintPerformanceReportUVE(
-    const Asset::BlueprintAssetUVE& blueprint, const BlueprintExecutionProfilerUVE& profiler,
+[[nodiscard]] BlueprintPerformanceReport BuildBlueprintPerformanceReport(
+    const Asset::BlueprintAsset& blueprint, const BlueprintExecutionProfiler& profiler,
     std::size_t topHotCount = 10U);
 
-[[nodiscard]] std::string FormatBlueprintPerformanceReportUVE(const BlueprintPerformanceReportUVE& report);
+[[nodiscard]] std::string FormatBlueprintPerformanceReport(const BlueprintPerformanceReport& report);
 
 } // namespace UVE::Blueprint::Profiling

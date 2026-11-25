@@ -9,21 +9,21 @@
 namespace UVE::Gameplay {
 
 /// Queued whenever a gameplay attribute loses value: who, which pool, how much, what is left.
-struct AttributeDamagedEventUVE final {
-    Scene::EntityUVE entity = Scene::kInvalidEntityUVE;
+struct AttributeDamagedEvent final {
+    Scene::Entity entity = Scene::kInvalidEntity;
     std::string attribute;
     float amount = 0.0F;
     float remaining = 0.0F;
 
-    [[nodiscard]] bool operator==(const AttributeDamagedEventUVE&) const = default;
+    [[nodiscard]] bool operator==(const AttributeDamagedEvent&) const = default;
 };
 
 /// Queued when a gameplay attribute hits zero.
-struct AttributeDepletedEventUVE final {
-    Scene::EntityUVE entity = Scene::kInvalidEntityUVE;
+struct AttributeDepletedEvent final {
+    Scene::Entity entity = Scene::kInvalidEntity;
     std::string attribute;
 
-    [[nodiscard]] bool operator==(const AttributeDepletedEventUVE&) const = default;
+    [[nodiscard]] bool operator==(const AttributeDepletedEvent&) const = default;
 };
 
 } // namespace UVE::Gameplay

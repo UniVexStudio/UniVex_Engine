@@ -13,45 +13,45 @@
 
 namespace UVE::Scene {
 
-class IEntityManagerUVE;
+class IEntityManager;
 
 /// Ambient light source selected by a WorldEnvironment. Sky is the backward-compatible default;
 /// EnvironmentMap samples the equirectangular sky asset for diffuse and specular ambient lighting.
-enum class WorldEnvironmentAmbientSourceUVE : std::uint8_t {
+enum class WorldEnvironmentAmbientSource : std::uint8_t {
     None = 0U,
     FlatColor = 1U,
     Sky = 2U,
     EnvironmentMap = 3U,
 };
 
-enum class WorldEnvironmentFogModeUVE : std::uint8_t {
+enum class WorldEnvironmentFogMode : std::uint8_t {
     Linear = 0U,
     Exponential = 1U,
     Height = 2U,
 };
 
-enum class WorldEnvironmentDepthOfFieldFocusModeUVE : std::uint8_t {
+enum class WorldEnvironmentDepthOfFieldFocusMode : std::uint8_t {
     Manual = 0U,
     ScreenCenter = 1U,
 };
 
-enum class WorldEnvironmentDepthOfFieldBokehShapeUVE : std::uint8_t {
+enum class WorldEnvironmentDepthOfFieldBokehShape : std::uint8_t {
     Circular = 0U,
     Hexagonal = 1U,
 };
 
-inline constexpr std::uint32_t kMaximumWorldEnvironmentBloomMipCountUVE = 6U;
+inline constexpr std::uint32_t kMaximumWorldEnvironmentBloomMipCount = 6U;
 
-struct WorldEnvironment3DComponentUVE final {
+struct WorldEnvironment3DComponent final {
     std::string skyAssetPath;
-    WorldEnvironmentAmbientSourceUVE ambientSource = WorldEnvironmentAmbientSourceUVE::Sky;
-    Math::Vector3UVE ambientColor{0.2F, 0.2F, 0.2F};
-    Math::Vector3UVE fogColor{0.5F, 0.6F, 0.7F};
+    WorldEnvironmentAmbientSource ambientSource = WorldEnvironmentAmbientSource::Sky;
+    Math::Vector3 ambientColor{0.2F, 0.2F, 0.2F};
+    Math::Vector3 fogColor{0.5F, 0.6F, 0.7F};
     float ambientEnergy = 1.0F;
     float exposure = 1.0F;
     float fogDensity = 0.0F;
     bool fogEnabled = false;
-    WorldEnvironmentFogModeUVE fogMode = WorldEnvironmentFogModeUVE::Height;
+    WorldEnvironmentFogMode fogMode = WorldEnvironmentFogMode::Height;
     float fogStart = 0.0F;
     float fogEnd = 1000.0F;
     /// Off by default, so adding an environment to a level does not change what the level looks
@@ -59,9 +59,9 @@ struct WorldEnvironment3DComponentUVE final {
     /// effects stack, and a default environment that turned bloom, vignette, grain and the rest on
     /// the moment it was created made "I only added an environment" look like a colour change.
     bool postProcessingEnabled = false;
-    Math::Vector3UVE skyColor{0.31F, 0.54F, 0.91F};
-    Math::Vector3UVE horizonColor{0.78F, 0.86F, 0.94F};
-    Math::Vector3UVE groundColor{0.24F, 0.21F, 0.18F};
+    Math::Vector3 skyColor{0.31F, 0.54F, 0.91F};
+    Math::Vector3 horizonColor{0.78F, 0.86F, 0.94F};
+    Math::Vector3 groundColor{0.24F, 0.21F, 0.18F};
     float skyCurve = 0.15F;
     float groundCurve = 0.02F;
     float fogSkyAffect = 0.35F;
@@ -78,7 +78,7 @@ struct WorldEnvironment3DComponentUVE final {
     float brightness = 0.0F;
     float contrast = 1.0F;
     float saturation = 1.0F;
-    Math::Vector3UVE colorFilter{1.0F, 1.0F, 1.0F};
+    Math::Vector3 colorFilter{1.0F, 1.0F, 1.0F};
     float vignetteIntensity = 0.0F;
     /// Normalized radial position where edge darkening begins; 1 keeps the vignette limited to the corners.
     float vignetteRadius = 0.65F;
@@ -88,9 +88,9 @@ struct WorldEnvironment3DComponentUVE final {
     /// 0..1 controls aspect-correct barrel distortion, up to 12% radial contraction at the corners.
     float lensDistortionIntensity = 0.0F;
     bool depthOfFieldEnabled = false;
-    WorldEnvironmentDepthOfFieldFocusModeUVE depthOfFieldFocusMode = WorldEnvironmentDepthOfFieldFocusModeUVE::Manual;
-    WorldEnvironmentDepthOfFieldBokehShapeUVE depthOfFieldBokehShape =
-        WorldEnvironmentDepthOfFieldBokehShapeUVE::Circular;
+    WorldEnvironmentDepthOfFieldFocusMode depthOfFieldFocusMode = WorldEnvironmentDepthOfFieldFocusMode::Manual;
+    WorldEnvironmentDepthOfFieldBokehShape depthOfFieldBokehShape =
+        WorldEnvironmentDepthOfFieldBokehShape::Circular;
     /// Manual focus distance along the camera ray, in world units.
     float depthOfFieldFocusDistance = 10.0F;
     /// Normalized aperture strength; 1.0 reaches the shader's eight-pixel blur-radius limit.
@@ -108,23 +108,23 @@ struct WorldEnvironment3DComponentUVE final {
     std::string lutAssetPath;
 };
 
-[[nodiscard]] bool IsWorldEnvironment3DObjectComponentValidUVE(const WorldEnvironment3DComponentUVE& value) noexcept;
+[[nodiscard]] bool IsWorldEnvironment3DObjectComponentValid(const WorldEnvironment3DComponent& value) noexcept;
 
-struct WorldEnvironmentFrameUVE final {
-    WorldEnvironmentAmbientSourceUVE ambientSource = WorldEnvironmentAmbientSourceUVE::Sky;
-    Math::Vector3UVE ambientColor{0.2F, 0.2F, 0.2F};
-    Math::Vector3UVE skyAmbient{0.2F, 0.2F, 0.2F};
-    Math::Vector3UVE groundAmbient{0.2F, 0.2F, 0.2F};
-    Math::Vector3UVE skyColor{0.31F, 0.54F, 0.91F};
-    Math::Vector3UVE horizonColor{0.78F, 0.86F, 0.94F};
-    Math::Vector3UVE groundColor{0.24F, 0.21F, 0.18F};
-    Math::Vector3UVE fogColor{0.5F, 0.6F, 0.7F};
-    Math::Vector3UVE backgroundColor{0.050F, 0.050F, 0.050F};
-    Math::Vector3UVE colorFilter{1.0F, 1.0F, 1.0F};
+struct WorldEnvironmentFrame final {
+    WorldEnvironmentAmbientSource ambientSource = WorldEnvironmentAmbientSource::Sky;
+    Math::Vector3 ambientColor{0.2F, 0.2F, 0.2F};
+    Math::Vector3 skyAmbient{0.2F, 0.2F, 0.2F};
+    Math::Vector3 groundAmbient{0.2F, 0.2F, 0.2F};
+    Math::Vector3 skyColor{0.31F, 0.54F, 0.91F};
+    Math::Vector3 horizonColor{0.78F, 0.86F, 0.94F};
+    Math::Vector3 groundColor{0.24F, 0.21F, 0.18F};
+    Math::Vector3 fogColor{0.5F, 0.6F, 0.7F};
+    Math::Vector3 backgroundColor{0.050F, 0.050F, 0.050F};
+    Math::Vector3 colorFilter{1.0F, 1.0F, 1.0F};
     float skyCurve = 0.15F;
     float groundCurve = 0.02F;
     float fogDensity = 0.0F;
-    WorldEnvironmentFogModeUVE fogMode = WorldEnvironmentFogModeUVE::Height;
+    WorldEnvironmentFogMode fogMode = WorldEnvironmentFogMode::Height;
     float fogStart = 0.0F;
     float fogEnd = 1000.0F;
     float fogSkyAffect = 0.35F;
@@ -147,9 +147,9 @@ struct WorldEnvironmentFrameUVE final {
     float filmGrainIntensity = 0.0F;
     float lensDistortionIntensity = 0.0F;
     bool depthOfFieldEnabled = false;
-    WorldEnvironmentDepthOfFieldFocusModeUVE depthOfFieldFocusMode = WorldEnvironmentDepthOfFieldFocusModeUVE::Manual;
-    WorldEnvironmentDepthOfFieldBokehShapeUVE depthOfFieldBokehShape =
-        WorldEnvironmentDepthOfFieldBokehShapeUVE::Circular;
+    WorldEnvironmentDepthOfFieldFocusMode depthOfFieldFocusMode = WorldEnvironmentDepthOfFieldFocusMode::Manual;
+    WorldEnvironmentDepthOfFieldBokehShape depthOfFieldBokehShape =
+        WorldEnvironmentDepthOfFieldBokehShape::Circular;
     float depthOfFieldFocusDistance = 10.0F;
     float depthOfFieldAperture = 0.5F;
     std::uint32_t depthOfFieldQuality = 1U;
@@ -194,12 +194,12 @@ struct WorldEnvironmentFrameUVE final {
     float cloudCoverage = 0.45F;
     float cloudDensity = 1.0F;
     float cloudAltitude = 1500.0F;
-    Math::Vector2UVE cloudWind{};
+    Math::Vector2 cloudWind{};
     float cloudSoftness = 0.35F;
     float cloudSilverLining = 1.0F;
 
     /// Lighting link from the Sky object. The ambient is applied later, by
-    /// ApplySunToWorldEnvironmentFrameUVE, because it depends on the sun's altitude and the sun is
+    /// ApplySunToWorldEnvironmentFrame, because it depends on the sun's altitude and the sun is
     /// not resolved until after this frame is built.
     bool skyAmbientLinked = false;
     float skyAmbientStrength = 1.0F;
@@ -212,42 +212,42 @@ struct WorldEnvironmentFrameUVE final {
     bool skyAnimated = true;
     /// What a reflective surface shows, resolved alongside the ambient for the same reason.
     bool skyReflectionsLinked = false;
-    Math::Vector3UVE reflectionSky{};
-    Math::Vector3UVE reflectionHorizon{};
-    Math::Vector3UVE reflectionGround{};
+    Math::Vector3 reflectionSky{};
+    Math::Vector3 reflectionHorizon{};
+    Math::Vector3 reflectionGround{};
 };
 
-[[nodiscard]] bool TryMakeSkyEquirectUvUVE(const Math::Vector3UVE& direction, Math::Vector2UVE& outUv) noexcept;
+[[nodiscard]] bool TryMakeSkyEquirectUv(const Math::Vector3& direction, Math::Vector2& outUv) noexcept;
 
-[[nodiscard]] WorldEnvironmentFrameUVE ResolveWorldEnvironmentFrameUVE(
-    IEntityManagerUVE& entityManager, const Math::Vector3UVE& fallbackAmbient) noexcept;
+[[nodiscard]] WorldEnvironmentFrame ResolveWorldEnvironmentFrame(
+    IEntityManager& entityManager, const Math::Vector3& fallbackAmbient) noexcept;
 
-void ApplySunToWorldEnvironmentFrameUVE(WorldEnvironmentFrameUVE& frame, const Math::Vector3UVE& sunDirection,
-                                        const Math::Vector3UVE& sunColor, float sunEnergy) noexcept;
+void ApplySunToWorldEnvironmentFrame(WorldEnvironmentFrame& frame, const Math::Vector3& sunDirection,
+                                        const Math::Vector3& sunColor, float sunEnergy) noexcept;
 
-struct WorldEnvironmentObjectDefinitionUVE final {
+struct WorldEnvironmentObjectDefinition final {
     static constexpr std::string_view defaultName = "WorldEnvironment";
-    WorldEnvironment3DComponentUVE environment = [] {
-        WorldEnvironment3DComponentUVE env{};
-        env.ambientSource = WorldEnvironmentAmbientSourceUVE::None;
+    WorldEnvironment3DComponent environment = [] {
+        WorldEnvironment3DComponent env{};
+        env.ambientSource = WorldEnvironmentAmbientSource::None;
         return env;
     }();
 };
 
-void ApplyWorldEnvironmentObjectDefinitionUVE(IEntityManagerUVE& entityManager, EntityUVE entity,
-                                            const WorldEnvironmentObjectDefinitionUVE& value);
+void ApplyWorldEnvironmentObjectDefinition(IEntityManager& entityManager, Entity entity,
+                                            const WorldEnvironmentObjectDefinition& value);
 
 /// Blends two environment profiles by `weightB` (clamped to 0..1) for overlapping environment volumes.
-[[nodiscard]] inline WorldEnvironment3DComponentUVE BlendWorldEnvironment3DComponentsUVE(
-    const WorldEnvironment3DComponentUVE& a, const WorldEnvironment3DComponentUVE& b,
+[[nodiscard]] inline WorldEnvironment3DComponent BlendWorldEnvironment3DComponents(
+    const WorldEnvironment3DComponent& a, const WorldEnvironment3DComponent& b,
     const float weightB) noexcept {
     const float t = weightB < 0.0F ? 0.0F : (weightB > 1.0F ? 1.0F : weightB);
     const float s = 1.0F - t;
-    WorldEnvironment3DComponentUVE result = t >= 0.5F ? b : a;
-    result.ambientColor = Math::Vector3UVE{a.ambientColor.x * s + b.ambientColor.x * t,
+    WorldEnvironment3DComponent result = t >= 0.5F ? b : a;
+    result.ambientColor = Math::Vector3{a.ambientColor.x * s + b.ambientColor.x * t,
                                            a.ambientColor.y * s + b.ambientColor.y * t,
                                            a.ambientColor.z * s + b.ambientColor.z * t};
-    result.fogColor = Math::Vector3UVE{a.fogColor.x * s + b.fogColor.x * t,
+    result.fogColor = Math::Vector3{a.fogColor.x * s + b.fogColor.x * t,
                                        a.fogColor.y * s + b.fogColor.y * t,
                                        a.fogColor.z * s + b.fogColor.z * t};
     result.ambientEnergy = a.ambientEnergy * s + b.ambientEnergy * t;
@@ -263,11 +263,11 @@ void ApplyWorldEnvironmentObjectDefinitionUVE(IEntityManagerUVE& entityManager, 
 
 /// Resolves the active environment resource with precedence:
 /// per-camera override > scene volume > project default > editor preview fallback.
-[[nodiscard]] inline WorldEnvironment3DComponentUVE ResolveEffectiveWorldEnvironment3DUVE(
-    const WorldEnvironment3DComponentUVE* const cameraOverride,
-    const WorldEnvironment3DComponentUVE* const sceneVolume,
-    const WorldEnvironment3DComponentUVE* const projectDefault,
-    const WorldEnvironment3DComponentUVE* const editorPreviewFallback) {
+[[nodiscard]] inline WorldEnvironment3DComponent ResolveEffectiveWorldEnvironment3D(
+    const WorldEnvironment3DComponent* const cameraOverride,
+    const WorldEnvironment3DComponent* const sceneVolume,
+    const WorldEnvironment3DComponent* const projectDefault,
+    const WorldEnvironment3DComponent* const editorPreviewFallback) {
     if (cameraOverride != nullptr) {
         return *cameraOverride;
     }
@@ -280,7 +280,7 @@ void ApplyWorldEnvironmentObjectDefinitionUVE(IEntityManagerUVE& entityManager, 
     if (editorPreviewFallback != nullptr) {
         return *editorPreviewFallback;
     }
-    return WorldEnvironment3DComponentUVE{};
+    return WorldEnvironment3DComponent{};
 }
 
 } // namespace UVE::Scene

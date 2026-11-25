@@ -7,26 +7,26 @@
 
 namespace {
 
-int InitializeTestPluginUVE() {
+int InitializeTestPlugin() {
     return 0;
 }
 
-void ShutdownTestPluginUVE() {}
+void ShutdownTestPlugin() {}
 
-const char* const kCapabilitiesUVE[] = {"test.objects", "test.window"};
+const char* const kCapabilities[] = {"test.objects", "test.window"};
 
-const UVE::Plugins::NativePluginDescriptorUVE kDescriptorUVE{
-    UVE::Plugins::kNativePluginProtocolVersionUVE,
+const UVE::Plugins::NativePluginDescriptor kDescriptor{
+    UVE::Plugins::kNativePluginProtocolVersion,
     "uve.test-plugin",
     "Host Fixture Plugin",
     1U,
     2U,
     3U,
-    UVE::Plugins::kNativePluginProtocolVersionUVE,
-    kCapabilitiesUVE,
+    UVE::Plugins::kNativePluginProtocolVersion,
+    kCapabilities,
     2U,
-    &InitializeTestPluginUVE,
-    &ShutdownTestPluginUVE,
+    &InitializeTestPlugin,
+    &ShutdownTestPlugin,
 };
 
 } // namespace
@@ -37,6 +37,6 @@ const UVE::Plugins::NativePluginDescriptorUVE kDescriptorUVE{
 #define UVE_TEST_PLUGIN_EXPORT
 #endif
 
-extern "C" UVE_TEST_PLUGIN_EXPORT const UVE::Plugins::NativePluginDescriptorUVE* UveNativePluginEntryUVE() {
-    return &kDescriptorUVE;
+extern "C" UVE_TEST_PLUGIN_EXPORT const UVE::Plugins::NativePluginDescriptor* UveNativePluginEntry() {
+    return &kDescriptor;
 }

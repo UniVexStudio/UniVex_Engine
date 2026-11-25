@@ -32,7 +32,7 @@ namespace {
 
 } // namespace
 
-std::optional<WavMetadataUVE> ParseWavMetadataUVE(const std::vector<std::byte>& bytes) {
+std::optional<WavMetadata> ParseWavMetadata(const std::vector<std::byte>& bytes) {
     constexpr std::size_t kRiffHeaderBytes = 12U;
     constexpr std::size_t kChunkHeaderBytes = 8U;
     if (bytes.size() < kRiffHeaderBytes || !HasTag(bytes, 0U, 'R', 'I', 'F', 'F') ||
@@ -45,7 +45,7 @@ std::optional<WavMetadataUVE> ParseWavMetadataUVE(const std::vector<std::byte>& 
     }
     const std::size_t riffEnd = static_cast<std::size_t>(riffPayloadBytes) + 8U;
 
-    std::optional<WavMetadataUVE> metadata;
+    std::optional<WavMetadata> metadata;
     std::uint32_t dataBytes = 0U;
     std::size_t offset = kRiffHeaderBytes;
     while (offset + kChunkHeaderBytes <= riffEnd) {
@@ -56,7 +56,7 @@ std::optional<WavMetadataUVE> ParseWavMetadataUVE(const std::vector<std::byte>& 
             return std::nullopt;
         }
         if (HasTag(bytes, offset, 'f', 'm', 't', ' ') && chunkBytes >= 16U && !metadata.has_value()) {
-            WavMetadataUVE parsed;
+            WavMetadata parsed;
             parsed.audioFormat = ReadU16LE(bytes, payloadOffset);
             parsed.channels = ReadU16LE(bytes, payloadOffset + 2U);
             parsed.sampleRate = ReadU32LE(bytes, payloadOffset + 4U);

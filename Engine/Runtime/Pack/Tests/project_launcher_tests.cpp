@@ -31,9 +31,9 @@
 namespace UVE::Pack::Tests {
 namespace {
 
-[[nodiscard]] Core::EngineConfigUVE MakeHeadlessConfigUVE(const std::filesystem::path& scratchDirectory) {
-    Core::EngineConfigUVE config{};
-    config.headlessUVE = true;
+[[nodiscard]] Core::EngineConfig MakeHeadlessConfig(const std::filesystem::path& scratchDirectory) {
+    Core::EngineConfig config{};
+    config.headless = true;
     config.enableConsoleLogging = false;
     config.logFilePath = scratchDirectory / "uve_project_launcher_tests.log";
     config.settingsFilePath = scratchDirectory / "uve_project_launcher_tests.uvsettings";
@@ -42,7 +42,7 @@ namespace {
     return config;
 }
 
-void WriteSample64PxPngIconUVE(const std::filesystem::path& path) {
+void WriteSample64PxPngIcon(const std::filesystem::path& path) {
     static constexpr std::array<unsigned char, 158U> kPngBytes{
         0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52,
         0x00, 0x00, 0x00, 0x40, 0x00, 0x00, 0x00, 0x40, 0x08, 0x06, 0x00, 0x00, 0x00, 0xAA, 0x69, 0x71,
@@ -58,10 +58,10 @@ void WriteSample64PxPngIconUVE(const std::filesystem::path& path) {
     output.write(reinterpret_cast<const char*>(kPngBytes.data()), static_cast<std::streamsize>(kPngBytes.size()));
 }
 
-class ProjectLauncherUVETest : public ::testing::Test {
+class ProjectLauncherTest : public ::testing::Test {
 protected:
     void SetUp() override {
-        projectRoot = ::UVE::Tests::MakeTestCaseDirectoryUVE("root");
+        projectRoot = ::UVE::Tests::MakeTestCaseDirectory("root");
         std::filesystem::create_directories(projectRoot / "content" / "scenes");
     }
 
@@ -69,20 +69,20 @@ protected:
 
     // Authors one entity with a real camera + world transform into a fresh in-memory entity
     // manager, saves it as the project's own scene file, then writes a matching .uvproject package
-    // naming it as the startup scene - the same shape ProjectPackagerUVE expects a real authored
+    // naming it as the startup scene - the same shape ProjectPackager expects a real authored
     // project to already have on disk.
-    void WriteProjectWithCameraSceneUVE(Core::EngineCoreUVE& authoringEngine) {
-        Core::EngineServicesUVE& services = authoringEngine.GetServicesUVE();
-        Scene::IEntityManagerUVE& entityManager = services.GetEntityManagerUVE();
-        const Scene::EntityUVE camera = entityManager.CreateEntityUVE();
-        services.GetSceneGraphUVE().AttachTransformUVE(entityManager, camera, Scene::TransformComponentUVE{});
-        entityManager.AddComponentUVE<Scene::CameraComponentUVE>(camera);
+    void WriteProjectWithCameraScene(Core::EngineCore& authoringEngine) {
+        Core::EngineServices& services = authoringEngine.GetServices();
+        Scene::IEntityManager& entityManager = services.GetEntityManager();
+        const Scene::Entity camera = entityManager.CreateEntity();
+        services.GetSceneGraph().AttachTransform(entityManager, camera, Scene::TransformComponent{});
+        entityManager.AddComponent<Scene::CameraComponent>(camera);
 
-        Scene::SceneSerializerUVE serializer;
-        ASSERT_TRUE(serializer.SaveUVE(entityManager, {camera}, projectRoot / "content" / "scenes" / "main.uvscene",
-                                       Scene::SceneAssetTypeUVE::Scene));
+        Scene::SceneSerializer serializer;
+        ASSERT_TRUE(serializer.Save(entityManager, {camera}, projectRoot / "content" / "scenes" / "main.uvscene",
+                                       Scene::SceneAssetType::Scene));
 
-        Platform::EditorProjectPackageUVE package;
+        Platform::EditorProjectPackage package;
         package.revision = 1U;
         package.projectId = "launcher-test-project";
         package.displayName = "Launcher Test Project";
@@ -102,18 +102,18 @@ protected:
         }
         package.applicationSettings.splashImagePath = "branding/splash.uvtex";
         std::filesystem::create_directories(projectRoot / "content" / "icons");
-        WriteSample64PxPngIconUVE(projectRoot / "content" / "icons" / "icon-64.png");
-        package.applicationSettings.iconPathsByTarget[std::string{Platform::GetApplicationTargetUVE()}] = {
+        WriteSample64PxPngIcon(projectRoot / "content" / "icons" / "icon-64.png");
+        package.applicationSettings.iconPathsByTarget[std::string{Platform::GetApplicationTarget()}] = {
             {64U, "icons/icon-64.png"}};
         package.applicationSettings.applicationIdentifiersByTarget[
-            std::string{Platform::GetApplicationTargetUVE()}] = "com.example.launcher";
+            std::string{Platform::GetApplicationTarget()}] = "com.example.launcher";
         package.applicationSettings.userDataDirectoryName = "runtime-data";
         package.applicationSettings.portableUserData = true;
         package.applicationSettings.quitOnLastWindowClosed = false;
         package.applicationSettings.enforceSingleInstance = true;
         package.applicationSettings.windowWidth = 1600U;
         package.applicationSettings.windowHeight = 900U;
-        package.applicationSettings.windowMode = Platform::WindowModeUVE::Maximized;
+        package.applicationSettings.windowMode = Platform::WindowMode::Maximized;
         package.applicationSettings.windowResizable = false;
         package.applicationSettings.windowBorderless = true;
         package.applicationSettings.windowAlwaysOnTop = true;
@@ -129,18 +129,18 @@ protected:
         package.applicationSettings.highDpiAware = false;
         package.applicationSettings.perMonitorScaling = false;
         package.applicationSettings.contentScaleOverride = 1.25;
-        package.applicationSettings.stretchMode = Platform::StretchModeUVE::Viewport;
-        package.applicationSettings.aspectPolicy = Platform::AspectPolicyUVE::Keep;
+        package.applicationSettings.stretchMode = Platform::StretchMode::Viewport;
+        package.applicationSettings.aspectPolicy = Platform::AspectPolicy::Keep;
         package.applicationSettings.integerOnlyScaling = true;
-        package.applicationSettings.orientation = Platform::DisplayOrientationUVE::LandscapeRight;
-        package.applicationSettings.allowedOrientations = {Platform::DisplayOrientationUVE::LandscapeRight,
-                                                            Platform::DisplayOrientationUVE::Portrait};
-        package.applicationSettings.vsyncMode = Platform::VSyncModeUVE::Adaptive;
+        package.applicationSettings.orientation = Platform::DisplayOrientation::LandscapeRight;
+        package.applicationSettings.allowedOrientations = {Platform::DisplayOrientation::LandscapeRight,
+                                                            Platform::DisplayOrientation::Portrait};
+        package.applicationSettings.vsyncMode = Platform::VSyncMode::Adaptive;
         package.applicationSettings.focusedFrameRateCap = 144U;
         package.applicationSettings.unfocusedFrameRateCap = 30U;
         package.applicationSettings.allowDisplaySleep = false;
         std::filesystem::create_directories(projectRoot / "content" / "ui");
-        WriteSample64PxPngIconUVE(projectRoot / "content" / "ui" / "cursor.png");
+        WriteSample64PxPngIcon(projectRoot / "content" / "ui" / "cursor.png");
         package.applicationSettings.cursorImagePath = "ui/cursor.png";
         package.applicationSettings.cursorHotspotX = 5U;
         package.applicationSettings.cursorHotspotY = 6U;
@@ -148,7 +148,7 @@ protected:
         package.applicationSettings.cursorConfinedToWindow = true;
         package.applicationSettings.windowTitleFormat = "{projectName} - {sceneName}";
         package.applicationSettings.appendSceneNameInEditorPlayMode = true;
-        ASSERT_TRUE(Platform::EditorProjectPackageCodecUVE::SaveUVE(projectFile(), package).IsAcceptedUVE());
+        ASSERT_TRUE(Platform::EditorProjectPackageCodec::Save(projectFile(), package).IsAccepted());
     }
 
     [[nodiscard]] std::filesystem::path projectFile() const { return projectRoot / "project.uvproject"; }
@@ -156,144 +156,144 @@ protected:
     std::filesystem::path projectRoot;
 };
 
-TEST_F(ProjectLauncherUVETest, CookedProjectLaunchesAndDemandLoadsAfterOriginalProjectRemoved) {
-    Core::EngineCoreUVE author(MakeHeadlessConfigUVE(projectRoot)); author.Init();
-    ASSERT_TRUE(author.Load()); WriteProjectWithCameraSceneUVE(author); author.Shutdown();
-    Asset::TextureAssetUVE texture; texture.width=4;texture.height=4;texture.pixels.resize(64,std::byte{255});
-    ASSERT_TRUE(Asset::SaveTextureAssetUVE(texture,projectRoot/"content/hero.uvtex"));
-    ASSERT_TRUE(Asset::SaveTextureAssetUVE(texture,projectRoot/"content/branding/splash.uvtex"));
-    Asset::AssetDatabaseUVE db; const auto guid=db.RegisterUVE("content/hero.uvtex");
-    ASSERT_TRUE(db.SaveUVE(projectRoot/".uvassetdb"));
-    const auto cooked=::UVE::Tests::ScratchPathUVE("relocated-cooked");
-    const auto result=CookProjectAssetsUVE(projectFile(),cooked,CookTargetUVE::Android);
+TEST_F(ProjectLauncherTest, CookedProjectLaunchesAndDemandLoadsAfterOriginalProjectRemoved) {
+    Core::EngineCore author(MakeHeadlessConfig(projectRoot)); author.Init();
+    ASSERT_TRUE(author.Load()); WriteProjectWithCameraScene(author); author.Shutdown();
+    Asset::TextureAsset texture; texture.width=4;texture.height=4;texture.pixels.resize(64,std::byte{255});
+    ASSERT_TRUE(Asset::SaveTextureAsset(texture,projectRoot/"content/hero.uvtex"));
+    ASSERT_TRUE(Asset::SaveTextureAsset(texture,projectRoot/"content/branding/splash.uvtex"));
+    Asset::AssetDatabase db; const auto guid=db.Register("content/hero.uvtex");
+    ASSERT_TRUE(db.Save(projectRoot/".uvassetdb"));
+    const auto cooked=::UVE::Tests::ScratchPath("relocated-cooked");
+    const auto result=CookProjectAssets(projectFile(),cooked,CookTarget::Android);
     ASSERT_TRUE(result.success)<<result.message;
     std::filesystem::remove_all(projectRoot);
-    auto config=MakeHeadlessConfigUVE(cooked);
-    const auto persistent=::UVE::Tests::ScratchPathUVE("native-persistent-data");
-    const auto setup=PrepareProjectRuntimeUVE(cooked/"project.uvproject",config,persistent);
-    ASSERT_TRUE(setup.IsReadyUVE())<<setup.message;
+    auto config=MakeHeadlessConfig(cooked);
+    const auto persistent=::UVE::Tests::ScratchPath("native-persistent-data");
+    const auto setup=PrepareProjectRuntime(cooked/"project.uvproject",config,persistent);
+    ASSERT_TRUE(setup.IsReady())<<setup.message;
     EXPECT_EQ(config.saveDirectoryPath,persistent/"saves");
-    EXPECT_TRUE(config.cookedAssetPathsUVE); EXPECT_EQ(config.assetResidentBudgetBytesUVE,128U*1024U*1024U);
-    Core::EngineCoreUVE runtime(config);runtime.Init();ASSERT_TRUE(runtime.Load());
-    ASSERT_TRUE(LoadAndActivateProjectSceneUVE(runtime,*setup.setup).IsAcceptedUVE());
-    auto& services=runtime.GetServicesUVE();auto& manager=services.GetAssetManagerUVE();
-    EXPECT_EQ(manager.GetLoadedAssetCountUVE(),0U);
+    EXPECT_TRUE(config.cookedAssetPaths); EXPECT_EQ(config.assetResidentBudgetBytes,128U*1024U*1024U);
+    Core::EngineCore runtime(config);runtime.Init();ASSERT_TRUE(runtime.Load());
+    ASSERT_TRUE(LoadAndActivateProjectScene(runtime,*setup.setup).IsAccepted());
+    auto& services=runtime.GetServices();auto& manager=services.GetAssetManager();
+    EXPECT_EQ(manager.GetLoadedAssetCount(),0U);
     {
-        auto h=manager.LoadUVE<Asset::TextureAssetUVE>(guid,services.GetAssetDatabaseUVE());
-        for(unsigned i=0;i<200000U&&!h.IsReadyUVE()&&!h.HasFailedUVE();++i) std::this_thread::yield();
-        ASSERT_TRUE(h.IsReadyUVE())<<h.GetFailureReasonUVE();EXPECT_EQ(h.TryGetUVE()->width,4U);
+        auto h=manager.Load<Asset::TextureAsset>(guid,services.GetAssetDatabase());
+        for(unsigned i=0;i<200000U&&!h.IsReady()&&!h.HasFailed();++i) std::this_thread::yield();
+        ASSERT_TRUE(h.IsReady())<<h.GetFailureReason();EXPECT_EQ(h.TryGet()->width,4U);
     }
-    manager.CollectGarbageUVE();EXPECT_EQ(manager.GetLoadedAssetCountUVE(),0U);
+    manager.CollectGarbage();EXPECT_EQ(manager.GetLoadedAssetCount(),0U);
     runtime.Shutdown();std::filesystem::remove_all(cooked);
     EXPECT_TRUE(std::filesystem::is_directory(persistent));std::filesystem::remove_all(persistent);
 }
 
-TEST_F(ProjectLauncherUVETest, LoadAndActivate_LoadsSceneAndActivatesItsCamera) {
-    Core::EngineCoreUVE authoringEngine(MakeHeadlessConfigUVE(projectRoot));
+TEST_F(ProjectLauncherTest, LoadAndActivate_LoadsSceneAndActivatesItsCamera) {
+    Core::EngineCore authoringEngine(MakeHeadlessConfig(projectRoot));
     authoringEngine.Init();
     ASSERT_TRUE(authoringEngine.Load());
-    WriteProjectWithCameraSceneUVE(authoringEngine);
+    WriteProjectWithCameraScene(authoringEngine);
     authoringEngine.Shutdown();
 
-    Core::EngineCoreUVE engine(MakeHeadlessConfigUVE(projectRoot));
+    Core::EngineCore engine(MakeHeadlessConfig(projectRoot));
     engine.Init();
     ASSERT_TRUE(engine.Load());
 
-    const ProjectLaunchResultUVE result = LoadAndActivateProjectSceneUVE(engine, projectFile());
+    const ProjectLaunchResult result = LoadAndActivateProjectScene(engine, projectFile());
 
-    EXPECT_TRUE(result.IsAcceptedUVE()) << result.message;
-    const Scene::EntityUVE activeCamera = engine.GetActiveCameraUVE();
-    EXPECT_NE(activeCamera, Scene::kInvalidEntityUVE);
-    EXPECT_TRUE(engine.GetServicesUVE().GetEntityManagerUVE().HasComponentUVE<Scene::CameraComponentUVE>(activeCamera));
+    EXPECT_TRUE(result.IsAccepted()) << result.message;
+    const Scene::Entity activeCamera = engine.GetActiveCamera();
+    EXPECT_NE(activeCamera, Scene::kInvalidEntity);
+    EXPECT_TRUE(engine.GetServices().GetEntityManager().HasComponent<Scene::CameraComponent>(activeCamera));
     engine.Shutdown();
 }
 
-TEST_F(ProjectLauncherUVETest, PrepareRuntime_ResolvesApplicationPolicyBeforeEngineInit) {
-    Core::EngineCoreUVE authoringEngine(MakeHeadlessConfigUVE(projectRoot));
+TEST_F(ProjectLauncherTest, PrepareRuntime_ResolvesApplicationPolicyBeforeEngineInit) {
+    Core::EngineCore authoringEngine(MakeHeadlessConfig(projectRoot));
     authoringEngine.Init();
     ASSERT_TRUE(authoringEngine.Load());
-    WriteProjectWithCameraSceneUVE(authoringEngine);
+    WriteProjectWithCameraScene(authoringEngine);
     authoringEngine.Shutdown();
 
-    Core::EngineConfigUVE config = MakeHeadlessConfigUVE(projectRoot);
-    const ProjectRuntimeSetupResultUVE setup = PrepareProjectRuntimeUVE(projectFile(), config);
+    Core::EngineConfig config = MakeHeadlessConfig(projectRoot);
+    const ProjectRuntimeSetupResult setup = PrepareProjectRuntime(projectFile(), config);
 
-    ASSERT_TRUE(setup.IsReadyUVE()) << setup.message;
+    ASSERT_TRUE(setup.IsReady()) << setup.message;
     ASSERT_TRUE(setup.setup.has_value());
     const std::filesystem::path expectedUserData = std::filesystem::absolute(projectRoot) / "runtime-data";
     EXPECT_EQ(setup.setup->applicationIdentifier, "com.example.launcher");
     EXPECT_EQ(setup.setup->projectRoot, std::filesystem::absolute(projectRoot));
     EXPECT_EQ(setup.setup->contentRoot, std::filesystem::absolute(projectRoot) / "content");
     EXPECT_EQ(setup.setup->userDataDirectory, expectedUserData);
-    EXPECT_EQ(config.userDataDirectoryPathUVE, expectedUserData);
+    EXPECT_EQ(config.userDataDirectoryPath, expectedUserData);
     EXPECT_EQ(config.windowTitle, "Launcher Test Product");
-    EXPECT_EQ(config.projectDisplayNameUVE, "Launcher Test Project");
+    EXPECT_EQ(config.projectDisplayName, "Launcher Test Project");
     EXPECT_EQ(config.windowWidth, 1600U);
     EXPECT_EQ(config.windowHeight, 900U);
-    EXPECT_EQ(config.windowModeUVE, Platform::WindowModeUVE::Maximized);
-    EXPECT_FALSE(config.windowResizableUVE);
-    EXPECT_TRUE(config.windowBorderlessUVE);
-    EXPECT_TRUE(config.windowAlwaysOnTopUVE);
-    EXPECT_TRUE(config.windowTransparentUVE);
-    EXPECT_EQ(config.windowMinimumWidthUVE, 640U);
-    EXPECT_EQ(config.windowMinimumHeightUVE, 360U);
-    EXPECT_EQ(config.windowMaximumWidthUVE, 1920U);
-    EXPECT_EQ(config.windowMaximumHeightUVE, 1080U);
-    EXPECT_TRUE(config.windowPositionSpecifiedUVE);
-    EXPECT_EQ(config.windowPositionXUVE, 120);
-    EXPECT_EQ(config.windowPositionYUVE, 80);
-    EXPECT_EQ(config.windowMonitorNameUVE, "Test Monitor");
-    EXPECT_FALSE(config.highDpiAwareUVE);
-    EXPECT_FALSE(config.perMonitorScalingUVE);
-    EXPECT_DOUBLE_EQ(config.contentScaleOverrideUVE, 1.25);
-    EXPECT_EQ(config.stretchModeUVE, Platform::StretchModeUVE::Viewport);
-    EXPECT_EQ(config.aspectPolicyUVE, Platform::AspectPolicyUVE::Keep);
-    EXPECT_TRUE(config.integerOnlyScalingUVE);
-    EXPECT_EQ(config.orientationUVE, Platform::DisplayOrientationUVE::LandscapeRight);
-    EXPECT_EQ(config.allowedOrientationsUVE,
-              (std::vector<Platform::DisplayOrientationUVE>{Platform::DisplayOrientationUVE::LandscapeRight,
-                                                            Platform::DisplayOrientationUVE::Portrait}));
-    EXPECT_EQ(config.vsyncModeUVE, Platform::VSyncModeUVE::Adaptive);
-    EXPECT_TRUE(config.vsyncModeExplicitUVE);
-    EXPECT_EQ(config.focusedFrameRateCapUVE, 144U);
-    EXPECT_EQ(config.unfocusedFrameRateCapUVE, 30U);
-    EXPECT_FALSE(config.allowDisplaySleepUVE);
-    EXPECT_EQ(config.cursorImagePathUVE,
+    EXPECT_EQ(config.windowMode, Platform::WindowMode::Maximized);
+    EXPECT_FALSE(config.windowResizable);
+    EXPECT_TRUE(config.windowBorderless);
+    EXPECT_TRUE(config.windowAlwaysOnTop);
+    EXPECT_TRUE(config.windowTransparent);
+    EXPECT_EQ(config.windowMinimumWidth, 640U);
+    EXPECT_EQ(config.windowMinimumHeight, 360U);
+    EXPECT_EQ(config.windowMaximumWidth, 1920U);
+    EXPECT_EQ(config.windowMaximumHeight, 1080U);
+    EXPECT_TRUE(config.windowPositionSpecified);
+    EXPECT_EQ(config.windowPositionX, 120);
+    EXPECT_EQ(config.windowPositionY, 80);
+    EXPECT_EQ(config.windowMonitorName, "Test Monitor");
+    EXPECT_FALSE(config.highDpiAware);
+    EXPECT_FALSE(config.perMonitorScaling);
+    EXPECT_DOUBLE_EQ(config.contentScaleOverride, 1.25);
+    EXPECT_EQ(config.stretchMode, Platform::StretchMode::Viewport);
+    EXPECT_EQ(config.aspectPolicy, Platform::AspectPolicy::Keep);
+    EXPECT_TRUE(config.integerOnlyScaling);
+    EXPECT_EQ(config.orientation, Platform::DisplayOrientation::LandscapeRight);
+    EXPECT_EQ(config.allowedOrientations,
+              (std::vector<Platform::DisplayOrientation>{Platform::DisplayOrientation::LandscapeRight,
+                                                            Platform::DisplayOrientation::Portrait}));
+    EXPECT_EQ(config.vsyncMode, Platform::VSyncMode::Adaptive);
+    EXPECT_TRUE(config.vsyncModeExplicit);
+    EXPECT_EQ(config.focusedFrameRateCap, 144U);
+    EXPECT_EQ(config.unfocusedFrameRateCap, 30U);
+    EXPECT_FALSE(config.allowDisplaySleep);
+    EXPECT_EQ(config.cursorImagePath,
               std::filesystem::canonical(std::filesystem::absolute(projectRoot) / "content" / "ui" / "cursor.png"));
-    EXPECT_EQ(config.cursorHotspotXUVE, 5U);
-    EXPECT_EQ(config.cursorHotspotYUVE, 6U);
-    EXPECT_FALSE(config.cursorVisibleUVE);
-    EXPECT_TRUE(config.cursorConfinedToWindowUVE);
-    EXPECT_EQ(config.windowTitleFormatUVE, "{projectName} - {sceneName}");
-    EXPECT_TRUE(config.appendSceneNameInEditorPlayModeUVE);
-    EXPECT_EQ(config.bootSplashImagePathUVE,
+    EXPECT_EQ(config.cursorHotspotX, 5U);
+    EXPECT_EQ(config.cursorHotspotY, 6U);
+    EXPECT_FALSE(config.cursorVisible);
+    EXPECT_TRUE(config.cursorConfinedToWindow);
+    EXPECT_EQ(config.windowTitleFormat, "{projectName} - {sceneName}");
+    EXPECT_TRUE(config.appendSceneNameInEditorPlayMode);
+    EXPECT_EQ(config.bootSplashImagePath,
               std::filesystem::canonical(std::filesystem::absolute(projectRoot) / "content" / "branding" /
                                           "splash.uvtex"));
-    ASSERT_EQ(config.windowIconsUVE.size(), 1U);
-    EXPECT_EQ(config.windowIconsUVE[0].width, 64U);
-    EXPECT_EQ(config.windowIconsUVE[0].height, 64U);
-    ASSERT_EQ(config.windowIconsUVE[0].rgba8.size(), 64U * 64U * 4U);
-    EXPECT_EQ(config.windowIconsUVE[0].rgba8[0], 0x20U);
-    EXPECT_EQ(config.windowIconsUVE[0].rgba8[1], 0x80U);
-    EXPECT_EQ(config.windowIconsUVE[0].rgba8[2], 0xE0U);
-    EXPECT_EQ(config.windowIconsUVE[0].rgba8[3], 0xFFU);
-    EXPECT_FALSE(config.quitOnLastWindowClosedUVE);
-    EXPECT_TRUE(config.enforceSingleInstanceUVE);
+    ASSERT_EQ(config.windowIcons.size(), 1U);
+    EXPECT_EQ(config.windowIcons[0].width, 64U);
+    EXPECT_EQ(config.windowIcons[0].height, 64U);
+    ASSERT_EQ(config.windowIcons[0].rgba8.size(), 64U * 64U * 4U);
+    EXPECT_EQ(config.windowIcons[0].rgba8[0], 0x20U);
+    EXPECT_EQ(config.windowIcons[0].rgba8[1], 0x80U);
+    EXPECT_EQ(config.windowIcons[0].rgba8[2], 0xE0U);
+    EXPECT_EQ(config.windowIcons[0].rgba8[3], 0xFFU);
+    EXPECT_FALSE(config.quitOnLastWindowClosed);
+    EXPECT_TRUE(config.enforceSingleInstance);
     EXPECT_EQ(config.settingsFilePath, expectedUserData / ".uvsettings");
     EXPECT_EQ(config.projectSettingsFilePath, std::filesystem::absolute(projectRoot) / ".uvsettings");
-    EXPECT_EQ(config.projectContentRootUVE, std::filesystem::absolute(projectRoot) / "content");
+    EXPECT_EQ(config.projectContentRoot, std::filesystem::absolute(projectRoot) / "content");
 
-    Core::EngineCoreUVE engine(config);
+    Core::EngineCore engine(config);
     engine.Init();
     ASSERT_TRUE(engine.Load());
-    const ProjectLaunchResultUVE launch = LoadAndActivateProjectSceneUVE(engine, *setup.setup);
-    EXPECT_TRUE(launch.IsAcceptedUVE()) << launch.message;
-    EXPECT_NE(engine.GetActiveCameraUVE(), Scene::kInvalidEntityUVE);
+    const ProjectLaunchResult launch = LoadAndActivateProjectScene(engine, *setup.setup);
+    EXPECT_TRUE(launch.IsAccepted()) << launch.message;
+    EXPECT_NE(engine.GetActiveCamera(), Scene::kInvalidEntity);
     engine.Shutdown();
 }
 
-TEST_F(ProjectLauncherUVETest, LoadAndActivate_RejectsProjectWithNoStartupSceneConfigured) {
-    Platform::EditorProjectPackageUVE package;
+TEST_F(ProjectLauncherTest, LoadAndActivate_RejectsProjectWithNoStartupSceneConfigured) {
+    Platform::EditorProjectPackage package;
     package.revision = 1U;
     package.projectId = "no-startup-scene";
     package.displayName = "No Startup Scene";
@@ -301,101 +301,101 @@ TEST_F(ProjectLauncherUVETest, LoadAndActivate_RejectsProjectWithNoStartupSceneC
     package.contentRoot = "content";
     package.assetDatabasePath = ".uvassetdb";
     package.settingsPath = ".uvsettings";
-    ASSERT_TRUE(Platform::EditorProjectPackageCodecUVE::SaveUVE(projectFile(), package).IsAcceptedUVE());
+    ASSERT_TRUE(Platform::EditorProjectPackageCodec::Save(projectFile(), package).IsAccepted());
 
-    Core::EngineCoreUVE engine(MakeHeadlessConfigUVE(projectRoot));
+    Core::EngineCore engine(MakeHeadlessConfig(projectRoot));
     engine.Init();
     ASSERT_TRUE(engine.Load());
 
-    const ProjectLaunchResultUVE result = LoadAndActivateProjectSceneUVE(engine, projectFile());
+    const ProjectLaunchResult result = LoadAndActivateProjectScene(engine, projectFile());
 
-    EXPECT_FALSE(result.IsAcceptedUVE());
-    EXPECT_EQ(result.code, ProjectLaunchCodeUVE::NoStartupSceneConfigured);
-    EXPECT_EQ(engine.GetActiveCameraUVE(), Scene::kInvalidEntityUVE);
+    EXPECT_FALSE(result.IsAccepted());
+    EXPECT_EQ(result.code, ProjectLaunchCode::NoStartupSceneConfigured);
+    EXPECT_EQ(engine.GetActiveCamera(), Scene::kInvalidEntity);
     engine.Shutdown();
 }
 
-TEST_F(ProjectLauncherUVETest, LoadAndActivate_RejectsMissingProjectFile) {
-    Core::EngineCoreUVE engine(MakeHeadlessConfigUVE(projectRoot));
+TEST_F(ProjectLauncherTest, LoadAndActivate_RejectsMissingProjectFile) {
+    Core::EngineCore engine(MakeHeadlessConfig(projectRoot));
     engine.Init();
     ASSERT_TRUE(engine.Load());
 
-    const ProjectLaunchResultUVE result =
-        LoadAndActivateProjectSceneUVE(engine, projectRoot / "does_not_exist.uvproject");
+    const ProjectLaunchResult result =
+        LoadAndActivateProjectScene(engine, projectRoot / "does_not_exist.uvproject");
 
-    EXPECT_FALSE(result.IsAcceptedUVE());
-    EXPECT_EQ(result.code, ProjectLaunchCodeUVE::InvalidProjectFile);
+    EXPECT_FALSE(result.IsAccepted());
+    EXPECT_EQ(result.code, ProjectLaunchCode::InvalidProjectFile);
     engine.Shutdown();
 }
 
-/// The engine version the authoring tests open projects with; MakeAuthoringPackageUVE records it.
-inline constexpr Core::VersionUVE kAuthoringEngineVersionUVE{0U, 0U, 1U, 0U};
+/// The engine version the authoring tests open projects with; MakeAuthoringPackage records it.
+inline constexpr Core::Version kAuthoringEngineVersion{0U, 0U, 1U, 0U};
 
-[[nodiscard]] Platform::EditorProjectPackageUVE MakeAuthoringPackageUVE() {
-    Platform::EditorProjectPackageUVE package;
+[[nodiscard]] Platform::EditorProjectPackage MakeAuthoringPackage() {
+    Platform::EditorProjectPackage package;
     package.revision = 1U;
     package.projectId = "editor-authoring-project";
     package.displayName = "Editor Authoring Project";
-    package.engineVersion = {kAuthoringEngineVersionUVE.major, kAuthoringEngineVersionUVE.minor,
-                             kAuthoringEngineVersionUVE.patch, kAuthoringEngineVersionUVE.build};
+    package.engineVersion = {kAuthoringEngineVersion.major, kAuthoringEngineVersion.minor,
+                             kAuthoringEngineVersion.patch, kAuthoringEngineVersion.build};
     package.contentRoot = "content";
     package.assetDatabasePath = ".uvassetdb";
     package.settingsPath = "project.uvsettings";
     return package;
 }
 
-TEST_F(ProjectLauncherUVETest, PrepareEditor_PointsConfigAtProjectAuthoringData) {
-    Platform::EditorProjectPackageUVE package = MakeAuthoringPackageUVE();
+TEST_F(ProjectLauncherTest, PrepareEditor_PointsConfigAtProjectAuthoringData) {
+    Platform::EditorProjectPackage package = MakeAuthoringPackage();
     package.startupScenePath = "scenes/not_saved_yet.uvscene";
-    ASSERT_TRUE(Platform::EditorProjectPackageCodecUVE::SaveUVE(projectFile(), package).IsAcceptedUVE());
+    ASSERT_TRUE(Platform::EditorProjectPackageCodec::Save(projectFile(), package).IsAccepted());
 
-    Core::EngineConfigUVE config = MakeHeadlessConfigUVE(projectRoot);
+    Core::EngineConfig config = MakeHeadlessConfig(projectRoot);
     const std::filesystem::path userSettings = config.settingsFilePath;
     const std::uint32_t editorWindowWidth = config.windowWidth;
     const std::filesystem::path logFileName = config.logFilePath.filename();
-    const ProjectEditorSetupResultUVE result =
-        PrepareProjectEditorUVE(projectFile(), kAuthoringEngineVersionUVE, config);
+    const ProjectEditorSetupResult result =
+        PrepareProjectEditor(projectFile(), kAuthoringEngineVersion, config);
 
-    ASSERT_TRUE(result.IsReadyUVE()) << result.message;
+    ASSERT_TRUE(result.IsReady()) << result.message;
     const std::filesystem::path root = std::filesystem::canonical(projectRoot);
     EXPECT_EQ(result.setup->projectRoot, root);
     EXPECT_EQ(result.setup->contentRoot, root / "content");
     EXPECT_EQ(result.setup->startupScene, root / "content" / "scenes" / "not_saved_yet.uvscene");
-    EXPECT_EQ(config.projectContentRootUVE, root / "content");
-    EXPECT_EQ(config.projectRootDirectoryUVE, root);
+    EXPECT_EQ(config.projectContentRoot, root / "content");
+    EXPECT_EQ(config.projectRootDirectory, root);
     EXPECT_EQ(config.projectSettingsFilePath, root / "project.uvsettings");
     EXPECT_EQ(config.assetDatabaseFilePath, root / ".uvassetdb");
     EXPECT_EQ(config.inputMapFilePath.parent_path(), root);
-    EXPECT_EQ(config.derivedArtifactCacheRootUVE.parent_path().parent_path().parent_path(), root);
-    EXPECT_EQ(config.projectDisplayNameUVE, package.displayName);
+    EXPECT_EQ(config.derivedArtifactCacheRoot.parent_path().parent_path().parent_path(), root);
+    EXPECT_EQ(config.projectDisplayName, package.displayName);
     EXPECT_EQ(config.logFilePath,
-              root / kProjectEditorLogDirectoryNameUVE / logFileName);
+              root / kProjectEditorLogDirectoryName / logFileName);
     EXPECT_TRUE(std::filesystem::is_directory(config.logFilePath.parent_path()));
     // The editor keeps its own per-user preferences and window.
     EXPECT_EQ(config.settingsFilePath, userSettings);
     EXPECT_EQ(config.windowWidth, editorWindowWidth);
 }
 
-TEST_F(ProjectLauncherUVETest, PrepareEditor_AcceptsProjectWithoutStartupScene) {
+TEST_F(ProjectLauncherTest, PrepareEditor_AcceptsProjectWithoutStartupScene) {
     ASSERT_TRUE(
-        Platform::EditorProjectPackageCodecUVE::SaveUVE(projectFile(), MakeAuthoringPackageUVE()).IsAcceptedUVE());
+        Platform::EditorProjectPackageCodec::Save(projectFile(), MakeAuthoringPackage()).IsAccepted());
 
-    Core::EngineConfigUVE config = MakeHeadlessConfigUVE(projectRoot);
-    const ProjectEditorSetupResultUVE result =
-        PrepareProjectEditorUVE(projectFile(), kAuthoringEngineVersionUVE, config);
+    Core::EngineConfig config = MakeHeadlessConfig(projectRoot);
+    const ProjectEditorSetupResult result =
+        PrepareProjectEditor(projectFile(), kAuthoringEngineVersion, config);
 
-    ASSERT_TRUE(result.IsReadyUVE()) << result.message;
+    ASSERT_TRUE(result.IsReady()) << result.message;
     EXPECT_TRUE(result.setup->startupScene.empty());
 }
 
-TEST_F(ProjectLauncherUVETest, PrepareEditor_RejectsStartupSceneOutsideContentRoot) {
+TEST_F(ProjectLauncherTest, PrepareEditor_RejectsStartupSceneOutsideContentRoot) {
     // The codec refuses to save such a manifest, so the escaping path is written into the file
     // directly, as a hand-edited or hostile project would carry it.
     constexpr std::string_view kInsideScene = "scenes/inside.uvscene";
     constexpr std::string_view kEscapingScene = "../outside.uvscene";
-    Platform::EditorProjectPackageUVE package = MakeAuthoringPackageUVE();
+    Platform::EditorProjectPackage package = MakeAuthoringPackage();
     package.startupScenePath = kInsideScene;
-    ASSERT_TRUE(Platform::EditorProjectPackageCodecUVE::SaveUVE(projectFile(), package).IsAcceptedUVE());
+    ASSERT_TRUE(Platform::EditorProjectPackageCodec::Save(projectFile(), package).IsAccepted());
     std::string manifest;
     {
         std::ifstream input(projectFile());
@@ -409,103 +409,103 @@ TEST_F(ProjectLauncherUVETest, PrepareEditor_RejectsStartupSceneOutsideContentRo
         output << manifest;
     }
 
-    Core::EngineConfigUVE config = MakeHeadlessConfigUVE(projectRoot);
-    const Core::EngineConfigUVE before = config;
-    const ProjectEditorSetupResultUVE result =
-        PrepareProjectEditorUVE(projectFile(), kAuthoringEngineVersionUVE, config);
+    Core::EngineConfig config = MakeHeadlessConfig(projectRoot);
+    const Core::EngineConfig before = config;
+    const ProjectEditorSetupResult result =
+        PrepareProjectEditor(projectFile(), kAuthoringEngineVersion, config);
 
-    EXPECT_FALSE(result.IsReadyUVE());
-    EXPECT_EQ(config.projectContentRootUVE, before.projectContentRootUVE);
+    EXPECT_FALSE(result.IsReady());
+    EXPECT_EQ(config.projectContentRoot, before.projectContentRoot);
     EXPECT_EQ(config.logFilePath, before.logFilePath);
 }
 
-TEST_F(ProjectLauncherUVETest, PrepareEditor_RejectsMissingContentRootWithoutTouchingConfig) {
-    Platform::EditorProjectPackageUVE package = MakeAuthoringPackageUVE();
+TEST_F(ProjectLauncherTest, PrepareEditor_RejectsMissingContentRootWithoutTouchingConfig) {
+    Platform::EditorProjectPackage package = MakeAuthoringPackage();
     package.contentRoot = "missing_content";
-    ASSERT_TRUE(Platform::EditorProjectPackageCodecUVE::SaveUVE(projectFile(), package).IsAcceptedUVE());
+    ASSERT_TRUE(Platform::EditorProjectPackageCodec::Save(projectFile(), package).IsAccepted());
 
-    Core::EngineConfigUVE config = MakeHeadlessConfigUVE(projectRoot);
-    const Core::EngineConfigUVE before = config;
-    const ProjectEditorSetupResultUVE result =
-        PrepareProjectEditorUVE(projectFile(), kAuthoringEngineVersionUVE, config);
+    Core::EngineConfig config = MakeHeadlessConfig(projectRoot);
+    const Core::EngineConfig before = config;
+    const ProjectEditorSetupResult result =
+        PrepareProjectEditor(projectFile(), kAuthoringEngineVersion, config);
 
-    EXPECT_EQ(result.code, ProjectEditorSetupCodeUVE::ContentRootInvalid);
-    EXPECT_EQ(config.projectContentRootUVE, before.projectContentRootUVE);
+    EXPECT_EQ(result.code, ProjectEditorSetupCode::ContentRootInvalid);
+    EXPECT_EQ(config.projectContentRoot, before.projectContentRoot);
     EXPECT_EQ(config.assetDatabaseFilePath, before.assetDatabaseFilePath);
 }
 
-TEST_F(ProjectLauncherUVETest, PrepareEditor_RejectsMissingProjectFile) {
-    Core::EngineConfigUVE config = MakeHeadlessConfigUVE(projectRoot);
-    const ProjectEditorSetupResultUVE result =
-        PrepareProjectEditorUVE(projectRoot / "does_not_exist.uvproject", kAuthoringEngineVersionUVE, config);
+TEST_F(ProjectLauncherTest, PrepareEditor_RejectsMissingProjectFile) {
+    Core::EngineConfig config = MakeHeadlessConfig(projectRoot);
+    const ProjectEditorSetupResult result =
+        PrepareProjectEditor(projectRoot / "does_not_exist.uvproject", kAuthoringEngineVersion, config);
 
-    EXPECT_FALSE(result.IsReadyUVE());
-    EXPECT_EQ(result.code, ProjectEditorSetupCodeUVE::InvalidProjectFile);
+    EXPECT_FALSE(result.IsReady());
+    EXPECT_EQ(result.code, ProjectEditorSetupCode::InvalidProjectFile);
 }
 
-TEST_F(ProjectLauncherUVETest, RecordEngineVersion_UpdatesManifestThroughRevisionCheck) {
+TEST_F(ProjectLauncherTest, RecordEngineVersion_UpdatesManifestThroughRevisionCheck) {
     ASSERT_TRUE(
-        Platform::EditorProjectPackageCodecUVE::SaveUVE(projectFile(), MakeAuthoringPackageUVE()).IsAcceptedUVE());
-    const Core::VersionUVE engineVersion{2U, 3U, 4U, 5U};
+        Platform::EditorProjectPackageCodec::Save(projectFile(), MakeAuthoringPackage()).IsAccepted());
+    const Core::Version engineVersion{2U, 3U, 4U, 5U};
 
-    ASSERT_TRUE(RecordProjectEngineVersionUVE(projectFile(), engineVersion).IsAcceptedUVE());
-    const Platform::EditorProjectPackageLoadResultUVE updated =
-        Platform::EditorProjectPackageCodecUVE::LoadUVE(projectFile());
-    ASSERT_TRUE(updated.IsAcceptedUVE());
-    EXPECT_EQ(updated.package->engineVersion, (Platform::EditorProjectVersionUVE{2U, 3U, 4U, 5U}));
+    ASSERT_TRUE(RecordProjectEngineVersion(projectFile(), engineVersion).IsAccepted());
+    const Platform::EditorProjectPackageLoadResult updated =
+        Platform::EditorProjectPackageCodec::Load(projectFile());
+    ASSERT_TRUE(updated.IsAccepted());
+    EXPECT_EQ(updated.package->engineVersion, (Platform::EditorProjectVersion{2U, 3U, 4U, 5U}));
     EXPECT_EQ(updated.package->revision, 2U);
 
     // Recording the same version again leaves the manifest and its revision untouched.
-    ASSERT_TRUE(RecordProjectEngineVersionUVE(projectFile(), engineVersion).IsAcceptedUVE());
-    EXPECT_EQ(Platform::EditorProjectPackageCodecUVE::LoadUVE(projectFile()).package->revision, 2U);
+    ASSERT_TRUE(RecordProjectEngineVersion(projectFile(), engineVersion).IsAccepted());
+    EXPECT_EQ(Platform::EditorProjectPackageCodec::Load(projectFile()).package->revision, 2U);
 }
 
-TEST_F(ProjectLauncherUVETest, RecordEngineVersion_ReportsMissingProjectFile) {
+TEST_F(ProjectLauncherTest, RecordEngineVersion_ReportsMissingProjectFile) {
     EXPECT_FALSE(
-        RecordProjectEngineVersionUVE(projectRoot / "does_not_exist.uvproject", Core::VersionUVE{1U, 0U, 0U, 0U})
-            .IsAcceptedUVE());
+        RecordProjectEngineVersion(projectRoot / "does_not_exist.uvproject", Core::Version{1U, 0U, 0U, 0U})
+            .IsAccepted());
 }
 
-TEST_F(ProjectLauncherUVETest, PrepareEditor_RefusesProjectFromIncompatibleNewerEngine) {
-    Platform::EditorProjectPackageUVE package = MakeAuthoringPackageUVE();
-    package.engineVersion.major = kAuthoringEngineVersionUVE.major + 1U;
-    ASSERT_TRUE(Platform::EditorProjectPackageCodecUVE::SaveUVE(projectFile(), package).IsAcceptedUVE());
+TEST_F(ProjectLauncherTest, PrepareEditor_RefusesProjectFromIncompatibleNewerEngine) {
+    Platform::EditorProjectPackage package = MakeAuthoringPackage();
+    package.engineVersion.major = kAuthoringEngineVersion.major + 1U;
+    ASSERT_TRUE(Platform::EditorProjectPackageCodec::Save(projectFile(), package).IsAccepted());
 
-    Core::EngineConfigUVE config = MakeHeadlessConfigUVE(projectRoot);
-    const Core::EngineConfigUVE before = config;
-    const ProjectEditorSetupResultUVE result =
-        PrepareProjectEditorUVE(projectFile(), kAuthoringEngineVersionUVE, config);
+    Core::EngineConfig config = MakeHeadlessConfig(projectRoot);
+    const Core::EngineConfig before = config;
+    const ProjectEditorSetupResult result =
+        PrepareProjectEditor(projectFile(), kAuthoringEngineVersion, config);
 
-    EXPECT_EQ(result.code, ProjectEditorSetupCodeUVE::EngineTooOld);
-    EXPECT_EQ(config.projectContentRootUVE, before.projectContentRootUVE);
+    EXPECT_EQ(result.code, ProjectEditorSetupCode::EngineTooOld);
+    EXPECT_EQ(config.projectContentRoot, before.projectContentRoot);
     EXPECT_EQ(config.logFilePath, before.logFilePath);
 }
 
-TEST_F(ProjectLauncherUVETest, PrepareEditor_ReportsCompatibilityOfOlderProject) {
-    Platform::EditorProjectPackageUVE package = MakeAuthoringPackageUVE();
-    const Core::VersionUVE newerEngine{kAuthoringEngineVersionUVE.major, kAuthoringEngineVersionUVE.minor + 1U,
-                                       kAuthoringEngineVersionUVE.patch, kAuthoringEngineVersionUVE.build};
-    ASSERT_TRUE(Platform::EditorProjectPackageCodecUVE::SaveUVE(projectFile(), package).IsAcceptedUVE());
+TEST_F(ProjectLauncherTest, PrepareEditor_ReportsCompatibilityOfOlderProject) {
+    Platform::EditorProjectPackage package = MakeAuthoringPackage();
+    const Core::Version newerEngine{kAuthoringEngineVersion.major, kAuthoringEngineVersion.minor + 1U,
+                                       kAuthoringEngineVersion.patch, kAuthoringEngineVersion.build};
+    ASSERT_TRUE(Platform::EditorProjectPackageCodec::Save(projectFile(), package).IsAccepted());
 
-    Core::EngineConfigUVE config = MakeHeadlessConfigUVE(projectRoot);
-    const ProjectEditorSetupResultUVE result = PrepareProjectEditorUVE(projectFile(), newerEngine, config);
+    Core::EngineConfig config = MakeHeadlessConfig(projectRoot);
+    const ProjectEditorSetupResult result = PrepareProjectEditor(projectFile(), newerEngine, config);
 
-    ASSERT_TRUE(result.IsReadyUVE()) << result.message;
-    EXPECT_EQ(result.setup->compatibility.verdict, ProjectCompatibilityVerdictUVE::OlderNeedsUpgrade);
+    ASSERT_TRUE(result.IsReady()) << result.message;
+    EXPECT_EQ(result.setup->compatibility.verdict, ProjectCompatibilityVerdict::OlderNeedsUpgrade);
 }
 
-TEST_F(ProjectLauncherUVETest, PrepareEditor_PropagatesProjectRendererProfileToEngineConfig) {
-    Platform::EditorProjectPackageUVE package = MakeAuthoringPackageUVE();
-    package.rendererProfile = Platform::RendererProfileUVE::Compatibility;
-    ASSERT_TRUE(Platform::EditorProjectPackageCodecUVE::SaveUVE(projectFile(), package).IsAcceptedUVE());
+TEST_F(ProjectLauncherTest, PrepareEditor_PropagatesProjectRendererProfileToEngineConfig) {
+    Platform::EditorProjectPackage package = MakeAuthoringPackage();
+    package.rendererProfile = Platform::RendererProfile::Compatibility;
+    ASSERT_TRUE(Platform::EditorProjectPackageCodec::Save(projectFile(), package).IsAccepted());
 
-    Core::EngineConfigUVE config = MakeHeadlessConfigUVE(projectRoot);
-    config.requestedRendererProfileUVE = Platform::RendererProfileUVE::ForwardPlus;
-    const ProjectEditorSetupResultUVE result =
-        PrepareProjectEditorUVE(projectFile(), kAuthoringEngineVersionUVE, config);
+    Core::EngineConfig config = MakeHeadlessConfig(projectRoot);
+    config.requestedRendererProfile = Platform::RendererProfile::ForwardPlus;
+    const ProjectEditorSetupResult result =
+        PrepareProjectEditor(projectFile(), kAuthoringEngineVersion, config);
 
-    ASSERT_TRUE(result.IsReadyUVE()) << result.message;
-    EXPECT_EQ(config.requestedRendererProfileUVE, Platform::RendererProfileUVE::Compatibility);
+    ASSERT_TRUE(result.IsReady()) << result.message;
+    EXPECT_EQ(config.requestedRendererProfile, Platform::RendererProfile::Compatibility);
 }
 
 } // namespace

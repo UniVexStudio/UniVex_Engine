@@ -10,7 +10,7 @@ Every job builds as on any check; the Release jobs then package what they built,
 
 - `univex-engine-<version>-<linux|windows|android-arm64-v8a|android-x86_64>.uvpackage` - the engine,
   per platform. The Android packages ship the in-process editor library (`uve_editor`) and Android
-  runtime library (`libunivex_android.so`), which UniVex Hub loads via `dlopen` per `contracts/v1/`;
+  runtime library (`libunivex_android.so`), which UniVex Hub loads via `dlopen` per `contracts/v2/`;
   `Release / Android` builds and verifies ELF symbol isolation, and `Publish the release` packages
   them with the release's tag.
 

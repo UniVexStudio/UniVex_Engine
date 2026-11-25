@@ -8,7 +8,7 @@
 // inspector, drops oldest past its cap, and answers oldest-first. Zero capacity disables
 // the capture (every push drops and counts) without unhooking the taps.
 //
-// This is deliberately live-tap-agnostic: who calls PushUVE (a test harness today, stream
+// This is deliberately live-tap-agnostic: who calls Push (a test harness today, stream
 // taps tomorrow) is the feeder's business - the ring only keeps, filters, and formats.
 //
 
@@ -24,65 +24,65 @@ namespace UVE::Network {
 
 /// Ring bound: 512 decoded datagrams, drop-oldest past it. Debug-scale by design - a
 /// capture is a glance at the wire, not a recording.
-struct PacketCaptureConfigUVE final {
+struct PacketCaptureConfig final {
     std::size_t maxPackets = 512U;
 
-    [[nodiscard]] bool operator==(const PacketCaptureConfigUVE&) const noexcept = default;
+    [[nodiscard]] bool operator==(const PacketCaptureConfig&) const noexcept = default;
 };
 
-enum class PacketCaptureDirectionUVE : std::uint8_t { Both = 0, Outbound, Inbound };
+enum class PacketCaptureDirection : std::uint8_t { Both = 0, Outbound, Inbound };
 
 /// What the viewer shows: a direction, an optional channel, a malformed-only switch, and a
-/// substring matched against each packet's DescribePacketUVE line (empty matches all).
+/// substring matched against each packet's DescribePacket line (empty matches all).
 /// Stateless on purpose - the ring keeps packets, the caller keeps its filter UI.
-struct PacketCaptureFilterUVE final {
-    PacketCaptureDirectionUVE direction = PacketCaptureDirectionUVE::Both;
-    std::optional<InspectedChannelUVE> channel;
+struct PacketCaptureFilter final {
+    PacketCaptureDirection direction = PacketCaptureDirection::Both;
+    std::optional<InspectedChannel> channel;
     bool malformedOnly = false;
     std::string text;
 
-    [[nodiscard]] bool operator==(const PacketCaptureFilterUVE&) const noexcept = default;
+    [[nodiscard]] bool operator==(const PacketCaptureFilter&) const noexcept = default;
 };
 
 /// Bounded oldest-first ring of decoded session datagrams. Not thread-safe: taps push from
 /// the single thread that pumps the watched session.
-class PacketCaptureUVE final {
+class PacketCapture final {
 public:
-    explicit PacketCaptureUVE(PacketCaptureConfigUVE config = PacketCaptureConfigUVE{});
+    explicit PacketCapture(PacketCaptureConfig config = PacketCaptureConfig{});
 
     /// Decodes one datagram and appends it, dropping the oldest past the cap (counted).
     /// Timestamps come from the tap's clock; the ring never reorders, so feed it in
     /// arrival order.
-    void PushUVE(const std::vector<std::uint8_t>& datagram, PacketDirectionUVE direction,
+    void Push(const std::vector<std::uint8_t>& datagram, PacketDirection direction,
                  std::uint64_t timestampMs,
-                 InspectedChannelUVE channel = InspectedChannelUVE::Unknown,
+                 InspectedChannel channel = InspectedChannel::Unknown,
                  bool multiplexed = false);
 
     /// Empties the ring and zeroes every counter: the next push starts a fresh capture.
-    void ClearUVE() noexcept;
+    void Clear() noexcept;
 
-    [[nodiscard]] std::size_t SizeUVE() const noexcept { return m_packets.size(); }
-    [[nodiscard]] bool EmptyUVE() const noexcept { return m_packets.empty(); }
-    [[nodiscard]] std::size_t CapacityUVE() const noexcept { return m_config.maxPackets; }
+    [[nodiscard]] std::size_t Size() const noexcept { return m_packets.size(); }
+    [[nodiscard]] bool Empty() const noexcept { return m_packets.empty(); }
+    [[nodiscard]] std::size_t Capacity() const noexcept { return m_config.maxPackets; }
 
     /// Oldest-first packet access; nullptr past the end (the viewer holds indices across
     /// pushes, so out-of-range is a lookup miss, not a bug).
-    [[nodiscard]] const InspectedPacketUVE* TryAtUVE(std::size_t index) const noexcept;
+    [[nodiscard]] const InspectedPacket* TryAt(std::size_t index) const noexcept;
 
     /// Indices matching `filter`, oldest-first. An empty filter matches everything.
-    [[nodiscard]] std::vector<std::size_t> FilteredUVE(
-        const PacketCaptureFilterUVE& filter) const;
+    [[nodiscard]] std::vector<std::size_t> Filtered(
+        const PacketCaptureFilter& filter) const;
 
     /// Total pushes ever (stored plus dropped).
-    [[nodiscard]] std::uint64_t CapturedUVE() const noexcept { return m_captured; }
+    [[nodiscard]] std::uint64_t Captured() const noexcept { return m_captured; }
     /// Pushes lost to the cap (plus every push while capacity is zero).
-    [[nodiscard]] std::uint64_t DropsUVE() const noexcept { return m_drops; }
+    [[nodiscard]] std::uint64_t Drops() const noexcept { return m_drops; }
     /// Stored packets flagged malformed (dropped ones stop counting).
-    [[nodiscard]] std::uint64_t MalformedUVE() const noexcept { return m_malformed; }
+    [[nodiscard]] std::uint64_t Malformed() const noexcept { return m_malformed; }
 
 private:
-    PacketCaptureConfigUVE m_config;
-    std::vector<InspectedPacketUVE> m_packets;
+    PacketCaptureConfig m_config;
+    std::vector<InspectedPacket> m_packets;
     std::uint64_t m_captured = 0U;
     std::uint64_t m_drops = 0U;
     std::uint64_t m_malformed = 0U;
@@ -92,7 +92,7 @@ private:
 /// bytes: 8-digit hex offset, blank-padded hex slots, printable ASCII (else '.'). Rows join
 /// with '\n' (no trailing newline); empty input formats empty. A zero row width means the
 /// default 16, past 64 clamps to 64.
-[[nodiscard]] std::string HexdumpPacketUVE(const std::vector<std::uint8_t>& raw,
+[[nodiscard]] std::string HexdumpPacket(const std::vector<std::uint8_t>& raw,
                                            std::size_t bytesPerRow = 16U);
 
 } // namespace UVE::Network

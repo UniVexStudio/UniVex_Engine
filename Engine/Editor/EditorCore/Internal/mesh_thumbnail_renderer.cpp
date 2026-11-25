@@ -34,19 +34,19 @@ namespace UVE::Editor {
 
 namespace {
 
-constexpr float kFieldOfViewYRadiansUVE = 0.6981317F; // 40 degrees
-constexpr float kCameraDistanceMarginUVE = 1.06F;
+constexpr float kFieldOfViewYRadians = 0.6981317F; // 40 degrees
+constexpr float kCameraDistanceMargin = 1.06F;
 // Only a guard against a mesh with no extent at all: a small model (a 2 cm bolt, a coin) is framed
 // to fill the card like any other, rather than shown as a dot in a quarter-metre view.
-constexpr float kMinimumBoundingRadiusUVE = 1.0e-4F;
+constexpr float kMinimumBoundingRadius = 1.0e-4F;
 // The near plane follows the camera, which follows the mesh's size, so a small mesh is never cut
 // by a fixed near plane and a large one keeps the same depth precision.
-constexpr float kNearPlaneFractionUVE = 0.05F;
+constexpr float kNearPlaneFraction = 0.05F;
 
 // Default neutral tone when no texture is available.
-constexpr Math::Vector3UVE kBaseColorUVE{0.70F, 0.72F, 0.76F};
+constexpr Math::Vector3 kBaseColor{0.70F, 0.72F, 0.76F};
 
-constexpr const char* kVertexShaderSourceUVE = R"GLSL(#version 330 core
+constexpr const char* kVertexShaderSource = R"GLSL(#version 330 core
 layout(location = 0) in vec3 aPosition;
 layout(location = 1) in vec3 aNormal;
 layout(location = 2) in vec2 aTexCoord;
@@ -62,7 +62,7 @@ void main() {
 }
 )GLSL";
 
-constexpr const char* kFragmentShaderSourceUVE = R"GLSL(#version 330 core
+constexpr const char* kFragmentShaderSource = R"GLSL(#version 330 core
 const float kPi = 3.14159265359;
 
 in vec3 vNormal;
@@ -95,7 +95,7 @@ uniform sampler2D uMetallicRoughnessTexture;
 uniform sampler2D uAOTexture;
 uniform sampler2D uEmissiveTexture;
 
-float DistributionGGXUVE(vec3 normal, vec3 halfway, float roughness) {
+float DistributionGGX(vec3 normal, vec3 halfway, float roughness) {
     float alpha = roughness * roughness;
     float alphaSquared = alpha * alpha;
     float normalDotHalfway = max(dot(normal, halfway), 0.0);
@@ -103,7 +103,7 @@ float DistributionGGXUVE(vec3 normal, vec3 halfway, float roughness) {
     return alphaSquared / max(kPi * denominator * denominator, 1.0e-5);
 }
 
-float VisibilitySmithGGXCorrelatedUVE(float normalDotView, float normalDotLight, float roughness) {
+float VisibilitySmithGGXCorrelated(float normalDotView, float normalDotLight, float roughness) {
     float alpha = roughness * roughness;
     float alphaSquared = alpha * alpha;
     float viewTerm = normalDotLight * sqrt(normalDotView * normalDotView * (1.0 - alphaSquared) + alphaSquared);
@@ -111,11 +111,11 @@ float VisibilitySmithGGXCorrelatedUVE(float normalDotView, float normalDotLight,
     return 0.5 / max(viewTerm + lightTerm, 1.0e-5);
 }
 
-vec3 FresnelSchlickUVE(float viewDotHalfway, vec3 baseReflectance) {
+vec3 FresnelSchlick(float viewDotHalfway, vec3 baseReflectance) {
     return baseReflectance + (vec3(1.0) - baseReflectance) * pow(1.0 - viewDotHalfway, 5.0);
 }
 
-vec3 DirectLightUVE(vec3 normal, vec3 view, vec3 lightDirection, vec3 radiance, vec3 albedo,
+vec3 DirectLight(vec3 normal, vec3 view, vec3 lightDirection, vec3 radiance, vec3 albedo,
                     vec3 baseReflectance, float metallic, float roughness) {
     float normalDotLight = max(dot(normal, lightDirection), 0.0);
     if (normalDotLight <= 0.0) {
@@ -123,27 +123,27 @@ vec3 DirectLightUVE(vec3 normal, vec3 view, vec3 lightDirection, vec3 radiance, 
     }
     vec3 halfway = normalize(view + lightDirection);
     float normalDotView = max(dot(normal, view), 1.0e-4);
-    float distribution = DistributionGGXUVE(normal, halfway, roughness);
-    float visibility = VisibilitySmithGGXCorrelatedUVE(normalDotView, normalDotLight, roughness);
-    vec3 fresnel = FresnelSchlickUVE(max(dot(halfway, view), 0.0), baseReflectance);
+    float distribution = DistributionGGX(normal, halfway, roughness);
+    float visibility = VisibilitySmithGGXCorrelated(normalDotView, normalDotLight, roughness);
+    vec3 fresnel = FresnelSchlick(max(dot(halfway, view), 0.0), baseReflectance);
     vec3 specular = fresnel * distribution * visibility;
     vec3 diffuseWeight = (vec3(1.0) - fresnel) * (1.0 - metallic);
     return (diffuseWeight * albedo / kPi + specular) * radiance * normalDotLight;
 }
 
-vec3 ToneMapUVE(vec3 color) {
+vec3 ToneMap(vec3 color) {
     vec3 numerator = color * (2.51 * color + 0.03);
     vec3 denominator = color * (2.43 * color + 0.59) + 0.14;
     return clamp(numerator / denominator, 0.0, 1.0);
 }
 
-vec3 LinearToDisplayUVE(vec3 color) {
+vec3 LinearToDisplay(vec3 color) {
     vec3 low = color * 12.92;
     vec3 high = 1.055 * pow(max(color, vec3(0.0)), vec3(1.0 / 2.4)) - 0.055;
     return mix(high, low, lessThanEqual(color, vec3(0.0031308)));
 }
 
-vec3 PerturbNormalUVE(vec3 geomNormal, vec3 worldPos, vec2 uv, vec3 tangentNormal) {
+vec3 PerturbNormal(vec3 geomNormal, vec3 worldPos, vec2 uv, vec3 tangentNormal) {
     vec3 dp1 = dFdx(worldPos);
     vec3 dp2 = dFdy(worldPos);
     vec2 duv1 = dFdx(uv);
@@ -171,7 +171,7 @@ void main() {
     }
     vec3 albedo = uBaseColor * albedoSample.rgb;
     if (uUnshaded) {
-        FragColor = vec4(LinearToDisplayUVE(clamp(albedo, 0.0, 1.0)), 1.0);
+        FragColor = vec4(LinearToDisplay(clamp(albedo, 0.0, 1.0)), 1.0);
         return;
     }
 
@@ -182,7 +182,7 @@ void main() {
             tangentNormal.y = -tangentNormal.y;
         }
         tangentNormal.xy *= uNormalScale;
-        shadingNormal = PerturbNormalUVE(shadingNormal, vWorldPosition, uv, tangentNormal);
+        shadingNormal = PerturbNormal(shadingNormal, vWorldPosition, uv, tangentNormal);
     }
 
     vec3 view = normalize(uCameraPosition - vWorldPosition);
@@ -208,7 +208,7 @@ void main() {
     float dielectricSpec = clamp(uDielectricSpecular, 0.0, 1.0);
     vec3 baseReflectance = mix(vec3(0.16 * dielectricSpec * dielectricSpec), albedo, metallic);
 
-    // Balanced three-point studio rig matching MaterialThumbnailRendererUVE so mesh and material
+    // Balanced three-point studio rig matching MaterialThumbnailRenderer so mesh and material
     // thumbnails agree on exposure, roughness response, and metal reflections.
     vec3 keyDir = normalize(vec3(-0.45, 0.85, 0.55));
     vec3 keyColor = vec3(2.05, 1.98, 1.88);
@@ -219,9 +219,9 @@ void main() {
     vec3 skyAmbient = vec3(0.16, 0.18, 0.22);
     vec3 groundAmbient = vec3(0.045, 0.042, 0.038);
 
-    vec3 color = DirectLightUVE(shadingNormal, view, keyDir, keyColor, albedo, baseReflectance, metallic, roughness) +
-                 DirectLightUVE(shadingNormal, view, fillDir, fillColor, albedo, baseReflectance, metallic, roughness) +
-                 DirectLightUVE(shadingNormal, view, rimDir, rimColor, albedo, baseReflectance, metallic, roughness);
+    vec3 color = DirectLight(shadingNormal, view, keyDir, keyColor, albedo, baseReflectance, metallic, roughness) +
+                 DirectLight(shadingNormal, view, fillDir, fillColor, albedo, baseReflectance, metallic, roughness) +
+                 DirectLight(shadingNormal, view, rimDir, rimColor, albedo, baseReflectance, metallic, roughness);
 
     vec3 irradiance = mix(groundAmbient, skyAmbient, shadingNormal.y * 0.5 + 0.5) * occlusion;
     vec3 diffuseAmbient = albedo * (1.0 - metallic) * irradiance;
@@ -239,11 +239,11 @@ void main() {
         color += uEmissiveColor * uEmissiveEnergy;
     }
 
-    FragColor = vec4(LinearToDisplayUVE(ToneMapUVE(color)), 1.0);
+    FragColor = vec4(LinearToDisplay(ToneMap(color)), 1.0);
 }
 )GLSL";
 
-constexpr const char* kBoneVertexShaderSourceUVE = R"GLSL(#version 330 core
+constexpr const char* kBoneVertexShaderSource = R"GLSL(#version 330 core
 layout(location = 0) in vec3 aPosition;
 uniform mat4 uViewProjection;
 void main() {
@@ -251,7 +251,7 @@ void main() {
 }
 )GLSL";
 
-constexpr const char* kBoneFragmentShaderSourceUVE = R"GLSL(#version 330 core
+constexpr const char* kBoneFragmentShaderSource = R"GLSL(#version 330 core
 out vec4 FragColor;
 uniform vec4 uBoneColor;
 void main() {
@@ -259,10 +259,10 @@ void main() {
 }
 )GLSL";
 
-constexpr GLenum kReadFramebufferUVE = 0x8CA8U;
-constexpr GLenum kDrawFramebufferUVE = 0x8CA9U;
+constexpr GLenum kReadFramebuffer = 0x8CA8U;
+constexpr GLenum kDrawFramebuffer = 0x8CA9U;
 
-void SetGlCapabilityUVE(const GLenum capability, const GLboolean enabled) noexcept {
+void SetGlCapability(const GLenum capability, const GLboolean enabled) noexcept {
     if (enabled == GL_TRUE) {
         glEnable(capability);
     } else {
@@ -271,9 +271,9 @@ void SetGlCapabilityUVE(const GLenum capability, const GLboolean enabled) noexce
 }
 
 /// Bridges GLFW's proc-address lookup (GLFWglproc, a void(*)(void)) to the shared GL loader's
-/// void*-based signature - the same one-line adapter GlRenderDeviceUVE passes (see
+/// void*-based signature - the same one-line adapter GlRenderDevice passes (see
 /// gl_render_device_uve.cpp); all actual per-function loading lives in gl_functions_uve.cpp.
-[[nodiscard]] void* GrabGlProcAddressUVE(const char* const name) noexcept {
+[[nodiscard]] void* GrabGlProcAddress(const char* const name) noexcept {
     return reinterpret_cast<void*>(glfwGetProcAddress(name));
 }
 
@@ -282,8 +282,8 @@ void SetGlCapabilityUVE(const GLenum capability, const GLboolean enabled) noexce
 /// The shared GL proc table (see uve/rhi_opengl/gl_functions_uve.h), compiled shader program, and
 /// scratch render target this renderer needs, kept out of the public header (see the header's class
 /// doc comment).
-struct MeshThumbnailRendererUVE::GlStateUVE {
-    Render::Detail::GlFunctionsUVE table;
+struct MeshThumbnailRenderer::GlState {
+    Render::Detail::GlFunctions table;
 
     bool functionsLoaded = false;
 
@@ -329,7 +329,7 @@ struct MeshThumbnailRendererUVE::GlStateUVE {
 
 namespace {
 
-[[nodiscard]] bool CompileShaderStageUVE(MeshThumbnailRendererUVE::GlStateUVE& gl, const GLenum stage,
+[[nodiscard]] bool CompileShaderStage(MeshThumbnailRenderer::GlState& gl, const GLenum stage,
                                           const char* const source, GLuint& outShader) noexcept {
     outShader = gl.table.glCreateShader(stage);
     if (outShader == 0U) {
@@ -349,7 +349,7 @@ namespace {
         if (gl.table.glGetShaderInfoLog != nullptr) {
             gl.table.glGetShaderInfoLog(outShader, static_cast<GLsizei>(sizeof(infoLog) - 1U), &logLen, infoLog);
         }
-        UVE_ERROR("MeshThumbnailRendererUVE: shader compile failed (stage 0x{:X}): {}",
+        UVE_ERROR("MeshThumbnailRenderer: shader compile failed (stage 0x{:X}): {}",
                   static_cast<unsigned int>(stage), infoLog);
         gl.table.glDeleteShader(outShader);
         outShader = 0U;
@@ -359,8 +359,8 @@ namespace {
 }
 
 /// Creates (once) and resizes (as needed) the scratch framebuffer + depth-renderbuffer (+ optional
-/// supersampled color texture & resolve framebuffer) reused by every RenderThumbnailUVE() call.
-[[nodiscard]] bool EnsureScratchTargetUVE(MeshThumbnailRendererUVE::GlStateUVE& gl, const int width,
+/// supersampled color texture & resolve framebuffer) reused by every RenderThumbnail() call.
+[[nodiscard]] bool EnsureScratchTarget(MeshThumbnailRenderer::GlState& gl, const int width,
                                            const int height, const bool supersample) noexcept {
     const bool firstTime = gl.scratchFramebuffer == 0U;
     if (firstTime) {
@@ -401,25 +401,25 @@ namespace {
 
 } // namespace
 
-MeshThumbnailRendererUVE::MeshThumbnailRendererUVE() = default;
-MeshThumbnailRendererUVE::~MeshThumbnailRendererUVE() = default;
+MeshThumbnailRenderer::MeshThumbnailRenderer() = default;
+MeshThumbnailRenderer::~MeshThumbnailRenderer() = default;
 
-void MeshThumbnailRendererUVE::InitializeUVE() {
-    m_gl = std::make_unique<GlStateUVE>();
-    GlStateUVE& gl = *m_gl;
+void MeshThumbnailRenderer::Initialize() {
+    m_gl = std::make_unique<GlState>();
+    GlState& gl = *m_gl;
 
-    gl.table = Render::Detail::LoadGlFunctionsUVE(&GrabGlProcAddressUVE);
-    gl.functionsLoaded = gl.table.IsCompleteUVE();
+    gl.table = Render::Detail::LoadGlFunctions(&GrabGlProcAddress);
+    gl.functionsLoaded = gl.table.IsComplete();
     if (!gl.functionsLoaded) {
-        UVE_ERROR("MeshThumbnailRendererUVE: OpenGL function table incomplete; PBR mesh thumbnails disabled");
+        UVE_ERROR("MeshThumbnailRenderer: OpenGL function table incomplete; PBR mesh thumbnails disabled");
         return;
     }
 
     GLuint vertexShader = 0U;
     GLuint fragmentShader = 0U;
-    const bool vertexCompiled = CompileShaderStageUVE(gl, GL_VERTEX_SHADER, kVertexShaderSourceUVE, vertexShader);
+    const bool vertexCompiled = CompileShaderStage(gl, GL_VERTEX_SHADER, kVertexShaderSource, vertexShader);
     const bool fragmentCompiled =
-        vertexCompiled && CompileShaderStageUVE(gl, GL_FRAGMENT_SHADER, kFragmentShaderSourceUVE, fragmentShader);
+        vertexCompiled && CompileShaderStage(gl, GL_FRAGMENT_SHADER, kFragmentShaderSource, fragmentShader);
     if (!fragmentCompiled) {
         if (vertexShader != 0U) {
             gl.table.glDeleteShader(vertexShader);
@@ -441,7 +441,7 @@ void MeshThumbnailRendererUVE::InitializeUVE() {
         if (gl.table.glGetProgramInfoLog != nullptr) {
             gl.table.glGetProgramInfoLog(gl.shaderProgram, static_cast<GLsizei>(sizeof(infoLog) - 1U), &logLen, infoLog);
         }
-        UVE_ERROR("MeshThumbnailRendererUVE: shader link failed: {}", infoLog);
+        UVE_ERROR("MeshThumbnailRenderer: shader link failed: {}", infoLog);
         gl.table.glDeleteProgram(gl.shaderProgram);
         gl.shaderProgram = 0U;
         return;
@@ -476,8 +476,8 @@ void MeshThumbnailRendererUVE::InitializeUVE() {
 
     GLuint boneVertexShader = 0U;
     GLuint boneFragmentShader = 0U;
-    if (CompileShaderStageUVE(gl, GL_VERTEX_SHADER, kBoneVertexShaderSourceUVE, boneVertexShader) &&
-        CompileShaderStageUVE(gl, GL_FRAGMENT_SHADER, kBoneFragmentShaderSourceUVE, boneFragmentShader)) {
+    if (CompileShaderStage(gl, GL_VERTEX_SHADER, kBoneVertexShaderSource, boneVertexShader) &&
+        CompileShaderStage(gl, GL_FRAGMENT_SHADER, kBoneFragmentShaderSource, boneFragmentShader)) {
         gl.boneShaderProgram = gl.table.glCreateProgram();
         gl.table.glAttachShader(gl.boneShaderProgram, boneVertexShader);
         gl.table.glAttachShader(gl.boneShaderProgram, boneFragmentShader);
@@ -497,11 +497,11 @@ void MeshThumbnailRendererUVE::InitializeUVE() {
     }
 }
 
-void MeshThumbnailRendererUVE::ShutdownUVE() noexcept {
+void MeshThumbnailRenderer::Shutdown() noexcept {
     if (!m_gl) {
         return;
     }
-    GlStateUVE& gl = *m_gl;
+    GlState& gl = *m_gl;
     if (gl.functionsLoaded) {
         if (gl.scratchColorTexture != 0U) {
             glDeleteTextures(1, &gl.scratchColorTexture);
@@ -533,26 +533,26 @@ void MeshThumbnailRendererUVE::ShutdownUVE() noexcept {
     m_gl.reset();
 }
 
-std::uintptr_t MeshThumbnailRendererUVE::RenderThumbnailUVE(const Asset::MeshAssetUVE& mesh, const int width,
+std::uintptr_t MeshThumbnailRenderer::RenderThumbnail(const Asset::MeshAsset& mesh, const int width,
                                                              const int height,
-                                                             const MaterialThumbnailImageUVE* albedoTexture) {
+                                                             const MaterialThumbnailImage* albedoTexture) {
     // One look for every slot (and for a mesh with no slots).
-    MeshThumbnailLookUVE look;
+    MeshThumbnailLook look;
     if (albedoTexture != nullptr) {
         look.colour = {1.0F, 1.0F, 1.0F};
         look.albedo = albedoTexture;
     }
     const std::size_t slots = std::max<std::size_t>(1U, mesh.materialGuids.size());
-    return RenderThumbnailUVE(mesh, width, height, std::vector<MeshThumbnailLookUVE>(slots, look));
+    return RenderThumbnail(mesh, width, height, std::vector<MeshThumbnailLook>(slots, look));
 }
 
-std::uintptr_t MeshThumbnailRendererUVE::RenderThumbnailUVE(const Asset::MeshAssetUVE& mesh, const int width,
+std::uintptr_t MeshThumbnailRenderer::RenderThumbnail(const Asset::MeshAsset& mesh, const int width,
                                                              const int height,
-                                                             const std::vector<MeshThumbnailLookUVE>& looksBySlot,
-                                                             const std::vector<MeshThumbnailBoneUVE>& bones,
+                                                             const std::vector<MeshThumbnailLook>& looksBySlot,
+                                                             const std::vector<MeshThumbnailBone>& bones,
                                                              const float* const viewDirectionIn) {
     if (!m_gl && glfwGetCurrentContext() != nullptr) {
-        InitializeUVE();
+        Initialize();
     }
     if (!m_gl || !m_gl->functionsLoaded || !m_gl->programLinked) {
         return 0U;
@@ -560,57 +560,57 @@ std::uintptr_t MeshThumbnailRendererUVE::RenderThumbnailUVE(const Asset::MeshAss
     if (mesh.vertices.empty() || mesh.indices.empty() || width <= 0 || height <= 0) {
         return 0U;
     }
-    GlStateUVE& gl = *m_gl;
+    GlState& gl = *m_gl;
 
-    const Math::Vector3UVE center = mesh.localBounds.GetCenterUVE();
-    const Math::Vector3UVE extents = mesh.localBounds.GetExtentsUVE();
+    const Math::Vector3 center = mesh.localBounds.GetCenter();
+    const Math::Vector3 extents = mesh.localBounds.GetExtents();
     const float boundingRadius =
-        std::max(kMinimumBoundingRadiusUVE,
+        std::max(kMinimumBoundingRadius,
                  std::sqrt(extents.x * extents.x + extents.y * extents.y + extents.z * extents.z));
     // A little from the right and above, mostly from the front.
-    Math::Vector3UVE viewDirection = Math::NormalizeUVE(Math::Vector3UVE{0.38F, 0.22F, 1.0F});
+    Math::Vector3 viewDirection = Math::Normalize(Math::Vector3{0.38F, 0.22F, 1.0F});
     if (viewDirectionIn != nullptr) {
-        const Math::Vector3UVE asked{viewDirectionIn[0], viewDirectionIn[1], viewDirectionIn[2]};
+        const Math::Vector3 asked{viewDirectionIn[0], viewDirectionIn[1], viewDirectionIn[2]};
         // Straight up or down has no "up" to look with: tipped a little off the vertical.
         if (std::abs(asked.y) < 0.995F && (asked.x != 0.0F || asked.z != 0.0F)) {
-            viewDirection = Math::NormalizeUVE(asked);
+            viewDirection = Math::Normalize(asked);
         }
     }
     // Framed on the model itself, not on a sphere around it: the camera stands just far enough
     // back that every corner of the box fits the picture, so the model fills the tile.
     float distance = 0.0F;
     {
-        const Math::Vector3UVE forward = viewDirection * -1.0F;
-        const Math::Vector3UVE side = Math::NormalizeUVE(Math::CrossUVE(forward, Math::Vector3UVE{0.0F, 1.0F, 0.0F}));
-        const Math::Vector3UVE upward = Math::CrossUVE(side, forward);
-        const float tanHalf = std::tan(kFieldOfViewYRadiansUVE * 0.5F);
+        const Math::Vector3 forward = viewDirection * -1.0F;
+        const Math::Vector3 side = Math::Normalize(Math::Cross(forward, Math::Vector3{0.0F, 1.0F, 0.0F}));
+        const Math::Vector3 upward = Math::Cross(side, forward);
+        const float tanHalf = std::tan(kFieldOfViewYRadians * 0.5F);
         const float aspect = static_cast<float>(width) / static_cast<float>(height);
         for (int corner = 0; corner < 8; ++corner) {
-            const Math::Vector3UVE d{(corner & 1) != 0 ? extents.x : -extents.x, (corner & 2) != 0 ? extents.y : -extents.y,
+            const Math::Vector3 d{(corner & 1) != 0 ? extents.x : -extents.x, (corner & 2) != 0 ? extents.y : -extents.y,
                                      (corner & 4) != 0 ? extents.z : -extents.z};
-            const float x = std::abs(Math::DotUVE(d, side));
-            const float y = std::abs(Math::DotUVE(d, upward));
-            const float z = Math::DotUVE(d, viewDirection);
+            const float x = std::abs(Math::Dot(d, side));
+            const float y = std::abs(Math::Dot(d, upward));
+            const float z = Math::Dot(d, viewDirection);
             distance = std::max({distance, z + x / (tanHalf * aspect), z + y / tanHalf});
         }
-        distance = std::max(distance * kCameraDistanceMarginUVE, boundingRadius * 0.5F);
+        distance = std::max(distance * kCameraDistanceMargin, boundingRadius * 0.5F);
     }
-    const Math::Vector3UVE cameraPosition = center + viewDirection * distance;
+    const Math::Vector3 cameraPosition = center + viewDirection * distance;
 
-    Math::QuaternionUVE cameraRotation{};
-    if (!Math::TryMakeLookAtUVE(cameraPosition - center, Math::Vector3UVE{0.0F, 1.0F, 0.0F}, cameraRotation)) {
+    Math::Quaternion cameraRotation{};
+    if (!Math::TryMakeLookAt(cameraPosition - center, Math::Vector3{0.0F, 1.0F, 0.0F}, cameraRotation)) {
         return 0U;
     }
 
-    const Math::Matrix4x4UVE view =
-        Math::Matrix4x4UVE::ViewFromPositionAndRotationUVE(cameraPosition, cameraRotation);
-    const float nearPlane = distance * kNearPlaneFractionUVE;
+    const Math::Matrix4x4 view =
+        Math::Matrix4x4::ViewFromPositionAndRotation(cameraPosition, cameraRotation);
+    const float nearPlane = distance * kNearPlaneFraction;
     const float farPlane = distance + boundingRadius * 2.0F + nearPlane;
-    Math::Matrix4x4UVE projection = Math::Matrix4x4UVE::PerspectiveUVE(
-        kFieldOfViewYRadiansUVE, static_cast<float>(width) / static_cast<float>(height), nearPlane, farPlane);
+    Math::Matrix4x4 projection = Math::Matrix4x4::Perspective(
+        kFieldOfViewYRadians, static_cast<float>(width) / static_cast<float>(height), nearPlane, farPlane);
     // Invert Y in projection so OpenGL's bottom-up FBO maps right-side up to the UI's top-down (0,0)-(1,1) UV coordinates.
     projection.m[1][1] = -projection.m[1][1];
-    const Math::Matrix4x4UVE viewProjection = projection * view;
+    const Math::Matrix4x4 viewProjection = projection * view;
 
     // Drain pre-existing GL errors from unrelated passes so glGetError() below only reflects this draw.
     while (glGetError() != GL_NO_ERROR) {
@@ -632,10 +632,10 @@ std::uintptr_t MeshThumbnailRendererUVE::RenderThumbnailUVE(const Asset::MeshAss
     glGetIntegerv(GL_ELEMENT_ARRAY_BUFFER_BINDING, &previousElementArrayBuffer);
     GLint previousActiveTexture = GL_TEXTURE0;
     glGetIntegerv(GL_ACTIVE_TEXTURE, &previousActiveTexture);
-    constexpr std::size_t kTextureUnitCountUVE = 5U;
-    std::array<GLint, kTextureUnitCountUVE> previousTextures{};
-    std::array<GLint, kTextureUnitCountUVE> previousSamplers{};
-    for (std::size_t unit = 0U; unit < kTextureUnitCountUVE; ++unit) {
+    constexpr std::size_t kTextureUnitCount = 5U;
+    std::array<GLint, kTextureUnitCount> previousTextures{};
+    std::array<GLint, kTextureUnitCount> previousSamplers{};
+    for (std::size_t unit = 0U; unit < kTextureUnitCount; ++unit) {
         gl.table.glActiveTexture(GL_TEXTURE0 + static_cast<GLenum>(unit));
         glGetIntegerv(GL_TEXTURE_BINDING_2D, &previousTextures[unit]);
         if (gl.table.glBindSampler != nullptr) {
@@ -658,7 +658,7 @@ std::uintptr_t MeshThumbnailRendererUVE::RenderThumbnailUVE(const Asset::MeshAss
     const bool supersample = gl.table.glBlitFramebuffer != nullptr && width <= 1024 && height <= 1024;
     const int renderWidth = supersample ? width * 2 : width;
     const int renderHeight = supersample ? height * 2 : height;
-    bool succeeded = EnsureScratchTargetUVE(gl, renderWidth, renderHeight, supersample);
+    bool succeeded = EnsureScratchTarget(gl, renderWidth, renderHeight, supersample);
 
     GLuint colorTexture = 0U;
     if (succeeded) {
@@ -691,18 +691,18 @@ std::uintptr_t MeshThumbnailRendererUVE::RenderThumbnailUVE(const Asset::MeshAss
     }
 
     // Upload each distinct (image, forceLinear) texture once with proper sRGB/linear format and mipmaps.
-    struct UploadedMapUVE {
-        const MaterialThumbnailImageUVE* image = nullptr;
+    struct UploadedMap {
+        const MaterialThumbnailImage* image = nullptr;
         bool forceLinear = false;
         GLuint id = 0U;
     };
-    std::vector<UploadedMapUVE> uploadedMaps;
-    const auto textureOf = [&gl, &uploadedMaps](const MaterialThumbnailImageUVE* image,
+    std::vector<UploadedMap> uploadedMaps;
+    const auto textureOf = [&gl, &uploadedMaps](const MaterialThumbnailImage* image,
                                                 const bool forceLinear) -> GLuint {
-        if (image == nullptr || !image->IsValidUVE()) {
+        if (image == nullptr || !image->IsValid()) {
             return 0U;
         }
-        for (const UploadedMapUVE& known : uploadedMaps) {
+        for (const UploadedMap& known : uploadedMaps) {
             if (known.image == image && known.forceLinear == forceLinear) {
                 return known.id;
             }
@@ -723,7 +723,7 @@ std::uintptr_t MeshThumbnailRendererUVE::RenderThumbnailUVE(const Asset::MeshAss
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER,
                             glGetError() == GL_NO_ERROR ? GL_LINEAR_MIPMAP_LINEAR : GL_LINEAR);
         }
-        uploadedMaps.push_back(UploadedMapUVE{image, forceLinear, id});
+        uploadedMaps.push_back(UploadedMap{image, forceLinear, id});
         return id;
     };
 
@@ -734,11 +734,11 @@ std::uintptr_t MeshThumbnailRendererUVE::RenderThumbnailUVE(const Asset::MeshAss
         glViewport(0, 0, renderWidth, renderHeight);
         // Transparent background: the preview is the mesh alone, composited over whatever tile shows it.
         glClearColor(0.0F, 0.0F, 0.0F, 0.0F);
-        SetGlCapabilityUVE(GL_DEPTH_TEST, GL_TRUE);
+        SetGlCapability(GL_DEPTH_TEST, GL_TRUE);
         glDepthMask(GL_TRUE);
-        SetGlCapabilityUVE(GL_CULL_FACE, GL_FALSE);
-        SetGlCapabilityUVE(GL_BLEND, GL_FALSE);
-        SetGlCapabilityUVE(GL_SCISSOR_TEST, GL_FALSE);
+        SetGlCapability(GL_CULL_FACE, GL_FALSE);
+        SetGlCapability(GL_BLEND, GL_FALSE);
+        SetGlCapability(GL_SCISSOR_TEST, GL_FALSE);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
         gl.table.glGenVertexArrays(1, &vao);
@@ -746,21 +746,21 @@ std::uintptr_t MeshThumbnailRendererUVE::RenderThumbnailUVE(const Asset::MeshAss
         gl.table.glGenBuffers(1, &vertexBuffer);
         gl.table.glBindBuffer(GL_ARRAY_BUFFER, vertexBuffer);
         gl.table.glBufferData(GL_ARRAY_BUFFER,
-                         static_cast<GLsizeiptr>(mesh.vertices.size() * sizeof(Asset::MeshVertexUVE)),
+                         static_cast<GLsizeiptr>(mesh.vertices.size() * sizeof(Asset::MeshVertex)),
                          mesh.vertices.data(), GL_STREAM_DRAW);
         gl.table.glGenBuffers(1, &indexBuffer);
         gl.table.glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, indexBuffer);
         gl.table.glBufferData(GL_ELEMENT_ARRAY_BUFFER,
                          static_cast<GLsizeiptr>(mesh.indices.size() * sizeof(std::uint32_t)), mesh.indices.data(),
                          GL_STREAM_DRAW);
-        gl.table.glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Asset::MeshVertexUVE),
-                                  reinterpret_cast<const void*>(offsetof(Asset::MeshVertexUVE, position)));
+        gl.table.glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Asset::MeshVertex),
+                                  reinterpret_cast<const void*>(offsetof(Asset::MeshVertex, position)));
         gl.table.glEnableVertexAttribArray(0);
-        gl.table.glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(Asset::MeshVertexUVE),
-                                  reinterpret_cast<const void*>(offsetof(Asset::MeshVertexUVE, normal)));
+        gl.table.glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(Asset::MeshVertex),
+                                  reinterpret_cast<const void*>(offsetof(Asset::MeshVertex, normal)));
         gl.table.glEnableVertexAttribArray(1);
-        gl.table.glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(Asset::MeshVertexUVE),
-                                  reinterpret_cast<const void*>(offsetof(Asset::MeshVertexUVE, u)));
+        gl.table.glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(Asset::MeshVertex),
+                                  reinterpret_cast<const void*>(offsetof(Asset::MeshVertex, u)));
         gl.table.glEnableVertexAttribArray(2);
 
         gl.table.glUseProgram(gl.shaderProgram);
@@ -783,13 +783,13 @@ std::uintptr_t MeshThumbnailRendererUVE::RenderThumbnailUVE(const Asset::MeshAss
         };
 
         // Each surface in its own material's PBR look; see-through ones are left out.
-        for (std::size_t index = 0U; index < mesh.SurfaceCountUVE(); ++index) {
-            const Asset::MeshSurfaceUVE surface = mesh.GetSurfaceUVE(index);
+        for (std::size_t index = 0U; index < mesh.SurfaceCount(); ++index) {
+            const Asset::MeshSurface surface = mesh.GetSurface(index);
             if (surface.indexCount == 0U || static_cast<std::size_t>(surface.firstIndex) + surface.indexCount > mesh.indices.size()) {
                 continue;
             }
-            MeshThumbnailLookUVE look;
-            look.colour = {kBaseColorUVE.x, kBaseColorUVE.y, kBaseColorUVE.z};
+            MeshThumbnailLook look;
+            look.colour = {kBaseColor.x, kBaseColor.y, kBaseColor.z};
             if (surface.materialSlot < looksBySlot.size()) {
                 look = looksBySlot[surface.materialSlot];
             }
@@ -826,25 +826,25 @@ std::uintptr_t MeshThumbnailRendererUVE::RenderThumbnailUVE(const Asset::MeshAss
         // The skeleton over the model, as the viewport draws it: a slim outline from each joint to
         // the next, in light strokes, never hiding the model.
         if (succeeded && !bones.empty() && gl.boneProgramLinked) {
-            const Math::Vector3UVE forward = viewDirection * -1.0F;
-            std::vector<Math::Vector3UVE> lines;
+            const Math::Vector3 forward = viewDirection * -1.0F;
+            std::vector<Math::Vector3> lines;
             lines.reserve(bones.size() * 16U);
-            for (const MeshThumbnailBoneUVE& bone : bones) {
-                const Math::Vector3UVE head{bone.head[0], bone.head[1], bone.head[2]};
-                const Math::Vector3UVE tail{bone.tail[0], bone.tail[1], bone.tail[2]};
-                const Math::Vector3UVE along = tail - head;
-                const float length = Math::LengthUVE(along);
+            for (const MeshThumbnailBone& bone : bones) {
+                const Math::Vector3 head{bone.head[0], bone.head[1], bone.head[2]};
+                const Math::Vector3 tail{bone.tail[0], bone.tail[1], bone.tail[2]};
+                const Math::Vector3 along = tail - head;
+                const float length = Math::Length(along);
                 if (length < 1.0e-4F) {
                     continue;
                 }
-                const Math::Vector3UVE axis = along * (1.0F / length);
-                Math::Vector3UVE across = Math::CrossUVE(axis, forward);
-                const float acrossLength = Math::LengthUVE(across);
-                across = acrossLength > 1.0e-4F ? across * (1.0F / acrossLength) : Math::Vector3UVE{1.0F, 0.0F, 0.0F};
+                const Math::Vector3 axis = along * (1.0F / length);
+                Math::Vector3 across = Math::Cross(axis, forward);
+                const float acrossLength = Math::Length(across);
+                across = acrossLength > 1.0e-4F ? across * (1.0F / acrossLength) : Math::Vector3{1.0F, 0.0F, 0.0F};
                 const float half = std::clamp(length * 0.08F, boundingRadius * 0.004F, boundingRadius * 0.025F);
-                const Math::Vector3UVE waist = head + along * 0.2F;
-                const Math::Vector3UVE a = waist + across * half;
-                const Math::Vector3UVE b = waist - across * half;
+                const Math::Vector3 waist = head + along * 0.2F;
+                const Math::Vector3 a = waist + across * half;
+                const Math::Vector3 b = waist - across * half;
                 lines.insert(lines.end(), {head, a, a, tail, tail, b, b, head});
             }
             if (!lines.empty()) {
@@ -854,16 +854,16 @@ std::uintptr_t MeshThumbnailRendererUVE::RenderThumbnailUVE(const Asset::MeshAss
                 gl.table.glBindVertexArray(boneVao);
                 gl.table.glGenBuffers(1, &boneVbo);
                 gl.table.glBindBuffer(GL_ARRAY_BUFFER, boneVbo);
-                gl.table.glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(lines.size() * sizeof(Math::Vector3UVE)),
+                gl.table.glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(lines.size() * sizeof(Math::Vector3)),
                                       lines.data(), GL_STREAM_DRAW);
-                gl.table.glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Math::Vector3UVE), nullptr);
+                gl.table.glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Math::Vector3), nullptr);
                 gl.table.glEnableVertexAttribArray(0);
                 gl.table.glUseProgram(gl.boneShaderProgram);
                 gl.table.glUniformMatrix4fv(gl.boneViewProjectionUniform, 1, GL_TRUE, &viewProjection.m[0][0]);
-                constexpr float kBoneColourUVE[4] = {0.55F, 0.95F, 0.80F, 0.95F};
-                gl.table.glUniform4fv(gl.boneColorUniform, 1, kBoneColourUVE);
-                SetGlCapabilityUVE(GL_DEPTH_TEST, GL_FALSE);
-                SetGlCapabilityUVE(GL_BLEND, GL_TRUE);
+                constexpr float kBoneColour[4] = {0.55F, 0.95F, 0.80F, 0.95F};
+                gl.table.glUniform4fv(gl.boneColorUniform, 1, kBoneColour);
+                SetGlCapability(GL_DEPTH_TEST, GL_FALSE);
+                SetGlCapability(GL_BLEND, GL_TRUE);
                 glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
                 glDrawArrays(GL_LINES, 0, static_cast<GLsizei>(lines.size()));
                 gl.table.glBindVertexArray(0);
@@ -874,8 +874,8 @@ std::uintptr_t MeshThumbnailRendererUVE::RenderThumbnailUVE(const Asset::MeshAss
     }
 
     if (succeeded && supersample) {
-        gl.table.glBindFramebuffer(kReadFramebufferUVE, gl.scratchFramebuffer);
-        gl.table.glBindFramebuffer(kDrawFramebufferUVE, gl.resolveFramebuffer);
+        gl.table.glBindFramebuffer(kReadFramebuffer, gl.scratchFramebuffer);
+        gl.table.glBindFramebuffer(kDrawFramebuffer, gl.resolveFramebuffer);
         gl.table.glBlitFramebuffer(0, 0, renderWidth, renderHeight, 0, 0, width, height, GL_COLOR_BUFFER_BIT, GL_LINEAR);
         succeeded = glGetError() == GL_NO_ERROR;
     }
@@ -889,7 +889,7 @@ std::uintptr_t MeshThumbnailRendererUVE::RenderThumbnailUVE(const Asset::MeshAss
         }
     }
 
-    for (const UploadedMapUVE& map : uploadedMaps) {
+    for (const UploadedMap& map : uploadedMaps) {
         if (map.id != 0U) {
             glDeleteTextures(1, &map.id);
         }
@@ -917,7 +917,7 @@ std::uintptr_t MeshThumbnailRendererUVE::RenderThumbnailUVE(const Asset::MeshAss
     if (previousVao != 0) {
         gl.table.glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, static_cast<GLuint>(previousElementArrayBuffer));
     }
-    for (std::size_t unit = 0U; unit < kTextureUnitCountUVE; ++unit) {
+    for (std::size_t unit = 0U; unit < kTextureUnitCount; ++unit) {
         gl.table.glActiveTexture(GL_TEXTURE0 + static_cast<GLenum>(unit));
         glBindTexture(GL_TEXTURE_2D, static_cast<GLuint>(previousTextures[unit]));
         if (gl.table.glBindSampler != nullptr) {
@@ -925,10 +925,10 @@ std::uintptr_t MeshThumbnailRendererUVE::RenderThumbnailUVE(const Asset::MeshAss
         }
     }
     gl.table.glActiveTexture(static_cast<GLenum>(previousActiveTexture));
-    SetGlCapabilityUVE(GL_DEPTH_TEST, depthTestWasEnabled);
-    SetGlCapabilityUVE(GL_CULL_FACE, cullFaceWasEnabled);
-    SetGlCapabilityUVE(GL_BLEND, blendWasEnabled);
-    SetGlCapabilityUVE(GL_SCISSOR_TEST, scissorWasEnabled);
+    SetGlCapability(GL_DEPTH_TEST, depthTestWasEnabled);
+    SetGlCapability(GL_CULL_FACE, cullFaceWasEnabled);
+    SetGlCapability(GL_BLEND, blendWasEnabled);
+    SetGlCapability(GL_SCISSOR_TEST, scissorWasEnabled);
     glDepthMask(previousDepthMask);
     glPixelStorei(GL_UNPACK_ALIGNMENT, previousUnpackAlignment);
     glClearColor(previousClearColor[0], previousClearColor[1], previousClearColor[2], previousClearColor[3]);

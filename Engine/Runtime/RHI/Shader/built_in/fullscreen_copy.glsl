@@ -32,7 +32,7 @@ uniform int uOrthographic;
 uniform int uFastReconstruct;
 uniform mat4 uInverseProjection;
 
-float LinearDepthUVE(vec2 uv, float depthSample) {
+float LinearDepth(vec2 uv, float depthSample) {
     float scale = uDepthNdcScale != 0.0 ? uDepthNdcScale : 2.0;
     float bias = uDepthNdcScale != 0.0 ? uDepthNdcBias : -1.0;
     float ndcZ = depthSample * scale + bias;
@@ -43,7 +43,7 @@ float LinearDepthUVE(vec2 uv, float depthSample) {
     return abs(viewPos.z / max(abs(viewPos.w), 1.0e-6));
 }
 
-vec4 SampleSourceClampedUVE(vec2 uv, vec2 halfTexel) {
+vec4 SampleSourceClamped(vec2 uv, vec2 halfTexel) {
     return texture(uSourceTexture, clamp(uv, halfTexel, vec2(1.0) - halfTexel));
 }
 
@@ -61,26 +61,26 @@ void main() {
         return;
     }
 
-    vec4 centerValue = SampleSourceClampedUVE(vTexCoord, halfTexel);
-    float centerLinDepth = LinearDepthUVE(vTexCoord, centerDepth);
+    vec4 centerValue = SampleSourceClamped(vTexCoord, halfTexel);
+    float centerLinDepth = LinearDepth(vTexCoord, centerDepth);
     float depthSharpness = uBilateralDepthSharpness > 0.0 ? uBilateralDepthSharpness : 12.0;
     float depthScale = max(centerLinDepth * 0.05, 0.02);
 
     vec2 axis = vec2(uBilateralAxisX, uBilateralAxisY);
     if (dot(axis, axis) > 1.0e-5) {
         // 7-tap separable Gaussian-bilateral kernel (sigma ~= 1.6 texels).
-        const float kSpatialWeightsUVE[4] = float[](0.25, 0.1875, 0.125, 0.0625);
-        vec4 sum = centerValue * kSpatialWeightsUVE[0];
-        float weightSum = kSpatialWeightsUVE[0];
+        const float kSpatialWeights[4] = float[](0.25, 0.1875, 0.125, 0.0625);
+        vec4 sum = centerValue * kSpatialWeights[0];
+        float weightSum = kSpatialWeights[0];
         vec2 stepUv = axis * texelSize;
         for (int tap = 1; tap <= 3; ++tap) {
-            float spatialW = kSpatialWeightsUVE[tap];
+            float spatialW = kSpatialWeights[tap];
             vec2 offset = stepUv * float(tap);
 
             vec2 uvPos = clamp(vTexCoord + offset, halfTexel, vec2(1.0) - halfTexel);
             float dPos = texture(uDepthTexture, uvPos).r;
             if (dPos < 0.999999) {
-                float deltaPos = abs(LinearDepthUVE(uvPos, dPos) - centerLinDepth) / depthScale;
+                float deltaPos = abs(LinearDepth(uvPos, dPos) - centerLinDepth) / depthScale;
                 float wPos = spatialW * exp(-deltaPos * depthSharpness * 0.15);
                 sum += texture(uSourceTexture, uvPos) * wPos;
                 weightSum += wPos;
@@ -89,7 +89,7 @@ void main() {
             vec2 uvNeg = clamp(vTexCoord - offset, halfTexel, vec2(1.0) - halfTexel);
             float dNeg = texture(uDepthTexture, uvNeg).r;
             if (dNeg < 0.999999) {
-                float deltaNeg = abs(LinearDepthUVE(uvNeg, dNeg) - centerLinDepth) / depthScale;
+                float deltaNeg = abs(LinearDepth(uvNeg, dNeg) - centerLinDepth) / depthScale;
                 float wNeg = spatialW * exp(-deltaNeg * depthSharpness * 0.15);
                 sum += texture(uSourceTexture, uvNeg) * wNeg;
                 weightSum += wNeg;
@@ -113,7 +113,7 @@ void main() {
             if (sampleDepth >= 0.999999) {
                 continue;
             }
-            float delta = abs(LinearDepthUVE(sampleUv, sampleDepth) - centerLinDepth) / depthScale;
+            float delta = abs(LinearDepth(sampleUv, sampleDepth) - centerLinDepth) / depthScale;
             float w = spatialW * exp(-delta * depthSharpness * 0.15);
             sum += texture(uSourceTexture, sampleUv) * w;
             weightSum += w;

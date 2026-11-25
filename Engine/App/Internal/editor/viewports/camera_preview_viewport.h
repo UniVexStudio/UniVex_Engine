@@ -9,35 +9,35 @@
 #include "viewport_surface.h"
 
 namespace UVE::Core {
-class EngineServicesUVE;
+class EngineServices;
 }
 
 namespace UVE::App::Viewports {
 
 /// Details `Camera3D` corner picture-in-picture viewport (`camera_preview_viewport`).
 ///
-/// Composes only `ViewportSurfaceUVE` for an ultra-lean, read-only direct cut through the selected
+/// Composes only `ViewportSurface` for an ultra-lean, read-only direct cut through the selected
 /// `Camera3D` with preview lighting and backdrop. Carries zero input handling, zero flight
 /// animation, zero gizmo building, zero depth readback, and zero Play-in-Editor state.
-class CameraPreviewViewportUVE final {
+class CameraPreviewViewport final {
 public:
-    CameraPreviewViewportUVE(Editor::EditorUVE& editor, Core::EngineServicesUVE& services);
-    ~CameraPreviewViewportUVE() = default;
+    CameraPreviewViewport(Editor::Editor& editor, Core::EngineServices& services);
+    ~CameraPreviewViewport() = default;
 
-    CameraPreviewViewportUVE(const CameraPreviewViewportUVE&) = delete;
-    CameraPreviewViewportUVE& operator=(const CameraPreviewViewportUVE&) = delete;
-    CameraPreviewViewportUVE(CameraPreviewViewportUVE&&) = delete;
-    CameraPreviewViewportUVE& operator=(CameraPreviewViewportUVE&&) = delete;
+    CameraPreviewViewport(const CameraPreviewViewport&) = delete;
+    CameraPreviewViewport& operator=(const CameraPreviewViewport&) = delete;
+    CameraPreviewViewport(CameraPreviewViewport&&) = delete;
+    CameraPreviewViewport& operator=(CameraPreviewViewport&&) = delete;
 
-    [[nodiscard]] const Core::EngineServicesUVE* ServicesUVE() const noexcept { return m_surface.ServicesUVE(); }
+    [[nodiscard]] const Core::EngineServices* Services() const noexcept { return m_surface.Services(); }
 
-    [[nodiscard]] std::uint64_t RenderUVE(const Math::Vector2UVE& availableSize,
-                                          Math::Vector2UVE& outUsedSize,
-                                          const Editor::EditorUVE::ViewportOverlayStateUVE& overlayState);
+    [[nodiscard]] std::uint64_t Render(const Math::Vector2& availableSize,
+                                          Math::Vector2& outUsedSize,
+                                          const Editor::Editor::ViewportOverlayState& overlayState);
 
 private:
-    Editor::EditorUVE& m_editor;
-    ViewportSurfaceUVE m_surface;
+    Editor::Editor& m_editor;
+    ViewportSurface m_surface;
     univex::camera::OrbitCamera m_fallbackCamera;
 };
 

@@ -7,10 +7,10 @@
 #include "scene.h"
 
 namespace UVE::World {
-class WorldUVE;
-enum class WorldPhaseUVE : std::uint8_t { BeforeTransforms = 0, AfterTransforms };
-enum class WorldStateUVE : std::uint8_t { Created = 0, Running, Failed, Stopped };
-enum class WorldResultUVE : std::uint8_t {
+class World;
+enum class WorldPhase : std::uint8_t { BeforeTransforms = 0, AfterTransforms };
+enum class WorldState : std::uint8_t { Created = 0, Running, Failed, Stopped };
+enum class WorldResult : std::uint8_t {
     Succeeded = 0,
     InvalidArgument,
     InvalidState,
@@ -23,9 +23,9 @@ enum class WorldResultUVE : std::uint8_t {
     Busy,
     CapacityExceeded
 };
-struct WorldSceneContextUVE final {
-    WorldUVE &world;
-    SceneUVE &scene;
+struct WorldSceneContext final {
+    World &world;
+    Scene &scene;
 };
 /// Owned callback descriptor. tick is required; start/stop are optional when no lifecycle work
 /// is needed. A failed/throwing start is paired with stop, then prior starts roll back in reverse
@@ -33,13 +33,13 @@ struct WorldSceneContextUVE final {
 /// registration (or own their dependencies). Structural world changes during callbacks fail Busy.
 /// Tick exceptions stop further work and put the world in Failed; gameplay mutations already
 /// performed are not rolled back. This is deterministic serial scheduling, not parallel gameplay.
-struct WorldSystemDescUVE final {
+struct WorldSystemDesc final {
     std::string name;
-    WorldPhaseUVE phase = WorldPhaseUVE::BeforeTransforms;
+    WorldPhase phase = WorldPhase::BeforeTransforms;
     std::int32_t priority = 0;
     std::vector<std::string> after;
-    std::function<bool(WorldSceneContextUVE &)> start;
-    std::function<void(WorldSceneContextUVE &, float)> tick;
-    std::function<void(WorldSceneContextUVE &)> stop;
+    std::function<bool(WorldSceneContext &)> start;
+    std::function<void(WorldSceneContext &, float)> tick;
+    std::function<void(WorldSceneContext &)> stop;
 };
 } // namespace UVE::World

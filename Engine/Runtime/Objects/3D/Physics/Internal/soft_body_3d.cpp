@@ -13,14 +13,14 @@
 namespace UVE::Scene {
 namespace {
 
-void SolveXpbdDistanceConstraintUVE(SoftBody3DPointUVE& a, SoftBody3DPointUVE& b,
+void SolveXpbdDistanceConstraint(SoftBody3DPoint& a, SoftBody3DPoint& b,
                                     const float restLength, const float compliance,
                                     const float stiffness, const float subDt) noexcept {
     if (a.pinned && b.pinned) {
         return;
     }
-    const Math::Vector3UVE delta = b.position - a.position;
-    const float dist = std::sqrt(Math::LengthSquaredUVE(delta));
+    const Math::Vector3 delta = b.position - a.position;
+    const float dist = std::sqrt(Math::LengthSquared(delta));
     if (dist <= 1.0e-6F) {
         return;
     }
@@ -33,7 +33,7 @@ void SolveXpbdDistanceConstraintUVE(SoftBody3DPointUVE& a, SoftBody3DPointUVE& b
     const float alphaTilde = compliance / std::max(subDt * subDt, 1.0e-8F);
     const float c = dist - restLength;
     const float lambda = (-c / (wSum + alphaTilde)) * std::clamp(stiffness, 0.0F, 1.0F);
-    const Math::Vector3UVE dir = delta * (1.0F / dist);
+    const Math::Vector3 dir = delta * (1.0F / dist);
     if (!a.pinned) {
         a.position = a.position - dir * (wA * lambda);
     }
@@ -42,29 +42,29 @@ void SolveXpbdDistanceConstraintUVE(SoftBody3DPointUVE& a, SoftBody3DPointUVE& b
     }
 }
 
-void ResolvePointCollidersUVE(SoftBody3DPointUVE& pt,
-                              const std::span<const SoftBodySphereColliderUVE> spheres,
-                              const std::span<const SoftBodyAabbColliderUVE> boxes) noexcept {
+void ResolvePointColliders(SoftBody3DPoint& pt,
+                              const std::span<const SoftBodySphereCollider> spheres,
+                              const std::span<const SoftBodyAabbCollider> boxes) noexcept {
     if (pt.pinned) {
         return;
     }
-    for (const SoftBodySphereColliderUVE& sphere : spheres) {
+    for (const SoftBodySphereCollider& sphere : spheres) {
         if (sphere.radius <= 0.0F) {
             continue;
         }
-        const Math::Vector3UVE offset = pt.position - sphere.center;
-        const float distSq = Math::LengthSquaredUVE(offset);
+        const Math::Vector3 offset = pt.position - sphere.center;
+        const float distSq = Math::LengthSquared(offset);
         const float minDist = sphere.radius + 0.002F;
         if (distSq < minDist * minDist) {
             const float dist = std::sqrt(distSq);
-            const Math::Vector3UVE n =
-                dist > 1.0e-5F ? (offset * (1.0F / dist)) : Math::Vector3UVE{0.0F, 1.0F, 0.0F};
+            const Math::Vector3 n =
+                dist > 1.0e-5F ? (offset * (1.0F / dist)) : Math::Vector3{0.0F, 1.0F, 0.0F};
             pt.position = sphere.center + n * minDist;
         }
     }
-    for (const SoftBodyAabbColliderUVE& box : boxes) {
-        const Math::Vector3UVE& mn = box.bounds.min;
-        const Math::Vector3UVE& mx = box.bounds.max;
+    for (const SoftBodyAabbCollider& box : boxes) {
+        const Math::Vector3& mn = box.bounds.min;
+        const Math::Vector3& mx = box.bounds.max;
         if (pt.position.x > mn.x && pt.position.x < mx.x && pt.position.y > mn.y &&
             pt.position.y < mx.y && pt.position.z > mn.z && pt.position.z < mx.z) {
             const float dxMin = pt.position.x - mn.x;
@@ -93,15 +93,15 @@ void ResolvePointCollidersUVE(SoftBody3DPointUVE& pt,
 
 } // namespace
 
-SoftBody3DComponentUVE BuildClothGridSoftBody3DUVE(const std::uint32_t width,
+SoftBody3DComponent BuildClothGridSoftBody3D(const std::uint32_t width,
                                                    const std::uint32_t height,
                                                    const float spacingMetres,
-                                                   const Math::Vector3UVE& origin,
+                                                   const Math::Vector3& origin,
                                                    const bool pinTopRow) {
-    SoftBody3DComponentUVE sb{};
+    SoftBody3DComponent sb{};
     if (width < 2U || height < 2U || spacingMetres <= 0.0F ||
         static_cast<std::size_t>(width) * static_cast<std::size_t>(height) >
-            kMaximumSoftBody3DPointsUVE) {
+            kMaximumSoftBody3DPoints) {
         return sb;
     }
     sb.gridWidth = width;
@@ -110,8 +110,8 @@ SoftBody3DComponentUVE BuildClothGridSoftBody3DUVE(const std::uint32_t width,
     sb.points.reserve(static_cast<std::size_t>(width) * height);
     for (std::uint32_t y = 0U; y < height; ++y) {
         for (std::uint32_t x = 0U; x < width; ++x) {
-            SoftBody3DPointUVE pt{};
-            pt.position = Math::Vector3UVE{
+            SoftBody3DPoint pt{};
+            pt.position = Math::Vector3{
                 origin.x + static_cast<float>(x) * spacingMetres,
                 origin.y - static_cast<float>(y) * spacingMetres,
                 origin.z,
@@ -123,34 +123,34 @@ SoftBody3DComponentUVE BuildClothGridSoftBody3DUVE(const std::uint32_t width,
     return sb;
 }
 
-bool IsSoftBody3DComponentValidUVE(const SoftBody3DComponentUVE& value) noexcept {
-    if (value.points.size() > kMaximumSoftBody3DPointsUVE || !std::isfinite(value.stiffness) ||
+bool IsSoftBody3DComponentValid(const SoftBody3DComponent& value) noexcept {
+    if (value.points.size() > kMaximumSoftBody3DPoints || !std::isfinite(value.stiffness) ||
         value.stiffness < 0.0F || value.stiffness > 1.0F || !std::isfinite(value.damping) ||
         value.damping < 0.0F || value.damping > 1.0F || !std::isfinite(value.restSegmentLength) ||
         value.restSegmentLength <= 0.0F || !std::isfinite(value.gravityScale) ||
         !std::isfinite(value.compliance) || value.compliance < 0.0F ||
-        !IsFinite3DObjectVectorUVE(value.windVelocity)) {
+        !IsFinite3DObjectVector(value.windVelocity)) {
         return false;
     }
-    for (const SoftBody3DPointUVE& pt : value.points) {
-        if (!IsFinite3DObjectVectorUVE(pt.position) || !IsFinite3DObjectVectorUVE(pt.velocity)) {
+    for (const SoftBody3DPoint& pt : value.points) {
+        if (!IsFinite3DObjectVector(pt.position) || !IsFinite3DObjectVector(pt.velocity)) {
             return false;
         }
     }
     return true;
 }
 
-SoftBody3DComponentUVE SanitizeSoftBody3DComponentUVE(const SoftBody3DComponentUVE& value) {
-    SoftBody3DComponentUVE out = value;
-    if (out.points.size() > kMaximumSoftBody3DPointsUVE) {
-        out.points.resize(kMaximumSoftBody3DPointsUVE);
+SoftBody3DComponent SanitizeSoftBody3DComponent(const SoftBody3DComponent& value) {
+    SoftBody3DComponent out = value;
+    if (out.points.size() > kMaximumSoftBody3DPoints) {
+        out.points.resize(kMaximumSoftBody3DPoints);
     }
-    for (SoftBody3DPointUVE& pt : out.points) {
-        if (!IsFinite3DObjectVectorUVE(pt.position)) {
-            pt.position = Math::Vector3UVE{0.0F, 0.0F, 0.0F};
+    for (SoftBody3DPoint& pt : out.points) {
+        if (!IsFinite3DObjectVector(pt.position)) {
+            pt.position = Math::Vector3{0.0F, 0.0F, 0.0F};
         }
-        if (!IsFinite3DObjectVectorUVE(pt.velocity)) {
-            pt.velocity = Math::Vector3UVE{0.0F, 0.0F, 0.0F};
+        if (!IsFinite3DObjectVector(pt.velocity)) {
+            pt.velocity = Math::Vector3{0.0F, 0.0F, 0.0F};
         }
     }
     out.substeps = std::clamp(out.substeps, 1U, 16U);
@@ -167,42 +167,42 @@ SoftBody3DComponentUVE SanitizeSoftBody3DComponentUVE(const SoftBody3DComponentU
     if (!std::isfinite(out.gravityScale)) {
         out.gravityScale = 1.0F;
     }
-    if (!IsFinite3DObjectVectorUVE(out.windVelocity)) {
-        out.windVelocity = Math::Vector3UVE{0.0F, 0.0F, 0.0F};
+    if (!IsFinite3DObjectVector(out.windVelocity)) {
+        out.windVelocity = Math::Vector3{0.0F, 0.0F, 0.0F};
     }
     out.windDrag = std::isfinite(out.windDrag) ? std::clamp(out.windDrag, 0.0F, 10.0F) : 0.25F;
     return out;
 }
 
-bool IsSoftBody3DObjectDefinitionValidUVE(const SoftBody3DObjectDefinitionUVE& value) noexcept {
-    return IsSoftBody3DComponentValidUVE(value.softBody);
+bool IsSoftBody3DObjectDefinitionValid(const SoftBody3DObjectDefinition& value) noexcept {
+    return IsSoftBody3DComponentValid(value.softBody);
 }
 
-void ApplySoftBody3DObjectDefinitionUVE(IEntityManagerUVE& entityManager, const EntityUVE entity,
-                                        const SoftBody3DObjectDefinitionUVE& value) {
-    ApplySurfaceInstance3DBaseUVE(entityManager, entity, SoftBody3DObjectDefinitionUVE::defaultName);
-    entityManager.AddComponentUVE<SoftBody3DComponentUVE>(
-        entity, SanitizeSoftBody3DComponentUVE(value.softBody));
+void ApplySoftBody3DObjectDefinition(IEntityManager& entityManager, const Entity entity,
+                                        const SoftBody3DObjectDefinition& value) {
+    ApplySurfaceInstance3DBase(entityManager, entity, SoftBody3DObjectDefinition::defaultName);
+    entityManager.AddComponent<SoftBody3DComponent>(
+        entity, SanitizeSoftBody3DComponent(value.softBody));
 }
 
-std::size_t UpdateSoftBody3DObjectsUVE(IEntityManagerUVE& entityManager,
-                                       const Math::Vector3UVE& gravity,
+std::size_t UpdateSoftBody3DObjects(IEntityManager& entityManager,
+                                       const Math::Vector3& gravity,
                                        const float deltaTimeSeconds,
-                                       const std::span<const SoftBodySphereColliderUVE> sphereColliders,
-                                       const std::span<const SoftBodyAabbColliderUVE> boxColliders) {
+                                       const std::span<const SoftBodySphereCollider> sphereColliders,
+                                       const std::span<const SoftBodyAabbCollider> boxColliders) {
     if (!std::isfinite(deltaTimeSeconds) || deltaTimeSeconds <= 0.0F) {
         return 0U;
     }
-    const Math::Vector3UVE safeGravity = IsFinite3DObjectVectorUVE(gravity)
+    const Math::Vector3 safeGravity = IsFinite3DObjectVector(gravity)
                                              ? gravity
-                                             : Math::Vector3UVE{0.0F, -9.81F, 0.0F};
+                                             : Math::Vector3{0.0F, -9.81F, 0.0F};
     std::size_t steppedCount = 0U;
-    std::vector<Math::Vector3UVE> prevPositions;
+    std::vector<Math::Vector3> prevPositions;
 
-    entityManager.ForEachUVE<SoftBody3DComponentUVE>(
-        [&](const EntityUVE entity, SoftBody3DComponentUVE& sb) {
-            if (!sb.enabled || entityManager.HasComponentUVE<DisabledComponentUVE>(entity) ||
-                !IsSoftBody3DComponentValidUVE(sb) || sb.points.empty()) {
+    entityManager.ForEach<SoftBody3DComponent>(
+        [&](const Entity entity, SoftBody3DComponent& sb) {
+            if (!sb.enabled || entityManager.HasComponent<DisabledComponent>(entity) ||
+                !IsSoftBody3DComponentValid(sb) || sb.points.empty()) {
                 return;
             }
             const std::uint32_t substeps = std::clamp(sb.substeps, 1U, 16U);
@@ -219,13 +219,13 @@ std::size_t UpdateSoftBody3DObjectsUVE(IEntityManagerUVE& entityManager,
             prevPositions.resize(sb.points.size());
             for (std::uint32_t step = 0U; step < substeps; ++step) {
                 for (std::size_t i = 0U; i < sb.points.size(); ++i) {
-                    SoftBody3DPointUVE& pt = sb.points[i];
+                    SoftBody3DPoint& pt = sb.points[i];
                     prevPositions[i] = pt.position;
                     if (pt.pinned) {
-                        pt.velocity = Math::Vector3UVE{0.0F, 0.0F, 0.0F};
+                        pt.velocity = Math::Vector3{0.0F, 0.0F, 0.0F};
                         continue;
                     }
-                    const Math::Vector3UVE windAccel = (sb.windVelocity - pt.velocity) * sb.windDrag;
+                    const Math::Vector3 windAccel = (sb.windVelocity - pt.velocity) * sb.windDrag;
                     pt.velocity = pt.velocity + (safeGravity * sb.gravityScale + windAccel) * subDt;
                     pt.position = pt.position + pt.velocity * subDt;
                 }
@@ -238,12 +238,12 @@ std::size_t UpdateSoftBody3DObjectsUVE(IEntityManagerUVE& entityManager,
                     for (std::uint32_t y = 0U; y < sb.gridHeight; ++y) {
                         for (std::uint32_t x = 0U; x < sb.gridWidth; ++x) {
                             if (x + 1U < sb.gridWidth) {
-                                SolveXpbdDistanceConstraintUVE(sb.points[idx(x, y)], sb.points[idx(x + 1U, y)],
+                                SolveXpbdDistanceConstraint(sb.points[idx(x, y)], sb.points[idx(x + 1U, y)],
                                                                sb.restSegmentLength, sb.compliance, sb.stiffness,
                                                                subDt);
                             }
                             if (y + 1U < sb.gridHeight) {
-                                SolveXpbdDistanceConstraintUVE(sb.points[idx(x, y)], sb.points[idx(x, y + 1U)],
+                                SolveXpbdDistanceConstraint(sb.points[idx(x, y)], sb.points[idx(x, y + 1U)],
                                                                sb.restSegmentLength, sb.compliance, sb.stiffness,
                                                                subDt);
                             }
@@ -252,9 +252,9 @@ std::size_t UpdateSoftBody3DObjectsUVE(IEntityManagerUVE& entityManager,
                     // Shear diagonal constraints.
                     for (std::uint32_t y = 0U; y + 1U < sb.gridHeight; ++y) {
                         for (std::uint32_t x = 0U; x + 1U < sb.gridWidth; ++x) {
-                            SolveXpbdDistanceConstraintUVE(sb.points[idx(x, y)], sb.points[idx(x + 1U, y + 1U)],
+                            SolveXpbdDistanceConstraint(sb.points[idx(x, y)], sb.points[idx(x + 1U, y + 1U)],
                                                            diagRest, sb.shearCompliance, sb.stiffness, subDt);
-                            SolveXpbdDistanceConstraintUVE(sb.points[idx(x + 1U, y)], sb.points[idx(x, y + 1U)],
+                            SolveXpbdDistanceConstraint(sb.points[idx(x + 1U, y)], sb.points[idx(x, y + 1U)],
                                                            diagRest, sb.shearCompliance, sb.stiffness, subDt);
                         }
                     }
@@ -262,25 +262,25 @@ std::size_t UpdateSoftBody3DObjectsUVE(IEntityManagerUVE& entityManager,
                     for (std::uint32_t y = 0U; y < sb.gridHeight; ++y) {
                         for (std::uint32_t x = 0U; x < sb.gridWidth; ++x) {
                             if (x + 2U < sb.gridWidth) {
-                                SolveXpbdDistanceConstraintUVE(sb.points[idx(x, y)], sb.points[idx(x + 2U, y)],
+                                SolveXpbdDistanceConstraint(sb.points[idx(x, y)], sb.points[idx(x + 2U, y)],
                                                                bendRest, sb.bendCompliance, sb.stiffness, subDt);
                             }
                             if (y + 2U < sb.gridHeight) {
-                                SolveXpbdDistanceConstraintUVE(sb.points[idx(x, y)], sb.points[idx(x, y + 2U)],
+                                SolveXpbdDistanceConstraint(sb.points[idx(x, y)], sb.points[idx(x, y + 2U)],
                                                                bendRest, sb.bendCompliance, sb.stiffness, subDt);
                             }
                         }
                     }
                 } else {
                     for (std::size_t i = 0U; i + 1U < sb.points.size(); ++i) {
-                        SolveXpbdDistanceConstraintUVE(sb.points[i], sb.points[i + 1U], sb.restSegmentLength,
+                        SolveXpbdDistanceConstraint(sb.points[i], sb.points[i + 1U], sb.restSegmentLength,
                                                        sb.compliance, sb.stiffness, subDt);
                     }
                 }
 
                 for (std::size_t i = 0U; i < sb.points.size(); ++i) {
-                    SoftBody3DPointUVE& pt = sb.points[i];
-                    ResolvePointCollidersUVE(pt, sphereColliders, boxColliders);
+                    SoftBody3DPoint& pt = sb.points[i];
+                    ResolvePointColliders(pt, sphereColliders, boxColliders);
                     if (!pt.pinned) {
                         pt.velocity = ((pt.position - prevPositions[i]) * (1.0F / subDt)) * dampPerSubstep;
                     }
@@ -291,34 +291,34 @@ std::size_t UpdateSoftBody3DObjectsUVE(IEntityManagerUVE& entityManager,
     return steppedCount;
 }
 
-std::size_t UpdateSoftBody3DObjectsUVE(IEntityManagerUVE& entityManager,
-                                       const Math::Vector3UVE& gravity,
+std::size_t UpdateSoftBody3DObjects(IEntityManager& entityManager,
+                                       const Math::Vector3& gravity,
                                        const float deltaTimeSeconds) {
-    return UpdateSoftBody3DObjectsUVE(entityManager, gravity, deltaTimeSeconds, {}, {});
+    return UpdateSoftBody3DObjects(entityManager, gravity, deltaTimeSeconds, {}, {});
 }
 
-bool IsCollisionPolygon3DComponentValidUVE(const CollisionPolygon3DComponentUVE& value) noexcept {
-    if (value.vertices2D.size() > kMaximumSoftBody3DPointsUVE ||
+bool IsCollisionPolygon3DComponentValid(const CollisionPolygon3DComponent& value) noexcept {
+    if (value.vertices2D.size() > kMaximumSoftBody3DPoints ||
         !std::isfinite(value.depthMetres) || value.depthMetres <= 0.0F) {
         return false;
     }
-    for (const Math::Vector2UVE& v : value.vertices2D) {
-        if (!Math::IsFiniteUVE(v)) {
+    for (const Math::Vector2& v : value.vertices2D) {
+        if (!Math::IsFinite(v)) {
             return false;
         }
     }
     return true;
 }
 
-CollisionPolygon3DComponentUVE SanitizeCollisionPolygon3DComponentUVE(
-    const CollisionPolygon3DComponentUVE& value) {
-    CollisionPolygon3DComponentUVE out = value;
-    if (out.vertices2D.size() > kMaximumSoftBody3DPointsUVE) {
-        out.vertices2D.resize(kMaximumSoftBody3DPointsUVE);
+CollisionPolygon3DComponent SanitizeCollisionPolygon3DComponent(
+    const CollisionPolygon3DComponent& value) {
+    CollisionPolygon3DComponent out = value;
+    if (out.vertices2D.size() > kMaximumSoftBody3DPoints) {
+        out.vertices2D.resize(kMaximumSoftBody3DPoints);
     }
-    for (Math::Vector2UVE& v : out.vertices2D) {
-        if (!Math::IsFiniteUVE(v)) {
-            v = Math::Vector2UVE{0.0F, 0.0F};
+    for (Math::Vector2& v : out.vertices2D) {
+        if (!Math::IsFinite(v)) {
+            v = Math::Vector2{0.0F, 0.0F};
         }
     }
     if (!std::isfinite(out.depthMetres) || out.depthMetres <= 0.0F) {
@@ -327,45 +327,45 @@ CollisionPolygon3DComponentUVE SanitizeCollisionPolygon3DComponentUVE(
     return out;
 }
 
-bool IsCollisionPolygon3DObjectDefinitionValidUVE(
-    const CollisionPolygon3DObjectDefinitionUVE& value) noexcept {
-    return IsCollisionPolygon3DComponentValidUVE(value.polygon);
+bool IsCollisionPolygon3DObjectDefinitionValid(
+    const CollisionPolygon3DObjectDefinition& value) noexcept {
+    return IsCollisionPolygon3DComponentValid(value.polygon);
 }
 
-void ApplyCollisionPolygon3DObjectDefinitionUVE(
-    IEntityManagerUVE& entityManager, const EntityUVE entity,
-    const CollisionPolygon3DObjectDefinitionUVE& value) {
-    EnsureObject3DBaselineUVE(entityManager, entity,
-                              CollisionPolygon3DObjectDefinitionUVE::defaultName);
-    entityManager.AddComponentUVE<CollisionPolygon3DComponentUVE>(
-        entity, SanitizeCollisionPolygon3DComponentUVE(value.polygon));
+void ApplyCollisionPolygon3DObjectDefinition(
+    IEntityManager& entityManager, const Entity entity,
+    const CollisionPolygon3DObjectDefinition& value) {
+    EnsureObject3DBaseline(entityManager, entity,
+                              CollisionPolygon3DObjectDefinition::defaultName);
+    entityManager.AddComponent<CollisionPolygon3DComponent>(
+        entity, SanitizeCollisionPolygon3DComponent(value.polygon));
 }
 
-Math::AabbUVE CollisionPolygon3DUVE::ComputeLocalAabbUVE(
-    const CollisionPolygon3DComponentUVE& polygon) noexcept {
-    if (!IsCollisionPolygon3DComponentValidUVE(polygon) || polygon.vertices2D.empty()) {
-        return Math::AabbUVE::FromCenterExtentsUVE(Math::Vector3UVE{0.0F, 0.0F, 0.0F},
-                                                   Math::Vector3UVE{0.0F, 0.0F, 0.0F});
+Math::Aabb CollisionPolygon3D::ComputeLocalAabb(
+    const CollisionPolygon3DComponent& polygon) noexcept {
+    if (!IsCollisionPolygon3DComponentValid(polygon) || polygon.vertices2D.empty()) {
+        return Math::Aabb::FromCenterExtents(Math::Vector3{0.0F, 0.0F, 0.0F},
+                                                   Math::Vector3{0.0F, 0.0F, 0.0F});
     }
     float minX = polygon.vertices2D.front().x;
     float maxX = polygon.vertices2D.front().x;
     float minY = polygon.vertices2D.front().y;
     float maxY = polygon.vertices2D.front().y;
-    for (const Math::Vector2UVE& v : polygon.vertices2D) {
+    for (const Math::Vector2& v : polygon.vertices2D) {
         minX = std::min(minX, v.x);
         maxX = std::max(maxX, v.x);
         minY = std::min(minY, v.y);
         maxY = std::max(maxY, v.y);
     }
     const float halfDepth = 0.5F * polygon.depthMetres;
-    return Math::AabbUVE{Math::Vector3UVE{minX, minY, -halfDepth},
-                         Math::Vector3UVE{maxX, maxY, halfDepth}};
+    return Math::Aabb{Math::Vector3{minX, minY, -halfDepth},
+                         Math::Vector3{maxX, maxY, halfDepth}};
 }
 
-bool CollisionPolygon3DUVE::ContainsLocalPointUVE(
-    const CollisionPolygon3DComponentUVE& polygon, const Math::Vector3UVE& localPoint) noexcept {
-    if (!IsCollisionPolygon3DComponentValidUVE(polygon) || polygon.vertices2D.size() < 3U ||
-        !IsFinite3DObjectVectorUVE(localPoint)) {
+bool CollisionPolygon3D::ContainsLocalPoint(
+    const CollisionPolygon3DComponent& polygon, const Math::Vector3& localPoint) noexcept {
+    if (!IsCollisionPolygon3DComponentValid(polygon) || polygon.vertices2D.size() < 3U ||
+        !IsFinite3DObjectVector(localPoint)) {
         return false;
     }
     const float halfDepth = 0.5F * polygon.depthMetres;
@@ -375,8 +375,8 @@ bool CollisionPolygon3DUVE::ContainsLocalPointUVE(
     bool inside = false;
     const std::size_t n = polygon.vertices2D.size();
     for (std::size_t i = 0U, j = n - 1U; i < n; j = i++) {
-        const Math::Vector2UVE& vi = polygon.vertices2D[i];
-        const Math::Vector2UVE& vj = polygon.vertices2D[j];
+        const Math::Vector2& vi = polygon.vertices2D[i];
+        const Math::Vector2& vj = polygon.vertices2D[j];
         const bool intersects = ((vi.y > localPoint.y) != (vj.y > localPoint.y)) &&
                                 (localPoint.x < (vj.x - vi.x) * (localPoint.y - vi.y) /
                                                         (vj.y - vi.y) +

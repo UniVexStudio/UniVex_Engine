@@ -12,31 +12,31 @@
 namespace UVE::Gameplay {
 namespace {
 
-using Input::GamepadAxisBindingUVE;
-using Input::GamepadAxisUVE;
-using Input::GamepadButtonBindingUVE;
-using Input::GamepadButtonUVE;
-using Input::InputActionTypeUVE;
-using Input::InputActionUVE;
-using Input::KeyBindingUVE;
-using Input::KeyCodeUVE;
+using Input::GamepadAxisBinding;
+using Input::GamepadAxis;
+using Input::GamepadButtonBinding;
+using Input::GamepadButton;
+using Input::InputActionType;
+using Input::InputAction;
+using Input::KeyBinding;
+using Input::KeyCode;
 
-void AddMoveFromKeysUVE(Math::Vector3UVE& move, const Input::IInputSystemUVE& inputSystem) {
-    if (inputSystem.IsKeyDownUVE(KeyCodeUVE::W)) {
+void AddMoveFromKeys(Math::Vector3& move, const Input::IInputSystem& inputSystem) {
+    if (inputSystem.IsKeyDown(KeyCode::W)) {
         move.z -= 1.0F;
     }
-    if (inputSystem.IsKeyDownUVE(KeyCodeUVE::S)) {
+    if (inputSystem.IsKeyDown(KeyCode::S)) {
         move.z += 1.0F;
     }
-    if (inputSystem.IsKeyDownUVE(KeyCodeUVE::A)) {
+    if (inputSystem.IsKeyDown(KeyCode::A)) {
         move.x -= 1.0F;
     }
-    if (inputSystem.IsKeyDownUVE(KeyCodeUVE::D)) {
+    if (inputSystem.IsKeyDown(KeyCode::D)) {
         move.x += 1.0F;
     }
 }
 
-void NormalizePlanarUVE(Math::Vector3UVE& move) {
+void NormalizePlanar(Math::Vector3& move) {
     const float lengthSquared = move.x * move.x + move.z * move.z;
     if (lengthSquared > 1.0F) {
         const float inverseLength = 1.0F / std::sqrt(lengthSquared);
@@ -47,57 +47,57 @@ void NormalizePlanarUVE(Math::Vector3UVE& move) {
 
 } // namespace
 
-std::vector<InputActionUVE> MakeDefaultGameplayActionsUVE() {
-    std::vector<InputActionUVE> actions;
-    actions.push_back(InputActionUVE{std::string{kMoveHorizontalActionUVE}, InputActionTypeUVE::Axis1D,
-                                     {KeyBindingUVE(KeyCodeUVE::D), GamepadAxisBindingUVE(0U, GamepadAxisUVE::LeftX)},
-                                     {KeyBindingUVE(KeyCodeUVE::A)}});
-    actions.push_back(InputActionUVE{std::string{kMoveForwardActionUVE}, InputActionTypeUVE::Axis1D,
-                                     {KeyBindingUVE(KeyCodeUVE::S), GamepadAxisBindingUVE(0U, GamepadAxisUVE::LeftY)},
-                                     {KeyBindingUVE(KeyCodeUVE::W)}});
-    actions.push_back(InputActionUVE{std::string{kJumpActionUVE}, InputActionTypeUVE::Button,
-                                     {KeyBindingUVE(KeyCodeUVE::Space), GamepadButtonBindingUVE(0U, GamepadButtonUVE::South)},
+std::vector<InputAction> MakeDefaultGameplayActions() {
+    std::vector<InputAction> actions;
+    actions.push_back(InputAction{std::string{kMoveHorizontalAction}, InputActionType::Axis1D,
+                                     {KeyBinding(KeyCode::D), GamepadAxisBinding(0U, GamepadAxis::LeftX)},
+                                     {KeyBinding(KeyCode::A)}});
+    actions.push_back(InputAction{std::string{kMoveForwardAction}, InputActionType::Axis1D,
+                                     {KeyBinding(KeyCode::S), GamepadAxisBinding(0U, GamepadAxis::LeftY)},
+                                     {KeyBinding(KeyCode::W)}});
+    actions.push_back(InputAction{std::string{kJumpAction}, InputActionType::Button,
+                                     {KeyBinding(KeyCode::Space), GamepadButtonBinding(0U, GamepadButton::South)},
                                      {}});
-    actions.push_back(InputActionUVE{std::string{kInteractActionUVE}, InputActionTypeUVE::Button,
-                                     {KeyBindingUVE(KeyCodeUVE::E), GamepadButtonBindingUVE(0U, GamepadButtonUVE::West)},
+    actions.push_back(InputAction{std::string{kInteractAction}, InputActionType::Button,
+                                     {KeyBinding(KeyCode::E), GamepadButtonBinding(0U, GamepadButton::West)},
                                      {}});
-    actions.push_back(InputActionUVE{std::string{kLookHorizontalActionUVE}, InputActionTypeUVE::Axis1D,
-                                     {GamepadAxisBindingUVE(0U, GamepadAxisUVE::RightX)},
+    actions.push_back(InputAction{std::string{kLookHorizontalAction}, InputActionType::Axis1D,
+                                     {GamepadAxisBinding(0U, GamepadAxis::RightX)},
                                      {}});
-    actions.push_back(InputActionUVE{std::string{kLookVerticalActionUVE}, InputActionTypeUVE::Axis1D,
-                                     {GamepadAxisBindingUVE(0U, GamepadAxisUVE::RightY)},
+    actions.push_back(InputAction{std::string{kLookVerticalAction}, InputActionType::Axis1D,
+                                     {GamepadAxisBinding(0U, GamepadAxis::RightY)},
                                      {}});
     return actions;
 }
 
-void RegisterDefaultGameplayActionsUVE(Input::IInputSystemUVE& inputSystem) {
-    for (InputActionUVE& action : MakeDefaultGameplayActionsUVE()) {
-        if (!inputSystem.HasActionUVE(action.name)) {
-            inputSystem.RegisterActionUVE(std::move(action));
+void RegisterDefaultGameplayActions(Input::IInputSystem& inputSystem) {
+    for (InputAction& action : MakeDefaultGameplayActions()) {
+        if (!inputSystem.HasAction(action.name)) {
+            inputSystem.RegisterAction(std::move(action));
         }
     }
 }
 
-GameplayInputUVE CollectGameplayInputUVE(const Input::IInputSystemUVE& inputSystem) {
-    GameplayInputUVE input;
-    input.move.x = inputSystem.GetAxisValueUVE(kMoveHorizontalActionUVE);
-    input.move.z = inputSystem.GetAxisValueUVE(kMoveForwardActionUVE);
+GameplayInput CollectGameplayInput(const Input::IInputSystem& inputSystem) {
+    GameplayInput input;
+    input.move.x = inputSystem.GetAxisValue(kMoveHorizontalAction);
+    input.move.z = inputSystem.GetAxisValue(kMoveForwardAction);
     if (input.move.x == 0.0F && input.move.z == 0.0F) {
-        AddMoveFromKeysUVE(input.move, inputSystem);
+        AddMoveFromKeys(input.move, inputSystem);
     }
-    NormalizePlanarUVE(input.move);
+    NormalizePlanar(input.move);
 
-    const bool jumpHeld = inputSystem.IsActionHeldUVE(kJumpActionUVE) || inputSystem.IsKeyDownUVE(KeyCodeUVE::Space);
+    const bool jumpHeld = inputSystem.IsActionHeld(kJumpAction) || inputSystem.IsKeyDown(KeyCode::Space);
     input.jumpPressed =
-        inputSystem.IsActionTriggeredUVE(kJumpActionUVE) || inputSystem.WasKeyPressedThisFrameUVE(KeyCodeUVE::Space);
-    const float sink = inputSystem.IsKeyDownUVE(KeyCodeUVE::LeftCtrl) ? 1.0F : 0.0F;
+        inputSystem.IsActionTriggered(kJumpAction) || inputSystem.WasKeyPressedThisFrame(KeyCode::Space);
+    const float sink = inputSystem.IsKeyDown(KeyCode::LeftCtrl) ? 1.0F : 0.0F;
     input.rise = (jumpHeld ? 1.0F : 0.0F) - sink;
 
-    input.lookPointer = inputSystem.GetMouseDeltaUVE();
-    input.lookStick.x = inputSystem.GetAxisValueUVE(kLookHorizontalActionUVE);
-    input.lookStick.y = inputSystem.GetAxisValueUVE(kLookVerticalActionUVE);
+    input.lookPointer = inputSystem.GetMouseDelta();
+    input.lookStick.x = inputSystem.GetAxisValue(kLookHorizontalAction);
+    input.lookStick.y = inputSystem.GetAxisValue(kLookVerticalAction);
     input.interactPressed =
-        inputSystem.IsActionTriggeredUVE(kInteractActionUVE) || inputSystem.WasKeyPressedThisFrameUVE(KeyCodeUVE::E);
+        inputSystem.IsActionTriggered(kInteractAction) || inputSystem.WasKeyPressedThisFrame(KeyCode::E);
     return input;
 }
 

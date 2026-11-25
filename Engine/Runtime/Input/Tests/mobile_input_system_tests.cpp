@@ -11,102 +11,102 @@ namespace {
 
 constexpr float kEpsilon = 1e-5F;
 
-TEST(MobileInputSystemUVETest, EvaluateMobileInputPolicyUVE_ClassifiesAvailability) {
-    MobileInputAvailabilityUVE availability = MobileInputAvailabilityUVE::TouchAndGyroscope;
-    ASSERT_TRUE(EvaluateMobileInputPolicyUVE(
-        MobileLifecycleStateUVE::Active, true, false, false, availability));
-    EXPECT_EQ(availability, MobileInputAvailabilityUVE::TouchAndGyroscope);
-    ASSERT_TRUE(EvaluateMobileInputPolicyUVE(
-        MobileLifecycleStateUVE::Active, false, true, false, availability));
-    EXPECT_EQ(availability, MobileInputAvailabilityUVE::TouchOnly);
-    ASSERT_TRUE(EvaluateMobileInputPolicyUVE(
-        MobileLifecycleStateUVE::Suspended, true, true, true, availability));
-    EXPECT_EQ(availability, MobileInputAvailabilityUVE::Disabled);
+TEST(MobileInputSystemTest, EvaluateMobileInputPolicy_ClassifiesAvailability) {
+    MobileInputAvailability availability = MobileInputAvailability::TouchAndGyroscope;
+    ASSERT_TRUE(EvaluateMobileInputPolicy(
+        MobileLifecycleState::Active, true, false, false, availability));
+    EXPECT_EQ(availability, MobileInputAvailability::TouchAndGyroscope);
+    ASSERT_TRUE(EvaluateMobileInputPolicy(
+        MobileLifecycleState::Active, false, true, false, availability));
+    EXPECT_EQ(availability, MobileInputAvailability::TouchOnly);
+    ASSERT_TRUE(EvaluateMobileInputPolicy(
+        MobileLifecycleState::Suspended, true, true, true, availability));
+    EXPECT_EQ(availability, MobileInputAvailability::Disabled);
 }
 
-TEST(MobileInputSystemUVETest, EvaluateMobileInputPolicyUVE_RejectsInvalidLifecycleAtomically) {
-    MobileInputAvailabilityUVE availability = MobileInputAvailabilityUVE::TouchOnly;
-    const auto invalidState = static_cast<MobileLifecycleStateUVE>(
-        static_cast<std::uint8_t>(MobileLifecycleStateUVE::Count));
-    EXPECT_FALSE(EvaluateMobileInputPolicyUVE(invalidState, true, true, true, availability));
-    EXPECT_EQ(availability, MobileInputAvailabilityUVE::TouchOnly);
+TEST(MobileInputSystemTest, EvaluateMobileInputPolicy_RejectsInvalidLifecycleAtomically) {
+    MobileInputAvailability availability = MobileInputAvailability::TouchOnly;
+    const auto invalidState = static_cast<MobileLifecycleState>(
+        static_cast<std::uint8_t>(MobileLifecycleState::Count));
+    EXPECT_FALSE(EvaluateMobileInputPolicy(invalidState, true, true, true, availability));
+    EXPECT_EQ(availability, MobileInputAvailability::TouchOnly);
 }
 
-TEST(MobileInputSystemUVETest, EvaluateMobileLifecycleTransitionUVE_ClassifiesPlatformEdges) {
-    MobileLifecycleTransitionUVE transition = MobileLifecycleTransitionUVE::Terminated;
-    ASSERT_TRUE(EvaluateMobileLifecycleTransitionUVE(
-        MobileLifecycleStateUVE::Inactive, MobileLifecycleStateUVE::Active, transition));
-    EXPECT_EQ(transition, MobileLifecycleTransitionUVE::Activated);
-    ASSERT_TRUE(EvaluateMobileLifecycleTransitionUVE(
-        MobileLifecycleStateUVE::Active, MobileLifecycleStateUVE::Suspended, transition));
-    EXPECT_EQ(transition, MobileLifecycleTransitionUVE::Suspended);
-    ASSERT_TRUE(EvaluateMobileLifecycleTransitionUVE(
-        MobileLifecycleStateUVE::Suspended, MobileLifecycleStateUVE::Active, transition));
-    EXPECT_EQ(transition, MobileLifecycleTransitionUVE::Resumed);
-    ASSERT_TRUE(EvaluateMobileLifecycleTransitionUVE(
-        MobileLifecycleStateUVE::Active, MobileLifecycleStateUVE::Inactive, transition));
-    EXPECT_EQ(transition, MobileLifecycleTransitionUVE::Deactivated);
-    ASSERT_TRUE(EvaluateMobileLifecycleTransitionUVE(
-        MobileLifecycleStateUVE::Active, MobileLifecycleStateUVE::Terminated, transition));
-    EXPECT_EQ(transition, MobileLifecycleTransitionUVE::Terminated);
-    ASSERT_TRUE(EvaluateMobileLifecycleTransitionUVE(
-        MobileLifecycleStateUVE::Terminated, MobileLifecycleStateUVE::Active, transition));
-    EXPECT_EQ(transition, MobileLifecycleTransitionUVE::Reinitialized);
-    ASSERT_TRUE(EvaluateMobileLifecycleTransitionUVE(
-        MobileLifecycleStateUVE::Active, MobileLifecycleStateUVE::Active, transition));
-    EXPECT_EQ(transition, MobileLifecycleTransitionUVE::None);
+TEST(MobileInputSystemTest, EvaluateMobileLifecycleTransition_ClassifiesPlatformEdges) {
+    MobileLifecycleTransition transition = MobileLifecycleTransition::Terminated;
+    ASSERT_TRUE(EvaluateMobileLifecycleTransition(
+        MobileLifecycleState::Inactive, MobileLifecycleState::Active, transition));
+    EXPECT_EQ(transition, MobileLifecycleTransition::Activated);
+    ASSERT_TRUE(EvaluateMobileLifecycleTransition(
+        MobileLifecycleState::Active, MobileLifecycleState::Suspended, transition));
+    EXPECT_EQ(transition, MobileLifecycleTransition::Suspended);
+    ASSERT_TRUE(EvaluateMobileLifecycleTransition(
+        MobileLifecycleState::Suspended, MobileLifecycleState::Active, transition));
+    EXPECT_EQ(transition, MobileLifecycleTransition::Resumed);
+    ASSERT_TRUE(EvaluateMobileLifecycleTransition(
+        MobileLifecycleState::Active, MobileLifecycleState::Inactive, transition));
+    EXPECT_EQ(transition, MobileLifecycleTransition::Deactivated);
+    ASSERT_TRUE(EvaluateMobileLifecycleTransition(
+        MobileLifecycleState::Active, MobileLifecycleState::Terminated, transition));
+    EXPECT_EQ(transition, MobileLifecycleTransition::Terminated);
+    ASSERT_TRUE(EvaluateMobileLifecycleTransition(
+        MobileLifecycleState::Terminated, MobileLifecycleState::Active, transition));
+    EXPECT_EQ(transition, MobileLifecycleTransition::Reinitialized);
+    ASSERT_TRUE(EvaluateMobileLifecycleTransition(
+        MobileLifecycleState::Active, MobileLifecycleState::Active, transition));
+    EXPECT_EQ(transition, MobileLifecycleTransition::None);
 }
 
-TEST(MobileInputSystemUVETest, EvaluateMobileLifecycleTransitionUVE_RejectsInvalidStatesAtomically) {
-    MobileLifecycleTransitionUVE transition = MobileLifecycleTransitionUVE::Resumed;
-    const auto invalidState = static_cast<MobileLifecycleStateUVE>(
-        static_cast<std::uint8_t>(MobileLifecycleStateUVE::Count));
-    EXPECT_FALSE(EvaluateMobileLifecycleTransitionUVE(
-        invalidState, MobileLifecycleStateUVE::Active, transition));
-    EXPECT_EQ(transition, MobileLifecycleTransitionUVE::Resumed);
-    EXPECT_FALSE(EvaluateMobileLifecycleTransitionUVE(
-        MobileLifecycleStateUVE::Active, invalidState, transition));
-    EXPECT_EQ(transition, MobileLifecycleTransitionUVE::Resumed);
+TEST(MobileInputSystemTest, EvaluateMobileLifecycleTransition_RejectsInvalidStatesAtomically) {
+    MobileLifecycleTransition transition = MobileLifecycleTransition::Resumed;
+    const auto invalidState = static_cast<MobileLifecycleState>(
+        static_cast<std::uint8_t>(MobileLifecycleState::Count));
+    EXPECT_FALSE(EvaluateMobileLifecycleTransition(
+        invalidState, MobileLifecycleState::Active, transition));
+    EXPECT_EQ(transition, MobileLifecycleTransition::Resumed);
+    EXPECT_FALSE(EvaluateMobileLifecycleTransition(
+        MobileLifecycleState::Active, invalidState, transition));
+    EXPECT_EQ(transition, MobileLifecycleTransition::Resumed);
 }
 
-TEST(MobileInputSystemUVETest, EvaluateTouchLifecycleTransitionUVE_ClassifiesSlotChanges) {
-    TouchLifecycleTransitionUVE transition = TouchLifecycleTransitionUVE::Replaced;
-    const TouchPointStateUVE inactive{};
-    const TouchPointStateUVE began{true, 7U, Math::Vector2UVE{1.0F, 2.0F}, {}, 0.5F};
-    const TouchPointStateUVE moved{true, 7U, Math::Vector2UVE{2.0F, 2.0F}, Math::Vector2UVE{1.0F, 0.0F}, 0.75F};
-    const TouchPointStateUVE replaced{true, 8U, Math::Vector2UVE{2.0F, 2.0F}, {}, 0.75F};
-    ASSERT_TRUE(EvaluateTouchLifecycleTransitionUVE(inactive, inactive, transition));
-    EXPECT_EQ(transition, TouchLifecycleTransitionUVE::None);
-    ASSERT_TRUE(EvaluateTouchLifecycleTransitionUVE(inactive, began, transition));
-    EXPECT_EQ(transition, TouchLifecycleTransitionUVE::Began);
-    ASSERT_TRUE(EvaluateTouchLifecycleTransitionUVE(began, moved, transition));
-    EXPECT_EQ(transition, TouchLifecycleTransitionUVE::Moved);
-    ASSERT_TRUE(EvaluateTouchLifecycleTransitionUVE(moved, inactive, transition));
-    EXPECT_EQ(transition, TouchLifecycleTransitionUVE::Ended);
-    ASSERT_TRUE(EvaluateTouchLifecycleTransitionUVE(moved, replaced, transition));
-    EXPECT_EQ(transition, TouchLifecycleTransitionUVE::Replaced);
-    ASSERT_TRUE(EvaluateTouchLifecycleTransitionUVE(began, began, transition));
-    EXPECT_EQ(transition, TouchLifecycleTransitionUVE::None);
+TEST(MobileInputSystemTest, EvaluateTouchLifecycleTransition_ClassifiesSlotChanges) {
+    TouchLifecycleTransition transition = TouchLifecycleTransition::Replaced;
+    const TouchPointState inactive{};
+    const TouchPointState began{true, 7U, Math::Vector2{1.0F, 2.0F}, {}, 0.5F};
+    const TouchPointState moved{true, 7U, Math::Vector2{2.0F, 2.0F}, Math::Vector2{1.0F, 0.0F}, 0.75F};
+    const TouchPointState replaced{true, 8U, Math::Vector2{2.0F, 2.0F}, {}, 0.75F};
+    ASSERT_TRUE(EvaluateTouchLifecycleTransition(inactive, inactive, transition));
+    EXPECT_EQ(transition, TouchLifecycleTransition::None);
+    ASSERT_TRUE(EvaluateTouchLifecycleTransition(inactive, began, transition));
+    EXPECT_EQ(transition, TouchLifecycleTransition::Began);
+    ASSERT_TRUE(EvaluateTouchLifecycleTransition(began, moved, transition));
+    EXPECT_EQ(transition, TouchLifecycleTransition::Moved);
+    ASSERT_TRUE(EvaluateTouchLifecycleTransition(moved, inactive, transition));
+    EXPECT_EQ(transition, TouchLifecycleTransition::Ended);
+    ASSERT_TRUE(EvaluateTouchLifecycleTransition(moved, replaced, transition));
+    EXPECT_EQ(transition, TouchLifecycleTransition::Replaced);
+    ASSERT_TRUE(EvaluateTouchLifecycleTransition(began, began, transition));
+    EXPECT_EQ(transition, TouchLifecycleTransition::None);
 }
 
-TEST(MobileInputSystemUVETest, EvaluateTouchLifecycleTransitionUVE_RejectsInvalidInputsAtomically) {
-    TouchLifecycleTransitionUVE transition = TouchLifecycleTransitionUVE::Moved;
-    const TouchPointStateUVE invalidIdentifier{true, 0U, Math::Vector2UVE{}, {}, 0.5F};
-    const TouchPointStateUVE invalidPressure{true, 1U, Math::Vector2UVE{}, {}, 1.1F};
-    EXPECT_FALSE(EvaluateTouchLifecycleTransitionUVE(invalidIdentifier, TouchPointStateUVE{}, transition));
-    EXPECT_EQ(transition, TouchLifecycleTransitionUVE::Moved);
-    EXPECT_FALSE(EvaluateTouchLifecycleTransitionUVE(invalidPressure, TouchPointStateUVE{}, transition));
-    EXPECT_EQ(transition, TouchLifecycleTransitionUVE::Moved);
+TEST(MobileInputSystemTest, EvaluateTouchLifecycleTransition_RejectsInvalidInputsAtomically) {
+    TouchLifecycleTransition transition = TouchLifecycleTransition::Moved;
+    const TouchPointState invalidIdentifier{true, 0U, Math::Vector2{}, {}, 0.5F};
+    const TouchPointState invalidPressure{true, 1U, Math::Vector2{}, {}, 1.1F};
+    EXPECT_FALSE(EvaluateTouchLifecycleTransition(invalidIdentifier, TouchPointState{}, transition));
+    EXPECT_EQ(transition, TouchLifecycleTransition::Moved);
+    EXPECT_FALSE(EvaluateTouchLifecycleTransition(invalidPressure, TouchPointState{}, transition));
+    EXPECT_EQ(transition, TouchLifecycleTransition::Moved);
 }
 
-TEST(MobileInputSystemUVETest, SnapshotCopiesTouchDeltaPressureAndGyroscopeDeterministically) {
-    MobileInputSystemUVE mobileInput;
+TEST(MobileInputSystemTest, SnapshotCopiesTouchDeltaPressureAndGyroscopeDeterministically) {
+    MobileInputSystem mobileInput;
 
-    mobileInput.SetTouchStateUVE(0U, true, 42U, Math::Vector2UVE{100.0F, 200.0F}, 1.5F);
-    mobileInput.SetGyroscopeRotationRateUVE(Math::Vector3UVE{1.0F, 2.0F, 3.0F});
-    mobileInput.UpdateUVE();
+    mobileInput.SetTouchState(0U, true, 42U, Math::Vector2{100.0F, 200.0F}, 1.5F);
+    mobileInput.SetGyroscopeRotationRate(Math::Vector3{1.0F, 2.0F, 3.0F});
+    mobileInput.Update();
 
-    const MobileInputSnapshotUVE first = mobileInput.GetSnapshotUVE();
+    const MobileInputSnapshot first = mobileInput.GetSnapshot();
     EXPECT_EQ(first.frameNumber, 1U);
     EXPECT_TRUE(first.touches[0U].active);
     EXPECT_EQ(first.touches[0U].identifier, 42U);
@@ -116,83 +116,83 @@ TEST(MobileInputSystemUVETest, SnapshotCopiesTouchDeltaPressureAndGyroscopeDeter
     EXPECT_NEAR(first.touches[0U].delta.y, 0.0F, kEpsilon);
     EXPECT_NEAR(first.touches[0U].pressure, 1.0F, kEpsilon);
     EXPECT_NEAR(first.gyroscopeRotationRate.z, 3.0F, kEpsilon);
-    EXPECT_EQ(mobileInput.GetPreviousSnapshotUVE().frameNumber, 0U);
+    EXPECT_EQ(mobileInput.GetPreviousSnapshot().frameNumber, 0U);
 
-    mobileInput.SetTouchStateUVE(0U, true, 42U, Math::Vector2UVE{110.0F, 190.0F}, -0.5F);
-    mobileInput.SetGyroscopeRotationRateUVE(Math::Vector3UVE{-1.0F, 0.0F, 2.0F});
-    mobileInput.UpdateUVE();
+    mobileInput.SetTouchState(0U, true, 42U, Math::Vector2{110.0F, 190.0F}, -0.5F);
+    mobileInput.SetGyroscopeRotationRate(Math::Vector3{-1.0F, 0.0F, 2.0F});
+    mobileInput.Update();
 
-    const MobileInputSnapshotUVE second = mobileInput.GetSnapshotUVE();
+    const MobileInputSnapshot second = mobileInput.GetSnapshot();
     EXPECT_EQ(second.frameNumber, 2U);
     EXPECT_NEAR(second.touches[0U].delta.x, 10.0F, kEpsilon);
     EXPECT_NEAR(second.touches[0U].delta.y, -10.0F, kEpsilon);
     EXPECT_NEAR(second.touches[0U].pressure, 0.0F, kEpsilon);
     EXPECT_NEAR(second.gyroscopeRotationRate.x, -1.0F, kEpsilon);
-    EXPECT_EQ(mobileInput.GetPreviousSnapshotUVE().touches[0U].identifier, 42U);
+    EXPECT_EQ(mobileInput.GetPreviousSnapshot().touches[0U].identifier, 42U);
 }
 
-TEST(MobileInputSystemUVETest, FiniteEndpointDeltaOverflowFailsClosedToZero) {
-    MobileInputSystemUVE mobileInput;
+TEST(MobileInputSystemTest, FiniteEndpointDeltaOverflowFailsClosedToZero) {
+    MobileInputSystem mobileInput;
     const float maximumFloat = std::numeric_limits<float>::max();
 
-    mobileInput.SetTouchStateUVE(0U, true, 42U, Math::Vector2UVE{-maximumFloat, 0.0F}, 1.0F);
-    mobileInput.UpdateUVE();
-    mobileInput.SetTouchStateUVE(0U, true, 42U, Math::Vector2UVE{maximumFloat, 0.0F}, 1.0F);
-    mobileInput.UpdateUVE();
+    mobileInput.SetTouchState(0U, true, 42U, Math::Vector2{-maximumFloat, 0.0F}, 1.0F);
+    mobileInput.Update();
+    mobileInput.SetTouchState(0U, true, 42U, Math::Vector2{maximumFloat, 0.0F}, 1.0F);
+    mobileInput.Update();
 
-    const TouchPointStateUVE touch = mobileInput.GetSnapshotUVE().touches[0U];
+    const TouchPointState touch = mobileInput.GetSnapshot().touches[0U];
     EXPECT_TRUE(std::isfinite(touch.delta.x));
     EXPECT_TRUE(std::isfinite(touch.delta.y));
-    EXPECT_EQ(touch.delta, (Math::Vector2UVE{}));
+    EXPECT_EQ(touch.delta, (Math::Vector2{}));
 }
 
-TEST(MobileInputSystemUVETest, ActiveZeroIdentifierIsRejectedWithoutPublishingOrReplacingTouch) {
-    MobileInputSystemUVE mobileInput;
-    mobileInput.SetTouchStateUVE(0U, true, 0U, Math::Vector2UVE{10.0F, 20.0F}, 1.0F);
-    mobileInput.UpdateUVE();
-    EXPECT_FALSE(mobileInput.GetSnapshotUVE().touches[0U].active);
+TEST(MobileInputSystemTest, ActiveZeroIdentifierIsRejectedWithoutPublishingOrReplacingTouch) {
+    MobileInputSystem mobileInput;
+    mobileInput.SetTouchState(0U, true, 0U, Math::Vector2{10.0F, 20.0F}, 1.0F);
+    mobileInput.Update();
+    EXPECT_FALSE(mobileInput.GetSnapshot().touches[0U].active);
 
-    mobileInput.SetTouchStateUVE(0U, true, 42U, Math::Vector2UVE{10.0F, 20.0F}, 1.0F);
-    mobileInput.UpdateUVE();
-    mobileInput.SetTouchStateUVE(0U, true, 0U, Math::Vector2UVE{30.0F, 40.0F}, 1.0F);
-    mobileInput.UpdateUVE();
-    const TouchPointStateUVE touch = mobileInput.GetSnapshotUVE().touches[0U];
+    mobileInput.SetTouchState(0U, true, 42U, Math::Vector2{10.0F, 20.0F}, 1.0F);
+    mobileInput.Update();
+    mobileInput.SetTouchState(0U, true, 0U, Math::Vector2{30.0F, 40.0F}, 1.0F);
+    mobileInput.Update();
+    const TouchPointState touch = mobileInput.GetSnapshot().touches[0U];
     EXPECT_TRUE(touch.active);
     EXPECT_EQ(touch.identifier, 42U);
-    EXPECT_EQ(touch.position, (Math::Vector2UVE{10.0F, 20.0F}));
+    EXPECT_EQ(touch.position, (Math::Vector2{10.0F, 20.0F}));
 }
 
-TEST(MobileInputSystemUVETest, DuplicateActiveIdentifierIsRejectedWithoutPublishingOrReplacingTouch) {
-    MobileInputSystemUVE mobileInput;
-    mobileInput.SetTouchStateUVE(0U, true, 42U, Math::Vector2UVE{10.0F, 20.0F}, 0.5F);
-    mobileInput.UpdateUVE();
+TEST(MobileInputSystemTest, DuplicateActiveIdentifierIsRejectedWithoutPublishingOrReplacingTouch) {
+    MobileInputSystem mobileInput;
+    mobileInput.SetTouchState(0U, true, 42U, Math::Vector2{10.0F, 20.0F}, 0.5F);
+    mobileInput.Update();
 
-    mobileInput.SetTouchStateUVE(1U, true, 42U, Math::Vector2UVE{30.0F, 40.0F}, 0.75F);
-    mobileInput.UpdateUVE();
-    const MobileInputSnapshotUVE duplicateRejected = mobileInput.GetSnapshotUVE();
+    mobileInput.SetTouchState(1U, true, 42U, Math::Vector2{30.0F, 40.0F}, 0.75F);
+    mobileInput.Update();
+    const MobileInputSnapshot duplicateRejected = mobileInput.GetSnapshot();
     EXPECT_TRUE(duplicateRejected.touches[0U].active);
     EXPECT_EQ(duplicateRejected.touches[0U].identifier, 42U);
-    EXPECT_EQ(duplicateRejected.touches[0U].position, (Math::Vector2UVE{10.0F, 20.0F}));
+    EXPECT_EQ(duplicateRejected.touches[0U].position, (Math::Vector2{10.0F, 20.0F}));
     EXPECT_FALSE(duplicateRejected.touches[1U].active);
 
-    mobileInput.SetTouchStateUVE(1U, true, 43U, Math::Vector2UVE{30.0F, 40.0F}, 0.75F);
-    mobileInput.UpdateUVE();
-    const MobileInputSnapshotUVE uniqueAccepted = mobileInput.GetSnapshotUVE();
+    mobileInput.SetTouchState(1U, true, 43U, Math::Vector2{30.0F, 40.0F}, 0.75F);
+    mobileInput.Update();
+    const MobileInputSnapshot uniqueAccepted = mobileInput.GetSnapshot();
     EXPECT_TRUE(uniqueAccepted.touches[1U].active);
     EXPECT_EQ(uniqueAccepted.touches[1U].identifier, 43U);
 }
 
-TEST(MobileInputSystemUVETest, InvalidAndNonFiniteInputFailsClosedAndReleaseClearsTouch) {
-    MobileInputSystemUVE mobileInput;
+TEST(MobileInputSystemTest, InvalidAndNonFiniteInputFailsClosedAndReleaseClearsTouch) {
+    MobileInputSystem mobileInput;
     const float infinity = std::numeric_limits<float>::infinity();
     const float nan = std::numeric_limits<float>::quiet_NaN();
 
-    mobileInput.SetTouchStateUVE(kMaximumTouchCountUVE, true, 99U, Math::Vector2UVE{1.0F, 2.0F}, 1.0F);
-    mobileInput.SetTouchStateUVE(1U, true, 7U, Math::Vector2UVE{infinity, nan}, nan);
-    mobileInput.SetGyroscopeRotationRateUVE(Math::Vector3UVE{nan, infinity, -infinity});
-    mobileInput.UpdateUVE();
+    mobileInput.SetTouchState(kMaximumTouchCount, true, 99U, Math::Vector2{1.0F, 2.0F}, 1.0F);
+    mobileInput.SetTouchState(1U, true, 7U, Math::Vector2{infinity, nan}, nan);
+    mobileInput.SetGyroscopeRotationRate(Math::Vector3{nan, infinity, -infinity});
+    mobileInput.Update();
 
-    MobileInputSnapshotUVE active = mobileInput.GetSnapshotUVE();
+    MobileInputSnapshot active = mobileInput.GetSnapshot();
     EXPECT_TRUE(active.touches[1U].active);
     EXPECT_EQ(active.touches[1U].identifier, 7U);
     EXPECT_NEAR(active.touches[1U].position.x, 0.0F, kEpsilon);
@@ -203,14 +203,14 @@ TEST(MobileInputSystemUVETest, InvalidAndNonFiniteInputFailsClosedAndReleaseClea
     EXPECT_NEAR(active.gyroscopeRotationRate.z, 0.0F, kEpsilon);
     EXPECT_FALSE(active.touches[0U].active);
 
-    mobileInput.SetTouchStateUVE(1U, false, 0U, {}, 0.0F);
-    mobileInput.UpdateUVE();
-    const MobileInputSnapshotUVE released = mobileInput.GetSnapshotUVE();
+    mobileInput.SetTouchState(1U, false, 0U, {}, 0.0F);
+    mobileInput.Update();
+    const MobileInputSnapshot released = mobileInput.GetSnapshot();
     EXPECT_FALSE(released.touches[1U].active);
     EXPECT_EQ(released.touches[1U].identifier, 0U);
     EXPECT_NEAR(released.touches[1U].delta.x, 0.0F, kEpsilon);
     EXPECT_NEAR(released.touches[1U].delta.y, 0.0F, kEpsilon);
-    EXPECT_TRUE(mobileInput.GetPreviousSnapshotUVE().touches[1U].active);
+    EXPECT_TRUE(mobileInput.GetPreviousSnapshot().touches[1U].active);
 }
 
 } // namespace

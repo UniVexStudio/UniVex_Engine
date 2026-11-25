@@ -10,7 +10,7 @@
 //   1. the instanceCount field of a DrawIndexedIndirectCommand, and
 //   2. a COMPACTED list of which boxes survived, in slot order,
 //
-// so DrawIndexedIndirectUVE can consume the command directly and the vertex shader can look up
+// so DrawIndexedIndirect can consume the command directly and the vertex shader can look up
 // gl_InstanceID in the compacted list. Nothing on the CPU ever learns how many objects passed.
 //
 // The test itself is character-for-character the one in frustum_cull.glsl, including `precise`
@@ -20,7 +20,7 @@
 
 layout(local_size_x = 64) in;
 
-// Mirrored by CullBoxGpuUVE on the host - shared with frustum_cull.glsl, same layout.
+// Mirrored by CullBoxGpu on the host - shared with frustum_cull.glsl, same layout.
 struct CullBox {
     float centerX;
     float centerY;
@@ -48,7 +48,7 @@ layout(std430, binding = 1) readonly buffer PlaneBlock {
 };
 
 // The draw parameters themselves, in exactly the five-word order both Vulkan and GL define for an
-// indexed indirect draw and DrawIndexedIndirectCommandUVE mirrors on the host. Only instanceCount
+// indexed indirect draw and DrawIndexedIndirectCommand mirrors on the host. Only instanceCount
 // is touched here: the host seeds the other four (they describe the MESH, which no culling
 // decision can change) and zeroes instanceCount before the dispatch.
 //

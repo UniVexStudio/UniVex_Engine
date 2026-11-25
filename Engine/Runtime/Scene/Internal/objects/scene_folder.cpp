@@ -7,21 +7,21 @@
 
 namespace UVE::Scene {
 
-void ApplyFolderObjectDefinitionUVE(IEntityManagerUVE& entityManager, const EntityUVE entity,
-                                  const FolderObjectDefinitionUVE& value) {
+void ApplyFolderObjectDefinition(IEntityManager& entityManager, const Entity entity,
+                                  const FolderObjectDefinition& value) {
     static_cast<void>(value);
-    EnsureObjectBaselineUVE(entityManager, entity, FolderObjectDefinitionUVE::defaultName);
-    if (entityManager.IsAliveUVE(entity) && !entityManager.HasComponentUVE<FolderComponentUVE>(entity)) {
-        entityManager.AddComponentUVE<FolderComponentUVE>(entity, FolderComponentUVE{});
+    EnsureObjectBaseline(entityManager, entity, FolderObjectDefinition::defaultName);
+    if (entityManager.IsAlive(entity) && !entityManager.HasComponent<FolderComponent>(entity)) {
+        entityManager.AddComponent<FolderComponent>(entity, FolderComponent{});
     }
 }
 
-void ApplyViewport3DObjectDefinitionUVE(IEntityManagerUVE& entityManager, const EntityUVE entity,
-                                    const Viewport3DObjectDefinitionUVE& value) {
+void ApplyViewport3DObjectDefinition(IEntityManager& entityManager, const Entity entity,
+                                    const Viewport3DObjectDefinition& value) {
     static_cast<void>(value);
-    EnsureObjectBaselineUVE(entityManager, entity, Viewport3DObjectDefinitionUVE::defaultName);
-    if (entityManager.IsAliveUVE(entity) && !entityManager.HasComponentUVE<OutlinerViewport3DComponentUVE>(entity)) {
-        entityManager.AddComponentUVE<OutlinerViewport3DComponentUVE>(entity, OutlinerViewport3DComponentUVE{});
+    EnsureObjectBaseline(entityManager, entity, Viewport3DObjectDefinition::defaultName);
+    if (entityManager.IsAlive(entity) && !entityManager.HasComponent<OutlinerViewport3DComponent>(entity)) {
+        entityManager.AddComponent<OutlinerViewport3DComponent>(entity, OutlinerViewport3DComponent{});
     }
 }
 

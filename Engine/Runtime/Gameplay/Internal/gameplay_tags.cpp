@@ -8,18 +8,18 @@
 namespace UVE::Scene {
 namespace {
 
-[[nodiscard]] bool IsValidTagUVE(const std::string_view tag) noexcept {
-    return !tag.empty() && tag.size() <= kMaximumGameplayTagBytesUVE;
+[[nodiscard]] bool IsValidTag(const std::string_view tag) noexcept {
+    return !tag.empty() && tag.size() <= kMaximumGameplayTagBytes;
 }
 
 } // namespace
 
-bool IsGameplayTagComponentValidUVE(const GameplayTagComponentUVE& value) noexcept {
-    if (value.tags.size() > kMaximumGameplayTagsUVE) {
+bool IsGameplayTagComponentValid(const GameplayTagComponent& value) noexcept {
+    if (value.tags.size() > kMaximumGameplayTags) {
         return false;
     }
     for (const std::string& tag : value.tags) {
-        if (!IsValidTagUVE(tag)) {
+        if (!IsValidTag(tag)) {
             return false;
         }
     }
@@ -33,7 +33,7 @@ bool IsGameplayTagComponentValidUVE(const GameplayTagComponentUVE& value) noexce
     return true;
 }
 
-bool HasGameplayTagUVE(const GameplayTagComponentUVE& tags, const std::string_view tag) noexcept {
+bool HasGameplayTag(const GameplayTagComponent& tags, const std::string_view tag) noexcept {
     for (const std::string& held : tags.tags) {
         if (held == tag) {
             return true;
@@ -42,36 +42,36 @@ bool HasGameplayTagUVE(const GameplayTagComponentUVE& tags, const std::string_vi
     return false;
 }
 
-bool HasAllGameplayTagsUVE(const GameplayTagComponentUVE& tags,
+bool HasAllGameplayTags(const GameplayTagComponent& tags,
                             const std::initializer_list<std::string_view> required) noexcept {
     for (const std::string_view want : required) {
-        if (!HasGameplayTagUVE(tags, want)) {
+        if (!HasGameplayTag(tags, want)) {
             return false;
         }
     }
     return true;
 }
 
-bool HasAnyGameplayTagUVE(const GameplayTagComponentUVE& tags,
+bool HasAnyGameplayTag(const GameplayTagComponent& tags,
                            const std::initializer_list<std::string_view> any) noexcept {
     for (const std::string_view want : any) {
-        if (HasGameplayTagUVE(tags, want)) {
+        if (HasGameplayTag(tags, want)) {
             return true;
         }
     }
     return false;
 }
 
-bool AddGameplayTagUVE(GameplayTagComponentUVE& tags, std::string tag) {
-    if (!IsValidTagUVE(tag) || tags.tags.size() >= kMaximumGameplayTagsUVE ||
-        HasGameplayTagUVE(tags, tag)) {
+bool AddGameplayTag(GameplayTagComponent& tags, std::string tag) {
+    if (!IsValidTag(tag) || tags.tags.size() >= kMaximumGameplayTags ||
+        HasGameplayTag(tags, tag)) {
         return false;
     }
     tags.tags.push_back(std::move(tag));
     return true;
 }
 
-bool RemoveGameplayTagUVE(GameplayTagComponentUVE& tags, const std::string_view tag) {
+bool RemoveGameplayTag(GameplayTagComponent& tags, const std::string_view tag) {
     const auto removed = std::erase_if(tags.tags, [tag](const std::string& held) { return held == tag; });
     return removed > 0;
 }

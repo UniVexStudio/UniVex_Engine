@@ -13,34 +13,34 @@ class ViewportRenderPass;
 namespace UVE::App::Viewports {
 
 /// Lightweight studio framing camera and GL preview overlay uploader shared by preview viewports
-/// (`WidgetPreviewViewportUVE`, `RetargetViewportUVE`, `MontageViewportUVE`, `VfxViewportUVE`).
-class ViewportStudioCameraUVE final {
+/// (`WidgetPreviewViewport`, `RetargetViewport`, `MontageViewport`, `VfxViewport`).
+class ViewportStudioCamera final {
 public:
-    ViewportStudioCameraUVE();
-    ~ViewportStudioCameraUVE() = default;
+    ViewportStudioCamera();
+    ~ViewportStudioCamera() = default;
 
-    ViewportStudioCameraUVE(const ViewportStudioCameraUVE&) = delete;
-    ViewportStudioCameraUVE& operator=(const ViewportStudioCameraUVE&) = delete;
+    ViewportStudioCamera(const ViewportStudioCamera&) = delete;
+    ViewportStudioCamera& operator=(const ViewportStudioCamera&) = delete;
 
-    [[nodiscard]] univex::camera::OrbitCamera& CameraUVE() noexcept { return m_camera; }
-    [[nodiscard]] const univex::camera::OrbitCamera& CameraUVE() const noexcept { return m_camera; }
+    [[nodiscard]] univex::camera::OrbitCamera& Camera() noexcept { return m_camera; }
+    [[nodiscard]] const univex::camera::OrbitCamera& Camera() const noexcept { return m_camera; }
 
     /// Applies front-facing perspective studio framing whenever `studioFramingSerial` advances.
-    void ApplyStudioFramingUVE(const Editor::EditorUVE::ViewportOverlayStateUVE& overlayState);
+    void ApplyStudioFraming(const Editor::Editor::ViewportOverlayState& overlayState);
 
     /// Applies mouse-wheel dolly when hovered and advances camera interpolation.
-    void HandleWheelDollyUVE(const Editor::EditorViewportInputUVE& input);
+    void HandleWheelDolly(const Editor::EditorViewportInput& input);
 
     /// Uploads GL skeleton bone overlays from `overlayState.bones` into `renderPass`.
-    static void UploadBoneOverlaysUVE(univex::app::ViewportRenderPass& renderPass,
-                                      const Editor::EditorUVE::ViewportOverlayStateUVE& overlayState);
+    static void UploadBoneOverlays(univex::app::ViewportRenderPass& renderPass,
+                                      const Editor::Editor::ViewportOverlayState& overlayState);
 
     /// Uploads GL collider / bounds wireframe lines from `overlayState.colliderLines` into `renderPass`.
-    static void UploadColliderLinesUVE(univex::app::ViewportRenderPass& renderPass,
-                                       const Editor::EditorUVE::ViewportOverlayStateUVE& overlayState);
+    static void UploadColliderLines(univex::app::ViewportRenderPass& renderPass,
+                                       const Editor::Editor::ViewportOverlayState& overlayState);
 
     /// Exports camera state into `overlayState.viewCamera` and clears host-gizmo/mask/depth outputs.
-    void ExportCameraForHostUVE(const Editor::EditorUVE::ViewportOverlayStateUVE& overlayState,
+    void ExportCameraForHost(const Editor::Editor::ViewportOverlayState& overlayState,
                                 int width,
                                 int height) const;
 

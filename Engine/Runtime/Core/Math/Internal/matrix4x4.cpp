@@ -10,11 +10,11 @@ namespace UVE::Math {
 
 namespace {
 
-[[nodiscard]] Vector3UVE ScaleVectorUVE(const Vector3UVE& vector, float scalar) noexcept {
-    return Vector3UVE{vector.x * scalar, vector.y * scalar, vector.z * scalar};
+[[nodiscard]] Vector3 ScaleVector(const Vector3& vector, float scalar) noexcept {
+    return Vector3{vector.x * scalar, vector.y * scalar, vector.z * scalar};
 }
 
-[[nodiscard]] float DotWideUVE(const Vector3UVE& lhs, const Vector3UVE& rhs) noexcept {
+[[nodiscard]] float DotWide(const Vector3& lhs, const Vector3& rhs) noexcept {
     const double sum = static_cast<double>(lhs.x) * static_cast<double>(rhs.x) +
                        static_cast<double>(lhs.y) * static_cast<double>(rhs.y) +
                        static_cast<double>(lhs.z) * static_cast<double>(rhs.z);
@@ -23,12 +23,12 @@ namespace {
 
 } // namespace
 
-Matrix4x4UVE Matrix4x4UVE::ComposeTrsUVE(Vector3UVE translation, QuaternionUVE rotation, Vector3UVE scale) noexcept {
-    const Vector3UVE basisX = ScaleVectorUVE(RotateVectorUVE(rotation, Vector3UVE{1.0F, 0.0F, 0.0F}), scale.x);
-    const Vector3UVE basisY = ScaleVectorUVE(RotateVectorUVE(rotation, Vector3UVE{0.0F, 1.0F, 0.0F}), scale.y);
-    const Vector3UVE basisZ = ScaleVectorUVE(RotateVectorUVE(rotation, Vector3UVE{0.0F, 0.0F, 1.0F}), scale.z);
+Matrix4x4 Matrix4x4::ComposeTrs(Vector3 translation, Quaternion rotation, Vector3 scale) noexcept {
+    const Vector3 basisX = ScaleVector(RotateVector(rotation, Vector3{1.0F, 0.0F, 0.0F}), scale.x);
+    const Vector3 basisY = ScaleVector(RotateVector(rotation, Vector3{0.0F, 1.0F, 0.0F}), scale.y);
+    const Vector3 basisZ = ScaleVector(RotateVector(rotation, Vector3{0.0F, 0.0F, 1.0F}), scale.z);
 
-    Matrix4x4UVE result = IdentityUVE();
+    Matrix4x4 result = Identity();
     result.m[0][0] = basisX.x;
     result.m[1][0] = basisX.y;
     result.m[2][0] = basisX.z;
@@ -44,11 +44,11 @@ Matrix4x4UVE Matrix4x4UVE::ComposeTrsUVE(Vector3UVE translation, QuaternionUVE r
     return result;
 }
 
-Matrix4x4UVE Matrix4x4UVE::PerspectiveUVE(float fovYRadians, float aspectRatio, float nearPlane,
+Matrix4x4 Matrix4x4::Perspective(float fovYRadians, float aspectRatio, float nearPlane,
                                            float farPlane) noexcept {
     const float focalLength = 1.0F / std::tan(fovYRadians * 0.5F);
 
-    Matrix4x4UVE result{};
+    Matrix4x4 result{};
     result.m[0][0] = focalLength / aspectRatio;
     result.m[0][1] = 0.0F;
     result.m[0][2] = 0.0F;
@@ -70,9 +70,9 @@ Matrix4x4UVE Matrix4x4UVE::PerspectiveUVE(float fovYRadians, float aspectRatio, 
     return result;
 }
 
-Matrix4x4UVE Matrix4x4UVE::OrthographicUVE(float left, float right, float bottom, float top, float nearPlane,
+Matrix4x4 Matrix4x4::Orthographic(float left, float right, float bottom, float top, float nearPlane,
                                             float farPlane) noexcept {
-    Matrix4x4UVE result{};
+    Matrix4x4 result{};
     result.m[0][0] = static_cast<float>(
         2.0 / (static_cast<double>(right) - static_cast<double>(left)));
     result.m[0][1] = 0.0F;
@@ -98,29 +98,29 @@ Matrix4x4UVE Matrix4x4UVE::OrthographicUVE(float left, float right, float bottom
     return result;
 }
 
-Matrix4x4UVE Matrix4x4UVE::ViewFromPositionAndRotationUVE(Vector3UVE position, QuaternionUVE rotation) noexcept {
-    const Vector3UVE right = RotateVectorUVE(rotation, Vector3UVE{1.0F, 0.0F, 0.0F});
-    const Vector3UVE up = RotateVectorUVE(rotation, Vector3UVE{0.0F, 1.0F, 0.0F});
-    const Vector3UVE forward = RotateVectorUVE(rotation, Vector3UVE{0.0F, 0.0F, -1.0F});
+Matrix4x4 Matrix4x4::ViewFromPositionAndRotation(Vector3 position, Quaternion rotation) noexcept {
+    const Vector3 right = RotateVector(rotation, Vector3{1.0F, 0.0F, 0.0F});
+    const Vector3 up = RotateVector(rotation, Vector3{0.0F, 1.0F, 0.0F});
+    const Vector3 forward = RotateVector(rotation, Vector3{0.0F, 0.0F, -1.0F});
 
-    Matrix4x4UVE result = IdentityUVE();
+    Matrix4x4 result = Identity();
     result.m[0][0] = right.x;
     result.m[0][1] = right.y;
     result.m[0][2] = right.z;
-    result.m[0][3] = -DotWideUVE(right, position);
+    result.m[0][3] = -DotWide(right, position);
     result.m[1][0] = up.x;
     result.m[1][1] = up.y;
     result.m[1][2] = up.z;
-    result.m[1][3] = -DotWideUVE(up, position);
+    result.m[1][3] = -DotWide(up, position);
     result.m[2][0] = -forward.x;
     result.m[2][1] = -forward.y;
     result.m[2][2] = -forward.z;
-    result.m[2][3] = DotWideUVE(forward, position);
+    result.m[2][3] = DotWide(forward, position);
     return result;
 }
 
-Matrix4x4UVE operator*(const Matrix4x4UVE& lhs, const Matrix4x4UVE& rhs) noexcept {
-    Matrix4x4UVE result{};
+Matrix4x4 operator*(const Matrix4x4& lhs, const Matrix4x4& rhs) noexcept {
+    Matrix4x4 result{};
     for (int row = 0; row < 4; ++row) {
         for (int col = 0; col < 4; ++col) {
             double sum = 0.0;
@@ -133,7 +133,7 @@ Matrix4x4UVE operator*(const Matrix4x4UVE& lhs, const Matrix4x4UVE& rhs) noexcep
     return result;
 }
 
-Vector3UVE TransformPointUVE(const Matrix4x4UVE& matrix, Vector3UVE point) noexcept {
+Vector3 TransformPoint(const Matrix4x4& matrix, Vector3 point) noexcept {
     const double pointX = static_cast<double>(point.x);
     const double pointY = static_cast<double>(point.y);
     const double pointZ = static_cast<double>(point.z);
@@ -149,15 +149,15 @@ Vector3UVE TransformPointUVE(const Matrix4x4UVE& matrix, Vector3UVE point) noexc
                                 static_cast<double>(matrix.m[2][1]) * pointY +
                                 static_cast<double>(matrix.m[2][2]) * pointZ +
                                 static_cast<double>(matrix.m[2][3]);
-    return Vector3UVE{
+    return Vector3{
         static_cast<float>(transformedX),
         static_cast<float>(transformedY),
         static_cast<float>(transformedZ),
     };
 }
 
-Matrix4x4UVE TransposeUVE(const Matrix4x4UVE& matrix) noexcept {
-    Matrix4x4UVE result{};
+Matrix4x4 Transpose(const Matrix4x4& matrix) noexcept {
+    Matrix4x4 result{};
     for (int row = 0; row < 4; ++row) {
         for (int col = 0; col < 4; ++col) {
             result.m[row][col] = matrix.m[col][row];
@@ -166,10 +166,10 @@ Matrix4x4UVE TransposeUVE(const Matrix4x4UVE& matrix) noexcept {
     return result;
 }
 
-bool TryInverseUVE(const Matrix4x4UVE& matrix, Matrix4x4UVE& outInverse) noexcept {
+bool TryInverse(const Matrix4x4& matrix, Matrix4x4& outInverse) noexcept {
     // Gauss-Jordan elimination with partial pivoting on an augmented [matrix | identity] in
     // double precision, following this module's established convention (see operator* and
-    // TransformPointUVE above) of accumulating in double even though the public type is float.
+    // TransformPoint above) of accumulating in double even though the public type is float.
     double augmented[4][8];
     for (int row = 0; row < 4; ++row) {
         for (int col = 0; col < 4; ++col) {
@@ -182,7 +182,7 @@ bool TryInverseUVE(const Matrix4x4UVE& matrix, Matrix4x4UVE& outInverse) noexcep
         }
     }
 
-    constexpr double kMinimumPivotUVE = 1e-9;
+    constexpr double kMinimumPivot = 1e-9;
     for (int pivotIndex = 0; pivotIndex < 4; ++pivotIndex) {
         int pivotRow = pivotIndex;
         double pivotMagnitude = std::abs(augmented[pivotIndex][pivotIndex]);
@@ -193,7 +193,7 @@ bool TryInverseUVE(const Matrix4x4UVE& matrix, Matrix4x4UVE& outInverse) noexcep
                 pivotRow = row;
             }
         }
-        if (pivotMagnitude < kMinimumPivotUVE) {
+        if (pivotMagnitude < kMinimumPivot) {
             return false; // Singular (or numerically indistinguishable from singular).
         }
         if (pivotRow != pivotIndex) {
@@ -220,7 +220,7 @@ bool TryInverseUVE(const Matrix4x4UVE& matrix, Matrix4x4UVE& outInverse) noexcep
         }
     }
 
-    Matrix4x4UVE result{};
+    Matrix4x4 result{};
     for (int row = 0; row < 4; ++row) {
         for (int col = 0; col < 4; ++col) {
             const double value = augmented[row][col + 4];
@@ -234,7 +234,7 @@ bool TryInverseUVE(const Matrix4x4UVE& matrix, Matrix4x4UVE& outInverse) noexcep
     return true;
 }
 
-std::string ToStringUVE(const Matrix4x4UVE& matrix) {
+std::string ToString(const Matrix4x4& matrix) {
     std::string result = "(";
     for (int row = 0; row < 4; ++row) {
         result += "(";

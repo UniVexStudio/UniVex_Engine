@@ -12,53 +12,53 @@
 namespace UVE::Scene::Tests {
 namespace {
 
-constexpr float kDeltaTimeUVE = 1.0F / 60.0F;
+constexpr float kDeltaTime = 1.0F / 60.0F;
 
-TEST(Kinematic3DUVETest, IsDrivingUVE_FollowsActive) {
-    Kinematic3DComponentUVE kinematic{};
-    EXPECT_TRUE(Kinematic3DUVE::IsDrivingUVE(kinematic));
+TEST(Kinematic3DTest, IsDriving_FollowsActive) {
+    Kinematic3DComponent kinematic{};
+    EXPECT_TRUE(Kinematic3D::IsDriving(kinematic));
     kinematic.active = false;
-    EXPECT_FALSE(Kinematic3DUVE::IsDrivingUVE(kinematic));
+    EXPECT_FALSE(Kinematic3D::IsDriving(kinematic));
 }
 
-TEST(Kinematic3DUVETest, EaseBlendUVE_OneIsNowZeroIsNever) {
-    EXPECT_FLOAT_EQ(Kinematic3DUVE::EaseBlendUVE(1.0F, kDeltaTimeUVE), 1.0F);
-    EXPECT_FLOAT_EQ(Kinematic3DUVE::EaseBlendUVE(0.0F, kDeltaTimeUVE), 0.0F);
-    EXPECT_FLOAT_EQ(Kinematic3DUVE::EaseBlendUVE(4.0F, kDeltaTimeUVE), 1.0F);
-    EXPECT_FLOAT_EQ(Kinematic3DUVE::EaseBlendUVE(-2.0F, kDeltaTimeUVE), 0.0F);
-    EXPECT_FLOAT_EQ(Kinematic3DUVE::EaseBlendUVE(std::numeric_limits<float>::quiet_NaN(), kDeltaTimeUVE), 0.0F);
+TEST(Kinematic3DTest, EaseBlend_OneIsNowZeroIsNever) {
+    EXPECT_FLOAT_EQ(Kinematic3D::EaseBlend(1.0F, kDeltaTime), 1.0F);
+    EXPECT_FLOAT_EQ(Kinematic3D::EaseBlend(0.0F, kDeltaTime), 0.0F);
+    EXPECT_FLOAT_EQ(Kinematic3D::EaseBlend(4.0F, kDeltaTime), 1.0F);
+    EXPECT_FLOAT_EQ(Kinematic3D::EaseBlend(-2.0F, kDeltaTime), 0.0F);
+    EXPECT_FLOAT_EQ(Kinematic3D::EaseBlend(std::numeric_limits<float>::quiet_NaN(), kDeltaTime), 0.0F);
 }
 
-TEST(Kinematic3DUVETest, ResolveWorldTargetUVE_IdentityKeepsLocalAndRotationTurnsIt) {
-    const Math::Vector3UVE local{1.0F, 0.0F, 0.0F};
-    const Math::Vector3UVE identity = Kinematic3DUVE::ResolveWorldTargetUVE(local, {});
+TEST(Kinematic3DTest, ResolveWorldTarget_IdentityKeepsLocalAndRotationTurnsIt) {
+    const Math::Vector3 local{1.0F, 0.0F, 0.0F};
+    const Math::Vector3 identity = Kinematic3D::ResolveWorldTarget(local, {});
     EXPECT_NEAR(identity.x, 1.0F, 1.0e-5F);
     EXPECT_NEAR(identity.y, 0.0F, 1.0e-5F);
     EXPECT_NEAR(identity.z, 0.0F, 1.0e-5F);
 
-    Math::QuaternionUVE quarterTurn{};
-    ASSERT_TRUE(Math::TryMakeAxisAngleUVE({0.0F, 1.0F, 0.0F}, 1.5707963F, quarterTurn));
-    const Math::Vector3UVE turned = Kinematic3DUVE::ResolveWorldTargetUVE(local, quarterTurn);
-    const Math::Vector3UVE expected = Math::RotateVectorUVE(quarterTurn, local);
+    Math::Quaternion quarterTurn{};
+    ASSERT_TRUE(Math::TryMakeAxisAngle({0.0F, 1.0F, 0.0F}, 1.5707963F, quarterTurn));
+    const Math::Vector3 turned = Kinematic3D::ResolveWorldTarget(local, quarterTurn);
+    const Math::Vector3 expected = Math::RotateVector(quarterTurn, local);
     EXPECT_NEAR(turned.x, expected.x, 1.0e-5F);
     EXPECT_NEAR(turned.y, expected.y, 1.0e-5F);
     EXPECT_NEAR(turned.z, expected.z, 1.0e-5F);
 }
 
-TEST(Kinematic3DUVETest, ResolveWorldTargetUVE_NonFiniteIsStanding) {
-    const Math::Vector3UVE nan{std::numeric_limits<float>::quiet_NaN(), 0.0F, 0.0F};
-    const Math::Vector3UVE world = Kinematic3DUVE::ResolveWorldTargetUVE(nan, {});
+TEST(Kinematic3DTest, ResolveWorldTarget_NonFiniteIsStanding) {
+    const Math::Vector3 nan{std::numeric_limits<float>::quiet_NaN(), 0.0F, 0.0F};
+    const Math::Vector3 world = Kinematic3D::ResolveWorldTarget(nan, {});
     EXPECT_FLOAT_EQ(world.x, 0.0F);
     EXPECT_FLOAT_EQ(world.y, 0.0F);
     EXPECT_FLOAT_EQ(world.z, 0.0F);
 }
 
-TEST(Kinematic3DUVETest, EaseVelocityUVE_SnapsAtOneAndHoldsAtZero) {
-    const Math::Vector3UVE current{1.0F, 0.0F, 0.0F};
-    const Math::Vector3UVE target{3.0F, 0.0F, 0.0F};
-    const Math::Vector3UVE snapped = Kinematic3DUVE::EaseVelocityUVE(current, target, 1.0F, kDeltaTimeUVE);
+TEST(Kinematic3DTest, EaseVelocity_SnapsAtOneAndHoldsAtZero) {
+    const Math::Vector3 current{1.0F, 0.0F, 0.0F};
+    const Math::Vector3 target{3.0F, 0.0F, 0.0F};
+    const Math::Vector3 snapped = Kinematic3D::EaseVelocity(current, target, 1.0F, kDeltaTime);
     EXPECT_NEAR(snapped.x, 3.0F, 1.0e-5F);
-    const Math::Vector3UVE held = Kinematic3DUVE::EaseVelocityUVE(current, target, 0.0F, kDeltaTimeUVE);
+    const Math::Vector3 held = Kinematic3D::EaseVelocity(current, target, 0.0F, kDeltaTime);
     EXPECT_NEAR(held.x, 1.0F, 1.0e-5F);
 }
 

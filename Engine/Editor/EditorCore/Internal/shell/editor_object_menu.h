@@ -14,7 +14,7 @@ struct TreeNode;
 
 namespace UVE::Editor {
 
-class EditorUVE;
+class Editor;
 
 /// The right-click menu of an object row, the same in the level's Outliner and the Entity
 /// Editor's Components (each in its own document):
@@ -28,20 +28,20 @@ class EditorUVE;
 ///   Copy Name
 ///   Open Entity  Show in Asset Table     (a placed entity)
 ///   Save as Entity                           (anything else that can be copied)
-class EditorObjectMenuUVE final {
+class EditorObjectMenu final {
 public:
-    struct HooksUVE final {
+    struct Hooks final {
         /// The tree the row is in (Rename, Expand / Collapse).
         prism::TreeView* tree = nullptr;
         /// The tree row of an entity, for selecting children.
-        std::function<prism::TreeNode*(Scene::EntityUVE)> nodeOf;
+        std::function<prism::TreeNode*(Scene::Entity)> nodeOf;
         /// Opens the tree's "+ Add" picker for a child of the selection.
         std::function<void()> addChild;
     };
 
     /// Shows the menu for `entity` (already the selection: the tree selects the row it was opened
     /// on) at `at` in the current window.
-    static void ShowUVE(EditorUVE& editor, Scene::EntityUVE entity, prism::TreeNode* node, prism::Vec2 at, const HooksUVE& hooks);
+    static void Show(Editor& editor, Scene::Entity entity, prism::TreeNode* node, prism::Vec2 at, const Hooks& hooks);
 };
 
 } // namespace UVE::Editor

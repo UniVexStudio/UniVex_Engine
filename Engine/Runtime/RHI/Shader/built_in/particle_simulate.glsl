@@ -1,6 +1,6 @@
 #version 430 core
 
-// GPU twin of Scene::ParticleRuntimeUVE::SimulateDetailedUVE's per-particle integration
+// GPU twin of Scene::ParticleRuntime::SimulateDetailed's per-particle integration
 // (CS4). The CPU runtime remains the authority on WHICH particles exist - emission,
 // budgets, lifetime culling and array compaction all stay on the CPU, where they are
 // bounded and testable; this kernel does only the part that is pure arithmetic over an
@@ -28,7 +28,7 @@
 layout(local_size_x = 64) in;
 
 // std430 packs this struct as 8 consecutive floats with no padding, which is what
-// ParticleComputeSimulationUVE::ParticleGpuStateUVE mirrors on the host. vec3 would be
+// ParticleComputeSimulation::ParticleGpuState mirrors on the host. vec3 would be
 // 16-byte aligned and silently introduce padding, so positions and velocities are spelled
 // out as scalars: the host layout assertion and this declaration must agree exactly.
 struct ParticleGpuState {

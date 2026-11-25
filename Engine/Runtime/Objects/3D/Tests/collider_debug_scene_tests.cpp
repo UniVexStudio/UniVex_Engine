@@ -24,45 +24,45 @@ namespace {
 
 /// Room for four capsules and then some: every test below stays well inside it, so a truncation
 /// assertion can only come from the setting under test.
-constexpr std::size_t kBufferLinesUVE = 1024U;
+constexpr std::size_t kBufferLines = 1024U;
 
 } // namespace
 
-class ColliderDebugSceneUVETest : public ::testing::Test {
+class ColliderDebugSceneTest : public ::testing::Test {
 protected:
-    Memory::MemoryManagerUVE memoryManager;
-    Events::EventSystemUVE eventSystem;
-    EntityManagerUVE entityManager{memoryManager.GetDefaultAllocatorUVE(), eventSystem};
-    std::vector<Physics::ColliderDebugLineUVE> lines{kBufferLinesUVE};
+    Memory::MemoryManager memoryManager;
+    Events::EventSystem eventSystem;
+    EntityManager entityManager{memoryManager.GetDefaultAllocator(), eventSystem};
+    std::vector<Physics::ColliderDebugLine> lines{kBufferLines};
 
-    [[nodiscard]] EntityUVE MakeColliderUVE(const Math::Vector3UVE position,
-                                            const ColliderShapeTypeUVE shape = ColliderShapeTypeUVE::Box,
+    [[nodiscard]] Entity MakeCollider(const Math::Vector3 position,
+                                            const ColliderShapeType shape = ColliderShapeType::Box,
                                             const std::uint32_t layer = 1U) {
-        const EntityUVE entity = entityManager.CreateEntityUVE();
-        entityManager.AddComponentUVE<TransformComponentUVE>(entity, TransformComponentUVE{});
-        WorldTransformComponentUVE world;
+        const Entity entity = entityManager.CreateEntity();
+        entityManager.AddComponent<TransformComponent>(entity, TransformComponent{});
+        WorldTransformComponent world;
         world.worldPosition = position;
         world.dirty = false;
-        entityManager.AddComponentUVE<WorldTransformComponentUVE>(entity, world);
-        ColliderComponentUVE collider;
+        entityManager.AddComponent<WorldTransformComponent>(entity, world);
+        ColliderComponent collider;
         collider.shapeType = shape;
         collider.collisionLayer = layer;
-        entityManager.AddComponentUVE<ColliderComponentUVE>(entity, collider);
+        entityManager.AddComponent<ColliderComponent>(entity, collider);
         return entity;
     }
 
-    [[nodiscard]] ColliderDebugSceneStatsUVE Build(const ColliderDebugSceneSettingsUVE& settings = {}) {
-        return BuildColliderDebugSceneUVE(entityManager, settings,
-                                          std::span<Physics::ColliderDebugLineUVE>{lines.data(), lines.size()});
+    [[nodiscard]] ColliderDebugSceneStats Build(const ColliderDebugSceneSettings& settings = {}) {
+        return BuildColliderDebugScene(entityManager, settings,
+                                          std::span<Physics::ColliderDebugLine>{lines.data(), lines.size()});
     }
 };
 
-TEST_F(ColliderDebugSceneUVETest, DrawsOneWireframePerCollider) {
-    static_cast<void>(MakeColliderUVE({0.0F, 0.0F, 0.0F}));
-    static_cast<void>(MakeColliderUVE({5.0F, 0.0F, 0.0F}));
-    static_cast<void>(MakeColliderUVE({10.0F, 0.0F, 0.0F}));
+TEST_F(ColliderDebugSceneTest, DrawsOneWireframePerCollider) {
+    static_cast<void>(MakeCollider({0.0F, 0.0F, 0.0F}));
+    static_cast<void>(MakeCollider({5.0F, 0.0F, 0.0F}));
+    static_cast<void>(MakeCollider({10.0F, 0.0F, 0.0F}));
 
-    const ColliderDebugSceneStatsUVE stats = Build();
+    const ColliderDebugSceneStats stats = Build();
     EXPECT_EQ(stats.colliderCount, 3U);
     EXPECT_EQ(stats.lineCount, 36U) << "12 edges each";
     EXPECT_FALSE(stats.truncated);
@@ -75,91 +75,91 @@ TEST_F(ColliderDebugSceneUVETest, DrawsOneWireframePerCollider) {
     EXPECT_TRUE(sawFarBox);
 }
 
-TEST_F(ColliderDebugSceneUVETest, SkipsCollidersThatAreNotInTheSimulation) {
-    static_cast<void>(MakeColliderUVE({}));
+TEST_F(ColliderDebugSceneTest, SkipsCollidersThatAreNotInTheSimulation) {
+    static_cast<void>(MakeCollider({}));
 
     // A collider the author switched off contributes nothing to the simulation, so it must not be
     // drawn: a debug view that over-reports is one an author cannot trust.
-    const EntityUVE disabledCollider = MakeColliderUVE({5.0F, 0.0F, 0.0F});
-    entityManager.GetComponentUVE<ColliderComponentUVE>(disabledCollider).disabled = true;
+    const Entity disabledCollider = MakeCollider({5.0F, 0.0F, 0.0F});
+    entityManager.GetComponent<ColliderComponent>(disabledCollider).disabled = true;
 
     // An entity disabled outright is skipped for the same reason, and one the Process mode has
     // taken out of the physics world is not there to be hit either.
-    const EntityUVE disabledEntity = MakeColliderUVE({10.0F, 0.0F, 0.0F});
-    entityManager.AddComponentUVE<DisabledComponentUVE>(disabledEntity, DisabledComponentUVE{});
+    const Entity disabledEntity = MakeCollider({10.0F, 0.0F, 0.0F});
+    entityManager.AddComponent<DisabledComponent>(disabledEntity, DisabledComponent{});
 
-    const EntityUVE removedFromWorld = MakeColliderUVE({15.0F, 0.0F, 0.0F});
-    entityManager.AddComponentUVE<PhysicsObjectComponentUVE>(removedFromWorld,
-                                                             PhysicsObjectComponentUVE{});
-    ProcessComponentUVE stopped;
-    stopped.mode = TickModeUVE::Never;
-    stopped.resolvedModeInHierarchy = TickModeUVE::Never;
-    entityManager.AddComponentUVE<ProcessComponentUVE>(removedFromWorld, stopped);
+    const Entity removedFromWorld = MakeCollider({15.0F, 0.0F, 0.0F});
+    entityManager.AddComponent<PhysicsObjectComponent>(removedFromWorld,
+                                                             PhysicsObjectComponent{});
+    ProcessComponent stopped;
+    stopped.mode = TickMode::Never;
+    stopped.resolvedModeInHierarchy = TickMode::Never;
+    entityManager.AddComponent<ProcessComponent>(removedFromWorld, stopped);
 
-    const ColliderDebugSceneStatsUVE stats = Build();
+    const ColliderDebugSceneStats stats = Build();
     EXPECT_EQ(stats.colliderCount, 1U) << "only the live collider is drawn";
     EXPECT_EQ(stats.lineCount, 12U);
 }
 
-TEST_F(ColliderDebugSceneUVETest, IncludeDisabledDrawsTheColliderItself) {
-    const EntityUVE disabledCollider = MakeColliderUVE({});
-    entityManager.GetComponentUVE<ColliderComponentUVE>(disabledCollider).disabled = true;
+TEST_F(ColliderDebugSceneTest, IncludeDisabledDrawsTheColliderItself) {
+    const Entity disabledCollider = MakeCollider({});
+    entityManager.GetComponent<ColliderComponent>(disabledCollider).disabled = true;
 
-    ColliderDebugSceneSettingsUVE settings;
+    ColliderDebugSceneSettings settings;
     settings.includeDisabled = true;
     // The switch is honoured only while the object is still in the world: `includeDisabled` speaks
     // for the collider's own checkbox, not for a body the Process mode has taken away.
     EXPECT_EQ(Build(settings).colliderCount, 1U);
 }
 
-TEST_F(ColliderDebugSceneUVETest, FiltersByLayerMask) {
-    static_cast<void>(MakeColliderUVE({}, ColliderShapeTypeUVE::Box, 0x1U));
-    static_cast<void>(MakeColliderUVE({}, ColliderShapeTypeUVE::Box, 0x2U));
+TEST_F(ColliderDebugSceneTest, FiltersByLayerMask) {
+    static_cast<void>(MakeCollider({}, ColliderShapeType::Box, 0x1U));
+    static_cast<void>(MakeCollider({}, ColliderShapeType::Box, 0x2U));
 
-    ColliderDebugSceneSettingsUVE settings;
+    ColliderDebugSceneSettings settings;
     settings.layerMask = 0x2U;
-    const ColliderDebugSceneStatsUVE stats = Build(settings);
+    const ColliderDebugSceneStats stats = Build(settings);
     EXPECT_EQ(stats.colliderCount, 1U);
 
     settings.layerMask = 0U; // zero means "no filter", not "nothing matches"
     EXPECT_EQ(Build(settings).colliderCount, 2U);
 }
 
-TEST_F(ColliderDebugSceneUVETest, StopsAtTheColliderCap) {
+TEST_F(ColliderDebugSceneTest, StopsAtTheColliderCap) {
     for (int index = 0; index < 10; ++index) {
-        static_cast<void>(MakeColliderUVE({static_cast<float>(index) * 3.0F, 0.0F, 0.0F}));
+        static_cast<void>(MakeCollider({static_cast<float>(index) * 3.0F, 0.0F, 0.0F}));
     }
-    ColliderDebugSceneSettingsUVE settings;
+    ColliderDebugSceneSettings settings;
     settings.maximumColliders = 4U;
-    const ColliderDebugSceneStatsUVE stats = Build(settings);
+    const ColliderDebugSceneStats stats = Build(settings);
     EXPECT_EQ(stats.colliderCount, 4U);
     EXPECT_TRUE(stats.truncated);
     EXPECT_TRUE(stats.reachedColliderLimit);
 }
 
-TEST_F(ColliderDebugSceneUVETest, StopsRatherThanDrawingAHalfShape) {
-    static_cast<void>(MakeColliderUVE({}));
-    static_cast<void>(MakeColliderUVE({5.0F, 0.0F, 0.0F}));
+TEST_F(ColliderDebugSceneTest, StopsRatherThanDrawingAHalfShape) {
+    static_cast<void>(MakeCollider({}));
+    static_cast<void>(MakeCollider({5.0F, 0.0F, 0.0F}));
 
     // Room for one box and four edges of the next: the second must be skipped whole, so the caller
     // never sees a shape with a missing side.
-    std::vector<Physics::ColliderDebugLineUVE> small(16U);
-    const ColliderDebugSceneStatsUVE stats = BuildColliderDebugSceneUVE(
-        entityManager, ColliderDebugSceneSettingsUVE{},
-        std::span<Physics::ColliderDebugLineUVE>{small.data(), small.size()});
+    std::vector<Physics::ColliderDebugLine> small(16U);
+    const ColliderDebugSceneStats stats = BuildColliderDebugScene(
+        entityManager, ColliderDebugSceneSettings{},
+        std::span<Physics::ColliderDebugLine>{small.data(), small.size()});
     EXPECT_EQ(stats.lineCount, 12U);
     EXPECT_EQ(stats.colliderCount, 1U);
     EXPECT_TRUE(stats.truncated);
     EXPECT_FALSE(stats.reachedColliderLimit) << "the buffer, not the entity cap, was the limit";
 }
 
-TEST_F(ColliderDebugSceneUVETest, RefusesAnEmptyBufferOrZeroCap) {
-    static_cast<void>(MakeColliderUVE({}));
-    EXPECT_EQ(BuildColliderDebugSceneUVE(entityManager, ColliderDebugSceneSettingsUVE{}, {}).lineCount, 0U);
+TEST_F(ColliderDebugSceneTest, RefusesAnEmptyBufferOrZeroCap) {
+    static_cast<void>(MakeCollider({}));
+    EXPECT_EQ(BuildColliderDebugScene(entityManager, ColliderDebugSceneSettings{}, {}).lineCount, 0U);
 
-    ColliderDebugSceneSettingsUVE settings;
+    ColliderDebugSceneSettings settings;
     settings.maximumColliders = 0U;
-    const ColliderDebugSceneStatsUVE stats = Build(settings);
+    const ColliderDebugSceneStats stats = Build(settings);
     EXPECT_EQ(stats.lineCount, 0U);
     EXPECT_TRUE(stats.reachedColliderLimit);
 }

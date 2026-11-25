@@ -11,149 +11,149 @@
 namespace UVE::Events::Tests {
 namespace {
 
-struct TestEventUVE {
+struct TestEvent {
     int value = 0;
 };
 
-struct OtherTestEventUVE {
+struct OtherTestEvent {
     std::string text;
 };
 
-class HandlerHostUVE {
+class HandlerHost {
 public:
-    void OnTestEvent(const TestEventUVE& event) { receivedValue = event.value; }
+    void OnTestEvent(const TestEvent& event) { receivedValue = event.value; }
     int receivedValue = -1;
 };
 
-TEST(EventSystemUVETest, Publish_InvokesSubscribedHandler) {
-    EventSystemUVE eventSystem;
+TEST(EventSystemTest, Publish_InvokesSubscribedHandler) {
+    EventSystem eventSystem;
     int received = -1;
-    eventSystem.Subscribe<TestEventUVE>([&received](const TestEventUVE& event) { received = event.value; });
+    eventSystem.Subscribe<TestEvent>([&received](const TestEvent& event) { received = event.value; });
 
-    eventSystem.Publish(TestEventUVE{42});
+    eventSystem.Publish(TestEvent{42});
 
     EXPECT_EQ(received, 42);
 }
 
-TEST(EventSystemUVETest, Publish_MultipleSubscribers_AllInvoked) {
-    EventSystemUVE eventSystem;
+TEST(EventSystemTest, Publish_MultipleSubscribers_AllInvoked) {
+    EventSystem eventSystem;
     int callCount = 0;
     for (int i = 0; i < 3; ++i) {
-        eventSystem.Subscribe<TestEventUVE>([&callCount](const TestEventUVE&) { ++callCount; });
+        eventSystem.Subscribe<TestEvent>([&callCount](const TestEvent&) { ++callCount; });
     }
 
-    eventSystem.Publish(TestEventUVE{1});
+    eventSystem.Publish(TestEvent{1});
 
     EXPECT_EQ(callCount, 3);
 }
 
-TEST(EventSystemUVETest, Publish_DifferentEventTypes_DoNotCrossFire) {
-    EventSystemUVE eventSystem;
+TEST(EventSystemTest, Publish_DifferentEventTypes_DoNotCrossFire) {
+    EventSystem eventSystem;
     bool testEventFired = false;
     bool otherEventFired = false;
-    eventSystem.Subscribe<TestEventUVE>([&testEventFired](const TestEventUVE&) { testEventFired = true; });
-    eventSystem.Subscribe<OtherTestEventUVE>(
-        [&otherEventFired](const OtherTestEventUVE&) { otherEventFired = true; });
+    eventSystem.Subscribe<TestEvent>([&testEventFired](const TestEvent&) { testEventFired = true; });
+    eventSystem.Subscribe<OtherTestEvent>(
+        [&otherEventFired](const OtherTestEvent&) { otherEventFired = true; });
 
-    eventSystem.Publish(TestEventUVE{1});
+    eventSystem.Publish(TestEvent{1});
 
     EXPECT_TRUE(testEventFired);
     EXPECT_FALSE(otherEventFired);
 }
 
-TEST(EventSystemUVETest, Unsubscribe_StopsFutureDelivery) {
-    EventSystemUVE eventSystem;
+TEST(EventSystemTest, Unsubscribe_StopsFutureDelivery) {
+    EventSystem eventSystem;
     int callCount = 0;
-    const EventSubscriptionUVE subscription =
-        eventSystem.Subscribe<TestEventUVE>([&callCount](const TestEventUVE&) { ++callCount; });
+    const EventSubscription subscription =
+        eventSystem.Subscribe<TestEvent>([&callCount](const TestEvent&) { ++callCount; });
 
     eventSystem.Unsubscribe(subscription);
-    eventSystem.Publish(TestEventUVE{1});
+    eventSystem.Publish(TestEvent{1});
 
     EXPECT_EQ(callCount, 0);
 }
 
-TEST(EventSystemUVETest, Unsubscribe_InvalidHandle_IsNoOp) {
-    EventSystemUVE eventSystem;
+TEST(EventSystemTest, Unsubscribe_InvalidHandle_IsNoOp) {
+    EventSystem eventSystem;
     int callCount = 0;
-    eventSystem.Subscribe<TestEventUVE>([&callCount](const TestEventUVE&) { ++callCount; });
+    eventSystem.Subscribe<TestEvent>([&callCount](const TestEvent&) { ++callCount; });
 
-    eventSystem.Unsubscribe(EventSubscriptionUVE{});
-    eventSystem.Publish(TestEventUVE{1});
+    eventSystem.Unsubscribe(EventSubscription{});
+    eventSystem.Publish(TestEvent{1});
 
     EXPECT_EQ(callCount, 1);
 }
 
-TEST(EventSystemUVETest, MemberFunctionSubscribe_Invoked) {
-    EventSystemUVE eventSystem;
-    HandlerHostUVE host;
-    eventSystem.Subscribe<TestEventUVE>(&host, &HandlerHostUVE::OnTestEvent);
+TEST(EventSystemTest, MemberFunctionSubscribe_Invoked) {
+    EventSystem eventSystem;
+    HandlerHost host;
+    eventSystem.Subscribe<TestEvent>(&host, &HandlerHost::OnTestEvent);
 
-    eventSystem.Publish(TestEventUVE{7});
+    eventSystem.Publish(TestEvent{7});
 
     EXPECT_EQ(host.receivedValue, 7);
 }
 
-TEST(EventSystemUVETest, QueueEvent_NotDeliveredUntilDispatchQueued) {
-    EventSystemUVE eventSystem;
+TEST(EventSystemTest, QueueEvent_NotDeliveredUntilDispatchQueued) {
+    EventSystem eventSystem;
     int callCount = 0;
-    eventSystem.Subscribe<TestEventUVE>([&callCount](const TestEventUVE&) { ++callCount; });
+    eventSystem.Subscribe<TestEvent>([&callCount](const TestEvent&) { ++callCount; });
 
-    eventSystem.QueueEvent(TestEventUVE{1});
+    eventSystem.QueueEvent(TestEvent{1});
     EXPECT_EQ(callCount, 0);
 
-    eventSystem.DispatchQueuedUVE();
+    eventSystem.DispatchQueued();
     EXPECT_EQ(callCount, 1);
 }
 
-TEST(EventSystemUVETest, DispatchQueued_PreservesSamePriorityOrder) {
-    EventSystemUVE eventSystem;
+TEST(EventSystemTest, DispatchQueued_PreservesSamePriorityOrder) {
+    EventSystem eventSystem;
     std::vector<int> order;
-    eventSystem.Subscribe<TestEventUVE>([&order](const TestEventUVE& event) { order.push_back(event.value); });
+    eventSystem.Subscribe<TestEvent>([&order](const TestEvent& event) { order.push_back(event.value); });
 
-    eventSystem.QueueEvent(TestEventUVE{1});
-    eventSystem.QueueEvent(TestEventUVE{2});
-    eventSystem.QueueEvent(TestEventUVE{3});
-    eventSystem.DispatchQueuedUVE();
+    eventSystem.QueueEvent(TestEvent{1});
+    eventSystem.QueueEvent(TestEvent{2});
+    eventSystem.QueueEvent(TestEvent{3});
+    eventSystem.DispatchQueued();
 
     EXPECT_EQ(order, (std::vector<int>{1, 2, 3}));
 }
 
-TEST(EventSystemUVETest, DispatchQueued_CriticalBeforeHighBeforeNormal) {
-    EventSystemUVE eventSystem;
+TEST(EventSystemTest, DispatchQueued_CriticalBeforeHighBeforeNormal) {
+    EventSystem eventSystem;
     std::vector<int> order;
-    eventSystem.Subscribe<TestEventUVE>([&order](const TestEventUVE& event) { order.push_back(event.value); });
+    eventSystem.Subscribe<TestEvent>([&order](const TestEvent& event) { order.push_back(event.value); });
 
-    eventSystem.QueueEvent(TestEventUVE{1}, EventPriorityUVE::Normal);
-    eventSystem.QueueEvent(TestEventUVE{2}, EventPriorityUVE::Critical);
-    eventSystem.QueueEvent(TestEventUVE{3}, EventPriorityUVE::High);
-    eventSystem.QueueEvent(TestEventUVE{4}, EventPriorityUVE::Critical);
-    eventSystem.DispatchQueuedUVE();
+    eventSystem.QueueEvent(TestEvent{1}, EventPriority::Normal);
+    eventSystem.QueueEvent(TestEvent{2}, EventPriority::Critical);
+    eventSystem.QueueEvent(TestEvent{3}, EventPriority::High);
+    eventSystem.QueueEvent(TestEvent{4}, EventPriority::Critical);
+    eventSystem.DispatchQueued();
 
     EXPECT_EQ(order, (std::vector<int>{2, 4, 3, 1}));
 }
 
-TEST(EventSystemUVETest, DispatchQueued_ClearsQueueAfterDispatch) {
-    EventSystemUVE eventSystem;
+TEST(EventSystemTest, DispatchQueued_ClearsQueueAfterDispatch) {
+    EventSystem eventSystem;
     int callCount = 0;
-    eventSystem.Subscribe<TestEventUVE>([&callCount](const TestEventUVE&) { ++callCount; });
+    eventSystem.Subscribe<TestEvent>([&callCount](const TestEvent&) { ++callCount; });
 
-    eventSystem.QueueEvent(TestEventUVE{1});
-    eventSystem.DispatchQueuedUVE();
-    eventSystem.DispatchQueuedUVE();
+    eventSystem.QueueEvent(TestEvent{1});
+    eventSystem.DispatchQueued();
+    eventSystem.DispatchQueued();
 
     EXPECT_EQ(callCount, 1);
 }
 
-TEST(EventSystemUVETest, Clear_RemovesSubscriptionsAndQueue) {
-    EventSystemUVE eventSystem;
+TEST(EventSystemTest, Clear_RemovesSubscriptionsAndQueue) {
+    EventSystem eventSystem;
     int callCount = 0;
-    eventSystem.Subscribe<TestEventUVE>([&callCount](const TestEventUVE&) { ++callCount; });
-    eventSystem.QueueEvent(TestEventUVE{1});
+    eventSystem.Subscribe<TestEvent>([&callCount](const TestEvent&) { ++callCount; });
+    eventSystem.QueueEvent(TestEvent{1});
 
     eventSystem.Clear();
-    eventSystem.DispatchQueuedUVE();
-    eventSystem.Publish(TestEventUVE{1});
+    eventSystem.DispatchQueued();
+    eventSystem.Publish(TestEvent{1});
 
     EXPECT_EQ(callCount, 0);
 }

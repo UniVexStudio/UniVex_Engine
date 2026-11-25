@@ -12,7 +12,7 @@
 namespace UVE::Scene {
 namespace {
 
-[[nodiscard]] std::string SanitizeBoundedStringUVE(const std::string_view input,
+[[nodiscard]] std::string SanitizeBoundedString(const std::string_view input,
                                                    const std::size_t maxBytes) {
     std::string out;
     out.reserve(std::min(input.size(), maxBytes));
@@ -30,19 +30,19 @@ namespace {
 
 } // namespace
 
-[[nodiscard]] bool IsAudioAttenuationCurveValidUVE(const AudioAttenuationCurveUVE curve) noexcept {
-    return curve == AudioAttenuationCurveUVE::Linear ||
-           curve == AudioAttenuationCurveUVE::InverseSquare;
+[[nodiscard]] bool IsAudioAttenuationCurveValid(const AudioAttenuationCurve curve) noexcept {
+    return curve == AudioAttenuationCurve::Linear ||
+           curve == AudioAttenuationCurve::InverseSquare;
 }
 
-[[nodiscard]] bool IsAudioSourceComponentValidUVE(const AudioSourceComponentUVE& source) noexcept {
+[[nodiscard]] bool IsAudioSourceComponentValid(const AudioSourceComponent& source) noexcept {
     const bool spatialDistanceValid =
         !source.spatial || (std::isfinite(source.minDistance) && source.minDistance > 0.0F &&
                             std::isfinite(source.maxDistance) &&
                             source.maxDistance > source.minDistance);
-    const bool assetPathValid = source.audioAssetPath.size() <= kMaximumAudioAssetPathBytesUVE &&
+    const bool assetPathValid = source.audioAssetPath.size() <= kMaximumAudioAssetPathBytes &&
                                 source.audioAssetPath.find('\0') == std::string::npos;
-    const bool mixerGroupValid = source.mixerGroup.size() <= kMaximumAudioMixerGroupNameBytesUVE &&
+    const bool mixerGroupValid = source.mixerGroup.size() <= kMaximumAudioMixerGroupNameBytes &&
                                  source.mixerGroup.find('\0') == std::string::npos;
     const bool occlusionValid =
         !source.spatial || !source.occlusionEnabled ||
@@ -51,24 +51,24 @@ namespace {
          source.occlusionLowPassHz <= 20000.0F);
     return assetPathValid && mixerGroupValid && std::isfinite(source.volume) &&
            source.volume >= 0.0F && std::isfinite(source.pitch) && source.pitch > 0.0F &&
-           IsAudioAttenuationCurveValidUVE(source.attenuationCurve) && spatialDistanceValid && occlusionValid;
+           IsAudioAttenuationCurveValid(source.attenuationCurve) && spatialDistanceValid && occlusionValid;
 }
 
-[[nodiscard]] bool HasAudioSourceAssetPathUVE(const AudioSourceComponentUVE& source) noexcept {
+[[nodiscard]] bool HasAudioSourceAssetPath(const AudioSourceComponent& source) noexcept {
     return !source.audioAssetPath.empty() &&
-           source.audioAssetPath.size() <= kMaximumAudioAssetPathBytesUVE &&
+           source.audioAssetPath.size() <= kMaximumAudioAssetPathBytes &&
            source.audioAssetPath.find('\0') == std::string::npos;
 }
 
-[[nodiscard]] AudioSourceComponentUVE SanitizeAudioSourceComponentUVE(
-    const AudioSourceComponentUVE& source) {
-    AudioSourceComponentUVE out = source;
-    out.audioAssetPath = SanitizeBoundedStringUVE(out.audioAssetPath, kMaximumAudioAssetPathBytesUVE);
-    out.mixerGroup = SanitizeBoundedStringUVE(out.mixerGroup, kMaximumAudioMixerGroupNameBytesUVE);
+[[nodiscard]] AudioSourceComponent SanitizeAudioSourceComponent(
+    const AudioSourceComponent& source) {
+    AudioSourceComponent out = source;
+    out.audioAssetPath = SanitizeBoundedString(out.audioAssetPath, kMaximumAudioAssetPathBytes);
+    out.mixerGroup = SanitizeBoundedString(out.mixerGroup, kMaximumAudioMixerGroupNameBytes);
     out.volume = (std::isfinite(out.volume) && out.volume >= 0.0F) ? out.volume : 1.0F;
     out.pitch = (std::isfinite(out.pitch) && out.pitch > 0.0F) ? out.pitch : 1.0F;
-    if (!IsAudioAttenuationCurveValidUVE(out.attenuationCurve)) {
-        out.attenuationCurve = AudioAttenuationCurveUVE::Linear;
+    if (!IsAudioAttenuationCurveValid(out.attenuationCurve)) {
+        out.attenuationCurve = AudioAttenuationCurve::Linear;
     }
     if (!std::isfinite(out.minDistance) || out.minDistance <= 0.0F) {
         out.minDistance = 1.0F;
@@ -86,7 +86,7 @@ namespace {
     return out;
 }
 
-[[nodiscard]] float ComputeAudioSourceDistanceAttenuationUVE(const AudioSourceComponentUVE& source,
+[[nodiscard]] float ComputeAudioSourceDistanceAttenuation(const AudioSourceComponent& source,
                                                              const float distance) noexcept {
     if (!source.spatial) {
         return 1.0F;
@@ -99,20 +99,20 @@ namespace {
     }
     const float span = source.maxDistance - source.minDistance;
     const float t = std::clamp((distance - source.minDistance) / span, 0.0F, 1.0F);
-    if (source.attenuationCurve == AudioAttenuationCurveUVE::InverseSquare) {
+    if (source.attenuationCurve == AudioAttenuationCurve::InverseSquare) {
         const float oneMinusT = 1.0F - t;
         return oneMinusT * oneMinusT;
     }
     return 1.0F - t;
 }
 
-[[nodiscard]] float ComputeEffectiveAudioSourceGainUVE(const AudioSourceComponentUVE& source,
+[[nodiscard]] float ComputeEffectiveAudioSourceGain(const AudioSourceComponent& source,
                                                        const float distance,
                                                        const float busVolume) noexcept {
     const float safeVolume =
         (std::isfinite(source.volume) && source.volume >= 0.0F) ? source.volume : 0.0F;
     const float safeBus = (std::isfinite(busVolume) && busVolume >= 0.0F) ? busVolume : 0.0F;
-    return safeVolume * ComputeAudioSourceDistanceAttenuationUVE(source, distance) * safeBus;
+    return safeVolume * ComputeAudioSourceDistanceAttenuation(source, distance) * safeBus;
 }
 
 } // namespace UVE::Scene

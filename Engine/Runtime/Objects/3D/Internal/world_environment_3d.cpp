@@ -14,47 +14,47 @@
 namespace UVE::Scene {
 namespace {
 
-[[nodiscard]] bool IsEnvironmentEntityHiddenUVE(IEntityManagerUVE& entityManager, const EntityUVE entity) noexcept {
-    if (!entityManager.HasComponentUVE<VisibilityComponentUVE>(entity)) {
+[[nodiscard]] bool IsEnvironmentEntityHidden(IEntityManager& entityManager, const Entity entity) noexcept {
+    if (!entityManager.HasComponent<VisibilityComponent>(entity)) {
         return false;
     }
-    const VisibilityComponentUVE& visibility = entityManager.GetComponentUVE<VisibilityComponentUVE>(entity);
+    const VisibilityComponent& visibility = entityManager.GetComponent<VisibilityComponent>(entity);
     return !visibility.visible || !visibility.visibleInHierarchy;
 }
 
-[[nodiscard]] bool IsNonNegativeColorUVE(const Math::Vector3UVE& value) noexcept {
-    return IsFinite3DObjectVectorUVE(value) && value.x >= 0.0F && value.y >= 0.0F && value.z >= 0.0F;
+[[nodiscard]] bool IsNonNegativeColor(const Math::Vector3& value) noexcept {
+    return IsFinite3DObjectVector(value) && value.x >= 0.0F && value.y >= 0.0F && value.z >= 0.0F;
 }
 
-[[nodiscard]] Math::Vector3UVE ScaleColorUVE(const Math::Vector3UVE& color, const Math::Vector3UVE& tint,
+[[nodiscard]] Math::Vector3 ScaleColor(const Math::Vector3& color, const Math::Vector3& tint,
                                              const float energy) noexcept {
-    return Math::Vector3UVE{color.x * tint.x * energy, color.y * tint.y * energy, color.z * tint.z * energy};
+    return Math::Vector3{color.x * tint.x * energy, color.y * tint.y * energy, color.z * tint.z * energy};
 }
 
 } // namespace
 
-bool IsWorldEnvironment3DObjectComponentValidUVE(const WorldEnvironment3DComponentUVE& value) noexcept {
-    return IsBounded3DObjectStringUVE(value.skyAssetPath) &&
-           (value.ambientSource == WorldEnvironmentAmbientSourceUVE::None ||
-            value.ambientSource == WorldEnvironmentAmbientSourceUVE::FlatColor ||
-            value.ambientSource == WorldEnvironmentAmbientSourceUVE::Sky ||
-            value.ambientSource == WorldEnvironmentAmbientSourceUVE::EnvironmentMap) &&
-           IsNonNegativeColorUVE(value.ambientColor) &&
-           IsNonNegativeColorUVE(value.fogColor) && IsNonNegativeColorUVE(value.skyColor) &&
-           IsNonNegativeColorUVE(value.horizonColor) && IsNonNegativeColorUVE(value.groundColor) &&
-           IsNonNegativeColorUVE(value.colorFilter) && std::isfinite(value.ambientEnergy) && value.ambientEnergy >= 0.0F &&
+bool IsWorldEnvironment3DObjectComponentValid(const WorldEnvironment3DComponent& value) noexcept {
+    return IsBounded3DObjectString(value.skyAssetPath) &&
+           (value.ambientSource == WorldEnvironmentAmbientSource::None ||
+            value.ambientSource == WorldEnvironmentAmbientSource::FlatColor ||
+            value.ambientSource == WorldEnvironmentAmbientSource::Sky ||
+            value.ambientSource == WorldEnvironmentAmbientSource::EnvironmentMap) &&
+           IsNonNegativeColor(value.ambientColor) &&
+           IsNonNegativeColor(value.fogColor) && IsNonNegativeColor(value.skyColor) &&
+           IsNonNegativeColor(value.horizonColor) && IsNonNegativeColor(value.groundColor) &&
+           IsNonNegativeColor(value.colorFilter) && std::isfinite(value.ambientEnergy) && value.ambientEnergy >= 0.0F &&
            std::isfinite(value.exposure) && value.exposure > 0.0F && std::isfinite(value.fogDensity) &&
            value.fogDensity >= 0.0F &&
-           (value.fogMode == WorldEnvironmentFogModeUVE::Linear ||
-            value.fogMode == WorldEnvironmentFogModeUVE::Exponential ||
-            value.fogMode == WorldEnvironmentFogModeUVE::Height) && std::isfinite(value.fogStart) &&
+           (value.fogMode == WorldEnvironmentFogMode::Linear ||
+            value.fogMode == WorldEnvironmentFogMode::Exponential ||
+            value.fogMode == WorldEnvironmentFogMode::Height) && std::isfinite(value.fogStart) &&
            value.fogStart >= 0.0F && std::isfinite(value.fogEnd) && value.fogEnd > value.fogStart &&
            std::isfinite(value.skyCurve) && value.skyCurve > 0.0F &&
            std::isfinite(value.groundCurve) && value.groundCurve > 0.0F && std::isfinite(value.fogSkyAffect) &&
            value.fogSkyAffect >= 0.0F && value.fogSkyAffect <= 1.0F && std::isfinite(value.bloomIntensity) &&
            value.bloomIntensity >= 0.0F && std::isfinite(value.bloomThreshold) && value.bloomThreshold >= 0.0F &&
            std::isfinite(value.bloomSoftKnee) && value.bloomSoftKnee >= 0.0F && value.bloomSoftKnee <= 1.0F &&
-           value.bloomMipCount >= 1U && value.bloomMipCount <= kMaximumWorldEnvironmentBloomMipCountUVE &&
+           value.bloomMipCount >= 1U && value.bloomMipCount <= kMaximumWorldEnvironmentBloomMipCount &&
            std::isfinite(value.ssaoIntensity) && value.ssaoIntensity >= 0.0F && std::isfinite(value.ssaoRadius) &&
            value.ssaoRadius > 0.0F && std::isfinite(value.brightness) && std::isfinite(value.contrast) &&
            value.contrast >= 0.0F && std::isfinite(value.saturation) && value.saturation >= 0.0F &&
@@ -66,10 +66,10 @@ bool IsWorldEnvironment3DObjectComponentValidUVE(const WorldEnvironment3DCompone
            value.filmGrainIntensity >= 0.0F && value.filmGrainIntensity <= 1.0F &&
            std::isfinite(value.lensDistortionIntensity) && value.lensDistortionIntensity >= 0.0F &&
            value.lensDistortionIntensity <= 1.0F &&
-           (value.depthOfFieldFocusMode == WorldEnvironmentDepthOfFieldFocusModeUVE::Manual ||
-            value.depthOfFieldFocusMode == WorldEnvironmentDepthOfFieldFocusModeUVE::ScreenCenter) &&
-           (value.depthOfFieldBokehShape == WorldEnvironmentDepthOfFieldBokehShapeUVE::Circular ||
-            value.depthOfFieldBokehShape == WorldEnvironmentDepthOfFieldBokehShapeUVE::Hexagonal) &&
+           (value.depthOfFieldFocusMode == WorldEnvironmentDepthOfFieldFocusMode::Manual ||
+            value.depthOfFieldFocusMode == WorldEnvironmentDepthOfFieldFocusMode::ScreenCenter) &&
+           (value.depthOfFieldBokehShape == WorldEnvironmentDepthOfFieldBokehShape::Circular ||
+            value.depthOfFieldBokehShape == WorldEnvironmentDepthOfFieldBokehShape::Hexagonal) &&
            std::isfinite(value.depthOfFieldFocusDistance) && value.depthOfFieldFocusDistance >= 0.1F &&
            std::isfinite(value.depthOfFieldAperture) &&
            value.depthOfFieldAperture >= 0.0F && value.depthOfFieldAperture <= 1.0F &&
@@ -82,42 +82,42 @@ bool IsWorldEnvironment3DObjectComponentValidUVE(const WorldEnvironment3DCompone
            std::isfinite(value.lutContribution) && value.lutContribution >= 0.0F && value.lutContribution <= 1.0F;
 }
 
-WorldEnvironmentFrameUVE ResolveWorldEnvironmentFrameUVE(IEntityManagerUVE& entityManager,
-                                                        const Math::Vector3UVE& fallbackAmbient) noexcept {
-    WorldEnvironmentFrameUVE frame;
-    const Math::Vector3UVE fallback = Math::IsFiniteUVE(fallbackAmbient) ? fallbackAmbient : Math::Vector3UVE{};
+WorldEnvironmentFrame ResolveWorldEnvironmentFrame(IEntityManager& entityManager,
+                                                        const Math::Vector3& fallbackAmbient) noexcept {
+    WorldEnvironmentFrame frame;
+    const Math::Vector3 fallback = Math::IsFinite(fallbackAmbient) ? fallbackAmbient : Math::Vector3{};
     frame.ambientColor = fallback;
     frame.skyAmbient = fallback;
     frame.groundAmbient = fallback;
     frame.backgroundColor = fallback;
-    entityManager.ForEachUVE<WorldEnvironment3DComponentUVE>(
-        [&frame, &entityManager](const EntityUVE entity, const WorldEnvironment3DComponentUVE& environment) {
-            if (frame.hasEnvironment || IsEnvironmentEntityHiddenUVE(entityManager, entity) ||
-                !IsWorldEnvironment3DObjectComponentValidUVE(environment)) {
+    entityManager.ForEach<WorldEnvironment3DComponent>(
+        [&frame, &entityManager](const Entity entity, const WorldEnvironment3DComponent& environment) {
+            if (frame.hasEnvironment || IsEnvironmentEntityHidden(entityManager, entity) ||
+                !IsWorldEnvironment3DObjectComponentValid(environment)) {
                 return;
             }
-            const Math::Vector3UVE ambient{environment.ambientColor.x * environment.ambientEnergy,
+            const Math::Vector3 ambient{environment.ambientColor.x * environment.ambientEnergy,
                                            environment.ambientColor.y * environment.ambientEnergy,
                                            environment.ambientColor.z * environment.ambientEnergy};
-            const Math::Vector3UVE skyAmbient =
-                ScaleColorUVE(environment.skyColor, environment.ambientColor, environment.ambientEnergy);
-            const Math::Vector3UVE groundAmbient =
-                ScaleColorUVE(environment.groundColor, environment.ambientColor, environment.ambientEnergy);
-            if (!Math::IsFiniteUVE(ambient) || !Math::IsFiniteUVE(skyAmbient) || !Math::IsFiniteUVE(groundAmbient)) {
+            const Math::Vector3 skyAmbient =
+                ScaleColor(environment.skyColor, environment.ambientColor, environment.ambientEnergy);
+            const Math::Vector3 groundAmbient =
+                ScaleColor(environment.groundColor, environment.ambientColor, environment.ambientEnergy);
+            if (!Math::IsFinite(ambient) || !Math::IsFinite(skyAmbient) || !Math::IsFinite(groundAmbient)) {
                 return;
             }
             frame.ambientSource = environment.ambientSource;
-            frame.ambientColor = environment.ambientSource == WorldEnvironmentAmbientSourceUVE::None
-                                     ? Math::Vector3UVE{}
+            frame.ambientColor = environment.ambientSource == WorldEnvironmentAmbientSource::None
+                                     ? Math::Vector3{}
                                      : ambient;
-            frame.skyAmbient = environment.ambientSource == WorldEnvironmentAmbientSourceUVE::Sky ||
-                                       environment.ambientSource == WorldEnvironmentAmbientSourceUVE::EnvironmentMap
+            frame.skyAmbient = environment.ambientSource == WorldEnvironmentAmbientSource::Sky ||
+                                       environment.ambientSource == WorldEnvironmentAmbientSource::EnvironmentMap
                                    ? skyAmbient
-                                   : Math::Vector3UVE{};
-            frame.groundAmbient = environment.ambientSource == WorldEnvironmentAmbientSourceUVE::Sky ||
-                                          environment.ambientSource == WorldEnvironmentAmbientSourceUVE::EnvironmentMap
+                                   : Math::Vector3{};
+            frame.groundAmbient = environment.ambientSource == WorldEnvironmentAmbientSource::Sky ||
+                                          environment.ambientSource == WorldEnvironmentAmbientSource::EnvironmentMap
                                       ? groundAmbient
-                                      : Math::Vector3UVE{};
+                                      : Math::Vector3{};
             frame.skyColor = environment.skyColor;
             frame.horizonColor = environment.horizonColor;
             frame.groundColor = environment.groundColor;
@@ -179,17 +179,17 @@ WorldEnvironmentFrameUVE ResolveWorldEnvironmentFrameUVE(IEntityManagerUVE& enti
     // same scene is not blended in, because two skies over one horizon has no meaning. A Sky with
     // no enabled state or a field out of range is skipped rather than half-applied.
     bool skyApplied = false;
-    entityManager.ForEachUVE<Sky3DComponentUVE>([&frame, &skyApplied, &entityManager](const EntityUVE entity,
-                                                                                      const Sky3DComponentUVE& sky) {
-        if (skyApplied || !sky.enabled || IsEnvironmentEntityHiddenUVE(entityManager, entity) ||
-            !IsSky3DObjectComponentValidUVE(sky)) {
+    entityManager.ForEach<Sky3DComponent>([&frame, &skyApplied, &entityManager](const Entity entity,
+                                                                                      const Sky3DComponent& sky) {
+        if (skyApplied || !sky.enabled || IsEnvironmentEntityHidden(entityManager, entity) ||
+            !IsSky3DObjectComponentValid(sky)) {
             return;
         }
-        const SkySourceUVE source = sky.source;
+        const SkySource source = sky.source;
         // A panorama with no image has nothing to sample. Falling through to the gradient would be
         // a different sky than the one selected, so the whole Sky is skipped and the scene keeps
         // whatever it had - the same answer as an empty Sky asset on the environment.
-        if (source == SkySourceUVE::Panorama && sky.panoramaPath.empty()) {
+        if (source == SkySource::Panorama && sky.panoramaPath.empty()) {
             return;
         }
         frame.skyColor = sky.skyColor;
@@ -198,8 +198,8 @@ WorldEnvironmentFrameUVE ResolveWorldEnvironmentFrameUVE(IEntityManagerUVE& enti
         frame.skyCurve = sky.skyCurve;
         frame.groundCurve = sky.groundCurve;
         frame.backgroundColor = sky.horizonColor;
-        frame.skyAssetPath = source == SkySourceUVE::Panorama ? sky.panoramaPath : std::string{};
-        frame.atmosphericSky = source == SkySourceUVE::Atmosphere;
+        frame.skyAssetPath = source == SkySource::Panorama ? sky.panoramaPath : std::string{};
+        frame.atmosphericSky = source == SkySource::Atmosphere;
         frame.atmosphereRayleigh = sky.atmosphereRayleigh;
         frame.atmosphereMie = sky.atmosphereMie;
         frame.atmosphereOzone = sky.atmosphereOzone;
@@ -219,7 +219,7 @@ WorldEnvironmentFrameUVE ResolveWorldEnvironmentFrameUVE(IEntityManagerUVE& enti
         // shader wants a velocity it can multiply by time, not an angle it would convert and
         // convert again every frame.
         const float windRadians = sky.cloudWindDirectionDegrees * 3.14159265358979323846F / 180.0F;
-        frame.cloudWind = Math::Vector2UVE{std::cos(windRadians) * sky.cloudWindSpeed,
+        frame.cloudWind = Math::Vector2{std::cos(windRadians) * sky.cloudWindSpeed,
                                            std::sin(windRadians) * sky.cloudWindSpeed};
         frame.cloudSoftness = sky.cloudSoftness;
         frame.cloudSilverLining = sky.cloudSilverLining;
@@ -232,9 +232,9 @@ WorldEnvironmentFrameUVE ResolveWorldEnvironmentFrameUVE(IEntityManagerUVE& enti
         // Fog is a blend, not a replacement: strength 0 leaves the environment's fog colour
         // exactly as authored, which is what makes the switch safe to flip back and forth.
         if (sky.fogFromSky) {
-            const Math::Vector3UVE skyFog = ResolveSkyFogColorUVE(sky.groundColor, sky.horizonColor);
+            const Math::Vector3 skyFog = ResolveSkyFogColor(sky.groundColor, sky.horizonColor);
             const float amount = std::clamp(sky.fogStrength, 0.0F, 1.0F);
-            frame.fogColor = Math::Vector3UVE{frame.fogColor.x + (skyFog.x - frame.fogColor.x) * amount,
+            frame.fogColor = Math::Vector3{frame.fogColor.x + (skyFog.x - frame.fogColor.x) * amount,
                                               frame.fogColor.y + (skyFog.y - frame.fogColor.y) * amount,
                                               frame.fogColor.z + (skyFog.z - frame.fogColor.z) * amount};
             frame.skyFogLinked = true;
@@ -245,13 +245,13 @@ WorldEnvironmentFrameUVE ResolveWorldEnvironmentFrameUVE(IEntityManagerUVE& enti
     return frame;
 }
 
-bool TryMakeSkyEquirectUvUVE(const Math::Vector3UVE& direction, Math::Vector2UVE& outUv) noexcept {
-    outUv = Math::Vector2UVE{};
-    if (!Math::IsFiniteUVE(direction) || Math::LengthSquaredUVE(direction) < 1.0e-20F) {
+bool TryMakeSkyEquirectUv(const Math::Vector3& direction, Math::Vector2& outUv) noexcept {
+    outUv = Math::Vector2{};
+    if (!Math::IsFinite(direction) || Math::LengthSquared(direction) < 1.0e-20F) {
         return false;
     }
-    const Math::Vector3UVE n = Math::NormalizeUVE(direction);
-    if (!Math::IsFiniteUVE(n)) {
+    const Math::Vector3 n = Math::Normalize(direction);
+    if (!Math::IsFinite(n)) {
         return false;
     }
     float longitude = 0.0F;
@@ -262,14 +262,14 @@ bool TryMakeSkyEquirectUvUVE(const Math::Vector3UVE& direction, Math::Vector2UVE
     if (!std::isfinite(longitude) || !std::isfinite(latitude)) {
         return false;
     }
-    outUv = Math::Vector2UVE{longitude / (2.0F * Math::kPiUVE) + 0.5F, latitude / Math::kPiUVE + 0.5F};
+    outUv = Math::Vector2{longitude / (2.0F * Math::kPi) + 0.5F, latitude / Math::kPi + 0.5F};
     return std::isfinite(outUv.x) && std::isfinite(outUv.y);
 }
 
-void ApplySunToWorldEnvironmentFrameUVE(WorldEnvironmentFrameUVE& frame, const Math::Vector3UVE& sunDirection,
-                                        const Math::Vector3UVE& sunColor, const float sunEnergy) noexcept {
-    const bool sunUsable = sunEnergy > 0.0F && Math::IsFiniteUVE(sunDirection) && Math::IsFiniteUVE(sunColor) &&
-                           Math::LengthSquaredUVE(sunDirection) >= 1.0e-8F;
+void ApplySunToWorldEnvironmentFrame(WorldEnvironmentFrame& frame, const Math::Vector3& sunDirection,
+                                        const Math::Vector3& sunColor, const float sunEnergy) noexcept {
+    const bool sunUsable = sunEnergy > 0.0F && Math::IsFinite(sunDirection) && Math::IsFinite(sunColor) &&
+                           Math::LengthSquared(sunDirection) >= 1.0e-8F;
 
     // The Sky's link owns the ambient outright when it is on, and runs before the environment's own
     // tuning below so the two cannot both write it. That tuning is a hand-picked dim-and-warm that
@@ -282,10 +282,10 @@ void ApplySunToWorldEnvironmentFrameUVE(WorldEnvironmentFrameUVE& frame, const M
     const bool linkActive = (frame.skyAmbientLinked || frame.skyReflectionsLinked) && sunUsable;
     bool reflectionsResolved = false;
     if (linkActive) {
-        const Math::Vector3UVE sun = Math::NormalizeUVE(sunDirection);
-        const SkyAmbientUVE ambient = ResolveSkyAmbientUVE(frame.skyColor, frame.horizonColor, frame.groundColor,
+        const Math::Vector3 sun = Math::Normalize(sunDirection);
+        const SkyAmbient ambient = ResolveSkyAmbient(frame.skyColor, frame.horizonColor, frame.groundColor,
                                                            frame.skyRayleighDensity, frame.skyAmbientStrength, sun);
-        if (frame.skyAmbientLinked && frame.ambientSource != WorldEnvironmentAmbientSourceUVE::None) {
+        if (frame.skyAmbientLinked && frame.ambientSource != WorldEnvironmentAmbientSource::None) {
             frame.skyAmbient = ambient.sky;
             frame.groundAmbient = ambient.ground;
         }
@@ -298,11 +298,11 @@ void ApplySunToWorldEnvironmentFrameUVE(WorldEnvironmentFrameUVE& frame, const M
             // Applying it here rather than per-material keeps the two readings of the same sky
             // consistent: the picture and the reflection cannot disagree about how bright it is.
             const float daylight = ambient.daylight * frame.skyLuminance;
-            frame.reflectionSky = Math::Vector3UVE{frame.skyColor.x * daylight, frame.skyColor.y * daylight,
+            frame.reflectionSky = Math::Vector3{frame.skyColor.x * daylight, frame.skyColor.y * daylight,
                                                    frame.skyColor.z * daylight};
-            frame.reflectionHorizon = Math::Vector3UVE{frame.horizonColor.x * daylight, frame.horizonColor.y * daylight,
+            frame.reflectionHorizon = Math::Vector3{frame.horizonColor.x * daylight, frame.horizonColor.y * daylight,
                                                        frame.horizonColor.z * daylight};
-            frame.reflectionGround = Math::Vector3UVE{frame.groundColor.x * daylight, frame.groundColor.y * daylight,
+            frame.reflectionGround = Math::Vector3{frame.groundColor.x * daylight, frame.groundColor.y * daylight,
                                                       frame.groundColor.z * daylight};
             reflectionsResolved = true;
         }
@@ -314,46 +314,46 @@ void ApplySunToWorldEnvironmentFrameUVE(WorldEnvironmentFrameUVE& frame, const M
     frame.skyReflectionsLinked = reflectionsResolved;
 
     if (!frame.hasEnvironment ||
-        (frame.ambientSource != WorldEnvironmentAmbientSourceUVE::Sky &&
-         frame.ambientSource != WorldEnvironmentAmbientSourceUVE::EnvironmentMap) ||
-        !(sunEnergy > 0.0F) || !Math::IsFiniteUVE(sunDirection) || !Math::IsFiniteUVE(sunColor) ||
-        Math::LengthSquaredUVE(sunDirection) < 1.0e-8F) {
+        (frame.ambientSource != WorldEnvironmentAmbientSource::Sky &&
+         frame.ambientSource != WorldEnvironmentAmbientSource::EnvironmentMap) ||
+        !(sunEnergy > 0.0F) || !Math::IsFinite(sunDirection) || !Math::IsFinite(sunColor) ||
+        Math::LengthSquared(sunDirection) < 1.0e-8F) {
         return;
     }
-    const Math::Vector3UVE sun = Math::NormalizeUVE(sunDirection);
+    const Math::Vector3 sun = Math::Normalize(sunDirection);
     const float sunY = sun.y;
     const float dayT = std::clamp((sunY + 0.08F) / 0.30F, 0.0F, 1.0F);
     const float day = dayT * dayT * (3.0F - 2.0F * dayT);
     const float sunset = std::exp(-(sunY * 6.0F) * (sunY * 6.0F)) * std::clamp((sunY + 0.15F) / 0.15F, 0.0F, 1.0F);
     const float nightScale = 0.06F + 0.94F * day;
-    frame.skyAmbient = Math::Vector3UVE{frame.skyAmbient.x * nightScale, frame.skyAmbient.y * nightScale,
+    frame.skyAmbient = Math::Vector3{frame.skyAmbient.x * nightScale, frame.skyAmbient.y * nightScale,
                                         frame.skyAmbient.z * nightScale};
-    frame.groundAmbient = Math::Vector3UVE{frame.groundAmbient.x * nightScale, frame.groundAmbient.y * nightScale,
+    frame.groundAmbient = Math::Vector3{frame.groundAmbient.x * nightScale, frame.groundAmbient.y * nightScale,
                                            frame.groundAmbient.z * nightScale};
     if (sunset > 0.001F) {
-        const Math::Vector3UVE warm{1.0F, 0.48F, 0.18F};
+        const Math::Vector3 warm{1.0F, 0.48F, 0.18F};
         const float skyBlend = sunset * 0.55F;
         const float groundBlend = sunset * 0.40F;
-        frame.skyAmbient = Math::Vector3UVE{
+        frame.skyAmbient = Math::Vector3{
             frame.skyAmbient.x + (frame.skyAmbient.x * warm.x - frame.skyAmbient.x) * skyBlend,
             frame.skyAmbient.y + (frame.skyAmbient.y * warm.y - frame.skyAmbient.y) * skyBlend,
             frame.skyAmbient.z + (frame.skyAmbient.z * warm.z - frame.skyAmbient.z) * skyBlend};
-        frame.groundAmbient = Math::Vector3UVE{
+        frame.groundAmbient = Math::Vector3{
             frame.groundAmbient.x + (frame.groundAmbient.x * warm.x - frame.groundAmbient.x) * groundBlend,
             frame.groundAmbient.y + (frame.groundAmbient.y * warm.y - frame.groundAmbient.y) * groundBlend,
             frame.groundAmbient.z + (frame.groundAmbient.z * warm.z - frame.groundAmbient.z) * groundBlend};
         const float fill = sunset * sunEnergy * 0.04F;
-        frame.skyAmbient = Math::Vector3UVE{frame.skyAmbient.x + sunColor.x * fill,
+        frame.skyAmbient = Math::Vector3{frame.skyAmbient.x + sunColor.x * fill,
                                             frame.skyAmbient.y + sunColor.y * fill,
                                             frame.skyAmbient.z + sunColor.z * fill};
     }
 }
 
-void ApplyWorldEnvironmentObjectDefinitionUVE(IEntityManagerUVE& entityManager, const EntityUVE entity,
-                                            const WorldEnvironmentObjectDefinitionUVE& value) {
-    EnsureObjectBaselineUVE(entityManager, entity, WorldEnvironmentObjectDefinitionUVE::defaultName);
-    if (entityManager.IsAliveUVE(entity) && !entityManager.HasComponentUVE<WorldEnvironment3DComponentUVE>(entity)) {
-        entityManager.AddComponentUVE<WorldEnvironment3DComponentUVE>(entity, value.environment);
+void ApplyWorldEnvironmentObjectDefinition(IEntityManager& entityManager, const Entity entity,
+                                            const WorldEnvironmentObjectDefinition& value) {
+    EnsureObjectBaseline(entityManager, entity, WorldEnvironmentObjectDefinition::defaultName);
+    if (entityManager.IsAlive(entity) && !entityManager.HasComponent<WorldEnvironment3DComponent>(entity)) {
+        entityManager.AddComponent<WorldEnvironment3DComponent>(entity, value.environment);
     }
 }
 

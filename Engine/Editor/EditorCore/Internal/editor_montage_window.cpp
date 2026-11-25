@@ -27,34 +27,34 @@ namespace UVE::Editor {
 namespace {
 
 /// The skeleton under `root`, breadth first (the one nearest the root wins).
-[[nodiscard]] Scene::EntityUVE FindSkeletonUnderUVE(Core::EngineServicesUVE& services, const Scene::EntityUVE root) {
-    Scene::IEntityManagerUVE& em = services.GetEntityManagerUVE();
-    if (root == Scene::kInvalidEntityUVE || !em.IsAliveUVE(root)) {
-        return Scene::kInvalidEntityUVE;
+[[nodiscard]] Scene::Entity FindSkeletonUnder(Core::EngineServices& services, const Scene::Entity root) {
+    Scene::IEntityManager& em = services.GetEntityManager();
+    if (root == Scene::kInvalidEntity || !em.IsAlive(root)) {
+        return Scene::kInvalidEntity;
     }
-    std::vector<Scene::EntityUVE> queue{root};
+    std::vector<Scene::Entity> queue{root};
     for (std::size_t next = 0U; next < queue.size() && next < 4096U; ++next) {
-        if (em.HasComponentUVE<Scene::Skeleton3DComponentUVE>(queue[next])) {
+        if (em.HasComponent<Scene::Skeleton3DComponent>(queue[next])) {
             return queue[next];
         }
-        const std::vector<Scene::EntityUVE> children = services.GetSceneGraphUVE().GetChildrenUVE(em, queue[next]);
+        const std::vector<Scene::Entity> children = services.GetSceneGraph().GetChildren(em, queue[next]);
         queue.insert(queue.end(), children.begin(), children.end());
     }
-    return Scene::kInvalidEntityUVE;
+    return Scene::kInvalidEntity;
 }
 
 } // namespace
 
-const Asset::AnimationClipAssetUVE* EditorUVE::MontageClipUVE(const Asset::AssetGuidUVE guid) {
-    if (guid == Asset::kInvalidAssetGuidUVE) {
+const Asset::AnimationClipAsset* Editor::MontageClip(const Asset::AssetGuid guid) {
+    if (guid == Asset::kInvalidAssetGuid) {
         return nullptr;
     }
     auto it = m_montageClips.find(guid.value);
     if (it == m_montageClips.end()) {
-        std::optional<Asset::AnimationClipAssetUVE> loaded;
-        const std::filesystem::path path = m_services->GetAssetDatabaseUVE().ResolveUVE(guid);
-        Asset::AnimationClipAssetUVE clip;
-        if (!path.empty() && Asset::LoadAnimationClipAssetUVE(path, clip)) {
+        std::optional<Asset::AnimationClipAsset> loaded;
+        const std::filesystem::path path = m_services->GetAssetDatabase().Resolve(guid);
+        Asset::AnimationClipAsset clip;
+        if (!path.empty() && Asset::LoadAnimationClipAsset(path, clip)) {
             loaded = std::move(clip);
         }
         it = m_montageClips.emplace(guid.value, std::move(loaded)).first;
@@ -62,24 +62,24 @@ const Asset::AnimationClipAssetUVE* EditorUVE::MontageClipUVE(const Asset::Asset
     return it->second.has_value() ? &*it->second : nullptr;
 }
 
-bool EditorUVE::OpenMontageEditorUVE(const std::filesystem::path& path) {
+bool Editor::OpenMontageEditor(const std::filesystem::path& path) {
     if (m_montageEdit.has_value() && m_montageEdit->path == path) {
         m_montageEdit->focusPending = true;
         return true;
     }
-    if (IsMontageEditorDirtyUVE()) {
+    if (IsMontageEditorDirty()) {
         m_contentStatusMessage = "Save or close " + m_montageEdit->path.filename().string() + " first.";
         return false;
     }
-    Asset::MotionMontageAssetUVE montage;
-    if (!Asset::LoadMotionMontageAssetUVE(path, montage)) {
+    Asset::MotionMontageAsset montage;
+    if (!Asset::LoadMotionMontageAsset(path, montage)) {
         m_contentStatusMessage = "Could not read " + path.filename().string() + " as an motion montage.";
         return false;
     }
-    CloseMontageEditorUVE();
-    MontageEditSessionUVE session;
+    CloseMontageEditor();
+    MontageEditSession session;
     session.path = path;
-    session.guid = m_services->GetAssetDatabaseUVE().RegisterUVE(path);
+    session.guid = m_services->GetAssetDatabase().Register(path);
     session.montage = montage;
     session.saved = std::move(montage);
     session.overlay.studioView = true;
@@ -88,44 +88,44 @@ bool EditorUVE::OpenMontageEditorUVE(const std::filesystem::path& path) {
     if (m_documentSceneFactory) {
         m_montageScene = m_documentSceneFactory();
     }
-    RebuildMontagePreviewUVE();
+    RebuildMontagePreview();
     return true;
 }
 
-bool EditorUVE::SaveMontageEditorUVE() {
+bool Editor::SaveMontageEditor() {
     if (!m_montageEdit.has_value()) {
         return false;
     }
-    if (!Asset::SaveMotionMontageAssetUVE(m_montageEdit->montage, m_montageEdit->path)) {
+    if (!Asset::SaveMotionMontageAsset(m_montageEdit->montage, m_montageEdit->path)) {
         m_montageEdit->status = "Could not save " + m_montageEdit->path.filename().string() + ".";
         return false;
     }
     m_montageEdit->saved = m_montageEdit->montage;
     m_montageEdit->status = "Saved " + m_montageEdit->path.filename().string() + ".";
     m_projectFileSnapshotInitialized = false;
-    RefreshProjectFileIndexUVE();
+    RefreshProjectFileIndex();
     return true;
 }
 
-void EditorUVE::CloseMontageEditorUVE() {
+void Editor::CloseMontageEditor() {
     if (m_montageScene != nullptr && m_documentSceneClosing) {
-        m_documentSceneClosing(m_montageScene->GetServicesUVE());
+        m_documentSceneClosing(m_montageScene->GetServices());
     }
     m_montageScene.reset();
     m_montageEdit.reset();
     m_montageClips.clear();
 }
 
-void EditorUVE::EditMontageUVE(const std::function<void(Asset::MotionMontageAssetUVE&)>& edit) {
+void Editor::EditMontage(const std::function<void(Asset::MotionMontageAsset&)>& edit) {
     if (!m_montageEdit.has_value() || !edit) {
         return;
     }
-    Asset::MotionMontageAssetUVE changed = m_montageEdit->montage;
+    Asset::MotionMontageAsset changed = m_montageEdit->montage;
     edit(changed);
     if (changed == m_montageEdit->montage) {
         return;
     }
-    if (!Asset::IsMotionMontageAssetValidUVE(changed)) {
+    if (!Asset::IsMotionMontageAssetValid(changed)) {
         m_montageEdit->status = "That would make the motion montage invalid.";
         return;
     }
@@ -137,84 +137,84 @@ void EditorUVE::EditMontageUVE(const std::function<void(Asset::MotionMontageAsse
     }
     m_montageEdit->redo.clear();
     m_montageEdit->montage = std::move(changed);
-    m_montageEdit->playhead = std::clamp(m_montageEdit->playhead, 0.0, Asset::MontageLengthUVE(m_montageEdit->montage));
+    m_montageEdit->playhead = std::clamp(m_montageEdit->playhead, 0.0, Asset::MontageLength(m_montageEdit->montage));
     if (previewChanged) {
-        RebuildMontagePreviewUVE();
+        RebuildMontagePreview();
     }
 }
 
-bool EditorUVE::UndoMontageEditUVE() {
+bool Editor::UndoMontageEdit() {
     if (!m_montageEdit.has_value() || m_montageEdit->undo.empty()) {
         return false;
     }
     m_montageEdit->redo.push_back(m_montageEdit->montage);
     m_montageEdit->montage = m_montageEdit->undo.back();
     m_montageEdit->undo.pop_back();
-    RebuildMontagePreviewUVE();
+    RebuildMontagePreview();
     return true;
 }
 
-bool EditorUVE::RedoMontageEditUVE() {
+bool Editor::RedoMontageEdit() {
     if (!m_montageEdit.has_value() || m_montageEdit->redo.empty()) {
         return false;
     }
     m_montageEdit->undo.push_back(m_montageEdit->montage);
     m_montageEdit->montage = m_montageEdit->redo.back();
     m_montageEdit->redo.pop_back();
-    RebuildMontagePreviewUVE();
+    RebuildMontagePreview();
     return true;
 }
 
-void EditorUVE::SetMontagePreviewEntityUVE(const Asset::AssetGuidUVE guid) {
-    EditMontageUVE([guid](Asset::MotionMontageAssetUVE& m) { m.previewEntity = guid; });
+void Editor::SetMontagePreviewEntity(const Asset::AssetGuid guid) {
+    EditMontage([guid](Asset::MotionMontageAsset& m) { m.previewEntity = guid; });
 }
 
-void EditorUVE::RebuildMontagePreviewUVE() {
+void Editor::RebuildMontagePreview() {
     if (!m_montageEdit.has_value() || m_montageScene == nullptr) {
         return;
     }
-    MontageEditSessionUVE& session = *m_montageEdit;
-    Core::EngineServicesUVE& services = m_montageScene->GetServicesUVE();
-    Scene::IEntityManagerUVE& em = services.GetEntityManagerUVE();
+    MontageEditSession& session = *m_montageEdit;
+    Core::EngineServices& services = m_montageScene->GetServices();
+    Scene::IEntityManager& em = services.GetEntityManager();
     // The preview is rebuilt whole: what was there is gone.
-    if (session.previewRoot != Scene::kInvalidEntityUVE && em.IsAliveUVE(session.previewRoot)) {
-        std::vector<Scene::EntityUVE> doomed{session.previewRoot};
+    if (session.previewRoot != Scene::kInvalidEntity && em.IsAlive(session.previewRoot)) {
+        std::vector<Scene::Entity> doomed{session.previewRoot};
         for (std::size_t i = 0U; i < doomed.size(); ++i) {
-            const std::vector<Scene::EntityUVE> children = services.GetSceneGraphUVE().GetChildrenUVE(em, doomed[i]);
+            const std::vector<Scene::Entity> children = services.GetSceneGraph().GetChildren(em, doomed[i]);
             doomed.insert(doomed.end(), children.begin(), children.end());
         }
         for (auto it = doomed.rbegin(); it != doomed.rend(); ++it) {
-            if (em.IsAliveUVE(*it)) {
-                em.DestroyEntityUVE(*it);
+            if (em.IsAlive(*it)) {
+                em.DestroyEntity(*it);
             }
         }
     }
-    session.previewRoot = Scene::kInvalidEntityUVE;
-    session.previewSkeleton = Scene::kInvalidEntityUVE;
+    session.previewRoot = Scene::kInvalidEntity;
+    session.previewSkeleton = Scene::kInvalidEntity;
 
-    if (session.montage.previewEntity != Asset::kInvalidAssetGuidUVE) {
-        session.previewRoot = services.GetPrefabSystemUVE().InstantiateUVE(em, services.GetSceneGraphUVE(),
-                                                                           services.GetAssetDatabaseUVE(),
-                                                                           session.montage.previewEntity, Scene::kInvalidEntityUVE);
-        session.previewSkeleton = FindSkeletonUnderUVE(services, session.previewRoot);
-        if (session.previewRoot != Scene::kInvalidEntityUVE && session.previewSkeleton == Scene::kInvalidEntityUVE) {
+    if (session.montage.previewEntity != Asset::kInvalidAssetGuid) {
+        session.previewRoot = services.GetPrefabSystem().Instantiate(em, services.GetSceneGraph(),
+                                                                           services.GetAssetDatabase(),
+                                                                           session.montage.previewEntity, Scene::kInvalidEntity);
+        session.previewSkeleton = FindSkeletonUnder(services, session.previewRoot);
+        if (session.previewRoot != Scene::kInvalidEntity && session.previewSkeleton == Scene::kInvalidEntity) {
             session.status = "The preview entity has no Skeleton3D: the motion montage has no bones to move.";
         }
     }
-    if (session.previewSkeleton == Scene::kInvalidEntityUVE) {
+    if (session.previewSkeleton == Scene::kInvalidEntity) {
         // No character: the bones of the first clip, so the motion still shows.
-        const Asset::AnimationClipAssetUVE* clip = nullptr;
-        for (const Asset::MontageSegmentUVE& segment : session.montage.segments) {
-            if ((clip = MontageClipUVE(segment.clip)) != nullptr && !clip->rest.empty()) {
+        const Asset::AnimationClipAsset* clip = nullptr;
+        for (const Asset::MontageSegment& segment : session.montage.segments) {
+            if ((clip = MontageClip(segment.clip)) != nullptr && !clip->rest.empty()) {
                 break;
             }
             clip = nullptr;
         }
         if (clip != nullptr) {
-            const Scene::EntityUVE skeletonEntity = em.CreateEntityUVE();
-            Scene::Skeleton3DObjectDefinitionUVE definition;
-            for (const Asset::AnimationAssetRestBoneUVE& rest : clip->rest) {
-                Scene::SkeletonBoneUVE bone;
+            const Scene::Entity skeletonEntity = em.CreateEntity();
+            Scene::Skeleton3DObjectDefinition definition;
+            for (const Asset::AnimationAssetRestBone& rest : clip->rest) {
+                Scene::SkeletonBone bone;
                 bone.name = rest.bone;
                 bone.parentIndex = rest.parent;
                 bone.localPosition = rest.position;
@@ -222,96 +222,96 @@ void EditorUVE::RebuildMontagePreviewUVE() {
                 bone.localScale = rest.scale;
                 definition.skeleton.bones.push_back(std::move(bone));
             }
-            Scene::ApplySkeleton3DObjectDefinitionUVE(em, skeletonEntity, definition);
-            if (session.previewRoot == Scene::kInvalidEntityUVE) {
+            Scene::ApplySkeleton3DObjectDefinition(em, skeletonEntity, definition);
+            if (session.previewRoot == Scene::kInvalidEntity) {
                 session.previewRoot = skeletonEntity;
             } else {
-                services.GetSceneGraphUVE().SetParentUVE(em, skeletonEntity, session.previewRoot);
+                services.GetSceneGraph().SetParent(em, skeletonEntity, session.previewRoot);
             }
             session.previewSkeleton = skeletonEntity;
         }
     }
     session.overlay.studioFramingSerial += 1U;
-    TickMontageEditorUVE(0.0);
+    TickMontageEditor(0.0);
 }
 
-void EditorUVE::PlayMontagePreviewUVE(const std::string_view section) {
+void Editor::PlayMontagePreview(const std::string_view section) {
     if (!m_montageEdit.has_value()) {
         return;
     }
-    MontageEditSessionUVE& session = *m_montageEdit;
+    MontageEditSession& session = *m_montageEdit;
     std::string from(section);
     if (from.empty()) {
-        if (const Asset::MontageSectionUVE* const at = Asset::MontageSectionAtUVE(session.montage, session.playhead)) {
+        if (const Asset::MontageSection* const at = Asset::MontageSectionAt(session.montage, session.playhead)) {
             from = at->name;
         }
     }
-    session.playback = Scene::MontagePlaybackUVE{};
-    if (!Scene::StartMontageUVE(session.montage, session.playback, from)) {
+    session.playback = Scene::MontagePlayback{};
+    if (!Scene::StartMontage(session.montage, session.playback, from)) {
         session.status = session.montage.segments.empty() ? "Add a clip to the Slot track first." : "Nothing to play.";
         return;
     }
     // Resuming mid-section keeps the playhead where the author left it.
     if (section.empty() && session.playhead > session.playback.time &&
-        session.playhead < Asset::MontageSectionEndUVE(session.montage, from)) {
+        session.playhead < Asset::MontageSectionEnd(session.montage, from)) {
         session.playback.time = session.playhead;
     }
     session.playback.weight = 1.0F;
-    session.playback.phase = Scene::MontagePhaseUVE::Playing;
+    session.playback.phase = Scene::MontagePhase::Playing;
     session.previewSection = from;
     session.playing = true;
 }
 
-void EditorUVE::PauseMontagePreviewUVE() {
+void Editor::PauseMontagePreview() {
     if (m_montageEdit.has_value()) {
         m_montageEdit->playing = false;
     }
 }
 
-void EditorUVE::StopMontagePreviewUVE() {
+void Editor::StopMontagePreview() {
     if (m_montageEdit.has_value()) {
         m_montageEdit->playing = false;
         m_montageEdit->playhead = 0.0;
-        TickMontageEditorUVE(0.0);
+        TickMontageEditor(0.0);
     }
 }
 
-void EditorUVE::SetMontagePlayheadUVE(const double time) {
+void Editor::SetMontagePlayhead(const double time) {
     if (!m_montageEdit.has_value()) {
         return;
     }
-    m_montageEdit->playhead = std::clamp(std::isfinite(time) ? time : 0.0, 0.0, Asset::MontageLengthUVE(m_montageEdit->montage));
+    m_montageEdit->playhead = std::clamp(std::isfinite(time) ? time : 0.0, 0.0, Asset::MontageLength(m_montageEdit->montage));
     m_montageEdit->playback.time = m_montageEdit->playhead;
-    if (const Asset::MontageSectionUVE* const at = Asset::MontageSectionAtUVE(m_montageEdit->montage, m_montageEdit->playhead)) {
+    if (const Asset::MontageSection* const at = Asset::MontageSectionAt(m_montageEdit->montage, m_montageEdit->playhead)) {
         m_montageEdit->playback.section = at->name;
     }
 }
 
-void EditorUVE::TickMontageEditorUVE(const double deltaSeconds) {
+void Editor::TickMontageEditor(const double deltaSeconds) {
     if (!m_montageEdit.has_value()) {
         return;
     }
-    MontageEditSessionUVE& session = *m_montageEdit;
+    MontageEditSession& session = *m_montageEdit;
     if (session.playing) {
-        std::vector<Scene::MontageEventUVE> events;
+        std::vector<Scene::MontageEvent> events;
         // The preview plays at full weight (the blends matter against a pose the editor has none of)
         // and never blends out early: it shows the whole montage.
-        Asset::MotionMontageAssetUVE timing = session.montage;
+        Asset::MotionMontageAsset timing = session.montage;
         timing.blendInSeconds = 0.0;
         timing.blendOutSeconds = 0.0;
         timing.autoBlendOut = true;
-        Scene::StepMontageUVE(timing, session.playback, std::max(0.0, deltaSeconds) * session.speed, events);
-        for (const Scene::MontageEventUVE& event : events) {
+        Scene::StepMontage(timing, session.playback, std::max(0.0, deltaSeconds) * session.speed, events);
+        for (const Scene::MontageEvent& event : events) {
             switch (event.kind) {
-                case Scene::MontageEventUVE::KindUVE::Notify: session.lastEvent = "Notify: " + event.name; break;
-                case Scene::MontageEventUVE::KindUVE::NotifyBegin: session.lastEvent = "Begin: " + event.name; break;
-                case Scene::MontageEventUVE::KindUVE::NotifyEnd: session.lastEvent = "End: " + event.name; break;
-                case Scene::MontageEventUVE::KindUVE::Ended: break;
+                case Scene::MontageEvent::Kind::Notify: session.lastEvent = "Notify: " + event.name; break;
+                case Scene::MontageEvent::Kind::NotifyBegin: session.lastEvent = "Begin: " + event.name; break;
+                case Scene::MontageEvent::Kind::NotifyEnd: session.lastEvent = "End: " + event.name; break;
+                case Scene::MontageEvent::Kind::Ended: break;
             }
         }
-        if (session.playback.phase == Scene::MontagePhaseUVE::Stopped) {
+        if (session.playback.phase == Scene::MontagePhase::Stopped) {
             if (session.loop) {
-                PlayMontagePreviewUVE(session.previewSection);
+                PlayMontagePreview(session.previewSection);
             } else {
                 session.playing = false;
             }
@@ -319,33 +319,33 @@ void EditorUVE::TickMontageEditorUVE(const double deltaSeconds) {
             session.playhead = session.playback.time;
         }
     }
-    if (m_montageScene == nullptr || session.previewSkeleton == Scene::kInvalidEntityUVE) {
+    if (m_montageScene == nullptr || session.previewSkeleton == Scene::kInvalidEntity) {
         return;
     }
-    Core::EngineServicesUVE& services = m_montageScene->GetServicesUVE();
-    Scene::IEntityManagerUVE& em = services.GetEntityManagerUVE();
-    if (!em.IsAliveUVE(session.previewSkeleton) || !em.HasComponentUVE<Scene::Skeleton3DComponentUVE>(session.previewSkeleton)) {
+    Core::EngineServices& services = m_montageScene->GetServices();
+    Scene::IEntityManager& em = services.GetEntityManager();
+    if (!em.IsAlive(session.previewSkeleton) || !em.HasComponent<Scene::Skeleton3DComponent>(session.previewSkeleton)) {
         return;
     }
-    Scene::Skeleton3DComponentUVE& skeleton = em.GetComponentUVE<Scene::Skeleton3DComponentUVE>(session.previewSkeleton);
+    Scene::Skeleton3DComponent& skeleton = em.GetComponent<Scene::Skeleton3DComponent>(session.previewSkeleton);
     skeleton.pose.clear();
-    const Scene::AnimationClipResolverUVE clipFor = [this](const Asset::AssetGuidUVE guid) { return MontageClipUVE(guid); };
-    static_cast<void>(Scene::BlendMontagePoseUVE(session.montage, session.playhead, 1.0F, clipFor, skeleton));
-    services.GetSceneGraphUVE().UpdateUVE(em);
+    const Scene::AnimationClipResolver clipFor = [this](const Asset::AssetGuid guid) { return MontageClip(guid); };
+    static_cast<void>(Scene::BlendMontagePose(session.montage, session.playhead, 1.0F, clipFor, skeleton));
+    services.GetSceneGraph().Update(em);
 }
 
-std::uint64_t EditorUVE::RenderMontagePreviewUVE(const Math::Vector2UVE& size, Math::Vector2UVE& outUsed,
-                                                 const EditorViewportInputUVE& input) {
-    outUsed = Math::Vector2UVE{0.0F, 0.0F};
+std::uint64_t Editor::RenderMontagePreview(const Math::Vector2& size, Math::Vector2& outUsed,
+                                                 const EditorViewportInput& input) {
+    outUsed = Math::Vector2{0.0F, 0.0F};
     if (!m_montageEdit.has_value() || m_montageScene == nullptr || !m_viewports.montage) {
         return 0U;
     }
-    MontageEditSessionUVE& session = *m_montageEdit;
+    MontageEditSession& session = *m_montageEdit;
     // The view renders whatever document is active: for this call, the preview's scene. Only the
     // services and the view state are borrowed; selection, undo and the rest stay the level's.
-    Core::EngineServicesUVE* const previous = m_services;
-    m_services = &m_montageScene->GetServicesUVE();
-    ViewportOverlayStateUVE& state = session.overlay;
+    Core::EngineServices* const previous = m_services;
+    m_services = &m_montageScene->GetServices();
+    ViewportOverlayState& state = session.overlay;
     state.studioView = true;
     state.entityAuthoringView = true;
     state.gameWorkspaceActive = false;
@@ -354,7 +354,7 @@ std::uint64_t EditorUVE::RenderMontagePreviewUVE(const Math::Vector2UVE& size, M
     state.pointerOverOverlay = false;
     state.bones.clear();
     state.colliderLines.clear();
-    BuildSkeletonOverlayUVE(state.bones);
+    BuildSkeletonOverlay(state.bones);
     state.input = input;
     std::uint64_t texture = 0U;
     try {

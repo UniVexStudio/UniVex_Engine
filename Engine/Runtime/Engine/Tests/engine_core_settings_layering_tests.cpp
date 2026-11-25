@@ -19,9 +19,9 @@
 namespace UVE::Core::Tests {
 namespace {
 
-class SettingsTestDirectoryUVE final {
+class SettingsTestDirectory final {
 public:
-    SettingsTestDirectoryUVE() {
+    SettingsTestDirectory() {
         static std::atomic<std::uint64_t> sequence{0U};
         const auto timestamp = std::chrono::steady_clock::now().time_since_epoch().count();
         m_path = std::filesystem::temp_directory_path() /
@@ -30,18 +30,18 @@ public:
         std::filesystem::create_directories(m_path);
     }
 
-    ~SettingsTestDirectoryUVE() {
+    ~SettingsTestDirectory() {
         std::error_code error;
         std::filesystem::remove_all(m_path, error);
     }
 
-    [[nodiscard]] const std::filesystem::path& GetPathUVE() const noexcept { return m_path; }
+    [[nodiscard]] const std::filesystem::path& GetPath() const noexcept { return m_path; }
 
 private:
     std::filesystem::path m_path;
 };
 
-[[nodiscard]] bool WriteTextFileUVE(const std::filesystem::path& path, const std::string& text) {
+[[nodiscard]] bool WriteTextFile(const std::filesystem::path& path, const std::string& text) {
     std::ofstream output(path, std::ios::binary | std::ios::trunc);
     if (!output.is_open()) {
         return false;
@@ -50,8 +50,8 @@ private:
     return output.good();
 }
 
-[[nodiscard]] EngineConfigUVE MakeSettingsTestConfigUVE(const std::filesystem::path& directory) {
-    EngineConfigUVE config{};
+[[nodiscard]] EngineConfig MakeSettingsTestConfig(const std::filesystem::path& directory) {
+    EngineConfig config{};
     config.enableConsoleLogging = false;
     config.logFilePath = directory / "engine.log";
     config.threadPoolWorkerCount = 1U;
@@ -60,94 +60,94 @@ private:
     config.platformSettingsFilePath = directory / "platform.uvsettings";
     config.inputMapFilePath = directory / "project.uvinput";
     config.assetDatabaseFilePath = directory / "assets.uvassetdb";
-    config.headlessUVE = true;
+    config.headless = true;
     return config;
 }
 
-TEST(EngineCoreSettingsLayeringUVETest, LoadsAllLayersAndAppliesCommandLineBeforeCoreStartupCompletes) {
-    SettingsTestDirectoryUVE directory;
-    EngineConfigUVE config = MakeSettingsTestConfigUVE(directory.GetPathUVE());
-    config.headlessUVE = false; // The presence-only CLI flag must resolve into EngineConfig.
-    config.autoSaveIntervalSecondsUVE = 777.0; // Keep the caller's base when no setting layer supplies it.
+TEST(EngineCoreSettingsLayeringTest, LoadsAllLayersAndAppliesCommandLineBeforeCoreStartupCompletes) {
+    SettingsTestDirectory directory;
+    EngineConfig config = MakeSettingsTestConfig(directory.GetPath());
+    config.headless = false; // The presence-only CLI flag must resolve into EngineConfig.
+    config.autoSaveIntervalSeconds = 777.0; // Keep the caller's base when no setting layer supplies it.
     config.commandLineArgs = {"--physics.common.ticksPerSecond", "120",
                               "--rendering.shadows.mapResolution", "512", "--headless"};
-    ASSERT_TRUE(WriteTextFileUVE(
+    ASSERT_TRUE(WriteTextFile(
         config.projectSettingsFilePath,
         R"({"physics":{"common":{"ticksPerSecond":30,"maxFrameTime":0.5,"maxStepsPerFrame":16}},"rendering":{"shadows":{"mapResolution":4096}}})"));
-    ASSERT_TRUE(WriteTextFileUVE(
+    ASSERT_TRUE(WriteTextFile(
         config.settingsFilePath,
         R"({"physics":{"common":{"ticksPerSecond":90,"maxFrameTime":0.4}},"rendering":{"shadows":{"mapResolution":2048}}})"));
-    ASSERT_TRUE(WriteTextFileUVE(config.platformSettingsFilePath,
+    ASSERT_TRUE(WriteTextFile(config.platformSettingsFilePath,
                                  R"({"rendering":{"shadows":{"mapResolution":1024}}})"));
 
-    EngineCoreUVE engine(config);
+    EngineCore engine(config);
     engine.Init();
-    EXPECT_DOUBLE_EQ(engine.GetConfigUVE().fixedUpdateFps, 120.0);
-    EXPECT_DOUBLE_EQ(engine.GetConfigUVE().maxDeltaTimeSeconds, 0.4);
-    EXPECT_EQ(engine.GetConfigUVE().maxFixedStepsPerFrame, 16);
-    EXPECT_EQ(engine.GetConfigUVE().shadowMapResolution, 512U);
-    EXPECT_TRUE(engine.GetConfigUVE().headlessUVE);
-    EXPECT_DOUBLE_EQ(engine.GetConfigUVE().autoSaveIntervalSecondsUVE, 777.0);
+    EXPECT_DOUBLE_EQ(engine.GetConfig().fixedUpdateFps, 120.0);
+    EXPECT_DOUBLE_EQ(engine.GetConfig().maxDeltaTimeSeconds, 0.4);
+    EXPECT_EQ(engine.GetConfig().maxFixedStepsPerFrame, 16);
+    EXPECT_EQ(engine.GetConfig().shadowMapResolution, 512U);
+    EXPECT_TRUE(engine.GetConfig().headless);
+    EXPECT_DOUBLE_EQ(engine.GetConfig().autoSaveIntervalSeconds, 777.0);
     engine.Shutdown();
 }
 
-TEST(EngineCoreSettingsLayeringUVETest, DisplaySleepPolicyIsForwardedToHeadlessWindowManager) {
-    SettingsTestDirectoryUVE directory;
-    EngineConfigUVE config = MakeSettingsTestConfigUVE(directory.GetPathUVE());
-    config.allowDisplaySleepUVE = false;
+TEST(EngineCoreSettingsLayeringTest, DisplaySleepPolicyIsForwardedToHeadlessWindowManager) {
+    SettingsTestDirectory directory;
+    EngineConfig config = MakeSettingsTestConfig(directory.GetPath());
+    config.allowDisplaySleep = false;
 
-    EngineCoreUVE engine(config);
+    EngineCore engine(config);
     engine.Init();
-    auto* const windowManager = dynamic_cast<UVE::Window::NullWindowManagerUVE*>(
-        &engine.GetServicesUVE().GetWindowManagerUVE());
+    auto* const windowManager = dynamic_cast<UVE::Window::NullWindowManager*>(
+        &engine.GetServices().GetWindowManager());
     ASSERT_NE(windowManager, nullptr);
-    EXPECT_FALSE(windowManager->IsDisplaySleepAllowedUVE());
+    EXPECT_FALSE(windowManager->IsDisplaySleepAllowed());
     engine.Shutdown();
 }
 
-TEST(EngineCoreSettingsLayeringUVETest, EditorPlaySceneNameUpdatesHeadlessWindowTitleAndClearsIt) {
-    SettingsTestDirectoryUVE directory;
-    EngineConfigUVE config = MakeSettingsTestConfigUVE(directory.GetPathUVE());
+TEST(EngineCoreSettingsLayeringTest, EditorPlaySceneNameUpdatesHeadlessWindowTitleAndClearsIt) {
+    SettingsTestDirectory directory;
+    EngineConfig config = MakeSettingsTestConfig(directory.GetPath());
     config.windowTitle = "UniVex";
-    config.projectDisplayNameUVE = "Demo Project";
-    config.windowTitleFormatUVE = "{projectName}";
-    config.appendSceneNameInEditorPlayModeUVE = true;
+    config.projectDisplayName = "Demo Project";
+    config.windowTitleFormat = "{projectName}";
+    config.appendSceneNameInEditorPlayMode = true;
 
-    EngineCoreUVE engine(config);
+    EngineCore engine(config);
     engine.Init();
-    auto* const windowManager = dynamic_cast<UVE::Window::NullWindowManagerUVE*>(
-        &engine.GetServicesUVE().GetWindowManagerUVE());
+    auto* const windowManager = dynamic_cast<UVE::Window::NullWindowManager*>(
+        &engine.GetServices().GetWindowManager());
     ASSERT_NE(windowManager, nullptr);
-    EXPECT_EQ(windowManager->GetWindowTitleUVE(), "Demo Project");
+    EXPECT_EQ(windowManager->GetWindowTitle(), "Demo Project");
 
-    EXPECT_TRUE(engine.SetEditorPlaySceneNameUVE("MainHall"));
-    EXPECT_EQ(windowManager->GetWindowTitleUVE(), "Demo Project - MainHall");
-    EXPECT_TRUE(engine.SetEditorPlaySceneNameUVE(""));
-    EXPECT_EQ(windowManager->GetWindowTitleUVE(), "Demo Project");
+    EXPECT_TRUE(engine.SetEditorPlaySceneName("MainHall"));
+    EXPECT_EQ(windowManager->GetWindowTitle(), "Demo Project - MainHall");
+    EXPECT_TRUE(engine.SetEditorPlaySceneName(""));
+    EXPECT_EQ(windowManager->GetWindowTitle(), "Demo Project");
 
-    const std::string previousTitle{windowManager->GetWindowTitleUVE()};
-    const std::string overlongScene(Window::kMaximumWindowTitleBytesUVE + 1U, 'x');
-    EXPECT_FALSE(engine.SetEditorPlaySceneNameUVE(overlongScene));
-    EXPECT_EQ(windowManager->GetWindowTitleUVE(), previousTitle);
+    const std::string previousTitle{windowManager->GetWindowTitle()};
+    const std::string overlongScene(Window::kMaximumWindowTitleBytes + 1U, 'x');
+    EXPECT_FALSE(engine.SetEditorPlaySceneName(overlongScene));
+    EXPECT_EQ(windowManager->GetWindowTitle(), previousTitle);
     engine.Shutdown();
 }
 
-TEST(EngineCoreSettingsLayeringUVETest, InvalidCommandLineValueFallsThroughToLoadedPlatformFile) {
-    SettingsTestDirectoryUVE directory;
-    EngineConfigUVE config = MakeSettingsTestConfigUVE(directory.GetPathUVE());
+TEST(EngineCoreSettingsLayeringTest, InvalidCommandLineValueFallsThroughToLoadedPlatformFile) {
+    SettingsTestDirectory directory;
+    EngineConfig config = MakeSettingsTestConfig(directory.GetPath());
     config.platformSettingsFilePath.clear(); // Exercise the generated platforms/<target>/ path.
     config.commandLineArgs = {"--rendering.shadows.mapResolution", "1536"};
-    ASSERT_TRUE(WriteTextFileUVE(config.projectSettingsFilePath,
+    ASSERT_TRUE(WriteTextFile(config.projectSettingsFilePath,
                                  R"({"rendering":{"shadows":{"mapResolution":4096}}})"));
-    ASSERT_TRUE(WriteTextFileUVE(config.settingsFilePath,
+    ASSERT_TRUE(WriteTextFile(config.settingsFilePath,
                                  R"({"rendering":{"shadows":{"mapResolution":2048}}})"));
-    const std::filesystem::path platformPath = GetPlatformSettingsFilePathUVE(config);
+    const std::filesystem::path platformPath = GetPlatformSettingsFilePath(config);
     ASSERT_TRUE(std::filesystem::create_directories(platformPath.parent_path()));
-    ASSERT_TRUE(WriteTextFileUVE(platformPath, R"({"rendering":{"shadows":{"mapResolution":1024}}})"));
+    ASSERT_TRUE(WriteTextFile(platformPath, R"({"rendering":{"shadows":{"mapResolution":1024}}})"));
 
-    EngineCoreUVE engine(config);
+    EngineCore engine(config);
     engine.Init();
-    EXPECT_EQ(engine.GetConfigUVE().shadowMapResolution, 1024U);
+    EXPECT_EQ(engine.GetConfig().shadowMapResolution, 1024U);
     engine.Shutdown();
 }
 

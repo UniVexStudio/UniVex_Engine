@@ -28,64 +28,64 @@ namespace UVE::UI {
 
 namespace {
 
-struct AnchoredWidgetUVE final {
-    Scene::EntityUVE entity = Scene::kInvalidEntityUVE;
+struct AnchoredWidget final {
+    Scene::Entity entity = Scene::kInvalidEntity;
     std::size_t depth = 0U;
 };
 
-[[nodiscard]] Math::RectUVE AnchorParentRectUVE(Scene::IEntityManagerUVE& entityManager,
-                                                const Scene::EntityUVE widget,
-                                                const Math::Vector2UVE& viewportSize) {
-    const Math::RectUVE viewport{{0.0F, 0.0F}, viewportSize};
-    if (!entityManager.IsAliveUVE(widget) ||
-        !entityManager.HasComponentUVE<Scene::HierarchyComponentUVE>(widget)) {
+[[nodiscard]] Math::Rect AnchorParentRect(Scene::IEntityManager& entityManager,
+                                                const Scene::Entity widget,
+                                                const Math::Vector2& viewportSize) {
+    const Math::Rect viewport{{0.0F, 0.0F}, viewportSize};
+    if (!entityManager.IsAlive(widget) ||
+        !entityManager.HasComponent<Scene::HierarchyComponent>(widget)) {
         return viewport;
     }
-    const Scene::EntityUVE parent =
-        entityManager.GetComponentUVE<Scene::HierarchyComponentUVE>(widget).parent;
-    if (!entityManager.IsAliveUVE(parent)) {
+    const Scene::Entity parent =
+        entityManager.GetComponent<Scene::HierarchyComponent>(widget).parent;
+    if (!entityManager.IsAlive(parent)) {
         return viewport;
     }
-    if (entityManager.HasComponentUVE<Scene::UILayoutContainerComponentUVE>(parent)) {
-        return entityManager.GetComponentUVE<Scene::UILayoutContainerComponentUVE>(parent).rect;
+    if (entityManager.HasComponent<Scene::UILayoutContainerComponent>(parent)) {
+        return entityManager.GetComponent<Scene::UILayoutContainerComponent>(parent).rect;
     }
-    if (entityManager.HasComponentUVE<Scene::UIButtonComponentUVE>(parent)) {
-        return entityManager.GetComponentUVE<Scene::UIButtonComponentUVE>(parent).rect;
+    if (entityManager.HasComponent<Scene::UIButtonComponent>(parent)) {
+        return entityManager.GetComponent<Scene::UIButtonComponent>(parent).rect;
     }
-    if (entityManager.HasComponentUVE<Scene::UIImageComponentUVE>(parent)) {
-        return entityManager.GetComponentUVE<Scene::UIImageComponentUVE>(parent).rect;
+    if (entityManager.HasComponent<Scene::UIImageComponent>(parent)) {
+        return entityManager.GetComponent<Scene::UIImageComponent>(parent).rect;
     }
-    if (entityManager.HasComponentUVE<Scene::UISliderComponentUVE>(parent)) {
-        return entityManager.GetComponentUVE<Scene::UISliderComponentUVE>(parent).rect;
+    if (entityManager.HasComponent<Scene::UISliderComponent>(parent)) {
+        return entityManager.GetComponent<Scene::UISliderComponent>(parent).rect;
     }
-    if (entityManager.HasComponentUVE<Scene::UIProgressBarComponentUVE>(parent)) {
-        return entityManager.GetComponentUVE<Scene::UIProgressBarComponentUVE>(parent).rect;
+    if (entityManager.HasComponent<Scene::UIProgressBarComponent>(parent)) {
+        return entityManager.GetComponent<Scene::UIProgressBarComponent>(parent).rect;
     }
-    if (entityManager.HasComponentUVE<Scene::UICheckboxComponentUVE>(parent)) {
-        return entityManager.GetComponentUVE<Scene::UICheckboxComponentUVE>(parent).rect;
+    if (entityManager.HasComponent<Scene::UICheckboxComponent>(parent)) {
+        return entityManager.GetComponent<Scene::UICheckboxComponent>(parent).rect;
     }
-    if (entityManager.HasComponentUVE<Scene::UIDropdownComponentUVE>(parent)) {
-        return entityManager.GetComponentUVE<Scene::UIDropdownComponentUVE>(parent).rect;
+    if (entityManager.HasComponent<Scene::UIDropdownComponent>(parent)) {
+        return entityManager.GetComponent<Scene::UIDropdownComponent>(parent).rect;
     }
-    if (entityManager.HasComponentUVE<Scene::UITextInputComponentUVE>(parent)) {
-        return entityManager.GetComponentUVE<Scene::UITextInputComponentUVE>(parent).rect;
+    if (entityManager.HasComponent<Scene::UITextInputComponent>(parent)) {
+        return entityManager.GetComponent<Scene::UITextInputComponent>(parent).rect;
     }
-    if (entityManager.HasComponentUVE<Scene::UIScrollContainerComponentUVE>(parent)) {
-        return entityManager.GetComponentUVE<Scene::UIScrollContainerComponentUVE>(parent).rect;
+    if (entityManager.HasComponent<Scene::UIScrollContainerComponent>(parent)) {
+        return entityManager.GetComponent<Scene::UIScrollContainerComponent>(parent).rect;
     }
     return viewport;
 }
 
 } // namespace
 
-void ResolveUIAnchorsUVE(Scene::IEntityManagerUVE& entityManager,
-                         const Math::Vector2UVE& viewportSize) {
-    std::vector<AnchoredWidgetUVE> widgets;
-    entityManager.ForEachUVE<Scene::UIAnchorComponentUVE>(
-        [&entityManager, &widgets](const Scene::EntityUVE entity, const Scene::UIAnchorComponentUVE&) {
-            widgets.push_back(AnchoredWidgetUVE{entity, UIHierarchyDepthUVE(entityManager, entity)});
+void ResolveUIAnchors(Scene::IEntityManager& entityManager,
+                         const Math::Vector2& viewportSize) {
+    std::vector<AnchoredWidget> widgets;
+    entityManager.ForEach<Scene::UIAnchorComponent>(
+        [&entityManager, &widgets](const Scene::Entity entity, const Scene::UIAnchorComponent&) {
+            widgets.push_back(AnchoredWidget{entity, UIHierarchyDepth(entityManager, entity)});
         });
-    std::sort(widgets.begin(), widgets.end(), [](const AnchoredWidgetUVE& lhs, const AnchoredWidgetUVE& rhs) {
+    std::sort(widgets.begin(), widgets.end(), [](const AnchoredWidget& lhs, const AnchoredWidget& rhs) {
         if (lhs.depth != rhs.depth) {
             return lhs.depth < rhs.depth;
         }
@@ -95,73 +95,73 @@ void ResolveUIAnchorsUVE(Scene::IEntityManagerUVE& entityManager,
         return lhs.entity.generation < rhs.entity.generation;
     });
 
-    for (const AnchoredWidgetUVE& widget : widgets) {
-        if (!entityManager.IsAliveUVE(widget.entity)) {
+    for (const AnchoredWidget& widget : widgets) {
+        if (!entityManager.IsAlive(widget.entity)) {
             continue;
         }
-        const Scene::UIAnchorComponentUVE& anchor =
-            entityManager.GetComponentUVE<Scene::UIAnchorComponentUVE>(widget.entity);
-        if (!IsUIAnchorComponentValidUVE(anchor)) {
+        const Scene::UIAnchorComponent& anchor =
+            entityManager.GetComponent<Scene::UIAnchorComponent>(widget.entity);
+        if (!IsUIAnchorComponentValid(anchor)) {
             continue;
         }
-        const bool isButton = entityManager.HasComponentUVE<Scene::UIButtonComponentUVE>(widget.entity);
-        const bool isImage = entityManager.HasComponentUVE<Scene::UIImageComponentUVE>(widget.entity);
+        const bool isButton = entityManager.HasComponent<Scene::UIButtonComponent>(widget.entity);
+        const bool isImage = entityManager.HasComponent<Scene::UIImageComponent>(widget.entity);
         const bool isContainer =
-            entityManager.HasComponentUVE<Scene::UILayoutContainerComponentUVE>(widget.entity);
-        const bool isSlider = entityManager.HasComponentUVE<Scene::UISliderComponentUVE>(widget.entity);
-        const bool isProgress = entityManager.HasComponentUVE<Scene::UIProgressBarComponentUVE>(widget.entity);
-        const bool isCheckbox = entityManager.HasComponentUVE<Scene::UICheckboxComponentUVE>(widget.entity);
-        const bool isDropdown = entityManager.HasComponentUVE<Scene::UIDropdownComponentUVE>(widget.entity);
-        const bool isTextInput = entityManager.HasComponentUVE<Scene::UITextInputComponentUVE>(widget.entity);
+            entityManager.HasComponent<Scene::UILayoutContainerComponent>(widget.entity);
+        const bool isSlider = entityManager.HasComponent<Scene::UISliderComponent>(widget.entity);
+        const bool isProgress = entityManager.HasComponent<Scene::UIProgressBarComponent>(widget.entity);
+        const bool isCheckbox = entityManager.HasComponent<Scene::UICheckboxComponent>(widget.entity);
+        const bool isDropdown = entityManager.HasComponent<Scene::UIDropdownComponent>(widget.entity);
+        const bool isTextInput = entityManager.HasComponent<Scene::UITextInputComponent>(widget.entity);
         const bool isScrollContainer =
-            entityManager.HasComponentUVE<Scene::UIScrollContainerComponentUVE>(widget.entity);
-        const bool isText = entityManager.HasComponentUVE<Scene::UITextComponentUVE>(widget.entity);
+            entityManager.HasComponent<Scene::UIScrollContainerComponent>(widget.entity);
+        const bool isText = entityManager.HasComponent<Scene::UITextComponent>(widget.entity);
         if (!isButton && !isImage && !isContainer && !isSlider && !isProgress && !isCheckbox && !isDropdown &&
             !isTextInput && !isScrollContainer && !isText) {
             continue;
         }
-        const Math::RectUVE parent = AnchorParentRectUVE(entityManager, widget.entity, viewportSize);
-        const Math::RectUVE resolvedRect = Scene::ResolveUIAnchoredRectUVE(anchor, parent);
-        const Math::Vector2UVE resolvedMin = resolvedRect.position;
-        const Math::Vector2UVE resolvedSize = resolvedRect.size;
+        const Math::Rect parent = AnchorParentRect(entityManager, widget.entity, viewportSize);
+        const Math::Rect resolvedRect = Scene::ResolveUIAnchoredRect(anchor, parent);
+        const Math::Vector2 resolvedMin = resolvedRect.position;
+        const Math::Vector2 resolvedSize = resolvedRect.size;
         if (isButton) {
-            entityManager.GetComponentUVE<Scene::UIButtonComponentUVE>(widget.entity).rect = {resolvedMin,
+            entityManager.GetComponent<Scene::UIButtonComponent>(widget.entity).rect = {resolvedMin,
                                                                                               resolvedSize};
         }
         if (isImage) {
-            entityManager.GetComponentUVE<Scene::UIImageComponentUVE>(widget.entity).rect = {resolvedMin,
+            entityManager.GetComponent<Scene::UIImageComponent>(widget.entity).rect = {resolvedMin,
                                                                                              resolvedSize};
         }
         if (isContainer) {
-            entityManager.GetComponentUVE<Scene::UILayoutContainerComponentUVE>(widget.entity).rect = {
+            entityManager.GetComponent<Scene::UILayoutContainerComponent>(widget.entity).rect = {
                 resolvedMin, resolvedSize};
         }
         if (isSlider) {
-            entityManager.GetComponentUVE<Scene::UISliderComponentUVE>(widget.entity).rect = {resolvedMin,
+            entityManager.GetComponent<Scene::UISliderComponent>(widget.entity).rect = {resolvedMin,
                                                                                               resolvedSize};
         }
         if (isProgress) {
-            entityManager.GetComponentUVE<Scene::UIProgressBarComponentUVE>(widget.entity).rect = {resolvedMin,
+            entityManager.GetComponent<Scene::UIProgressBarComponent>(widget.entity).rect = {resolvedMin,
                                                                                                    resolvedSize};
         }
         if (isCheckbox) {
-            entityManager.GetComponentUVE<Scene::UICheckboxComponentUVE>(widget.entity).rect = {resolvedMin,
+            entityManager.GetComponent<Scene::UICheckboxComponent>(widget.entity).rect = {resolvedMin,
                                                                                                 resolvedSize};
         }
         if (isDropdown) {
-            entityManager.GetComponentUVE<Scene::UIDropdownComponentUVE>(widget.entity).rect = {resolvedMin,
+            entityManager.GetComponent<Scene::UIDropdownComponent>(widget.entity).rect = {resolvedMin,
                                                                                                 resolvedSize};
         }
         if (isTextInput) {
-            entityManager.GetComponentUVE<Scene::UITextInputComponentUVE>(widget.entity).rect = {resolvedMin,
+            entityManager.GetComponent<Scene::UITextInputComponent>(widget.entity).rect = {resolvedMin,
                                                                                                  resolvedSize};
         }
         if (isScrollContainer) {
-            entityManager.GetComponentUVE<Scene::UIScrollContainerComponentUVE>(widget.entity).rect = {resolvedMin,
+            entityManager.GetComponent<Scene::UIScrollContainerComponent>(widget.entity).rect = {resolvedMin,
                                                                                                        resolvedSize};
         }
         if (isText) {
-            entityManager.GetComponentUVE<Scene::UITextComponentUVE>(widget.entity).positionPixels = resolvedMin;
+            entityManager.GetComponent<Scene::UITextComponent>(widget.entity).positionPixels = resolvedMin;
         }
     }
 }

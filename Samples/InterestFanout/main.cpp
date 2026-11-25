@@ -6,10 +6,10 @@
 #include "interest_fanout_sample.h"
 
 int main() {
-    UVE::Samples::InterestFanoutSampleConfigUVE config;
+    UVE::Samples::InterestFanoutSampleConfig config;
     config.log = [](const std::string& line) { std::printf("%s\n", line.c_str()); };
-    const UVE::Samples::InterestFanoutSampleResultUVE result =
-        UVE::Samples::RunInterestFanoutSampleUVE(config);
+    const UVE::Samples::InterestFanoutSampleResult result =
+        UVE::Samples::RunInterestFanoutSample(config);
     if (!result.success) {
         std::printf("SAMPLE FAIL (%zu violation%s):\n", result.failures.size(),
                     result.failures.size() == 1U ? "" : "s");

@@ -6,23 +6,23 @@
 
 namespace UVE::Render::Vulkan::Tests {
 
-TEST(VulkanValidationPolicyUVETest, DoesNotRequestOptionalDebugToolingWhenDisabled) {
-    EXPECT_EQ(ResolveValidationLayerPlanUVE(false, true, true), (ValidationLayerPlanUVE{}));
+TEST(VulkanValidationPolicyTest, DoesNotRequestOptionalDebugToolingWhenDisabled) {
+    EXPECT_EQ(ResolveValidationLayerPlan(false, true, true), (ValidationLayerPlan{}));
 }
 
-TEST(VulkanValidationPolicyUVETest, EnablesLayerAndDebugMessengerWhenBothAreAvailable) {
-    EXPECT_EQ(ResolveValidationLayerPlanUVE(true, true, true),
-              (ValidationLayerPlanUVE{true, true, false, false}));
+TEST(VulkanValidationPolicyTest, EnablesLayerAndDebugMessengerWhenBothAreAvailable) {
+    EXPECT_EQ(ResolveValidationLayerPlan(true, true, true),
+              (ValidationLayerPlan{true, true, false, false}));
 }
 
-TEST(VulkanValidationPolicyUVETest, MissingLayerDoesNotBlockVulkanBackendCreation) {
-    EXPECT_EQ(ResolveValidationLayerPlanUVE(true, false, true),
-              (ValidationLayerPlanUVE{false, false, true, false}));
+TEST(VulkanValidationPolicyTest, MissingLayerDoesNotBlockVulkanBackendCreation) {
+    EXPECT_EQ(ResolveValidationLayerPlan(true, false, true),
+              (ValidationLayerPlan{false, false, true, false}));
 }
 
-TEST(VulkanValidationPolicyUVETest, KeepsValidationLayerWhenDebugUtilsExtensionIsUnavailable) {
-    EXPECT_EQ(ResolveValidationLayerPlanUVE(true, true, false),
-              (ValidationLayerPlanUVE{true, false, false, true}));
+TEST(VulkanValidationPolicyTest, KeepsValidationLayerWhenDebugUtilsExtensionIsUnavailable) {
+    EXPECT_EQ(ResolveValidationLayerPlan(true, true, false),
+              (ValidationLayerPlan{true, false, false, true}));
 }
 
 } // namespace UVE::Render::Vulkan::Tests

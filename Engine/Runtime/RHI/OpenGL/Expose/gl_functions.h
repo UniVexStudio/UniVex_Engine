@@ -10,10 +10,10 @@
 // PUBLIC CONTRACT, deliberately: this is the engine's one shared GL proc-table loader. The
 // codebase's rule remains that no public header includes a GL header UNLESS the GL type surface
 // is the contract itself - which is exactly the case here. There are two sanctioned consumers:
-// GlRenderDeviceUVE (the primary owner) and the editor's MeshThumbnailRendererUVE, which draws a
+// GlRenderDevice (the primary owner) and the editor's MeshThumbnailRenderer, which draws a
 // tiny self-contained preview directly with GL instead of standing up a full render device and
 // used to keep a second hand-rolled copy of this loader (AUDIT 5.6). Any future consumer must be
-// equally small and self-contained; anything larger belongs behind IRenderDeviceUVE instead.
+// equally small and self-contained; anything larger belongs behind IRenderDevice instead.
 #if defined(__ANDROID__)
 #include <GLES3/gl32.h>
 using PFNGLGETBUFFERSUBDATAPROC = void (GL_APIENTRYP)(GLenum, GLintptr, GLsizeiptr, void*);
@@ -21,18 +21,21 @@ using PFNGLGETBUFFERSUBDATAPROC = void (GL_APIENTRYP)(GLenum, GLintptr, GLsizeip
 #else
 #include <GL/gl.h>
 #include <GL/glext.h>
+#ifdef MemoryBarrier
+#undef MemoryBarrier
+#endif
 #endif
 
 namespace UVE::Render::Detail {
 
-/// The GL function pointers GlRenderDeviceUVE needs beyond what the system's legacy OpenGL 1.1
+/// The GL function pointers GlRenderDevice needs beyond what the system's legacy OpenGL 1.1
 /// <GL/gl.h> already declares directly and requires no loading for (glViewport, glClear,
 /// glClearColor, glDrawArrays, glGetError, glGetIntegerv, glEnable/glDisable, ...). This is a
 /// genuinely minimal, hand-rolled loader — exactly the ~20 buffer/VAO/shader/program functions
 /// this increment's triangle needs — rather than a GLEW/GLAD dependency, matching this codebase's
 /// "only build what the current consumer needs" discipline (see docs/CODING_STANDARDS.md,
-/// Matrix4x4UVE's minimal API for the established precedent).
-struct GlFunctionsUVE {
+/// Matrix4x4's minimal API for the established precedent).
+struct GlFunctions {
     // Optional foundation operations; absent pointers do not disable the baseline renderer.
     PFNGLCOPYBUFFERSUBDATAPROC glCopyBufferSubData = nullptr;
     PFNGLBLITFRAMEBUFFERPROC glBlitFramebuffer = nullptr;
@@ -60,26 +63,26 @@ struct GlFunctionsUVE {
     PFNGLBINDBUFFERPROC glBindBuffer = nullptr;
     PFNGLBUFFERDATAPROC glBufferData = nullptr;
     PFNGLBUFFERSUBDATAPROC glBufferSubData = nullptr;
-    // CS3: the read direction of glBufferSubData, backing IRenderDeviceUVE::ReadbackBufferUVE.
-    // Core since GL 1.5 like its write sibling, so it joins the IsCompleteUVE() core set.
+    // CS3: the read direction of glBufferSubData, backing IRenderDevice::ReadbackBuffer.
+    // Core since GL 1.5 like its write sibling, so it joins the IsComplete() core set.
     PFNGLGETBUFFERSUBDATAPROC glGetBufferSubData = nullptr;
     PFNGLBINDBUFFERBASEPROC glBindBufferBase = nullptr;
 
-    // M5a compute pair (GL 4.3+). Deliberately NOT part of the IsLoadedUVE() core set: contexts
-    // below 4.3 leave these null (state.supportsComputeShadersUVE is false there too), and
-    // CreateComputePipelineUVE()/DispatchUVE() refuse loudly instead of calling through null.
+    // M5a compute pair (GL 4.3+). Deliberately NOT part of the IsLoaded() core set: contexts
+    // below 4.3 leave these null (state.supportsComputeShaders is false there too), and
+    // CreateComputePipeline()/Dispatch() refuse loudly instead of calling through null.
     PFNGLDISPATCHCOMPUTEPROC glDispatchCompute = nullptr;
     PFNGLMEMORYBARRIERPROC glMemoryBarrier = nullptr;
     // CS7: indexed indirect draw (GL 4.0+). Same optional-null policy as the compute pair above -
-    // a context without it leaves this null and DrawIndexedIndirectUVE warns once and skips
+    // a context without it leaves this null and DrawIndexedIndirect warns once and skips
     // rather than calling through a null pointer.
     PFNGLDRAWELEMENTSINDIRECTPROC glDrawElementsIndirect = nullptr;
     // V3a: instanced draw entry points (core since GL 3.1 / GLES 3.0). Optional like indirect draw;
-    // DrawUVE / DrawIndexedUVE call these whenever instanceCount > 1 and fall back cleanly if null.
+    // Draw / DrawIndexed call these whenever instanceCount > 1 and fall back cleanly if null.
     PFNGLDRAWARRAYSINSTANCEDPROC glDrawArraysInstanced = nullptr;
     PFNGLDRAWELEMENTSINSTANCEDPROC glDrawElementsInstanced = nullptr;
     // M5b: image-unit binding for storage images (GL 4.2+), same optional-null policy as the
-    // compute pair — BindTextureUVE skips the image bind when it is null.
+    // compute pair — BindTexture skips the image bind when it is null.
     PFNGLBINDIMAGETEXTUREPROC glBindImageTexture = nullptr;
 
     PFNGLGENVERTEXARRAYSPROC glGenVertexArrays = nullptr;
@@ -110,7 +113,7 @@ struct GlFunctionsUVE {
     PFNGLCHECKFRAMEBUFFERSTATUSPROC glCheckFramebufferStatus = nullptr;
     PFNGLFRAMEBUFFERRENDERBUFFERPROC glFramebufferRenderbuffer = nullptr;
 
-    // Renderbuffer block: not used by GlRenderDeviceUVE itself; MeshThumbnailRendererUVE (the
+    // Renderbuffer block: not used by GlRenderDevice itself; MeshThumbnailRenderer (the
     // contract's other sanctioned consumer) needs a depth renderbuffer for its scratch target.
     PFNGLGENRENDERBUFFERSPROC glGenRenderbuffers = nullptr;
     PFNGLDELETERENDERBUFFERSPROC glDeleteRenderbuffers = nullptr;
@@ -119,27 +122,27 @@ struct GlFunctionsUVE {
 
     PFNGLACTIVETEXTUREPROC glActiveTexture = nullptr;
     // Optional GL 1.3 / GLES 2 compressed upload path. It is not required to keep an otherwise
-    // usable context alive; compressed SupportsTextureFormatUVE() returns false when absent.
+    // usable context alive; compressed SupportsTextureFormat() returns false when absent.
     PFNGLCOMPRESSEDTEXIMAGE2DPROC glCompressedTexImage2D = nullptr;
     // Tier 2.3: 2D-array uploads (GL 1.2 / GLES 3.0 core) plus layered FBO attach (GL 3.2 /
     // GLES 3.0 core). Optional like glCompressedTexImage2D above — creation/attach fail
-    // closed when getProcAddress cannot supply them — and IsCompleteUVE() ignores them.
+    // closed when getProcAddress cannot supply them — and IsComplete() ignores them.
     PFNGLTEXIMAGE3DPROC glTexImage3D = nullptr;
     PFNGLCOMPRESSEDTEXIMAGE3DPROC glCompressedTexImage3D = nullptr;
     PFNGLFRAMEBUFFERTEXTURELAYERPROC glFramebufferTextureLayer = nullptr;
     // Tier 2.4/2.5: MRT draw routing (GL 2.0 / GLES 3.0 core), per-slot clears (GL 3.0 /
     // GLES 3.0 core), and DontCare discard hints (GL 4.3 / GLES 3.0 core). Optional like the
-    // Tier 2.3 entries above — IsCompleteUVE() ignores them; MRT passes fail closed when the
+    // Tier 2.3 entries above — IsComplete() ignores them; MRT passes fail closed when the
     // routing/clear entries are absent, while a missing discard entry only skips the hint.
     PFNGLDRAWBUFFERSPROC glDrawBuffers = nullptr;
     PFNGLCLEARBUFFERFVPROC glClearBufferfv = nullptr;
     PFNGLINVALIDATEFRAMEBUFFERPROC glInvalidateFramebuffer = nullptr;
     // Integer vertex attributes (GL 3.0 / GLES 3.0 core): the fetch path for UShort4 / UInt4
     // layouts. Optional like the entries above — a pipeline whose layout needs it is refused
-    // at creation when getProcAddress cannot supply it; IsCompleteUVE() ignores it.
+    // at creation when getProcAddress cannot supply it; IsComplete() ignores it.
     PFNGLVERTEXATTRIBIPOINTERPROC glVertexAttribIPointer = nullptr;
 
-    // Uniform-related (Increment 21: ShaderManagerUVE's reflection + ICommandBufferUVE's
+    // Uniform-related (Increment 21: ShaderManager's reflection + ICommandBuffer's
     // SetUniform*UVE calls) and program-binary-cache (Increment 21's on-disk shader cache).
     PFNGLGETUNIFORMLOCATIONPROC glGetUniformLocation = nullptr;
     PFNGLUNIFORM1FPROC glUniform1f = nullptr;
@@ -154,8 +157,8 @@ struct GlFunctionsUVE {
     PFNGLPROGRAMPARAMETERIPROC glProgramParameteri = nullptr;
 
     // Tier 2.2 sampler objects (core since desktop GL 3.3 / GLES 3.0). Optional like the
-    // program-binary entry points above: CreateSamplerUVE fails closed when getProcAddress
-    // cannot supply them (a pre-3.3 context), and IsCompleteUVE() deliberately ignores them.
+    // program-binary entry points above: CreateSampler fails closed when getProcAddress
+    // cannot supply them (a pre-3.3 context), and IsComplete() deliberately ignores them.
     PFNGLGENSAMPLERSPROC glGenSamplers = nullptr;
     PFNGLDELETESAMPLERSPROC glDeleteSamplers = nullptr;
     PFNGLBINDSAMPLERPROC glBindSampler = nullptr;
@@ -167,7 +170,7 @@ struct GlFunctionsUVE {
 
     // GL_KHR_debug (core since desktop GL 4.3; a common but not universally guaranteed GLES
     // extension - this engine's Android baseline is a fixed GLES 3.0 context, so this is expected
-    // to stay null there). Deliberately excluded from IsCompleteUVE() below, matching
+    // to stay null there). Deliberately excluded from IsComplete() below, matching
     // glGetProgramBinary/glProgramBinary's precedent immediately above: an optional capability a
     // caller checks for null before using, not a hard requirement for a usable render device. See
     // gl_error_check_uve.h for the manual glGetError()-polling fallback this engine relies on when
@@ -175,16 +178,16 @@ struct GlFunctionsUVE {
     PFNGLDEBUGMESSAGECALLBACKPROC glDebugMessageCallback = nullptr;
 
     /// True iff every function pointer above loaded successfully (non-null).
-    [[nodiscard]] bool IsCompleteUVE() const noexcept;
+    [[nodiscard]] bool IsComplete() const noexcept;
 };
 
-/// Loads every GlFunctionsUVE member by calling `getProcAddress(name)` once per function and
+/// Loads every GlFunctions member by calling `getProcAddress(name)` once per function and
 /// reinterpret_cast-ing the result to the matching PFNGL*PROC type — the universal pattern every
 /// GL loader (hand-rolled or generated) uses, since a GL driver only exposes post-1.1 entry
 /// points through this kind of dynamic lookup. `getProcAddress` is injected rather than calling
 /// glfwGetProcAddress directly so this loader itself never includes GLFW; both callers
-/// (GlRenderDeviceUVE and the editor's MeshThumbnailRendererUVE, each constructed only after a
+/// (GlRenderDevice and the editor's MeshThumbnailRenderer, each constructed only after a
 /// GL context has been made current) pass a small wrapper around glfwGetProcAddress.
-[[nodiscard]] GlFunctionsUVE LoadGlFunctionsUVE(void* (*getProcAddress)(const char*));
+[[nodiscard]] GlFunctions LoadGlFunctions(void* (*getProcAddress)(const char*));
 
 } // namespace UVE::Render::Detail

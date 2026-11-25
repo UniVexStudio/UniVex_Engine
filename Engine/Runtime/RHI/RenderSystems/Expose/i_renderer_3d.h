@@ -23,42 +23,42 @@
 
 namespace UVE::Render {
 
-/// Runtime resolution of a project's requested RendererProfileUVE against real GPU capabilities.
-struct RendererProfileResolutionUVE final {
-    Platform::RendererProfileUVE requested = Platform::DefaultRendererProfileForHostUVE();
-    Platform::RendererProfileUVE effective = Platform::DefaultRendererProfileForHostUVE();
+/// Runtime resolution of a project's requested RendererProfile against real GPU capabilities.
+struct RendererProfileResolution final {
+    Platform::RendererProfile requested = Platform::DefaultRendererProfileForHost();
+    Platform::RendererProfile effective = Platform::DefaultRendererProfileForHost();
     bool fallbackApplied = false;
     std::string_view fallbackReason;
 };
 
 /// Resolves `requested` against `capabilities`, stepping down Forward+ -> Mobile -> Compatibility
 /// only when the active GPU/backend lacks required hardware features.
-[[nodiscard]] constexpr RendererProfileResolutionUVE ResolveEffectiveRendererProfileUVE(
-    const Platform::RendererProfileUVE requested,
-    const RenderDeviceCapabilitiesUVE& capabilities) noexcept {
+[[nodiscard]] constexpr RendererProfileResolution ResolveEffectiveRendererProfile(
+    const Platform::RendererProfile requested,
+    const RenderDeviceCapabilities& capabilities) noexcept {
     const bool supportsHdr16F =
-        capabilities.halfFloatColorTargets != RenderFeatureSupportUVE::Unsupported;
+        capabilities.halfFloatColorTargets != RenderFeatureSupport::Unsupported;
     const bool supportsSsbo =
-        capabilities.storageBuffers != RenderFeatureSupportUVE::Unsupported;
-    if (requested == Platform::RendererProfileUVE::ForwardPlus) {
+        capabilities.storageBuffers != RenderFeatureSupport::Unsupported;
+    if (requested == Platform::RendererProfile::ForwardPlus) {
         if (supportsSsbo && supportsHdr16F) {
-            return {requested, Platform::RendererProfileUVE::ForwardPlus, false, {}};
+            return {requested, Platform::RendererProfile::ForwardPlus, false, {}};
         }
         if (supportsHdr16F) {
-            return {requested, Platform::RendererProfileUVE::Mobile, true,
+            return {requested, Platform::RendererProfile::Mobile, true,
                     "GPU/backend lacks SSBO support; using Mobile"};
         }
-        return {requested, Platform::RendererProfileUVE::Compatibility, true,
+        return {requested, Platform::RendererProfile::Compatibility, true,
                 "GPU/backend lacks SSBO and HDR16F support; using Compatibility"};
     }
-    if (requested == Platform::RendererProfileUVE::Mobile) {
+    if (requested == Platform::RendererProfile::Mobile) {
         if (supportsHdr16F) {
-            return {requested, Platform::RendererProfileUVE::Mobile, false, {}};
+            return {requested, Platform::RendererProfile::Mobile, false, {}};
         }
-        return {requested, Platform::RendererProfileUVE::Compatibility, true,
+        return {requested, Platform::RendererProfile::Compatibility, true,
                 "GPU/backend lacks HDR16F support; using Compatibility"};
     }
-    return {requested, Platform::RendererProfileUVE::Compatibility, false, {}};
+    return {requested, Platform::RendererProfile::Compatibility, false, {}};
 }
 
 /// Post-process controls. The final tone-mapping pass supports bilinear or nearest-neighbour
@@ -72,57 +72,57 @@ struct RendererProfileResolutionUVE final {
 /// contrast test; sharpening strength is clamped to [0, 1]. Dithering adds deterministic sub-LSB
 /// screen-space noise before final output quantization.
 
-struct PostProcessSettingsUVE final {
-    bool bloomEnabledUVE = true;
-    bool ssaoEnabledUVE = true;
-    float ssaoRadiusUVE = 0.5F;
-    float ssaoIntensityUVE = 1.0F;
-    float ssaoPowerUVE = 1.0F;
+struct PostProcessSettings final {
+    bool bloomEnabled = true;
+    bool ssaoEnabled = true;
+    float ssaoRadius = 0.5F;
+    float ssaoIntensity = 1.0F;
+    float ssaoPower = 1.0F;
     /// 0 = Low (4 samples), 1 = Medium (8), 2 = High (12).
-    std::uint32_t ssaoQualityUVE = 2U;
-    bool ssaoBlurEnabledUVE = true;
+    std::uint32_t ssaoQuality = 2U;
+    bool ssaoBlurEnabled = true;
 
     /// Screen-space contact shadows (see contact_shadows_uve.h). Off by default: the pass refines an
     /// existing shadow map with a depth-buffer march, so a project opts in once it has shadows worth
     /// refining, and the cost stays out of every frame that has not asked for it.
-    bool contactShadowsEnabledUVE = false;
+    bool contactShadowsEnabled = false;
     /// How far along the light direction the ray marches, in metres.
-    float contactShadowLengthMetersUVE = 0.2F;
+    float contactShadowLengthMeters = 0.2F;
     /// How far behind the ray a depth sample may sit and still count as touching geometry, in metres.
-    float contactShadowThicknessMetersUVE = 0.1F;
+    float contactShadowThicknessMeters = 0.1F;
     /// Fraction of the light the pass may remove at full occlusion, 0..1.
-    float contactShadowStrengthUVE = 0.8F;
-    /// Ray samples per pixel; clamped to [1, 16] by SanitizeContactShadowSettingsUVE().
-    std::uint32_t contactShadowStepCountUVE = 8U;
+    float contactShadowStrength = 0.8F;
+    /// Ray samples per pixel; clamped to [1, 16] by SanitizeContactShadowSettings().
+    std::uint32_t contactShadowStepCount = 8U;
 
     /// Screen-Space Reflections (SSR).
-    bool ssrEnabledUVE = false;
-    std::uint32_t ssrMaxStepsUVE = 32U;
-    float ssrDepthToleranceUVE = 0.2F;
-    float ssrFadeInUVE = 0.1F;
-    float ssrFadeOutUVE = 0.8F;
+    bool ssrEnabled = false;
+    std::uint32_t ssrMaxSteps = 32U;
+    float ssrDepthTolerance = 0.2F;
+    float ssrFadeIn = 0.1F;
+    float ssrFadeOut = 0.8F;
 
-    bool fastApproximateAAEnabledUVE = false;
-    std::uint32_t fastApproximateAAQualityUVE = 1U;
+    bool fastApproximateAAEnabled = false;
+    std::uint32_t fastApproximateAAQuality = 1U;
     /// Temporal Anti-Aliasing (Halton jitter + YCoCg variance-clamped HDR history reprojection).
-    bool temporalAAEnabledUVE = false;
-    float taaHistoryWeightUVE = 0.90F;
+    bool temporalAAEnabled = false;
+    float taaHistoryWeight = 0.90F;
     /// Weighted Blended Order-Independent Transparency (MRT accum + log-revealage composite).
-    bool orderIndependentTransparencyEnabledUVE = false;
+    bool orderIndependentTransparencyEnabled = false;
     /// Forward+ 16x9x24 clustered lighting SSBO path (up to 256 dynamic lights on desktop GPUs).
-    bool clusteredLightingEnabledUVE = false;
-    bool nearestUpscalingEnabledUVE = false;
-    bool acesToneMappingEnabledUVE = true;
+    bool clusteredLightingEnabled = false;
+    bool nearestUpscalingEnabled = false;
+    bool acesToneMappingEnabled = true;
     /// 0 = Linear clamp, 1 = ACES filmic, 2 = Soft filmic (default). Setting
-    /// `acesToneMappingEnabledUVE = false` forces mode 0 for backwards compatibility.
-    std::uint32_t toneMappingMethodUVE = 2U;
-    float sharpeningAmountUVE = 0.0F;
-    bool ditheringEnabledUVE = true;
+    /// `acesToneMappingEnabled = false` forces mode 0 for backwards compatibility.
+    std::uint32_t toneMappingMethod = 2U;
+    float sharpeningAmount = 0.0F;
+    bool ditheringEnabled = true;
 };
 
 /// Culling controls for the main colour view.
 ///
-/// `frustumCullingEnabledUVE` false is the spec's "debug freeze": the renderer stops rejecting
+/// `frustumCullingEnabled` false is the spec's "debug freeze": the renderer stops rejecting
 /// anything by frustum, so every placed mesh, primitive, surface instance and decal in the scene is
 /// submitted for the frame regardless of where the camera looks. It is a debugging aid, not a
 /// quality option - a frozen frame draws the whole scene.
@@ -133,42 +133,42 @@ struct PostProcessSettingsUVE final {
 /// keep running: a debug freeze that also ignored an author's "hidden" flag would hide the very
 /// mistake it exists to diagnose. Shadow cascades also keep culling against their own light frusta,
 /// since freezing those multiplies shadow draw work without changing what the camera sees.
-struct CullingSettingsUVE final {
-    bool frustumCullingEnabledUVE = true;
+struct CullingSettings final {
+    bool frustumCullingEnabled = true;
     /// Foundation WP3: GPU occlusion culling of the main colour view's opaque mesh items. When on,
-    /// and the device reports occlusion queries (RenderDeviceCapabilitiesUVE::occlusionQueries !=
+    /// and the device reports occlusion queries (RenderDeviceCapabilities::occlusionQueries !=
     /// Unsupported), the main pass ends with one depth-tested, colour-less proxy box per opaque
-    /// item under an ICommandBufferUVE query bracket. An item is skipped on a LATER frame only when
+    /// item under an ICommandBuffer query bracket. An item is skipped on a LATER frame only when
     /// its most recent bracket completed with zero samples, the camera's view-projection is
     /// unchanged since that bracket, and the item's world matrix is unchanged (its probe key is
     /// derived from both the mesh and the matrix). Anything else - a not-ready result, a moved
     /// camera, a moved object, a device without queries - draws the item. Default off: the stage
     /// costs a query bracket per item and only pays back in occlusion-heavy scenes.
-    bool gpuOcclusionCullingEnabledUVE = false;
+    bool gpuOcclusionCullingEnabled = false;
 };
 
 /// Opt-in dark studio floor plane rendered inside the HDR scene pass (before VfxParticles,
 /// SSAO, Bloom, and ToneMapping) for dedicated studio preview viewports.
-struct StudioFloorSettingsUVE final {
-    bool enabledUVE = false;
-    float heightYUVE = 0.0F;
-    float halfExtentMetersUVE = 45.0F;
-    float tileScaleUVE = 0.45F;
-    float fadeStartRadiusMetersUVE = 9.0F;
-    float fadeEndRadiusMetersUVE = 34.0F;
-    Math::Vector3UVE pivotPositionUVE{0.0F, 0.0F, 0.0F};
-    Math::Vector3UVE baseTintUVE{1.0F, 1.0F, 1.0F};
-    float roughnessScaleUVE = 1.0F;
-    float specularStrengthUVE = 0.58F;
+struct StudioFloorSettings final {
+    bool enabled = false;
+    float heightY = 0.0F;
+    float halfExtentMeters = 45.0F;
+    float tileScale = 0.45F;
+    float fadeStartRadiusMeters = 9.0F;
+    float fadeEndRadiusMeters = 34.0F;
+    Math::Vector3 pivotPosition{0.0F, 0.0F, 0.0F};
+    Math::Vector3 baseTint{1.0F, 1.0F, 1.0F};
+    float roughnessScale = 1.0F;
+    float specularStrength = 0.58F;
 };
 
-/// A copied, frame-local account of observable Renderer3DUVE work. Each field names evidence that
+/// A copied, frame-local account of observable Renderer3D work. Each field names evidence that
 /// the renderer actually has: extraction and recorded-pass/draw counts are CPU-side facts;
 /// `glDrawCallsIssued` means a draw call was dispatched through the immediate OpenGL backend, not
 /// that the driver completed it or that a compositor displayed pixels. Presentation and pixel
-/// verification belong to EngineCoreUVE and dedicated real-GL integration tests respectively.
-/// Thread-safety: returned by value; RenderFrameUVE() and this accessor remain main-thread only.
-struct Renderer3DFrameDiagnosticsUVE final {
+/// verification belong to EngineCore and dedicated real-GL integration tests respectively.
+/// Thread-safety: returned by value; RenderFrame() and this accessor remain main-thread only.
+struct Renderer3DFrameDiagnostics final {
     std::uint32_t renderTargetWidth = 0U;
     std::uint32_t renderTargetHeight = 0U;
     std::size_t meshItemsExtracted = 0U;
@@ -187,7 +187,7 @@ struct Renderer3DFrameDiagnosticsUVE final {
     std::size_t primitiveItemsExtracted = 0U;
     /// Primitives skipped this frame because their assigned material was still loading
     /// (`pending`) or had failed to load (`failed`). Separate from the mesh queue's
-    /// pendingAssetLoads/failedAssetLoads: those describe MeshRendererUVE's walk, and a scene can
+    /// pendingAssetLoads/failedAssetLoads: those describe MeshRenderer's walk, and a scene can
     /// have a healthy mesh path and a broken primitive material at the same time.
     std::size_t primitiveMaterialPending = 0U;
     std::size_t primitiveMaterialFailed = 0U;
@@ -211,11 +211,11 @@ struct Renderer3DFrameDiagnosticsUVE final {
     /// Skinned meshes posed by a skeleton and drawn from their own vertex buffer this frame.
     std::size_t skinnedMeshesDrawn = 0U;
     /// Meshes sent to the GPU this frame, and those left for a later frame by the upload budget
-    /// (SetMeshUploadBudgetUVE): a scene that is still coming in shows here, mesh by mesh.
+    /// (SetMeshUploadBudget): a scene that is still coming in shows here, mesh by mesh.
     std::size_t meshUploads = 0U;
     std::size_t meshUploadsDeferred = 0U;
     /// The first meshes sent this frame (unused slots stay invalid), so a host can say what it is drawing.
-    std::array<Asset::AssetGuidUVE, 4U> uploadedMeshes{};
+    std::array<Asset::AssetGuid, 4U> uploadedMeshes{};
     std::size_t meshDrawCallsRecorded = 0U;
     /// How many of `meshDrawCallsRecorded` were instanced draws, and how many objects those draws
     /// covered. Both name what instancing ACTUALLY did this frame, not what it was offered: a
@@ -224,8 +224,8 @@ struct Renderer3DFrameDiagnosticsUVE final {
     /// from reading the material assets.
     std::size_t instancedDrawCallsRecorded = 0U;
     std::size_t instancedObjectsRecorded = 0U;
-    /// Indirect instanced draws recorded this frame via GPU compute culling (FrustumCullIndirectUVE)
-    /// and ICommandBufferUVE::DrawIndexedIndirectUVE.
+    /// Indirect instanced draws recorded this frame via GPU compute culling (FrustumCullIndirect)
+    /// and ICommandBuffer::DrawIndexedIndirect.
     std::size_t indirectInstancedDrawCallsRecorded = 0U;
     /// Placement-cache outcome for this frame's extraction walk. Surfaced because a cache whose
     /// hit rate nobody can see is a cache nobody can tell is broken: a key bug that misses every
@@ -244,7 +244,7 @@ struct Renderer3DFrameDiagnosticsUVE final {
     /// a batch is one draw call, so `shadowBatchesRecorded` well below `shadowBatchedItems` means
     /// the batcher is merging, and the two being equal means every item became its own draw.
     /// Worth watching because the merging depends entirely on the ORDER the cascade queue is
-    /// handed - BuildShadowBatchesUVE merges only adjacent same-mesh runs - so a change to the
+    /// handed - BuildShadowBatches merges only adjacent same-mesh runs - so a change to the
     /// queue's sort silently multiplies draw calls while every image stays identical.
     std::size_t shadowBatchesRecorded = 0U;
     std::size_t shadowBatchedItems = 0U;
@@ -260,7 +260,7 @@ struct Renderer3DFrameDiagnosticsUVE final {
     std::size_t visibilityClustersRejected = 0U;
 
     /// True when the main colour view skipped every frustum rejection this frame because
-    /// CullingSettingsUVE::frustumCullingEnabledUVE was false (the debug freeze). Reported because
+    /// CullingSettings::frustumCullingEnabled was false (the debug freeze). Reported because
     /// the frozen frame's draw counts are otherwise indistinguishable from a scene that simply has
     /// nothing off-screen - and a freeze left on by accident is a performance bug nobody can see.
     /// Shadow cascades keep culling, so this describes the colour view alone.
@@ -271,7 +271,7 @@ struct Renderer3DFrameDiagnosticsUVE final {
     /// pass actually recorded this frame; `occludedItemsSkipped` counts opaque mesh items removed
     /// from the colour view by a completed zero-sample verdict. A frame with issued > 0 and
     /// skipped == 0 is the normal first frame (verdicts arrive a frame late) and the permanent
-    /// state on NullRenderDeviceUVE, which records brackets but never invents a result.
+    /// state on NullRenderDevice, which records brackets but never invents a result.
     bool occlusionQueriesSupported = false;
     std::size_t occlusionQueriesIssued = 0U;
     std::size_t occludedItemsSkipped = 0U;
@@ -304,11 +304,11 @@ struct Renderer3DFrameDiagnosticsUVE final {
     std::size_t clusteredLightsSubmitted = 0U;
     bool particleItemsTruncated = false;
     bool particleDrawCommandsSubmissionTruncated = false;
-    /// True only when SSAO was enabled (PostProcessSettingsUVE), its post-process targets and
+    /// True only when SSAO was enabled (PostProcessSettings), its post-process targets and
     /// programs were valid, and the camera's projection matrix was invertible this frame - not
     /// merely that SSAO was requested.
     bool ssaoPassRecorded = false;
-    /// True only when contact shadows were enabled (PostProcessSettingsUVE), their target and both
+    /// True only when contact shadows were enabled (PostProcessSettings), their target and both
     /// programs were valid, the camera's projection was invertible this frame, and the sun direction
     /// was usable - not merely that the pass was requested.
     bool contactShadowPassRecorded = false;
@@ -318,7 +318,7 @@ struct Renderer3DFrameDiagnosticsUVE final {
     bool ssrPassRecorded = false;
     /// Number of WorldSpace UI Canvases rendered into the 3D scene this frame.
     std::size_t worldSpaceCanvasesRendered = 0U;
-    /// True only when bloom was enabled by PostProcessSettingsUVE and the active WorldEnvironment,
+    /// True only when bloom was enabled by PostProcessSettings and the active WorldEnvironment,
     /// and the required targets/programs were valid this frame - not merely that bloom was requested.
     bool bloomPassRecorded = false;
     /// Number of bloom scales actually blurred and composited this frame, or zero when inactive.
@@ -360,43 +360,43 @@ struct Renderer3DFrameDiagnosticsUVE final {
     bool vfxPassRecorded = false;
 };
 
-/// IRenderer3DUVE is the engine's final per-frame render orchestrator (the spec's `Renderer3DUVE`,
+/// IRenderer3D is the engine's final per-frame render orchestrator (the spec's `Renderer3D`,
 /// Part 7.2): for a given camera entity, it computes the view-projection, culls and sorts the
-/// scene into a RenderQueueUVE (via IMeshRendererUVE), lazily uploads each encountered mesh's/
+/// scene into a RenderQueue (via IMeshRenderer), lazily uploads each encountered mesh's/
 /// material's GPU-shaped resources (cached, invalidated on hot reload), records resulting draw
-/// calls into an ICommandBufferUVE, and renders to an internally owned HDR color/depth target.
+/// calls into an ICommandBuffer, and renders to an internally owned HDR color/depth target.
 /// The built-in tone-mapping pass then writes the color target to the backend default framebuffer;
-/// EngineCoreUVE owns the subsequent overlay callback and explicit PresentUVE() request.
-/// Thread-safety: not thread-safe. RenderFrameUVE() must be called once per frame from the main
-/// engine thread only, after SceneGraphUVE::UpdateUVE() has run for this frame (it needs current
-/// WorldTransformComponentUVE data), matching EngineCoreUVE's single-threaded Update -> Render
+/// EngineCore owns the subsequent overlay callback and explicit Present() request.
+/// Thread-safety: not thread-safe. RenderFrame() must be called once per frame from the main
+/// engine thread only, after SceneGraph::Update() has run for this frame (it needs current
+/// WorldTransformComponent data), matching EngineCore's single-threaded Update -> Render
 /// frame-loop contract.
 /// The scene depth of the last frame rendered, for an editor that draws its own overlays (grid, gizmos) and
 /// needs them hidden behind the scene's geometry. `depthTexture` is the renderer's own depth target (OpenGL
 /// convention: window depth 0..1, 1 where nothing was drawn); `inverseViewProjection` turns a pixel's NDC
 /// position and depth back into world space. Valid until the next frame is rendered or the targets resize.
-struct SceneDepthExportUVE final {
+struct SceneDepthExport final {
     bool valid = false;
-    TextureHandleUVE depthTexture = kInvalidTextureHandleUVE;
+    TextureHandle depthTexture = kInvalidTextureHandle;
     std::uint32_t width = 0U;
     std::uint32_t height = 0U;
-    Math::Matrix4x4UVE inverseViewProjection{};
+    Math::Matrix4x4 inverseViewProjection{};
 };
 
-class IRenderer3DUVE {
+class IRenderer3D {
 public:
-    virtual ~IRenderer3DUVE() = default;
+    virtual ~IRenderer3D() = default;
 
     /// Renders the scene as seen by `cameraEntity`: extract -> sort -> record -> submit ->
     /// tone-map to the current backend presentation surface. `cameraEntity` must have both
-    /// WorldTransformComponentUVE and CameraComponentUVE (the same contract ICameraSystemUVE
+    /// WorldTransformComponent and CameraComponent (the same contract ICameraSystem
     /// already enforces).
-    virtual void RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scene::EntityUVE cameraEntity) = 0;
+    virtual void RenderFrame(Scene::IEntityManager& entityManager, Scene::Entity cameraEntity) = 0;
 
     /// Recreates the owned color/depth targets at a validated adaptive resolution. The default is
     /// a safe no-op for lightweight renderers and test doubles that do not own offscreen targets.
     /// Must be called on the main render thread while no frame command buffer is active.
-    [[nodiscard]] virtual bool ResizeTargetsUVE(std::uint32_t width, std::uint32_t height) {
+    [[nodiscard]] virtual bool ResizeTargets(std::uint32_t width, std::uint32_t height) {
         static_cast<void>(width);
         static_cast<void>(height);
         return false;
@@ -404,58 +404,58 @@ public:
 
     /// Sets the scene/presentation clear color used when no sky is active. The default is a no-op
     /// so lightweight renderers and test doubles need not retain the value.
-    virtual void SetSceneClearColorUVE(const std::array<float, 4U>& color) noexcept {
+    virtual void SetSceneClearColor(const std::array<float, 4U>& color) noexcept {
         static_cast<void>(color);
     }
 
     /// Renders the scene while extracting a copied particle snapshot from the caller-owned runtime
     /// into the frame queue. The runtime reference is borrowed for this call only; implementations
     /// must not retain it after returning. The distinct name avoids hiding the legacy virtual in test doubles.
-    virtual void RenderFrameWithParticleRuntimeUVE(Scene::IEntityManagerUVE& entityManager,
-                                                   Scene::EntityUVE cameraEntity,
-                                                   const Scene::ParticleRuntimeUVE& particleRuntime) {
+    virtual void RenderFrameWithParticleRuntime(Scene::IEntityManager& entityManager,
+                                                   Scene::Entity cameraEntity,
+                                                   const Scene::ParticleRuntime& particleRuntime) {
         static_cast<void>(particleRuntime);
-        RenderFrameUVE(entityManager, cameraEntity);
+        RenderFrame(entityManager, cameraEntity);
     }
 
-    /// Renders exactly like RenderFrameUVE(), except the final presentation write targets `region`
+    /// Renders exactly like RenderFrame(), except the final presentation write targets `region`
     /// (a pixel sub-rect of the presentation surface) instead of its entire area - Phase 3's
-    /// ViewportManagerUVE split-view support. `particleRuntime`, when non-null, extracts particles
-    /// into this frame exactly like RenderFrameWithParticleRuntimeUVE() would (an editor viewport
+    /// ViewportManager split-view support. `particleRuntime`, when non-null, extracts particles
+    /// into this frame exactly like RenderFrameWithParticleRuntime() would (an editor viewport
     /// composing both capabilities at once - e.g. rendering a scene's authored particle emitters
     /// into its own on-screen sub-rect - needs both together, not a choice between them). The
     /// default implementation ignores both `region` and `particleRuntime` and falls back to a
-    /// full-surface RenderFrameUVE(), matching this interface's existing safe-no-op-default
+    /// full-surface RenderFrame(), matching this interface's existing safe-no-op-default
     /// convention for test doubles/lightweight renderers that don't own a resizable offscreen
-    /// target (see ResizeTargetsUVE()'s own default above) - such a renderer has no sub-region
+    /// target (see ResizeTargets()'s own default above) - such a renderer has no sub-region
     /// concept to honor, so a full render is the closest correct behavior rather than silently
     /// dropping the frame.
-    virtual void RenderFrameToRegionUVE(Scene::IEntityManagerUVE& entityManager, Scene::EntityUVE cameraEntity,
-                                        const ViewportRectUVE& region,
-                                        const Scene::ParticleRuntimeUVE* particleRuntime = nullptr) {
+    virtual void RenderFrameToRegion(Scene::IEntityManager& entityManager, Scene::Entity cameraEntity,
+                                        const ViewportRect& region,
+                                        const Scene::ParticleRuntime* particleRuntime = nullptr) {
         static_cast<void>(region);
         static_cast<void>(particleRuntime);
-        RenderFrameUVE(entityManager, cameraEntity);
+        RenderFrame(entityManager, cameraEntity);
     }
 
-    /// Renders exactly like RenderFrameUVE(), except the final tone-mapped image is written into
+    /// Renders exactly like RenderFrame(), except the final tone-mapped image is written into
     /// `colorTarget`/`depthTarget` (caller-owned offscreen textures) instead of the backend's
     /// presentation surface - an editor viewport (or any other host compositing the result itself,
     /// e.g. as an image in the editor's view) rather than a real on-screen window region (that case is
-    /// RenderFrameToRegionUVE() above). Both targets must be valid, matching-size textures created
-    /// through this renderer's own IRenderDeviceUVE; PresentUVE() is never implied by this call.
-    /// `width`/`height` name that matching size in pixels - TextureHandleUVE has no queryable size
-    /// on IRenderDeviceUVE, so the caller (which just created these textures) supplies it directly;
+    /// RenderFrameToRegion() above). Both targets must be valid, matching-size textures created
+    /// through this renderer's own IRenderDevice; Present() is never implied by this call.
+    /// `width`/`height` name that matching size in pixels - TextureHandle has no queryable size
+    /// on IRenderDevice, so the caller (which just created these textures) supplies it directly;
     /// this is also what sizes the "UIOverlay" pass's orthographic projection for this target, so a
     /// zero width/height (the default, for callers that don't need UI overlaid) skips that pass
     /// exactly like the pre-Phase-U3b behavior. The default implementation ignores every parameter
-    /// and falls back to a full-frame RenderFrameUVE(), matching this interface's existing
+    /// and falls back to a full-frame RenderFrame(), matching this interface's existing
     /// safe-no-op-default convention for test doubles/lightweight renderers with no offscreen-target
     /// concept.
     /// Tier 2.3: colorLayer/depthLayer name the rendered LAYERS of that pair (probe capture
     /// aims cube faces at layers); both default to 0, preserving every existing caller's behavior.
-    virtual void RenderFrameToTargetUVE(Scene::IEntityManagerUVE& entityManager, Scene::EntityUVE cameraEntity,
-                                        TextureHandleUVE colorTarget, TextureHandleUVE depthTarget,
+    virtual void RenderFrameToTarget(Scene::IEntityManager& entityManager, Scene::Entity cameraEntity,
+                                        TextureHandle colorTarget, TextureHandle depthTarget,
                                         std::uint32_t width = 0U, std::uint32_t height = 0U,
                                         std::uint32_t colorLayer = 0U, std::uint32_t depthLayer = 0U) {
         static_cast<void>(colorTarget);
@@ -465,17 +465,17 @@ public:
         static_cast<void>(colorLayer);
         static_cast<void>(depthLayer);
         static_cast<void>(height);
-        RenderFrameUVE(entityManager, cameraEntity);
+        RenderFrame(entityManager, cameraEntity);
     }
 
     /// Updates the Phase 2b post-process quality-tier toggles for later render frames. The default
     /// implementation is intentionally a no-op so non-Renderer3D test doubles need not own
     /// post-process state.
-    virtual void SetPostProcessSettingsUVE(const PostProcessSettingsUVE& settings) {
+    virtual void SetPostProcessSettings(const PostProcessSettings& settings) {
         static_cast<void>(settings);
     }
 
-    /// Editor-only preview environment, the counterpart of Scene::PreviewLightingFrameUVE.
+    /// Editor-only preview environment, the counterpart of Scene::PreviewLightingFrame.
     ///
     /// Applied by the concrete renderer only when the scene itself resolves to NO WorldEnvironment,
     /// which is exactly the rule Godot's "Preview Environment" follows: the preview fills the gap
@@ -484,87 +484,87 @@ public:
     /// build - so `std::nullopt` simply restores the authored/fallback path.
     ///
     /// The default implementation is a no-op, so renderer doubles in tests stay unaffected.
-    virtual void SetPreviewEnvironmentUVE(const std::optional<Scene::WorldEnvironmentFrameUVE>& frame) {
+    virtual void SetPreviewEnvironment(const std::optional<Scene::WorldEnvironmentFrame>& frame) {
         static_cast<void>(frame);
     }
 
     /// Sets the authored depth-bias and angle-aware normal-bias defaults used by directional lights whose
     /// per-light values are negative (inherit). Implementations may clamp out-of-range direct API input;
     /// settings-system values are already validated to [0, 10].
-    virtual void SetShadowBiasDefaultsUVE(float depthBias, float normalBias) noexcept {
+    virtual void SetShadowBiasDefaults(float depthBias, float normalBias) noexcept {
         static_cast<void>(depthBias);
         static_cast<void>(normalBias);
     }
 
-    /// Requested atlas tile edge, in pixels, for atlas shadows (EngineConfigUVE::
-    /// pointSpotShadowResolutionUVE / the "rendering.shadows.pointSpotCubeResolution" key). The
+    /// Requested atlas tile edge, in pixels, for atlas shadows (EngineConfig::
+    /// pointSpotShadowResolution / the "rendering.shadows.pointSpotCubeResolution" key). The
     /// renderer rounds to a power of two and halves it further when the frame needs more tiles than
     /// fit at that size - a point light spends six. Default: no-op, so test doubles that never render
     /// an atlas shadow need not own the state.
-    virtual void SetShadowAtlasTileResolutionUVE(std::uint32_t resolution) noexcept {
+    virtual void SetShadowAtlasTileResolution(std::uint32_t resolution) noexcept {
         static_cast<void>(resolution);
     }
 
     /// Sets the viewport shading mode (0: Lit, 1: Unshaded, 2: Wireframe, 3: Lighting, 4: Normals).
-    virtual void SetShadingModeUVE(std::int32_t shadingMode) noexcept {
+    virtual void SetShadingMode(std::int32_t shadingMode) noexcept {
         static_cast<void>(shadingMode);
     }
 
     /// How many new meshes a frame may send to the GPU; the rest wait for later frames and are not
     /// drawn until then, so a scene comes in a few meshes at a time instead of all in one frame.
     /// Zero (the default) means no limit.
-    virtual void SetMeshUploadBudgetUVE(std::size_t meshesPerFrame) noexcept {
+    virtual void SetMeshUploadBudget(std::size_t meshesPerFrame) noexcept {
         static_cast<void>(meshesPerFrame);
     }
 
     /// Sets the rendering scalability / quality preset (0: Low, 1: Medium, 2: High/Ultra).
-    virtual void SetScalabilityModeUVE(std::int32_t scalabilityMode) noexcept {
+    virtual void SetScalabilityMode(std::int32_t scalabilityMode) noexcept {
         static_cast<void>(scalabilityMode);
     }
 
     /// Sets the project renderer profile (`Compatibility`, `Mobile`, `Forward+`).
     /// Implementations resolve this against real device capabilities and may step down cleanly.
-    virtual void SetRendererProfileUVE(Platform::RendererProfileUVE profile) noexcept {
+    virtual void SetRendererProfile(Platform::RendererProfile profile) noexcept {
         static_cast<void>(profile);
     }
 
     /// Returns the requested vs effective renderer profile and any hardware fallback reason.
-    [[nodiscard]] virtual RendererProfileResolutionUVE GetRendererProfileResolutionUVE() const noexcept {
+    [[nodiscard]] virtual RendererProfileResolution GetRendererProfileResolution() const noexcept {
         return {};
     }
 
     /// Updates the culling controls used by later frames. The default implementation is a no-op so
     /// non-Renderer3D test doubles need not own culling state; a double that never culls already
     /// behaves the way a disabled setting asks for.
-    virtual void SetCullingSettingsUVE(const CullingSettingsUVE& settings) noexcept {
+    virtual void SetCullingSettings(const CullingSettings& settings) noexcept {
         static_cast<void>(settings);
     }
 
     /// Configures material texture wrapping (repeat vs clamp-to-edge) and maximum anisotropic
     /// filtering level used for standard surface textures.
-    virtual void SetMaterialSamplerSettingsUVE(bool repeatEnabled, float maxAnisotropy) noexcept {
+    virtual void SetMaterialSamplerSettings(bool repeatEnabled, float maxAnisotropy) noexcept {
         static_cast<void>(repeatEnabled);
         static_cast<void>(maxAnisotropy);
     }
 
-    /// Points the renderer at UI::UIRuntimeUVE's latest draw batch/font atlas, drawn by a
+    /// Points the renderer at UI::UIRuntime's latest draw batch/font atlas, drawn by a
     /// "UIOverlay" pass added right after tone-mapping in every RenderFrame* variant. Pass nullptr
     /// (the default) to draw no UI this frame. The pointer is read fresh each RenderFrame* call,
     /// never copied - the caller must keep it valid at least that long. The default implementation
     /// is a no-op so non-Renderer3D test doubles need not own UI-overlay state.
-    virtual void SetUIRuntimeUVE(const UI::UIRuntimeUVE* uiRuntime) noexcept {
+    virtual void SetUIRuntime(const UI::UIRuntime* uiRuntime) noexcept {
         static_cast<void>(uiRuntime);
     }
 
-    /// Points the renderer at the frame's extracted VFX sprite draw list (`VfxDrawListUVE`),
+    /// Points the renderer at the frame's extracted VFX sprite draw list (`VfxDrawList`),
     /// drawn in `MainColor` (opaque cutout batches) and `VfxParticles` (translucent batches).
     /// Pass `nullptr` (the default) to draw no VFX sprites this frame.
-    virtual void SetVfxDrawListUVE(const VfxDrawListUVE* vfxDrawList) noexcept {
+    virtual void SetVfxDrawList(const VfxDrawList* vfxDrawList) noexcept {
         static_cast<void>(vfxDrawList);
     }
 
     /// Configures or clears the opt-in dark studio PBR floor plane for studio preview viewports.
-    virtual void SetStudioFloorUVE(const std::optional<StudioFloorSettingsUVE>& settings) noexcept {
+    virtual void SetStudioFloor(const std::optional<StudioFloorSettings>& settings) noexcept {
         static_cast<void>(settings);
     }
 
@@ -577,11 +577,11 @@ public:
     /// Set once per frame by whoever owns the fixed-step timer, before rendering. Defaults to
     /// zero, which means "draw the simulated pose" - so a host that never calls this keeps exactly
     /// the behaviour it had, and nothing is required to opt in.
-    virtual void SetPhysicsInterpolationAlphaUVE(float alpha) noexcept = 0;
-    [[nodiscard]] virtual Renderer3DFrameDiagnosticsUVE GetLastFrameDiagnosticsUVE() const noexcept = 0;
-    /// The scene depth of the last camera frame (see SceneDepthExportUVE). Renderers that keep no depth
+    virtual void SetPhysicsInterpolationAlpha(float alpha) noexcept = 0;
+    [[nodiscard]] virtual Renderer3DFrameDiagnostics GetLastFrameDiagnostics() const noexcept = 0;
+    /// The scene depth of the last camera frame (see SceneDepthExport). Renderers that keep no depth
     /// target, and test doubles, report none.
-    [[nodiscard]] virtual SceneDepthExportUVE GetLastSceneDepthUVE() const noexcept { return {}; }
+    [[nodiscard]] virtual SceneDepthExport GetLastSceneDepth() const noexcept { return {}; }
 };
 
 } // namespace UVE::Render

@@ -7,7 +7,7 @@
 namespace UVE::Asset::Detail {
 
 [[nodiscard]] std::optional<std::filesystem::path>
-MakeRootRelativePathUVE(const std::filesystem::path& path, const std::filesystem::path& root) {
+MakeRootRelativePath(const std::filesystem::path& path, const std::filesystem::path& root) {
     std::error_code errorCode;
     const std::filesystem::path absolutePath = std::filesystem::absolute(path, errorCode).lexically_normal();
     if (errorCode) {
@@ -32,7 +32,7 @@ MakeRootRelativePathUVE(const std::filesystem::path& path, const std::filesystem
     return relativePath.lexically_normal();
 }
 
-[[nodiscard]] std::filesystem::path NormalizeProjectContentRootUVE(std::filesystem::path path) {
+[[nodiscard]] std::filesystem::path NormalizeProjectContentRoot(std::filesystem::path path) {
     path = std::move(path).lexically_normal();
     // `lexically_normal()` deliberately retains a trailing separator on a relative directory such
     // as `assets/`. Remove only that empty final component so path iteration cannot mistake it for
@@ -43,13 +43,13 @@ MakeRootRelativePathUVE(const std::filesystem::path& path, const std::filesystem
     return path;
 }
 
-[[nodiscard]] std::map<std::string, AssetGuidUVE>
-BuildRegisteredAssetsByRelativePathUVE(const std::filesystem::path& absoluteContentRoot,
-                                       const IAssetDatabaseUVE& assetDatabase) {
-    std::map<std::string, AssetGuidUVE> registeredAssetsByRelativePath;
-    for (const AssetRecordUVE& record : assetDatabase.GetRegisteredAssetsUVE()) {
+[[nodiscard]] std::map<std::string, AssetGuid>
+BuildRegisteredAssetsByRelativePath(const std::filesystem::path& absoluteContentRoot,
+                                       const IAssetDatabase& assetDatabase) {
+    std::map<std::string, AssetGuid> registeredAssetsByRelativePath;
+    for (const AssetRecord& record : assetDatabase.GetRegisteredAssets()) {
         const std::optional<std::filesystem::path> relativePath =
-            MakeRootRelativePathUVE(record.path, absoluteContentRoot);
+            MakeRootRelativePath(record.path, absoluteContentRoot);
         if (!relativePath.has_value()) {
             continue;
         }
@@ -58,12 +58,12 @@ BuildRegisteredAssetsByRelativePathUVE(const std::filesystem::path& absoluteCont
     return registeredAssetsByRelativePath;
 }
 
-[[nodiscard]] bool WalkProjectContentTreeUVE(
+[[nodiscard]] bool WalkProjectContentTree(
     const std::filesystem::path& absoluteContentRoot,
     std::string& outDiagnostic,
     const std::function<bool(const std::filesystem::path& absoluteEntryPath,
                              const std::filesystem::path& rootRelativePath,
-                             ProjectFileEntryKindUVE kind)>& perEntry) {
+                             ProjectFileEntryKind kind)>& perEntry) {
     outDiagnostic.clear();
     std::error_code errorCode;
     std::filesystem::recursive_directory_iterator iterator(
@@ -95,15 +95,15 @@ BuildRegisteredAssetsByRelativePathUVE(const std::filesystem::path& absoluteCont
                 continue;
             }
             const std::optional<std::filesystem::path> relativePath =
-                MakeRootRelativePathUVE(entry.path(), absoluteContentRoot);
+                MakeRootRelativePath(entry.path(), absoluteContentRoot);
             if (!relativePath.has_value()) {
                 outDiagnostic = "A project content entry escaped the configured root boundary.";
                 return false;
             }
 
-            const ProjectFileEntryKindUVE kind = std::filesystem::is_directory(entryStatus)
-                                                     ? ProjectFileEntryKindUVE::Directory
-                                                     : ProjectFileEntryKindUVE::File;
+            const ProjectFileEntryKind kind = std::filesystem::is_directory(entryStatus)
+                                                     ? ProjectFileEntryKind::Directory
+                                                     : ProjectFileEntryKind::File;
             // When perEntry reports failure it owns the diagnostic content (or deliberately
             // leaves it empty, like the historically-silent index).
             if (!perEntry(entry.path(), *relativePath, kind)) {

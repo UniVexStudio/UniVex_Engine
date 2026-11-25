@@ -13,7 +13,7 @@
 namespace UVE::Scene {
 namespace {
 
-[[nodiscard]] std::uint32_t PackClockHalfUVE(const float seconds) noexcept {
+[[nodiscard]] std::uint32_t PackClockHalf(const float seconds) noexcept {
     const float millis = seconds * 1000.0F;
     // !(millis > 0) rather than (millis <= 0): NaN fails the comparison and packs as zero
     // instead of slipping through to the cast.
@@ -28,131 +28,131 @@ namespace {
 
 } // namespace
 
-std::uint32_t PackPredictionClocksUVE(const float coyoteSeconds,
+std::uint32_t PackPredictionClocks(const float coyoteSeconds,
                                        const float bufferSeconds) noexcept {
-    return (PackClockHalfUVE(coyoteSeconds) << 16U) | PackClockHalfUVE(bufferSeconds);
+    return (PackClockHalf(coyoteSeconds) << 16U) | PackClockHalf(bufferSeconds);
 }
 
-PredictionClocksUVE UnpackPredictionClocksUVE(const std::uint32_t appState) noexcept {
-    return PredictionClocksUVE{static_cast<float>(appState >> 16U) / 1000.0F,
+PredictionClocks UnpackPredictionClocks(const std::uint32_t appState) noexcept {
+    return PredictionClocks{static_cast<float>(appState >> 16U) / 1000.0F,
                                static_cast<float>(appState & 0xFFFFU) / 1000.0F};
 }
 
-Network::PredictionStepperUVE MakeCharacterPredictionStepperUVE(
-    const CharacterControllerComponentUVE& settings, const float gravityY) {
-    return [settings, gravityY](const Network::PredictedStateUVE& state,
-                                const Network::PredictedInputUVE& input, const float dt) {
-        CharacterControllerComponentUVE c = settings;
+Network::PredictionStepper MakeCharacterPredictionStepper(
+    const CharacterControllerComponent& settings, const float gravityY) {
+    return [settings, gravityY](const Network::PredictedState& state,
+                                const Network::PredictedInput& input, const float dt) {
+        CharacterControllerComponent c = settings;
         c.velocity = state.velocity;
         c.grounded = state.grounded;
-        const PredictionClocksUVE clocks = UnpackPredictionClocksUVE(state.appState);
+        const PredictionClocks clocks = UnpackPredictionClocks(state.appState);
         c.timeSinceOnFloor = clocks.coyoteSeconds;
         c.jumpBufferRemaining = clocks.bufferSeconds;
-        const Physics::CharacterMotionInputUVE motion{input.move, input.rise, input.jumpPressed};
-        static_cast<void>(Physics::StepCharacterIntentUVE(c, motion, gravityY, dt));
-        Network::PredictedStateUVE next;
+        const Physics::CharacterMotionInput motion{input.move, input.rise, input.jumpPressed};
+        static_cast<void>(Physics::StepCharacterIntent(c, motion, gravityY, dt));
+        Network::PredictedState next;
         next.position = state.position + c.velocity * dt;
         next.velocity = c.velocity;
         next.grounded = c.grounded;
-        next.appState = PackPredictionClocksUVE(c.timeSinceOnFloor, c.jumpBufferRemaining);
+        next.appState = PackPredictionClocks(c.timeSinceOnFloor, c.jumpBufferRemaining);
         return next;
     };
 }
 
-Network::PredictedInputUVE CapturePredictedInputUVE(IEntityManagerUVE& entityManager,
-                                                    const EntityUVE entity) {
-    const Physics::CharacterMotionInputUVE motion = ResolveCharacterMotionUVE(entityManager, entity);
-    Network::PredictedInputUVE input;
+Network::PredictedInput CapturePredictedInput(IEntityManager& entityManager,
+                                                    const Entity entity) {
+    const Physics::CharacterMotionInput motion = ResolveCharacterMotion(entityManager, entity);
+    Network::PredictedInput input;
     input.move = motion.move;
     input.rise = motion.rise;
     input.jumpPressed = motion.jumpPressed;
     return input;
 }
 
-std::optional<Network::PredictedStateUVE> PackPredictedStateUVE(
-    const IEntityManagerUVE& entityManager, const EntityUVE entity) {
-    if (!entityManager.IsAliveUVE(entity) ||
-        !entityManager.HasComponentUVE<WorldTransformComponentUVE>(entity) ||
-        !entityManager.HasComponentUVE<CharacterControllerComponentUVE>(entity)) {
+std::optional<Network::PredictedState> PackPredictedState(
+    const IEntityManager& entityManager, const Entity entity) {
+    if (!entityManager.IsAlive(entity) ||
+        !entityManager.HasComponent<WorldTransformComponent>(entity) ||
+        !entityManager.HasComponent<CharacterControllerComponent>(entity)) {
         return std::nullopt;
     }
-    const WorldTransformComponentUVE& world =
-        entityManager.GetComponentUVE<WorldTransformComponentUVE>(entity);
-    const CharacterControllerComponentUVE& c =
-        entityManager.GetComponentUVE<CharacterControllerComponentUVE>(entity);
-    if (!Math::IsFiniteUVE(world.worldPosition) || !Math::IsFiniteUVE(c.velocity)) {
+    const WorldTransformComponent& world =
+        entityManager.GetComponent<WorldTransformComponent>(entity);
+    const CharacterControllerComponent& c =
+        entityManager.GetComponent<CharacterControllerComponent>(entity);
+    if (!Math::IsFinite(world.worldPosition) || !Math::IsFinite(c.velocity)) {
         return std::nullopt;
     }
-    Network::PredictedStateUVE state;
+    Network::PredictedState state;
     state.position = world.worldPosition;
     state.velocity = c.velocity;
     state.grounded = c.grounded;
-    state.appState = PackPredictionClocksUVE(c.timeSinceOnFloor, c.jumpBufferRemaining);
+    state.appState = PackPredictionClocks(c.timeSinceOnFloor, c.jumpBufferRemaining);
     return state;
 }
 
-bool ApplyPredictedStateUVE(IEntityManagerUVE& entityManager, ISceneGraphUVE& sceneGraph,
-                            const EntityUVE entity, const Network::PredictedStateUVE& state) {
-    if (!entityManager.IsAliveUVE(entity) ||
-        !entityManager.HasComponentUVE<TransformComponentUVE>(entity) ||
-        !entityManager.HasComponentUVE<WorldTransformComponentUVE>(entity) ||
-        !entityManager.HasComponentUVE<CharacterControllerComponentUVE>(entity)) {
+bool ApplyPredictedState(IEntityManager& entityManager, ISceneGraph& sceneGraph,
+                            const Entity entity, const Network::PredictedState& state) {
+    if (!entityManager.IsAlive(entity) ||
+        !entityManager.HasComponent<TransformComponent>(entity) ||
+        !entityManager.HasComponent<WorldTransformComponent>(entity) ||
+        !entityManager.HasComponent<CharacterControllerComponent>(entity)) {
         return false;
     }
     // Predicted pawns are roots: the state carries a world position and the write lands on
     // the local transform, which agree only without a parent. No hierarchy component means
     // never parented, which counts as root.
-    if (entityManager.HasComponentUVE<HierarchyComponentUVE>(entity) &&
-        entityManager.GetComponentUVE<HierarchyComponentUVE>(entity).parent != kInvalidEntityUVE) {
+    if (entityManager.HasComponent<HierarchyComponent>(entity) &&
+        entityManager.GetComponent<HierarchyComponent>(entity).parent != kInvalidEntity) {
         return false;
     }
-    if (!Math::IsFiniteUVE(state.position) || !Math::IsFiniteUVE(state.velocity)) {
+    if (!Math::IsFinite(state.position) || !Math::IsFinite(state.velocity)) {
         return false;
     }
-    TransformComponentUVE transform = entityManager.GetComponentUVE<TransformComponentUVE>(entity);
+    TransformComponent transform = entityManager.GetComponent<TransformComponent>(entity);
     transform.localPosition = state.position;
-    // Through the graph, not around it - the mover's own rule - with the immediate UpdateUVE()
+    // Through the graph, not around it - the mover's own rule - with the immediate Update()
     // that makes the new pose visible to the rest of the step instead of next frame's pass.
-    sceneGraph.SetLocalTransformUVE(entityManager, entity, transform);
-    CharacterControllerComponentUVE& c =
-        entityManager.GetComponentUVE<CharacterControllerComponentUVE>(entity);
+    sceneGraph.SetLocalTransform(entityManager, entity, transform);
+    CharacterControllerComponent& c =
+        entityManager.GetComponent<CharacterControllerComponent>(entity);
     c.velocity = state.velocity;
     c.grounded = state.grounded;
-    const PredictionClocksUVE clocks = UnpackPredictionClocksUVE(state.appState);
+    const PredictionClocks clocks = UnpackPredictionClocks(state.appState);
     c.timeSinceOnFloor = clocks.coyoteSeconds;
     c.jumpBufferRemaining = clocks.bufferSeconds;
-    sceneGraph.UpdateUVE(entityManager);
+    sceneGraph.Update(entityManager);
     return true;
 }
 
-Network::PredictionTickUVE TickPredictedPawnUVE(IEntityManagerUVE& entityManager,
-                                                ISceneGraphUVE& sceneGraph, const EntityUVE entity,
-                                                Network::NetworkPredictionUVE& predictor) {
-    return TickPredictedPawnUVE(entityManager, sceneGraph, entity, predictor,
-                                Network::kDefaultPredictionPawnUVE);
+Network::PredictionTick TickPredictedPawn(IEntityManager& entityManager,
+                                                ISceneGraph& sceneGraph, const Entity entity,
+                                                Network::NetworkPrediction& predictor) {
+    return TickPredictedPawn(entityManager, sceneGraph, entity, predictor,
+                                Network::kDefaultPredictionPawn);
 }
 
-Network::PredictionTickUVE TickPredictedPawnUVE(IEntityManagerUVE& entityManager,
-                                                ISceneGraphUVE& sceneGraph, const EntityUVE entity,
-                                                Network::NetworkPredictionUVE& predictor,
-                                                const Network::PredictionPawnUVE pawn) {
-    const Network::PredictionTickUVE tick =
-        predictor.TickUVE(pawn, CapturePredictedInputUVE(entityManager, entity));
-    static_cast<void>(ApplyPredictedStateUVE(entityManager, sceneGraph, entity,
-                                             predictor.LocalStateUVE(pawn)));
+Network::PredictionTick TickPredictedPawn(IEntityManager& entityManager,
+                                                ISceneGraph& sceneGraph, const Entity entity,
+                                                Network::NetworkPrediction& predictor,
+                                                const Network::PredictionPawn pawn) {
+    const Network::PredictionTick tick =
+        predictor.Tick(pawn, CapturePredictedInput(entityManager, entity));
+    static_cast<void>(ApplyPredictedState(entityManager, sceneGraph, entity,
+                                             predictor.LocalState(pawn)));
     return tick;
 }
 
-bool SyncPredictedPawnUVE(IEntityManagerUVE& entityManager, ISceneGraphUVE& sceneGraph,
-                           const EntityUVE entity, Network::NetworkPredictionUVE& predictor) {
-    return SyncPredictedPawnUVE(entityManager, sceneGraph, entity, predictor,
-                                Network::kDefaultPredictionPawnUVE);
+bool SyncPredictedPawn(IEntityManager& entityManager, ISceneGraph& sceneGraph,
+                           const Entity entity, Network::NetworkPrediction& predictor) {
+    return SyncPredictedPawn(entityManager, sceneGraph, entity, predictor,
+                                Network::kDefaultPredictionPawn);
 }
 
-bool SyncPredictedPawnUVE(IEntityManagerUVE& entityManager, ISceneGraphUVE& sceneGraph,
-                           const EntityUVE entity, Network::NetworkPredictionUVE& predictor,
-                           const Network::PredictionPawnUVE pawn) {
-    return ApplyPredictedStateUVE(entityManager, sceneGraph, entity, predictor.LocalStateUVE(pawn));
+bool SyncPredictedPawn(IEntityManager& entityManager, ISceneGraph& sceneGraph,
+                           const Entity entity, Network::NetworkPrediction& predictor,
+                           const Network::PredictionPawn pawn) {
+    return ApplyPredictedState(entityManager, sceneGraph, entity, predictor.LocalState(pawn));
 }
 
 } // namespace UVE::Scene

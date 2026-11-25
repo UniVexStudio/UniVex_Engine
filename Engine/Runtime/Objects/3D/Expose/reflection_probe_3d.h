@@ -16,9 +16,9 @@
 
 namespace UVE::Scene {
 
-class IEntityManagerUVE;
+class IEntityManager;
 
-enum class ReflectionProbeUpdateModeUVE : std::uint8_t {
+enum class ReflectionProbeUpdateMode : std::uint8_t {
     Once = 0,
     EveryFrame,
     OnDemand,
@@ -26,49 +26,49 @@ enum class ReflectionProbeUpdateModeUVE : std::uint8_t {
 
 /// Resolution tiers map to square 2D textures for each of a probe's six cubemap faces. A tier is
 /// authored per probe because nearby hero probes can afford more texels than background probes.
-enum class ReflectionProbeResolutionUVE : std::uint8_t {
+enum class ReflectionProbeResolution : std::uint8_t {
     Low = 0U,
     Medium,
     High,
     Ultra,
 };
 
-inline constexpr std::uint32_t kReflectionProbeCaptureResolutionUVE = 128U;
+inline constexpr std::uint32_t kReflectionProbeCaptureResolution = 128U;
 
-[[nodiscard]] constexpr std::uint32_t GetReflectionProbeResolutionPixelsUVE(
-    const ReflectionProbeResolutionUVE resolution) noexcept {
+[[nodiscard]] constexpr std::uint32_t GetReflectionProbeResolutionPixels(
+    const ReflectionProbeResolution resolution) noexcept {
     switch (resolution) {
-        case ReflectionProbeResolutionUVE::Low:
+        case ReflectionProbeResolution::Low:
             return 64U;
-        case ReflectionProbeResolutionUVE::Medium:
-            return kReflectionProbeCaptureResolutionUVE;
-        case ReflectionProbeResolutionUVE::High:
+        case ReflectionProbeResolution::Medium:
+            return kReflectionProbeCaptureResolution;
+        case ReflectionProbeResolution::High:
             return 256U;
-        case ReflectionProbeResolutionUVE::Ultra:
+        case ReflectionProbeResolution::Ultra:
             return 512U;
     }
     return 0U;
 }
 
-[[nodiscard]] constexpr bool IsReflectionProbeResolutionValidUVE(
-    const ReflectionProbeResolutionUVE resolution) noexcept {
-    return GetReflectionProbeResolutionPixelsUVE(resolution) != 0U;
+[[nodiscard]] constexpr bool IsReflectionProbeResolutionValid(
+    const ReflectionProbeResolution resolution) noexcept {
+    return GetReflectionProbeResolutionPixels(resolution) != 0U;
 }
 
-struct ReflectionProbe3DComponentUVE final {
+struct ReflectionProbe3DComponent final {
     // `size` is the box's FULL extents on each axis (Godot's ReflectionProbe convention);
     // everything geometric works in half-extents internally.
-    Math::Vector3UVE size{5.0F, 5.0F, 5.0F};
+    Math::Vector3 size{5.0F, 5.0F, 5.0F};
     std::uint32_t visibilityLayers = 0xFFFFFFFFU;
-    ReflectionProbeUpdateModeUVE updateMode = ReflectionProbeUpdateModeUVE::Once;
-    ReflectionProbeResolutionUVE resolution = ReflectionProbeResolutionUVE::Medium;
+    ReflectionProbeUpdateMode updateMode = ReflectionProbeUpdateMode::Once;
+    ReflectionProbeResolution resolution = ReflectionProbeResolution::Medium;
     // The OnDemand recapture latch: authoring (or an inspector "Recapture" button) sets it,
-    // EngineCoreUVE::SyncReflectionProbe3DObjectsUVE() clears it the tick the capture resolves. In
+    // EngineCore::SyncReflectionProbe3DObjects() clears it the tick the capture resolves. In
     // the other update modes the engine owns the schedule and simply ignores this, so it keeps
     // no meaning there. Never serialized (see the ToJson/FromJson pair - authored payloads only).
     bool updateRequested = false;
     bool enabled = true;
-    // Runtime-only state below, refreshed by EngineCoreUVE::SyncReflectionProbe3DObjectsUVE() each
+    // Runtime-only state below, refreshed by EngineCore::SyncReflectionProbe3DObjects() each
     // tick (same authored-config/runtime-state split every other 3D object keeps).
     //
     // `capturedOnce` is what gives the Once update mode exactly-once semantics over the
@@ -89,24 +89,24 @@ struct ReflectionProbe3DComponentUVE final {
     std::uint32_t captureWaitTicks = 0;
 };
 
-[[nodiscard]] bool IsReflectionProbe3DObjectComponentValidUVE(const ReflectionProbe3DComponentUVE& value) noexcept;
+[[nodiscard]] bool IsReflectionProbe3DObjectComponentValid(const ReflectionProbe3DComponent& value) noexcept;
 
-struct ReflectionProbe3DObjectDefinitionUVE final {
+struct ReflectionProbe3DObjectDefinition final {
     static constexpr std::string_view defaultName = "ReflectionProbe3D";
-    ReflectionProbe3DComponentUVE probe{};
+    ReflectionProbe3DComponent probe{};
 };
 
-void ApplyReflectionProbe3DObjectDefinitionUVE(IEntityManagerUVE& entityManager, EntityUVE entity,
-                                               const ReflectionProbe3DObjectDefinitionUVE& value);
+void ApplyReflectionProbe3DObjectDefinition(IEntityManager& entityManager, Entity entity,
+                                               const ReflectionProbe3DObjectDefinition& value);
 
 // The budget of probe captures serviced per tick. A cubemap capture costs six scene passes -
 // Godot's Always mode re-renders EVERY probe every frame, and others block on capture; time-
 // slicing in the Frostbite style instead starts at most this many captures per tick and lets
 // the rest carry over, prioritized nearest-camera-first. Measured by the engine tests.
-inline constexpr std::size_t kMaximumReflectionProbeCapturesPerTickUVE = 2U;
+inline constexpr std::size_t kMaximumReflectionProbeCapturesPerTick = 2U;
 
 // The per-tick verdict the core sync applies to one probe.
-enum class ReflectionProbe3DCaptureActionUVE : std::uint8_t {
+enum class ReflectionProbe3DCaptureAction : std::uint8_t {
     None,
     Capture,
 };
@@ -114,12 +114,12 @@ enum class ReflectionProbe3DCaptureActionUVE : std::uint8_t {
 // The complete decision input for one probe on one tick, already extracted by the core sync
 // (which owns the viewer pose and world-space reads). Kept a plain value so the verdict below
 // is a total, measurable function of it.
-struct ReflectionProbe3DCaptureFrameUVE final {
+struct ReflectionProbe3DCaptureFrame final {
     // The weight this probe exerts on the eye this tick, pre-computed by
-    // ResolveReflectionProbe3DInfluenceWeightUVE() below. Only meaningful when hasCameraViewer.
+    // ResolveReflectionProbe3DInfluenceWeight() below. Only meaningful when hasCameraViewer.
     float cameraInfluenceWeight = 0.0F;
     bool hasCameraViewer = false;
-    ReflectionProbeUpdateModeUVE updateMode = ReflectionProbeUpdateModeUVE::Once;
+    ReflectionProbeUpdateMode updateMode = ReflectionProbeUpdateMode::Once;
     bool updateRequested = false;
     bool capturedOnce = false;
     bool enabled = true;
@@ -133,8 +133,8 @@ struct ReflectionProbe3DCaptureFrameUVE final {
 // and the standard boxes fade the same normalized way on paper but keep it internal; here the rule
 // is one total, directly measurable function: non-finite inputs and degenerate half extents
 // answer 0, `1 - d` is exact at every boundary, and no point ever reports a negative weight.
-[[nodiscard]] float ResolveReflectionProbe3DInfluenceWeightUVE(
-    const Math::Vector3UVE& probeLocalPoint, const Math::Vector3UVE& probeHalfExtents) noexcept;
+[[nodiscard]] float ResolveReflectionProbe3DInfluenceWeight(
+    const Math::Vector3& probeLocalPoint, const Math::Vector3& probeHalfExtents) noexcept;
 
 // The verdict. The ONLY rules, each measured by the object tests:
 //   * !enabled or an updateMode value beyond every listed enumerator      -> None
@@ -144,13 +144,13 @@ struct ReflectionProbe3DCaptureFrameUVE final {
 //   * OnDemand && updateRequested                                         -> Capture
 //   * Once && !capturedOnce                                               -> Capture
 //   * everything else                                                     -> None
-[[nodiscard]] ReflectionProbe3DCaptureActionUVE ResolveReflectionProbe3DCaptureActionUVE(
-    const ReflectionProbe3DCaptureFrameUVE& frame) noexcept;
+[[nodiscard]] ReflectionProbe3DCaptureAction ResolveReflectionProbe3DCaptureAction(
+    const ReflectionProbe3DCaptureFrame& frame) noexcept;
 
-inline constexpr std::size_t kReflectionProbeCubemapFaceCountUVE = 6U;
-inline constexpr std::size_t kMaximumReflectionProbesPerFrameUVE = 4U;
+inline constexpr std::size_t kReflectionProbeCubemapFaceCount = 6U;
+inline constexpr std::size_t kMaximumReflectionProbesPerFrame = 4U;
 
-enum class CubemapFaceUVE : std::uint8_t {
+enum class CubemapFace : std::uint8_t {
     PositiveX = 0,
     NegativeX,
     PositiveY,
@@ -159,64 +159,64 @@ enum class CubemapFaceUVE : std::uint8_t {
     NegativeZ,
 };
 
-[[nodiscard]] bool TryGetCubemapFaceBasisUVE(CubemapFaceUVE face, Math::Vector3UVE& outForward,
-                                             Math::Vector3UVE& outUp) noexcept;
+[[nodiscard]] bool TryGetCubemapFaceBasis(CubemapFace face, Math::Vector3& outForward,
+                                             Math::Vector3& outUp) noexcept;
 
-[[nodiscard]] bool TrySelectCubemapFaceUVE(const Math::Vector3UVE& direction, CubemapFaceUVE& outFace) noexcept;
+[[nodiscard]] bool TrySelectCubemapFace(const Math::Vector3& direction, CubemapFace& outFace) noexcept;
 
-[[nodiscard]] bool TryMakeCubemapFaceCameraRotationUVE(CubemapFaceUVE face,
-                                                       Math::QuaternionUVE& outRotation) noexcept;
+[[nodiscard]] bool TryMakeCubemapFaceCameraRotation(CubemapFace face,
+                                                       Math::Quaternion& outRotation) noexcept;
 
-[[nodiscard]] bool TryMakeCubemapFaceUvUVE(const Math::Vector3UVE& direction, CubemapFaceUVE face,
-                                           Math::Vector2UVE& outUv) noexcept;
+[[nodiscard]] bool TryMakeCubemapFaceUv(const Math::Vector3& direction, CubemapFace face,
+                                           Math::Vector2& outUv) noexcept;
 
-[[nodiscard]] bool TryProjectCubemapDirectionUVE(const Math::Vector3UVE& direction, CubemapFaceUVE& outFace,
-                                                 Math::Vector2UVE& outUv) noexcept;
+[[nodiscard]] bool TryProjectCubemapDirection(const Math::Vector3& direction, CubemapFace& outFace,
+                                                 Math::Vector2& outUv) noexcept;
 
-struct ReflectionProbe3DFrameUVE final {
-    EntityUVE entity = kInvalidEntityUVE;
-    Math::Vector3UVE worldPosition{};
-    Math::Vector3UVE axisX{1.0F, 0.0F, 0.0F};
-    Math::Vector3UVE axisY{0.0F, 1.0F, 0.0F};
-    Math::Vector3UVE axisZ{0.0F, 0.0F, 1.0F};
-    Math::Vector3UVE halfExtents{2.5F, 2.5F, 2.5F};
+struct ReflectionProbe3DFrame final {
+    Entity entity = kInvalidEntity;
+    Math::Vector3 worldPosition{};
+    Math::Vector3 axisX{1.0F, 0.0F, 0.0F};
+    Math::Vector3 axisY{0.0F, 1.0F, 0.0F};
+    Math::Vector3 axisZ{0.0F, 0.0F, 1.0F};
+    Math::Vector3 halfExtents{2.5F, 2.5F, 2.5F};
     std::uint32_t visibilityLayers = 0xFFFFFFFFU;
-    std::uint32_t captureResolution = kReflectionProbeCaptureResolutionUVE;
+    std::uint32_t captureResolution = kReflectionProbeCaptureResolution;
     float influenceWeight = 0.0F;
     std::uint32_t captureGeneration = 0;
     bool capturedOnce = false;
     bool enabled = true;
 };
 
-[[nodiscard]] bool TryMakeReflectionProbe3DFrameUVE(const ReflectionProbe3DComponentUVE& value,
-                                                    const Math::Vector3UVE& worldPosition,
-                                                    const Math::QuaternionUVE& worldRotation,
-                                                    ReflectionProbe3DFrameUVE& out) noexcept;
+[[nodiscard]] bool TryMakeReflectionProbe3DFrame(const ReflectionProbe3DComponent& value,
+                                                    const Math::Vector3& worldPosition,
+                                                    const Math::Quaternion& worldRotation,
+                                                    ReflectionProbe3DFrame& out) noexcept;
 
-[[nodiscard]] std::optional<Math::Vector3UVE> ReflectionProbe3DWorldToLocalUVE(
-    const ReflectionProbe3DFrameUVE& frame, const Math::Vector3UVE& worldPoint) noexcept;
+[[nodiscard]] std::optional<Math::Vector3> ReflectionProbe3DWorldToLocal(
+    const ReflectionProbe3DFrame& frame, const Math::Vector3& worldPoint) noexcept;
 
-[[nodiscard]] float SampleReflectionProbe3DInfluenceUVE(const ReflectionProbe3DFrameUVE& frame,
-                                                        const Math::Vector3UVE& worldPoint) noexcept;
+[[nodiscard]] float SampleReflectionProbe3DInfluence(const ReflectionProbe3DFrame& frame,
+                                                        const Math::Vector3& worldPoint) noexcept;
 
-[[nodiscard]] bool TryBoxProjectReflectionUVE(const ReflectionProbe3DFrameUVE& frame,
-                                              const Math::Vector3UVE& worldOrigin,
-                                              const Math::Vector3UVE& worldDirection,
-                                              Math::Vector3UVE& outWorldPoint) noexcept;
+[[nodiscard]] bool TryBoxProjectReflection(const ReflectionProbe3DFrame& frame,
+                                              const Math::Vector3& worldOrigin,
+                                              const Math::Vector3& worldDirection,
+                                              Math::Vector3& outWorldPoint) noexcept;
 
-[[nodiscard]] std::size_t CollectReflectionProbe3DFramesUVE(IEntityManagerUVE& entityManager,
-                                                            const Math::Vector3UVE& viewPosition,
-                                                            std::span<ReflectionProbe3DFrameUVE> out);
+[[nodiscard]] std::size_t CollectReflectionProbe3DFrames(IEntityManager& entityManager,
+                                                            const Math::Vector3& viewPosition,
+                                                            std::span<ReflectionProbe3DFrame> out);
 
-struct ReflectionProbe3DGizmoUVE final {
-    Math::Vector3UVE origin{};
-    Math::Vector3UVE axisX{1.0F, 0.0F, 0.0F};
-    Math::Vector3UVE axisY{0.0F, 1.0F, 0.0F};
-    Math::Vector3UVE axisZ{0.0F, 0.0F, 1.0F};
-    Math::Vector3UVE halfExtents{2.5F, 2.5F, 2.5F};
-    Math::Vector3UVE color{0.35F, 0.85F, 0.95F};
+struct ReflectionProbe3DGizmo final {
+    Math::Vector3 origin{};
+    Math::Vector3 axisX{1.0F, 0.0F, 0.0F};
+    Math::Vector3 axisY{0.0F, 1.0F, 0.0F};
+    Math::Vector3 axisZ{0.0F, 0.0F, 1.0F};
+    Math::Vector3 halfExtents{2.5F, 2.5F, 2.5F};
+    Math::Vector3 color{0.35F, 0.85F, 0.95F};
 };
 
-void CollectReflectionProbe3DGizmosUVE(IEntityManagerUVE& entityManager, std::vector<ReflectionProbe3DGizmoUVE>& out);
+void CollectReflectionProbe3DGizmos(IEntityManager& entityManager, std::vector<ReflectionProbe3DGizmo>& out);
 
 } // namespace UVE::Scene

@@ -24,10 +24,10 @@
 namespace UVE::Asset::Tests {
 namespace {
 
-[[nodiscard]] bool WaitForTerminalStateUVE(const AssetHandleUVE<DataTableUVE>& handle,
+[[nodiscard]] bool WaitForTerminalState(const AssetHandle<DataTable>& handle,
                                            const int maxIterations = 200000) {
     for (int iteration = 0; iteration < maxIterations; ++iteration) {
-        if (handle.IsReadyUVE() || handle.HasFailedUVE()) {
+        if (handle.IsReady() || handle.HasFailed()) {
             return true;
         }
         std::this_thread::yield();
@@ -35,71 +35,71 @@ namespace {
     return false;
 }
 
-[[nodiscard]] DataTableUVE MakeTableUVE() {
-    DataTableUVE table("weapons");
-    static_cast<void>(table.DefineColumnUVE("damage", DataTableColumnTypeUVE::Integer));
-    static_cast<void>(table.AddRowUVE("pistol", {std::int64_t{25}}));
+[[nodiscard]] DataTable MakeTable() {
+    DataTable table("weapons");
+    static_cast<void>(table.DefineColumn("damage", DataTableColumnType::Integer));
+    static_cast<void>(table.AddRow("pistol", {std::int64_t{25}}));
     return table;
 }
 
-class TemporaryDataTableAssetUVE final {
+class TemporaryDataTableAsset final {
 public:
-    TemporaryDataTableAssetUVE() : m_valid("uve_data_table_manager_valid.uvtable"),
+    TemporaryDataTableAsset() : m_valid("uve_data_table_manager_valid.uvtable"),
                                    m_wrongKind("uve_data_table_manager_wrong_kind.uvtable") {
         static_cast<void>(std::filesystem::remove(m_valid));
         static_cast<void>(std::filesystem::remove(m_wrongKind));
     }
-    TemporaryDataTableAssetUVE(const TemporaryDataTableAssetUVE&) = delete;
-    TemporaryDataTableAssetUVE& operator=(const TemporaryDataTableAssetUVE&) = delete;
-    ~TemporaryDataTableAssetUVE() {
+    TemporaryDataTableAsset(const TemporaryDataTableAsset&) = delete;
+    TemporaryDataTableAsset& operator=(const TemporaryDataTableAsset&) = delete;
+    ~TemporaryDataTableAsset() {
         static_cast<void>(std::filesystem::remove(m_valid));
         static_cast<void>(std::filesystem::remove(m_wrongKind));
     }
 
-    [[nodiscard]] const std::filesystem::path& ValidUVE() const noexcept { return m_valid; }
-    [[nodiscard]] const std::filesystem::path& WrongKindUVE() const noexcept { return m_wrongKind; }
+    [[nodiscard]] const std::filesystem::path& Valid() const noexcept { return m_valid; }
+    [[nodiscard]] const std::filesystem::path& WrongKind() const noexcept { return m_wrongKind; }
 
 private:
     std::filesystem::path m_valid;
     std::filesystem::path m_wrongKind;
 };
 
-TEST(DataTableAssetManagerUVE, RegisteredLoaderLoadsTypedTableThroughAsyncHandle) {
-    const TemporaryDataTableAssetUVE files;
-    ASSERT_TRUE(SaveDataTableAssetUVE(MakeTableUVE(), files.ValidUVE()));
+TEST(DataTableAssetManager, RegisteredLoaderLoadsTypedTableThroughAsyncHandle) {
+    const TemporaryDataTableAsset files;
+    ASSERT_TRUE(SaveDataTableAsset(MakeTable(), files.Valid()));
 
-    Threading::ThreadPoolUVE threadPool(2);
-    Events::EventSystemUVE eventSystem;
-    AssetDatabaseUVE database;
-    AssetManagerUVE manager(threadPool, eventSystem);
-    RegisterDataTableAssetLoaderUVE(manager);
-    const std::optional<AssetGuidUVE> guid = RegisterDataTableAssetUVE(database, files.ValidUVE());
+    Threading::ThreadPool threadPool(2);
+    Events::EventSystem eventSystem;
+    AssetDatabase database;
+    AssetManager manager(threadPool, eventSystem);
+    RegisterDataTableAssetLoader(manager);
+    const std::optional<AssetGuid> guid = RegisterDataTableAsset(database, files.Valid());
     ASSERT_TRUE(guid.has_value());
 
-    const AssetHandleUVE<DataTableUVE> handle = manager.LoadUVE<DataTableUVE>(*guid, database);
-    ASSERT_TRUE(WaitForTerminalStateUVE(handle));
-    ASSERT_TRUE(handle.IsReadyUVE());
-    const DataTableUVE* const loaded = handle.TryGetUVE();
+    const AssetHandle<DataTable> handle = manager.Load<DataTable>(*guid, database);
+    ASSERT_TRUE(WaitForTerminalState(handle));
+    ASSERT_TRUE(handle.IsReady());
+    const DataTable* const loaded = handle.TryGet();
     ASSERT_NE(loaded, nullptr);
-    EXPECT_EQ(loaded->GetSnapshotUVE(), MakeTableUVE().GetSnapshotUVE());
+    EXPECT_EQ(loaded->GetSnapshot(), MakeTable().GetSnapshot());
 }
 
-TEST(DataTableAssetManagerUVE, RegisteredLoaderFailsWrongEnvelopeKind) {
-    const TemporaryDataTableAssetUVE files;
-    ASSERT_TRUE(WriteUveFileUVE(files.WrongKindUVE(), AssetKindUVE::Blob,
+TEST(DataTableAssetManager, RegisteredLoaderFailsWrongEnvelopeKind) {
+    const TemporaryDataTableAsset files;
+    ASSERT_TRUE(WriteUveFile(files.WrongKind(), AssetKind::Blob,
                                 std::vector<std::byte>{std::byte{'x'}}));
 
-    Threading::ThreadPoolUVE threadPool(2);
-    Events::EventSystemUVE eventSystem;
-    AssetDatabaseUVE database;
-    AssetManagerUVE manager(threadPool, eventSystem);
-    RegisterDataTableAssetLoaderUVE(manager);
-    const AssetGuidUVE guid = database.RegisterUVE(files.WrongKindUVE());
+    Threading::ThreadPool threadPool(2);
+    Events::EventSystem eventSystem;
+    AssetDatabase database;
+    AssetManager manager(threadPool, eventSystem);
+    RegisterDataTableAssetLoader(manager);
+    const AssetGuid guid = database.Register(files.WrongKind());
 
-    const AssetHandleUVE<DataTableUVE> handle = manager.LoadUVE<DataTableUVE>(guid, database);
-    ASSERT_TRUE(WaitForTerminalStateUVE(handle));
-    EXPECT_TRUE(handle.HasFailedUVE());
-    EXPECT_EQ(handle.TryGetUVE(), nullptr);
+    const AssetHandle<DataTable> handle = manager.Load<DataTable>(guid, database);
+    ASSERT_TRUE(WaitForTerminalState(handle));
+    EXPECT_TRUE(handle.HasFailed());
+    EXPECT_EQ(handle.TryGet(), nullptr);
 }
 
 } // namespace

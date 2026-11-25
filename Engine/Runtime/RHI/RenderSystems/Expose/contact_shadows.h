@@ -37,66 +37,66 @@ namespace UVE::Render {
 /// Tunables for the contact-shadow pass. Every value is in world metres except the step count and
 /// the strength, so a project can reason about it against its own scale rather than in screen-space
 /// percentages.
-struct ContactShadowSettingsUVE final {
+struct ContactShadowSettings final {
     /// Off by default: this is a refinement of an existing shadow, it costs a depth fetch per step
     /// per covered pixel, and it can only ever darken. A project turns it on deliberately.
-    bool enabledUVE = false;
+    bool enabled = false;
     /// How far along the light direction the ray marches. This is the scale of the feature: a
     /// 0.2 m ray recovers feet on a floor and a crate on a table, not a wall on the ground.
-    float lengthMetersUVE = 0.2F;
+    float lengthMeters = 0.2F;
     /// How far behind the ray a depth sample may sit and still count as an occluder. Without an
     /// upper bound every distant wall behind a grazing ray would darken the surface; with it, the
     /// pass only sees geometry close enough to be touching.
-    float thicknessMetersUVE = 0.1F;
+    float thicknessMeters = 0.1F;
     /// Fraction of the unoccluded result the shadow may remove, 0..1. Contact shadow is a
     /// refinement, so it never fully removes the light: at 1.0 a fully occluded ray is pitch black,
     /// which reads as a hole rather than as contact.
-    float strengthUVE = 0.8F;
+    float strength = 0.8F;
     /// Ray samples per pixel. More steps find thinner occluders at the far end of the ray; the
     /// schedule below is quadratic, so the extra samples land near the surface where contact lives.
-    std::uint32_t stepCountUVE = 8U;
+    std::uint32_t stepCount = 8U;
 };
 
 /// Bounds that keep an authored setting from becoming a per-pixel loop with no upper bound.
-inline constexpr std::uint32_t kContactShadowMinStepCountUVE = 1U;
-inline constexpr std::uint32_t kContactShadowMaxStepCountUVE = 16U;
-inline constexpr float kContactShadowMinLengthMetersUVE = 0.001F;
-inline constexpr float kContactShadowMaxLengthMetersUVE = 5.0F;
+inline constexpr std::uint32_t kContactShadowMinStepCount = 1U;
+inline constexpr std::uint32_t kContactShadowMaxStepCount = 16U;
+inline constexpr float kContactShadowMinLengthMeters = 0.001F;
+inline constexpr float kContactShadowMaxLengthMeters = 5.0F;
 /// Depth samples within this of the ray point are treated as the surface the ray started from, not
 /// as an occluder. It absorbs depth-buffer quantization on the surface itself.
-inline constexpr float kContactShadowDepthBiasMetersUVE = 0.005F;
+inline constexpr float kContactShadowDepthBiasMeters = 0.005F;
 /// A depth sample this close to the far plane is background (sky or a cleared buffer) and is never
 /// an occluder - nothing is behind it, and treating it as solid would shadow the horizon.
-inline constexpr float kContactShadowBackgroundDepthUVE = 0.9999F;
+inline constexpr float kContactShadowBackgroundDepth = 0.9999F;
 
 /// Returns `settings` with every field inside its documented range. Out-of-range values are clamped
 /// rather than rejected: a project that asks for a 40-step ray gets a 16-step one and a frame that
 /// still runs, not a build error or a stall.
-[[nodiscard]] constexpr ContactShadowSettingsUVE SanitizeContactShadowSettingsUVE(
-    ContactShadowSettingsUVE settings) noexcept {
-    if (!(settings.lengthMetersUVE >= kContactShadowMinLengthMetersUVE)) {
-        settings.lengthMetersUVE = kContactShadowMinLengthMetersUVE;
+[[nodiscard]] constexpr ContactShadowSettings SanitizeContactShadowSettings(
+    ContactShadowSettings settings) noexcept {
+    if (!(settings.lengthMeters >= kContactShadowMinLengthMeters)) {
+        settings.lengthMeters = kContactShadowMinLengthMeters;
     }
-    if (settings.lengthMetersUVE > kContactShadowMaxLengthMetersUVE) {
-        settings.lengthMetersUVE = kContactShadowMaxLengthMetersUVE;
+    if (settings.lengthMeters > kContactShadowMaxLengthMeters) {
+        settings.lengthMeters = kContactShadowMaxLengthMeters;
     }
-    if (!(settings.thicknessMetersUVE >= 0.0F)) {
-        settings.thicknessMetersUVE = 0.0F;
+    if (!(settings.thicknessMeters >= 0.0F)) {
+        settings.thicknessMeters = 0.0F;
     }
-    if (settings.thicknessMetersUVE > kContactShadowMaxLengthMetersUVE) {
-        settings.thicknessMetersUVE = kContactShadowMaxLengthMetersUVE;
+    if (settings.thicknessMeters > kContactShadowMaxLengthMeters) {
+        settings.thicknessMeters = kContactShadowMaxLengthMeters;
     }
-    if (!(settings.strengthUVE >= 0.0F)) {
-        settings.strengthUVE = 0.0F;
+    if (!(settings.strength >= 0.0F)) {
+        settings.strength = 0.0F;
     }
-    if (settings.strengthUVE > 1.0F) {
-        settings.strengthUVE = 1.0F;
+    if (settings.strength > 1.0F) {
+        settings.strength = 1.0F;
     }
-    if (settings.stepCountUVE < kContactShadowMinStepCountUVE) {
-        settings.stepCountUVE = kContactShadowMinStepCountUVE;
+    if (settings.stepCount < kContactShadowMinStepCount) {
+        settings.stepCount = kContactShadowMinStepCount;
     }
-    if (settings.stepCountUVE > kContactShadowMaxStepCountUVE) {
-        settings.stepCountUVE = kContactShadowMaxStepCountUVE;
+    if (settings.stepCount > kContactShadowMaxStepCount) {
+        settings.stepCount = kContactShadowMaxStepCount;
     }
     return settings;
 }
@@ -112,19 +112,19 @@ inline constexpr float kContactShadowBackgroundDepthUVE = 0.9999F;
 /// surface, which is the whole feature.
 ///
 /// `contact_shadow.glsl` computes the same schedule inline in its loop; keep them equal.
-[[nodiscard]] std::uint32_t FillContactShadowRayStepsUVE(const ContactShadowSettingsUVE& settings,
+[[nodiscard]] std::uint32_t FillContactShadowRaySteps(const ContactShadowSettings& settings,
                                                         float* steps,
                                                         std::uint32_t capacity) noexcept;
 
 /// The occlusion rule, stated once. `rayViewZ` is the view-space depth (metres, negative in front
-/// of the camera, matching `Math::Vector3UVE`'s view convention) of the point on the ray;
+/// of the camera, matching `Math::Vector3`'s view convention) of the point on the ray;
 /// `sceneViewZ` is the depth the depth buffer reports at the same screen position.
 ///
 /// The sample occludes when it sits in FRONT of the ray point by more than `biasMeters` - it is
 /// nearer the camera, so the light cannot reach the ray point - and behind it by less than
 /// `thicknessMeters`. The upper bound is what stops a wall metres behind the ray from darkening a
 /// surface it is nowhere near touching.
-[[nodiscard]] constexpr bool IsContactShadowOccludedUVE(const float rayViewZ,
+[[nodiscard]] constexpr bool IsContactShadowOccluded(const float rayViewZ,
                                                        const float sceneViewZ,
                                                        const float thicknessMeters,
                                                        const float biasMeters) noexcept {
@@ -135,18 +135,18 @@ inline constexpr float kContactShadowBackgroundDepthUVE = 0.9999F;
 /// The result of one march. Kept as a struct rather than a bare float because "how many samples were
 /// tested" is what distinguishes "no occluder found" from "every sample fell off-screen", and those
 /// two must not both read as full occlusion.
-struct ContactShadowRayResultUVE final {
+struct ContactShadowRayResult final {
     /// 1.0 = fully lit, 0.0 = fully shadowed by contact geometry.
-    float visibilityUVE = 1.0F;
-    std::uint32_t testedStepsUVE = 0U;
-    std::uint32_t occludedStepsUVE = 0U;
+    float visibility = 1.0F;
+    std::uint32_t testedSteps = 0U;
+    std::uint32_t occludedSteps = 0U;
 };
 
 /// Maps an occlusion count to the visibility the shader writes: the fraction of tested steps that
 /// were occluded, scaled by `strength`. A march that could not test any step (an all-background or
 /// all-off-screen ray) returns full visibility - it observed nothing, so it must not darken
 /// anything.
-[[nodiscard]] constexpr float ContactShadowVisibilityUVE(const std::uint32_t occludedSteps,
+[[nodiscard]] constexpr float ContactShadowVisibility(const std::uint32_t occludedSteps,
                                                         const std::uint32_t testedSteps,
                                                         const float strength) noexcept {
     if (testedSteps == 0U) {
@@ -166,18 +166,18 @@ struct ContactShadowRayResultUVE final {
 namespace Detail {
 
 /// `matrix * vec4(point, 1)` without the perspective divide, matching the row-major, column-vector
-/// convention `Math::Matrix4x4UVE` documents. Returned as four floats because the divide is the
+/// convention `Math::Matrix4x4` documents. Returned as four floats because the divide is the
 /// caller's next step and the w component is what decides whether the divide is safe.
-struct ContactShadowClipPositionUVE final {
+struct ContactShadowClipPosition final {
     float x = 0.0F;
     float y = 0.0F;
     float z = 0.0F;
     float w = 1.0F;
 };
 
-[[nodiscard]] constexpr ContactShadowClipPositionUVE ProjectContactShadowPointUVE(
-    const Math::Matrix4x4UVE& projection, const Math::Vector3UVE& point) noexcept {
-    return ContactShadowClipPositionUVE{
+[[nodiscard]] constexpr ContactShadowClipPosition ProjectContactShadowPoint(
+    const Math::Matrix4x4& projection, const Math::Vector3& point) noexcept {
+    return ContactShadowClipPosition{
         projection.m[0][0] * point.x + projection.m[0][1] * point.y + projection.m[0][2] * point.z +
             projection.m[0][3],
         projection.m[1][0] * point.x + projection.m[1][1] * point.y + projection.m[1][2] * point.z +
@@ -191,15 +191,15 @@ struct ContactShadowClipPositionUVE final {
 
 /// Inverse of the above: turns a normalized device coordinate plus a raw depth-buffer sample back
 /// into a view-space position, exactly as `ssao.glsl` and `contact_shadow.glsl` do.
-[[nodiscard]] constexpr Math::Vector3UVE ReconstructContactShadowViewPositionUVE(
-    const Math::Matrix4x4UVE& inverseProjection, const float u, const float v, const float rawDepth) noexcept {
-    const Math::Vector3UVE ndc{u * 2.0F - 1.0F, v * 2.0F - 1.0F, rawDepth * 2.0F - 1.0F};
-    const ContactShadowClipPositionUVE clip =
-        ProjectContactShadowPointUVE(inverseProjection, ndc);
+[[nodiscard]] constexpr Math::Vector3 ReconstructContactShadowViewPosition(
+    const Math::Matrix4x4& inverseProjection, const float u, const float v, const float rawDepth) noexcept {
+    const Math::Vector3 ndc{u * 2.0F - 1.0F, v * 2.0F - 1.0F, rawDepth * 2.0F - 1.0F};
+    const ContactShadowClipPosition clip =
+        ProjectContactShadowPoint(inverseProjection, ndc);
     if (!(clip.w > 1.0e-8F) && !(clip.w < -1.0e-8F)) {
-        return Math::Vector3UVE{0.0F, 0.0F, 0.0F};
+        return Math::Vector3{0.0F, 0.0F, 0.0F};
     }
-    return Math::Vector3UVE{clip.x / clip.w, clip.y / clip.w, clip.z / clip.w};
+    return Math::Vector3{clip.x / clip.w, clip.y / clip.w, clip.z / clip.w};
 }
 
 } // namespace Detail
@@ -213,17 +213,17 @@ struct ContactShadowClipPositionUVE final {
 /// Returns full visibility when the settings are disabled, when the light direction is degenerate,
 /// or when no step could be tested. The shader's loop is the same sequence in the same order, so
 /// the CPU test binary and the GPU disagree only if one of them is edited without the other.
-template <typename TRawDepthAtUvUVE>
-[[nodiscard]] ContactShadowRayResultUVE MarchContactShadowRayUVE(
-    const ContactShadowSettingsUVE& settings,
-    const Math::Vector3UVE& originView,
-    const Math::Vector3UVE& lightDirectionView,
-    const Math::Matrix4x4UVE& projection,
-    const Math::Matrix4x4UVE& inverseProjection,
-    TRawDepthAtUvUVE&& rawDepthAtUv) {
-    ContactShadowRayResultUVE result{};
-    const ContactShadowSettingsUVE clamped = SanitizeContactShadowSettingsUVE(settings);
-    if (!clamped.enabledUVE) {
+template <typename TRawDepthAtUv>
+[[nodiscard]] ContactShadowRayResult MarchContactShadowRay(
+    const ContactShadowSettings& settings,
+    const Math::Vector3& originView,
+    const Math::Vector3& lightDirectionView,
+    const Math::Matrix4x4& projection,
+    const Math::Matrix4x4& inverseProjection,
+    TRawDepthAtUv&& rawDepthAtUv) {
+    ContactShadowRayResult result{};
+    const ContactShadowSettings clamped = SanitizeContactShadowSettings(settings);
+    if (!clamped.enabled) {
         return result;
     }
     const float directionLengthSq = lightDirectionView.x * lightDirectionView.x +
@@ -233,20 +233,20 @@ template <typename TRawDepthAtUvUVE>
         return result;
     }
     const float inverseDirectionLength = 1.0F / std::sqrt(directionLengthSq);
-    const Math::Vector3UVE direction{lightDirectionView.x * inverseDirectionLength,
+    const Math::Vector3 direction{lightDirectionView.x * inverseDirectionLength,
                                      lightDirectionView.y * inverseDirectionLength,
                                      lightDirectionView.z * inverseDirectionLength};
 
-    std::array<float, kContactShadowMaxStepCountUVE> steps{};
+    std::array<float, kContactShadowMaxStepCount> steps{};
     const std::uint32_t stepCount =
-        FillContactShadowRayStepsUVE(clamped, steps.data(), static_cast<std::uint32_t>(steps.size()));
+        FillContactShadowRaySteps(clamped, steps.data(), static_cast<std::uint32_t>(steps.size()));
     for (std::uint32_t stepIndex = 0U; stepIndex < stepCount; ++stepIndex) {
         const float distance = steps[stepIndex];
-        const Math::Vector3UVE samplePoint{originView.x + direction.x * distance,
+        const Math::Vector3 samplePoint{originView.x + direction.x * distance,
                                            originView.y + direction.y * distance,
                                            originView.z + direction.z * distance};
-        const Detail::ContactShadowClipPositionUVE clip =
-            Detail::ProjectContactShadowPointUVE(projection, samplePoint);
+        const Detail::ContactShadowClipPosition clip =
+            Detail::ProjectContactShadowPoint(projection, samplePoint);
         if (!(clip.w > 1.0e-4F) && !(clip.w < -1.0e-4F)) {
             continue;
         }
@@ -256,19 +256,19 @@ template <typename TRawDepthAtUvUVE>
             continue;
         }
         const float rawDepth = rawDepthAtUv(u, v);
-        if (!(rawDepth < kContactShadowBackgroundDepthUVE)) {
+        if (!(rawDepth < kContactShadowBackgroundDepth)) {
             continue;
         }
-        const Math::Vector3UVE sceneViewPosition =
-            Detail::ReconstructContactShadowViewPositionUVE(inverseProjection, u, v, rawDepth);
-        ++result.testedStepsUVE;
-        if (IsContactShadowOccludedUVE(samplePoint.z, sceneViewPosition.z, clamped.thicknessMetersUVE,
-                                       kContactShadowDepthBiasMetersUVE)) {
-            ++result.occludedStepsUVE;
+        const Math::Vector3 sceneViewPosition =
+            Detail::ReconstructContactShadowViewPosition(inverseProjection, u, v, rawDepth);
+        ++result.testedSteps;
+        if (IsContactShadowOccluded(samplePoint.z, sceneViewPosition.z, clamped.thicknessMeters,
+                                       kContactShadowDepthBiasMeters)) {
+            ++result.occludedSteps;
         }
     }
-    result.visibilityUVE = ContactShadowVisibilityUVE(result.occludedStepsUVE, result.testedStepsUVE,
-                                                     clamped.strengthUVE);
+    result.visibility = ContactShadowVisibility(result.occludedSteps, result.testedSteps,
+                                                     clamped.strength);
     return result;
 }
 

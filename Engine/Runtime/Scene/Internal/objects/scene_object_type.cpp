@@ -28,113 +28,113 @@
 namespace UVE::Scene {
 namespace {
 
-using Kind = Objects::SceneObjectKindUVE;
+using Kind = Objects::SceneObjectKind;
 
 /// The kinds whose own object component says exactly what they are. Checked before the shared
 /// components below, since several of these objects also carry one (an Kinematic3D has a
 /// collider and a body).
 template <typename Component>
-struct OwnComponentUVE final {
+struct OwnComponent final {
     Kind kind;
 };
 
 template <typename... Components>
-[[nodiscard]] bool TryOwnComponentUVE(const IEntityManagerUVE& entityManager, const EntityUVE entity, Kind& out,
-                                      const OwnComponentUVE<Components>&... candidates) {
-    return ((entityManager.HasComponentUVE<Components>(entity) ? (out = candidates.kind, true) : false) || ...);
+[[nodiscard]] bool TryOwnComponent(const IEntityManager& entityManager, const Entity entity, Kind& out,
+                                      const OwnComponent<Components>&... candidates) {
+    return ((entityManager.HasComponent<Components>(entity) ? (out = candidates.kind, true) : false) || ...);
 }
 
 } // namespace
 
-bool IsSceneObjectTypeComponentValidUVE(const SceneObjectTypeComponentUVE& value) noexcept {
-    return Objects::FindSceneObjectDescriptorUVE(value.kind) != nullptr;
+bool IsSceneObjectTypeComponentValid(const SceneObjectTypeComponent& value) noexcept {
+    return Objects::FindSceneObjectDescriptor(value.kind) != nullptr;
 }
 
-Objects::SceneObjectKindUVE ResolveSceneObjectKindUVE(const IEntityManagerUVE& entityManager, const EntityUVE entity) {
-    if (!entityManager.IsAliveUVE(entity)) {
+Objects::SceneObjectKind ResolveSceneObjectKind(const IEntityManager& entityManager, const Entity entity) {
+    if (!entityManager.IsAlive(entity)) {
         return Kind::Object3D;
     }
-    if (entityManager.HasComponentUVE<SceneObjectTypeComponentUVE>(entity)) {
-        const SceneObjectTypeComponentUVE& type = entityManager.GetComponentUVE<SceneObjectTypeComponentUVE>(entity);
-        if (IsSceneObjectTypeComponentValidUVE(type)) {
+    if (entityManager.HasComponent<SceneObjectTypeComponent>(entity)) {
+        const SceneObjectTypeComponent& type = entityManager.GetComponent<SceneObjectTypeComponent>(entity);
+        if (IsSceneObjectTypeComponentValid(type)) {
             return type.kind;
         }
     }
-    return InferSceneObjectKindUVE(entityManager, entity);
+    return InferSceneObjectKind(entityManager, entity);
 }
 
-Objects::SceneObjectKindUVE InferSceneObjectKindUVE(const IEntityManagerUVE& entityManager, const EntityUVE entity) {
-    if (!entityManager.IsAliveUVE(entity)) {
+Objects::SceneObjectKind InferSceneObjectKind(const IEntityManager& entityManager, const Entity entity) {
+    if (!entityManager.IsAlive(entity)) {
         return Kind::Object3D;
     }
-    if (entityManager.HasComponentUVE<SceneRootComponentUVE>(entity)) {
+    if (entityManager.HasComponent<SceneRootComponent>(entity)) {
         return Kind::SceneRoot;
     }
-    if (entityManager.HasComponentUVE<OutlinerViewport3DComponentUVE>(entity)) {
+    if (entityManager.HasComponent<OutlinerViewport3DComponent>(entity)) {
         return Kind::Viewport3D;
     }
-    if (entityManager.HasComponentUVE<FolderComponentUVE>(entity)) {
+    if (entityManager.HasComponent<FolderComponent>(entity)) {
         return Kind::Folder;
     }
     // A primitive also carries a collider, so it is read before the physics kinds.
-    if (entityManager.HasComponentUVE<PrimitiveMeshComponentUVE>(entity)) {
-        switch (entityManager.GetComponentUVE<PrimitiveMeshComponentUVE>(entity).kind) {
-            case PrimitiveMeshKindUVE::Cube:
+    if (entityManager.HasComponent<PrimitiveMeshComponent>(entity)) {
+        switch (entityManager.GetComponent<PrimitiveMeshComponent>(entity).kind) {
+            case PrimitiveMeshKind::Cube:
                 return Kind::BoxMesh3D;
-            case PrimitiveMeshKindUVE::UVSphere:
+            case PrimitiveMeshKind::UVSphere:
                 return Kind::SphereMesh3D;
-            case PrimitiveMeshKindUVE::Plane:
+            case PrimitiveMeshKind::Plane:
                 return Kind::PlaneMesh3D;
-            case PrimitiveMeshKindUVE::Capsule:
-            case PrimitiveMeshKindUVE::Cylinder:
+            case PrimitiveMeshKind::Capsule:
+            case PrimitiveMeshKind::Cylinder:
                 return Kind::MeshInstance3D;
         }
     }
 
     Kind kind = Kind::Object3D;
-    if (TryOwnComponentUVE(entityManager, entity, kind,
-                           OwnComponentUVE<Kinematic3DComponentUVE>{Kind::Kinematic3D},
-                           OwnComponentUVE<RayCast3DComponentUVE>{Kind::RayCast3D},
-                           OwnComponentUVE<NavMeshVolume3DComponentUVE>{Kind::NavMeshVolume3D},
-                           OwnComponentUVE<NavSeeker3DComponentUVE>{Kind::NavSeeker3D},
-                           OwnComponentUVE<Skeleton3DComponentUVE>{Kind::Skeleton3D},
-                           OwnComponentUVE<BoneAttachment3DComponentUVE>{Kind::BoneAttachment3D},
-                           OwnComponentUVE<TwoBoneIK3DComponentUVE>{Kind::TwoBoneIK3D},
-                           OwnComponentUVE<FullBodyIK3DComponentUVE>{Kind::FullBodyIK3D},
-                           OwnComponentUVE<Ragdoll3DComponentUVE>{Kind::Ragdoll3D},
-                           OwnComponentUVE<SpringArm3DComponentUVE>{Kind::SpringArm3D},
-                           OwnComponentUVE<Marker3DComponentUVE>{Kind::Marker3D},
-                           OwnComponentUVE<Hitbox3DComponentUVE>{Kind::Hitbox3D},
-                           OwnComponentUVE<Hurtbox3DComponentUVE>{Kind::Hurtbox3D},
-                           OwnComponentUVE<Projectile3DComponentUVE>{Kind::Projectile3D},
-                           OwnComponentUVE<InteractionArea3DComponentUVE>{Kind::InteractionArea3D},
-                           OwnComponentUVE<WorldEnvironment3DComponentUVE>{Kind::WorldEnvironment3D},
-                           OwnComponentUVE<Sky3DComponentUVE>{Kind::Sky},
-                           OwnComponentUVE<ReflectionProbe3DComponentUVE>{Kind::ReflectionProbe3D},
-                           OwnComponentUVE<Decal3DComponentUVE>{Kind::Decal3D},
-                           OwnComponentUVE<DirectionalLight3DComponentUVE>{Kind::DirectionalLight3D},
-                           OwnComponentUVE<FogVolume3DComponentUVE>{Kind::FogVolume3D},
-                           OwnComponentUVE<LodGroup3DComponentUVE>{Kind::LODGroup3D},
-                           OwnComponentUVE<Occluder3DComponentUVE>{Kind::Occluder3D},
-                           OwnComponentUVE<VisibilityRegion3DComponentUVE>{Kind::VisibilityRegion3D},
-                           OwnComponentUVE<SpawnPoint3DComponentUVE>{Kind::SpawnPoint3D},
-                           OwnComponentUVE<LevelStreamer3DComponentUVE>{Kind::LevelStreamer3D},
-                           OwnComponentUVE<WorldPartition3DComponentUVE>{Kind::WorldPartition3D},
-                           OwnComponentUVE<CameraComponentUVE>{Kind::Camera3D},
-                           OwnComponentUVE<LightComponentUVE>{Kind::Light3D},
-                           OwnComponentUVE<MeshComponentUVE>{Kind::MeshInstance3D},
-                           OwnComponentUVE<AudioSourceComponentUVE>{Kind::AudioSource3D},
-                           OwnComponentUVE<ParticleEmitterComponentUVE>{Kind::ParticleEmitter3D},
-                           OwnComponentUVE<AnimationSequencerComponentUVE>{Kind::AnimationSequencer},
-                           OwnComponentUVE<MontageSequencerComponentUVE>{Kind::MontageSequencer},
-                           OwnComponentUVE<AnimationGraphComponentUVE>{Kind::AnimationGraph},
-                           OwnComponentUVE<CanvasComponentUVE>{Kind::Canvas},
-                           OwnComponentUVE<UITextComponentUVE>{Kind::UIText},
-                           OwnComponentUVE<UIImageComponentUVE>{Kind::UIImage},
-                           OwnComponentUVE<UIButtonComponentUVE>{Kind::UIButton},
-                           OwnComponentUVE<AreaComponentUVE>{Kind::Area3D},
-                           OwnComponentUVE<PlayerComponentUVE>{Kind::Player3D},
-                           OwnComponentUVE<CharacterControllerComponentUVE>{Kind::Character3D})) {
+    if (TryOwnComponent(entityManager, entity, kind,
+                           OwnComponent<Kinematic3DComponent>{Kind::Kinematic3D},
+                           OwnComponent<RayCast3DComponent>{Kind::RayCast3D},
+                           OwnComponent<NavMeshVolume3DComponent>{Kind::NavMeshVolume3D},
+                           OwnComponent<NavSeeker3DComponent>{Kind::NavSeeker3D},
+                           OwnComponent<Skeleton3DComponent>{Kind::Skeleton3D},
+                           OwnComponent<BoneAttachment3DComponent>{Kind::BoneAttachment3D},
+                           OwnComponent<TwoBoneIK3DComponent>{Kind::TwoBoneIK3D},
+                           OwnComponent<FullBodyIK3DComponent>{Kind::FullBodyIK3D},
+                           OwnComponent<Ragdoll3DComponent>{Kind::Ragdoll3D},
+                           OwnComponent<SpringArm3DComponent>{Kind::SpringArm3D},
+                           OwnComponent<Marker3DComponent>{Kind::Marker3D},
+                           OwnComponent<Hitbox3DComponent>{Kind::Hitbox3D},
+                           OwnComponent<Hurtbox3DComponent>{Kind::Hurtbox3D},
+                           OwnComponent<Projectile3DComponent>{Kind::Projectile3D},
+                           OwnComponent<InteractionArea3DComponent>{Kind::InteractionArea3D},
+                           OwnComponent<WorldEnvironment3DComponent>{Kind::WorldEnvironment3D},
+                           OwnComponent<Sky3DComponent>{Kind::Sky},
+                           OwnComponent<ReflectionProbe3DComponent>{Kind::ReflectionProbe3D},
+                           OwnComponent<Decal3DComponent>{Kind::Decal3D},
+                           OwnComponent<DirectionalLight3DComponent>{Kind::DirectionalLight3D},
+                           OwnComponent<FogVolume3DComponent>{Kind::FogVolume3D},
+                           OwnComponent<LodGroup3DComponent>{Kind::LODGroup3D},
+                           OwnComponent<Occluder3DComponent>{Kind::Occluder3D},
+                           OwnComponent<VisibilityRegion3DComponent>{Kind::VisibilityRegion3D},
+                           OwnComponent<SpawnPoint3DComponent>{Kind::SpawnPoint3D},
+                           OwnComponent<LevelStreamer3DComponent>{Kind::LevelStreamer3D},
+                           OwnComponent<WorldPartition3DComponent>{Kind::WorldPartition3D},
+                           OwnComponent<CameraComponent>{Kind::Camera3D},
+                           OwnComponent<LightComponent>{Kind::Light3D},
+                           OwnComponent<MeshComponent>{Kind::MeshInstance3D},
+                           OwnComponent<AudioSourceComponent>{Kind::AudioSource3D},
+                           OwnComponent<ParticleEmitterComponent>{Kind::ParticleEmitter3D},
+                           OwnComponent<AnimationSequencerComponent>{Kind::AnimationSequencer},
+                           OwnComponent<MontageSequencerComponent>{Kind::MontageSequencer},
+                           OwnComponent<AnimationGraphComponent>{Kind::AnimationGraph},
+                           OwnComponent<CanvasComponent>{Kind::Canvas},
+                           OwnComponent<UITextComponent>{Kind::UIText},
+                           OwnComponent<UIImageComponent>{Kind::UIImage},
+                           OwnComponent<UIButtonComponent>{Kind::UIButton},
+                           OwnComponent<AreaComponent>{Kind::Area3D},
+                           OwnComponent<PlayerComponent>{Kind::Player3D},
+                           OwnComponent<CharacterControllerComponent>{Kind::Character3D})) {
         return kind;
     }
 
@@ -143,8 +143,8 @@ Objects::SceneObjectKindUVE InferSceneObjectKindUVE(const IEntityManagerUVE& ent
     // controller is a Rigid3D with a shape, which is what the Rigid3D recipe itself creates.
     // A collider alone is either a Collider3D or a Static3D, which are built identically and read
     // as Collider3D, the older of the two.
-    const bool collider = entityManager.HasComponentUVE<ColliderComponentUVE>(entity);
-    const bool body = entityManager.HasComponentUVE<Rigid3DComponentUVE>(entity);
+    const bool collider = entityManager.HasComponent<ColliderComponent>(entity);
+    const bool body = entityManager.HasComponent<Rigid3DComponent>(entity);
     if (body) {
         return Kind::Rigid3D;
     }
@@ -152,18 +152,18 @@ Objects::SceneObjectKindUVE InferSceneObjectKindUVE(const IEntityManagerUVE& ent
         return Kind::Collider3D;
     }
     // Last: a script can sit on any object, so it names the object only when nothing else does.
-    if (entityManager.HasComponentUVE<ScriptComponentUVE>(entity)) {
+    if (entityManager.HasComponent<ScriptComponent>(entity)) {
         return Kind::Script;
     }
     return Kind::Object3D;
 }
 
-void SetSceneObjectKindUVE(IEntityManagerUVE& entityManager, const EntityUVE entity, const Objects::SceneObjectKindUVE kind) {
-    if (entityManager.HasComponentUVE<SceneObjectTypeComponentUVE>(entity)) {
-        entityManager.GetComponentUVE<SceneObjectTypeComponentUVE>(entity).kind = kind;
+void SetSceneObjectKind(IEntityManager& entityManager, const Entity entity, const Objects::SceneObjectKind kind) {
+    if (entityManager.HasComponent<SceneObjectTypeComponent>(entity)) {
+        entityManager.GetComponent<SceneObjectTypeComponent>(entity).kind = kind;
         return;
     }
-    entityManager.AddComponentUVE<SceneObjectTypeComponentUVE>(entity, SceneObjectTypeComponentUVE{kind});
+    entityManager.AddComponent<SceneObjectTypeComponent>(entity, SceneObjectTypeComponent{kind});
 }
 
 } // namespace UVE::Scene

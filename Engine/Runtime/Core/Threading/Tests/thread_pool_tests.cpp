@@ -22,48 +22,48 @@
 namespace UVE::Threading::Tests {
 namespace {
 
-TEST(ThreadPoolUVETest, ExplicitWorkerCount_IsHonored) {
-    ThreadPoolUVE pool(3);
-    EXPECT_EQ(pool.GetWorkerCountUVE(), 3U);
+TEST(ThreadPoolTest, ExplicitWorkerCount_IsHonored) {
+    ThreadPool pool(3);
+    EXPECT_EQ(pool.GetWorkerCount(), 3U);
 }
 
-TEST(ThreadPoolUVETest, AutoWorkerCount_ResolvesToAtLeastOne) {
-    ThreadPoolUVE pool(0);
-    EXPECT_GE(pool.GetWorkerCountUVE(), 1U);
+TEST(ThreadPoolTest, AutoWorkerCount_ResolvesToAtLeastOne) {
+    ThreadPool pool(0);
+    EXPECT_GE(pool.GetWorkerCount(), 1U);
 }
 
-TEST(ThreadPoolUVETest, SubmitWithCounter_AllJobsRunExactlyOnce) {
-    ThreadPoolUVE pool(4);
-    JobCounterUVE counter;
+TEST(ThreadPoolTest, SubmitWithCounter_AllJobsRunExactlyOnce) {
+    ThreadPool pool(4);
+    JobCounter counter;
     std::atomic<int> completed{0};
     constexpr int kJobCount = 50;
 
     for (int i = 0; i < kJobCount; ++i) {
-        pool.SubmitUVE([&completed] { completed.fetch_add(1, std::memory_order_relaxed); }, counter);
+        pool.Submit([&completed] { completed.fetch_add(1, std::memory_order_relaxed); }, counter);
     }
-    counter.WaitUVE();
+    counter.Wait();
 
     EXPECT_EQ(completed.load(), kJobCount);
 }
 
-TEST(ThreadPoolUVETest, SubmitWithCounter_HighVolumeStress) {
-    ThreadPoolUVE pool(4);
-    JobCounterUVE counter;
+TEST(ThreadPoolTest, SubmitWithCounter_HighVolumeStress) {
+    ThreadPool pool(4);
+    JobCounter counter;
     std::atomic<int> completed{0};
     constexpr int kJobCount = 1000;
 
     for (int i = 0; i < kJobCount; ++i) {
-        pool.SubmitUVE([&completed] { completed.fetch_add(1, std::memory_order_relaxed); }, counter);
+        pool.Submit([&completed] { completed.fetch_add(1, std::memory_order_relaxed); }, counter);
     }
-    counter.WaitUVE();
+    counter.Wait();
 
     EXPECT_EQ(completed.load(), kJobCount);
 }
 
-TEST(ThreadPoolUVETest, SubmitWithoutCounter_JobEventuallyRuns) {
-    ThreadPoolUVE pool(2);
+TEST(ThreadPoolTest, SubmitWithoutCounter_JobEventuallyRuns) {
+    ThreadPool pool(2);
     std::atomic<bool> ran{false};
-    pool.SubmitUVE([&ran] { ran.store(true, std::memory_order_relaxed); });
+    pool.Submit([&ran] { ran.store(true, std::memory_order_relaxed); });
 
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(1);
     while (!ran.load(std::memory_order_relaxed) && std::chrono::steady_clock::now() < deadline) {
@@ -72,46 +72,46 @@ TEST(ThreadPoolUVETest, SubmitWithoutCounter_JobEventuallyRuns) {
     EXPECT_TRUE(ran.load());
 }
 
-TEST(ThreadPoolUVETest, JobsRunOnWorkerThread_NotCallingThread) {
-    ThreadPoolUVE pool(2);
-    JobCounterUVE counter;
+TEST(ThreadPoolTest, JobsRunOnWorkerThread_NotCallingThread) {
+    ThreadPool pool(2);
+    JobCounter counter;
     const std::thread::id callingThreadId = std::this_thread::get_id();
     std::thread::id jobThreadId{};
 
-    pool.SubmitUVE([&jobThreadId] { jobThreadId = std::this_thread::get_id(); }, counter);
-    counter.WaitUVE();
+    pool.Submit([&jobThreadId] { jobThreadId = std::this_thread::get_id(); }, counter);
+    counter.Wait();
 
     EXPECT_NE(jobThreadId, callingThreadId);
 }
 
-TEST(ThreadPoolUVETest, RecursiveSubmission_CompletesWithoutDeadlock) {
-    ThreadPoolUVE pool(2);
-    JobCounterUVE outerCounter;
+TEST(ThreadPoolTest, RecursiveSubmission_CompletesWithoutDeadlock) {
+    ThreadPool pool(2);
+    JobCounter outerCounter;
     std::atomic<int> innerCompleted{0};
 
-    pool.SubmitUVE(
+    pool.Submit(
         [&pool, &innerCompleted] {
-            JobCounterUVE innerCounter;
+            JobCounter innerCounter;
             for (int i = 0; i < 5; ++i) {
-                pool.SubmitUVE(
+                pool.Submit(
                     [&innerCompleted] { innerCompleted.fetch_add(1, std::memory_order_relaxed); },
                     innerCounter);
             }
-            innerCounter.WaitUVE();
+            innerCounter.Wait();
         },
         outerCounter);
 
-    outerCounter.WaitUVE();
+    outerCounter.Wait();
     EXPECT_EQ(innerCompleted.load(), 5);
 }
 
-TEST(ThreadPoolUVETest, DestructorDrainsPendingWork) {
+TEST(ThreadPoolTest, DestructorDrainsPendingWork) {
     std::atomic<int> completed{0};
     constexpr int kJobCount = 20;
     {
-        ThreadPoolUVE pool(2);
+        ThreadPool pool(2);
         for (int i = 0; i < kJobCount; ++i) {
-            pool.SubmitUVE([&completed] {
+            pool.Submit([&completed] {
                 std::this_thread::sleep_for(std::chrono::milliseconds(1));
                 completed.fetch_add(1, std::memory_order_relaxed);
             });
@@ -121,27 +121,27 @@ TEST(ThreadPoolUVETest, DestructorDrainsPendingWork) {
     EXPECT_EQ(completed.load(), kJobCount);
 }
 
-TEST(ThreadPoolUVETest, ExceptionInJob_IsCaughtAndLoggedAsError_PoolKeepsRunning) {
-    Debug::LoggerUVE logger;
-    logger.Init(Debug::LogLevelUVE::Trace);
-    auto memorySink = std::make_unique<Debug::MemorySinkUVE>();
-    Debug::MemorySinkUVE* const memorySinkPtr = memorySink.get();
+TEST(ThreadPoolTest, ExceptionInJob_IsCaughtAndLoggedAsError_PoolKeepsRunning) {
+    Debug::Logger logger;
+    logger.Init(Debug::LogLevel::Trace);
+    auto memorySink = std::make_unique<Debug::MemorySink>();
+    Debug::MemorySink* const memorySinkPtr = memorySink.get();
     logger.AddSink(std::move(memorySink));
 
-    ThreadPoolUVE pool(2);
-    JobCounterUVE counter;
+    ThreadPool pool(2);
+    JobCounter counter;
     std::atomic<bool> normalJobRan{false};
 
-    pool.SubmitUVE([] { throw std::runtime_error("boom"); }, counter);
-    pool.SubmitUVE([&normalJobRan] { normalJobRan.store(true, std::memory_order_relaxed); }, counter);
-    counter.WaitUVE();
+    pool.Submit([] { throw std::runtime_error("boom"); }, counter);
+    pool.Submit([&normalJobRan] { normalJobRan.store(true, std::memory_order_relaxed); }, counter);
+    counter.Wait();
 
     EXPECT_TRUE(normalJobRan.load());
 
-    const std::vector<Debug::LogMessageUVE> messages = memorySinkPtr->GetMessagesUVE();
+    const std::vector<Debug::LogMessage> messages = memorySinkPtr->GetMessages();
     const bool foundExceptionError =
-        std::any_of(messages.begin(), messages.end(), [](const Debug::LogMessageUVE& message) {
-            return message.level == Debug::LogLevelUVE::Error &&
+        std::any_of(messages.begin(), messages.end(), [](const Debug::LogMessage& message) {
+            return message.level == Debug::LogLevel::Error &&
                    message.message.contains("boom");
         });
     EXPECT_TRUE(foundExceptionError);
@@ -149,22 +149,22 @@ TEST(ThreadPoolUVETest, ExceptionInJob_IsCaughtAndLoggedAsError_PoolKeepsRunning
     logger.Shutdown();
 }
 
-TEST(ThreadPoolUVETest, UnknownExceptionInJob_IsCaughtAndLoggedGenerically) {
-    Debug::LoggerUVE logger;
-    logger.Init(Debug::LogLevelUVE::Trace);
-    auto memorySink = std::make_unique<Debug::MemorySinkUVE>();
-    Debug::MemorySinkUVE* const memorySinkPtr = memorySink.get();
+TEST(ThreadPoolTest, UnknownExceptionInJob_IsCaughtAndLoggedGenerically) {
+    Debug::Logger logger;
+    logger.Init(Debug::LogLevel::Trace);
+    auto memorySink = std::make_unique<Debug::MemorySink>();
+    Debug::MemorySink* const memorySinkPtr = memorySink.get();
     logger.AddSink(std::move(memorySink));
 
-    ThreadPoolUVE pool(2);
-    JobCounterUVE counter;
-    pool.SubmitUVE([] { throw 42; }, counter);
-    counter.WaitUVE();
+    ThreadPool pool(2);
+    JobCounter counter;
+    pool.Submit([] { throw 42; }, counter);
+    counter.Wait();
 
-    const std::vector<Debug::LogMessageUVE> messages = memorySinkPtr->GetMessagesUVE();
+    const std::vector<Debug::LogMessage> messages = memorySinkPtr->GetMessages();
     const bool foundGenericError =
-        std::any_of(messages.begin(), messages.end(), [](const Debug::LogMessageUVE& message) {
-            return message.level == Debug::LogLevelUVE::Error &&
+        std::any_of(messages.begin(), messages.end(), [](const Debug::LogMessage& message) {
+            return message.level == Debug::LogLevel::Error &&
                    message.message.contains("unknown");
         });
     EXPECT_TRUE(foundGenericError);
@@ -172,12 +172,12 @@ TEST(ThreadPoolUVETest, UnknownExceptionInJob_IsCaughtAndLoggedGenerically) {
     logger.Shutdown();
 }
 
-TEST(ThreadPoolUVETest, DebugStats_PendingCountRisesAndFallsBackToZero) {
-    ThreadPoolUVE pool(1);
-    JobCounterUVE counter;
+TEST(ThreadPoolTest, DebugStats_PendingCountRisesAndFallsBackToZero) {
+    ThreadPool pool(1);
+    JobCounter counter;
     std::atomic<bool> canProceed{false};
 
-    pool.SubmitUVE(
+    pool.Submit(
         [&canProceed] {
             while (!canProceed.load(std::memory_order_relaxed)) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(1));
@@ -185,31 +185,31 @@ TEST(ThreadPoolUVETest, DebugStats_PendingCountRisesAndFallsBackToZero) {
         },
         counter);
 
-    // GetPendingJobCountUVE() is incremented synchronously inside SubmitUVE(), before the job is
+    // GetPendingJobCount() is incremented synchronously inside Submit(), before the job is
     // even picked up by a worker, so this is observable immediately without a race.
-    EXPECT_GE(pool.GetPendingJobCountUVE(), 1U);
+    EXPECT_GE(pool.GetPendingJobCount(), 1U);
 
     canProceed.store(true, std::memory_order_relaxed);
-    counter.WaitUVE();
+    counter.Wait();
 
-    // JobCounterUVE is notified immediately before ThreadPoolUVE decrements its independent
+    // JobCounter is notified immediately before ThreadPool decrements its independent
     // pending-stat counter. Let that last bookkeeping instruction settle without asserting a
     // scheduler-dependent ordering between two separate atomics.
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(100);
-    while (pool.GetPendingJobCountUVE() != 0U && std::chrono::steady_clock::now() < deadline) {
+    while (pool.GetPendingJobCount() != 0U && std::chrono::steady_clock::now() < deadline) {
         std::this_thread::yield();
     }
-    EXPECT_EQ(pool.GetPendingJobCountUVE(), 0U);
+    EXPECT_EQ(pool.GetPendingJobCount(), 0U);
 }
 
-TEST(ThreadPoolUVETest, DebugStats_ActiveWorkerCountNeverExceedsWorkerCount) {
-    ThreadPoolUVE pool(3);
-    JobCounterUVE counter;
+TEST(ThreadPoolTest, DebugStats_ActiveWorkerCountNeverExceedsWorkerCount) {
+    ThreadPool pool(3);
+    JobCounter counter;
     std::atomic<bool> canProceed{false};
     std::atomic<std::size_t> maxObservedActive{0};
 
     for (int i = 0; i < 6; ++i) {
-        pool.SubmitUVE(
+        pool.Submit(
             [&canProceed] {
                 while (!canProceed.load(std::memory_order_relaxed)) {
                     std::this_thread::sleep_for(std::chrono::milliseconds(1));
@@ -219,7 +219,7 @@ TEST(ThreadPoolUVETest, DebugStats_ActiveWorkerCountNeverExceedsWorkerCount) {
     }
 
     for (int i = 0; i < 20; ++i) {
-        const std::size_t active = pool.GetActiveWorkerCountUVE();
+        const std::size_t active = pool.GetActiveWorkerCount();
         std::size_t currentMax = maxObservedActive.load(std::memory_order_relaxed);
         while (active > currentMax && !maxObservedActive.compare_exchange_weak(currentMax, active)) {
         }
@@ -227,29 +227,29 @@ TEST(ThreadPoolUVETest, DebugStats_ActiveWorkerCountNeverExceedsWorkerCount) {
     }
 
     canProceed.store(true, std::memory_order_relaxed);
-    counter.WaitUVE();
+    counter.Wait();
 
-    EXPECT_LE(maxObservedActive.load(), pool.GetWorkerCountUVE());
+    EXPECT_LE(maxObservedActive.load(), pool.GetWorkerCount());
 }
 
-TEST(ThreadPoolUVETest, IsWorkerThreadUVE_TrueInsideJobFalseOnCallingThread) {
-    ThreadPoolUVE pool(2);
-    JobCounterUVE counter;
+TEST(ThreadPoolTest, IsWorkerThread_TrueInsideJobFalseOnCallingThread) {
+    ThreadPool pool(2);
+    JobCounter counter;
     std::atomic<bool> wasWorkerThreadInsideJob{false};
 
-    EXPECT_FALSE(pool.IsWorkerThreadUVE());
+    EXPECT_FALSE(pool.IsWorkerThread());
 
-    pool.SubmitUVE(
+    pool.Submit(
         [&pool, &wasWorkerThreadInsideJob] {
-            wasWorkerThreadInsideJob.store(pool.IsWorkerThreadUVE(), std::memory_order_relaxed);
+            wasWorkerThreadInsideJob.store(pool.IsWorkerThread(), std::memory_order_relaxed);
         },
         counter);
-    counter.WaitUVE();
+    counter.Wait();
 
     EXPECT_TRUE(wasWorkerThreadInsideJob.load());
 }
 
-TEST(ThreadPoolUVETest, IdleWorkerStealsJobsQueuedBehindBlockedWorkers) {
+TEST(ThreadPoolTest, IdleWorkerStealsJobsQueuedBehindBlockedWorkers) {
     // Deterministic by construction: nothing here depends on one worker happening to run dry
     // before the others, which is what made sleep-based versions of this test fail under a
     // parallel ctest run.
@@ -270,8 +270,8 @@ TEST(ThreadPoolUVETest, IdleWorkerStealsJobsQueuedBehindBlockedWorkers) {
         return isDone();
     };
 
-    ThreadPoolUVE pool(kWorkerCount);
-    JobCounterUVE counter;
+    ThreadPool pool(kWorkerCount);
+    JobCounter counter;
     std::atomic<std::size_t> gatesEntered{0};
     std::atomic<bool> releaseGates{false};
     std::atomic<int> fastJobsDone{0};
@@ -281,7 +281,7 @@ TEST(ThreadPoolUVETest, IdleWorkerStealsJobsQueuedBehindBlockedWorkers) {
     // would let the blocked workers start draining their queues at the very moment the count
     // below is read.
     for (std::size_t i = 0; i < kGateCount; ++i) {
-        pool.SubmitUVE(
+        pool.Submit(
             [&gatesEntered, &releaseGates] {
                 gatesEntered.fetch_add(1, std::memory_order_acq_rel);
                 while (!releaseGates.load(std::memory_order_acquire)) {
@@ -299,7 +299,7 @@ TEST(ThreadPoolUVETest, IdleWorkerStealsJobsQueuedBehindBlockedWorkers) {
     int fastJobsDoneWhileGated = 0;
     if (allGatesEntered) {
         for (int i = 0; i < kFastJobCount; ++i) {
-            pool.SubmitUVE(
+            pool.Submit(
                 [&fastJobsDone] { fastJobsDone.fetch_add(1, std::memory_order_acq_rel); }, counter);
         }
         waitUntil([&fastJobsDone] {
@@ -310,12 +310,12 @@ TEST(ThreadPoolUVETest, IdleWorkerStealsJobsQueuedBehindBlockedWorkers) {
 
     // Every path reaches here, so no job outlives the locals it captured.
     releaseGates.store(true, std::memory_order_release);
-    counter.WaitUVE();
+    counter.Wait();
 
     ASSERT_TRUE(allGatesEntered) << "the gate jobs never all started";
     EXPECT_EQ(fastJobsDoneWhileGated, kFastJobCount)
         << "jobs queued behind the blocked workers were never picked up by the idle one";
-    EXPECT_GT(pool.GetStolenJobCountUVE(), 0U);
+    EXPECT_GT(pool.GetStolenJobCount(), 0U);
 }
 
 } // namespace

@@ -11,39 +11,39 @@
 namespace UVE::Strings::Tests {
 namespace {
 
-TEST(StringUtilsUVETest, Trim_StripsAsciiWhitespaceBothEnds) {
-    EXPECT_EQ(TrimUVE("  hello\t\n"), "hello");
-    EXPECT_EQ(TrimUVE("hello"), "hello");
-    EXPECT_EQ(TrimUVE(""), "");
-    EXPECT_EQ(TrimUVE("   "), "");
-    EXPECT_EQ(TrimUVE("  a  b  "), "a  b"); // Interior space survives.
+TEST(StringUtilsTest, Trim_StripsAsciiWhitespaceBothEnds) {
+    EXPECT_EQ(Trim("  hello\t\n"), "hello");
+    EXPECT_EQ(Trim("hello"), "hello");
+    EXPECT_EQ(Trim(""), "");
+    EXPECT_EQ(Trim("   "), "");
+    EXPECT_EQ(Trim("  a  b  "), "a  b"); // Interior space survives.
 }
 
-TEST(StringUtilsUVETest, Split_KeepsEmptyParts) {
-    const std::vector<std::string_view> parts = SplitUVE("a,,b,", ',');
+TEST(StringUtilsTest, Split_KeepsEmptyParts) {
+    const std::vector<std::string_view> parts = Split("a,,b,", ',');
     ASSERT_EQ(parts.size(), 4U);
     EXPECT_EQ(parts[0U], "a");
     EXPECT_EQ(parts[1U], "");
     EXPECT_EQ(parts[2U], "b");
     EXPECT_EQ(parts[3U], "");
-    const std::vector<std::string_view> single = SplitUVE("abc", ',');
+    const std::vector<std::string_view> single = Split("abc", ',');
     ASSERT_EQ(single.size(), 1U);
     EXPECT_EQ(single[0U], "abc");
 }
 
-TEST(StringUtilsUVETest, Join_InsertsDelimitersBetweenOnly) {
+TEST(StringUtilsTest, Join_InsertsDelimitersBetweenOnly) {
     const std::vector<std::string_view> parts{"a", "b", "c"};
-    EXPECT_EQ(JoinUVE(parts, ", "), "a, b, c");
+    EXPECT_EQ(Join(parts, ", "), "a, b, c");
     const std::vector<std::string_view> one{"solo"};
-    EXPECT_EQ(JoinUVE(one, ", "), "solo");
+    EXPECT_EQ(Join(one, ", "), "solo");
     const std::vector<std::string_view> none;
-    EXPECT_EQ(JoinUVE(none, ", "), "");
+    EXPECT_EQ(Join(none, ", "), "");
 }
 
-TEST(StringUtilsUVETest, Case_ConvertsAsciiAndPassesTheRestThrough) {
-    EXPECT_EQ(ToLowerUVE("HeLLo World! 123"), "hello world! 123");
-    EXPECT_EQ(ToUpperUVE("HeLLo World! 123"), "HELLO WORLD! 123");
-    EXPECT_EQ(ToLowerUVE(""), "");
+TEST(StringUtilsTest, Case_ConvertsAsciiAndPassesTheRestThrough) {
+    EXPECT_EQ(ToLower("HeLLo World! 123"), "hello world! 123");
+    EXPECT_EQ(ToUpper("HeLLo World! 123"), "HELLO WORLD! 123");
+    EXPECT_EQ(ToLower(""), "");
 }
 
 } // namespace

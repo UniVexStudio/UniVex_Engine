@@ -18,76 +18,76 @@
 namespace UVE::Scene::Detail::Tests {
 namespace {
 
-struct TestComponentUVE {
+struct TestComponent {
     int value = 0;
 };
 
-struct UnregisteredComponentUVE {
+struct UnregisteredComponent {
     int value = 0;
 };
 
-class ArchetypeChunkUVETest : public ::testing::Test {
+class ArchetypeChunkTest : public ::testing::Test {
 protected:
-    Memory::HeapAllocatorUVE allocator;
-    std::unordered_map<std::type_index, ComponentTypeInfoUVE> typeInfos{
-        {std::type_index(typeid(TestComponentUVE)), MakeComponentTypeInfoUVE<TestComponentUVE>()}};
-    ArchetypeChunkUVE chunk{allocator, {std::type_index(typeid(TestComponentUVE))}, typeInfos};
+    Memory::HeapAllocator allocator;
+    std::unordered_map<std::type_index, ComponentTypeInfo> typeInfos{
+        {std::type_index(typeid(TestComponent)), MakeComponentTypeInfo<TestComponent>()}};
+    ArchetypeChunk chunk{allocator, {std::type_index(typeid(TestComponent))}, typeInfos};
 };
 
-TEST_F(ArchetypeChunkUVETest, ReserveRowUVE_ReturnsSequentialRowsUntilFull) {
-    for (std::size_t expectedRow = 0; expectedRow < kChunkCapacityUVE; ++expectedRow) {
-        EXPECT_EQ(chunk.ReserveRowUVE(EntityUVE{}), expectedRow);
+TEST_F(ArchetypeChunkTest, ReserveRow_ReturnsSequentialRowsUntilFull) {
+    for (std::size_t expectedRow = 0; expectedRow < kChunkCapacity; ++expectedRow) {
+        EXPECT_EQ(chunk.ReserveRow(Entity{}), expectedRow);
     }
-    EXPECT_TRUE(chunk.IsFullUVE());
+    EXPECT_TRUE(chunk.IsFull());
 }
 
 #if UVE_DEBUG
-TEST_F(ArchetypeChunkUVETest, GetComponentPointerUVE_UnregisteredComponentTypeAsserts) {
-    static_cast<void>(chunk.ReserveRowUVE(EntityUVE{}));
+TEST_F(ArchetypeChunkTest, GetComponentPointer_UnregisteredComponentTypeAsserts) {
+    static_cast<void>(chunk.ReserveRow(Entity{}));
     EXPECT_DEATH(
-        { static_cast<void>(chunk.GetComponentPointerUVE(std::type_index(typeid(UnregisteredComponentUVE)), 0)); },
+        { static_cast<void>(chunk.GetComponentPointer(std::type_index(typeid(UnregisteredComponent)), 0)); },
         "");
 }
 #else
-TEST_F(ArchetypeChunkUVETest, GetComponentPointerUVE_UnregisteredComponentTypeThrowsOutOfRange) {
-    static_cast<void>(chunk.ReserveRowUVE(EntityUVE{}));
+TEST_F(ArchetypeChunkTest, GetComponentPointer_UnregisteredComponentTypeThrowsOutOfRange) {
+    static_cast<void>(chunk.ReserveRow(Entity{}));
     EXPECT_THROW(
-        { static_cast<void>(chunk.GetComponentPointerUVE(std::type_index(typeid(UnregisteredComponentUVE)), 0)); },
+        { static_cast<void>(chunk.GetComponentPointer(std::type_index(typeid(UnregisteredComponent)), 0)); },
         std::out_of_range);
 }
 #endif
 
 #if UVE_DEBUG
-TEST_F(ArchetypeChunkUVETest, ReserveRowUVE_OnFullChunkAsserts) {
-    for (std::size_t i = 0; i < kChunkCapacityUVE; ++i) {
-        static_cast<void>(chunk.ReserveRowUVE(EntityUVE{}));
+TEST_F(ArchetypeChunkTest, ReserveRow_OnFullChunkAsserts) {
+    for (std::size_t i = 0; i < kChunkCapacity; ++i) {
+        static_cast<void>(chunk.ReserveRow(Entity{}));
     }
-    EXPECT_DEATH({ static_cast<void>(chunk.ReserveRowUVE(EntityUVE{})); }, "");
+    EXPECT_DEATH({ static_cast<void>(chunk.ReserveRow(Entity{})); }, "");
 }
 
-TEST_F(ArchetypeChunkUVETest, VacateRowUVE_OutOfRangeRowAsserts) {
-    EXPECT_DEATH({ static_cast<void>(chunk.VacateRowUVE(0)); }, "");
+TEST_F(ArchetypeChunkTest, VacateRow_OutOfRangeRowAsserts) {
+    EXPECT_DEATH({ static_cast<void>(chunk.VacateRow(0)); }, "");
 }
 
-TEST_F(ArchetypeChunkUVETest, GetEntityAtRowUVE_OutOfRangeRowAsserts) {
-    EXPECT_DEATH({ static_cast<void>(chunk.GetEntityAtRowUVE(0)); }, "");
+TEST_F(ArchetypeChunkTest, GetEntityAtRow_OutOfRangeRowAsserts) {
+    EXPECT_DEATH({ static_cast<void>(chunk.GetEntityAtRow(0)); }, "");
 }
 #else
-TEST_F(ArchetypeChunkUVETest, ReserveRowUVE_OnFullChunkReturnsSentinelInsteadOfOverrunningStorage) {
-    for (std::size_t i = 0; i < kChunkCapacityUVE; ++i) {
-        static_cast<void>(chunk.ReserveRowUVE(EntityUVE{}));
+TEST_F(ArchetypeChunkTest, ReserveRow_OnFullChunkReturnsSentinelInsteadOfOverrunningStorage) {
+    for (std::size_t i = 0; i < kChunkCapacity; ++i) {
+        static_cast<void>(chunk.ReserveRow(Entity{}));
     }
-    EXPECT_EQ(chunk.ReserveRowUVE(EntityUVE{}), kInvalidRowUVE);
-    EXPECT_TRUE(chunk.IsFullUVE()); // the failed reservation must not have grown m_count further
+    EXPECT_EQ(chunk.ReserveRow(Entity{}), kInvalidRow);
+    EXPECT_TRUE(chunk.IsFull()); // the failed reservation must not have grown m_count further
 }
 
-TEST_F(ArchetypeChunkUVETest, VacateRowUVE_OutOfRangeRowReturnsInvalidEntityInsteadOfUnderflowing) {
-    EXPECT_EQ(chunk.VacateRowUVE(0), kInvalidEntityUVE);
-    EXPECT_EQ(chunk.GetCountUVE(), 0U);
+TEST_F(ArchetypeChunkTest, VacateRow_OutOfRangeRowReturnsInvalidEntityInsteadOfUnderflowing) {
+    EXPECT_EQ(chunk.VacateRow(0), kInvalidEntity);
+    EXPECT_EQ(chunk.GetCount(), 0U);
 }
 
-TEST_F(ArchetypeChunkUVETest, GetEntityAtRowUVE_OutOfRangeRowReturnsInvalidEntity) {
-    EXPECT_EQ(chunk.GetEntityAtRowUVE(0), kInvalidEntityUVE);
+TEST_F(ArchetypeChunkTest, GetEntityAtRow_OutOfRangeRowReturnsInvalidEntity) {
+    EXPECT_EQ(chunk.GetEntityAtRow(0), kInvalidEntity);
 }
 #endif
 

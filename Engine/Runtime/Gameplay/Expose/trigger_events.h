@@ -8,12 +8,12 @@
 
 namespace UVE::Gameplay {
 
-struct TriggerFiredEventUVE final {
-    Scene::EntityUVE trigger = Scene::kInvalidEntityUVE;
-    Scene::EntityUVE interactor = Scene::kInvalidEntityUVE;
+struct TriggerFiredEvent final {
+    Scene::Entity trigger = Scene::kInvalidEntity;
+    Scene::Entity interactor = Scene::kInvalidEntity;
     std::uint32_t firedCount = 0U;
 
-    [[nodiscard]] bool operator==(const TriggerFiredEventUVE&) const noexcept = default;
+    [[nodiscard]] bool operator==(const TriggerFiredEvent&) const noexcept = default;
 };
 
 } // namespace UVE::Gameplay

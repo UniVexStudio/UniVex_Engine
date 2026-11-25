@@ -14,44 +14,44 @@
 
 namespace UVE::Scene {
 
-/// EntityManagerUVE is the concrete, engine-standard implementation of IEntityManagerUVE: an
-/// archetype ECS with chunk-based component storage (see ArchetypeUVE/ArchetypeChunkUVE in
+/// EntityManager is the concrete, engine-standard implementation of IEntityManager: an
+/// archetype ECS with chunk-based component storage (see Archetype/ArchetypeChunk in
 /// engine/scene/src/ — private implementation details hidden entirely behind this PIMPL, the
-/// same "no internals in the public header" idiom ConfigManagerUVE established; here it's
+/// same "no internals in the public header" idiom ConfigManager established; here it's
 /// motivated by avoiding incomplete-type risk in a public header rather than hiding a
 /// third-party dependency, but the mechanism is identical).
-/// Thread-safety: not thread-safe — every method (including ForEachUVE, inherited from
-/// IEntityManagerUVE) must be called only from the main/scene thread, matching EngineCoreUVE's
+/// Thread-safety: not thread-safe — every method (including ForEach, inherited from
+/// IEntityManager) must be called only from the main/scene thread, matching EngineCore's
 /// own single-threaded contract.
-class EntityManagerUVE final : public IEntityManagerUVE {
+class EntityManager final : public IEntityManager {
 public:
-    /// `allocator` backs every chunk's component storage (see ArchetypeChunkUVE); `eventSystem` receives
-    /// EntityCreatedEventUVE/EntityDestroyedEventUVE publications. Both references must outlive
-    /// this EntityManagerUVE.
-    EntityManagerUVE(Memory::IAllocatorUVE& allocator, Events::IEventSystemUVE& eventSystem);
-    ~EntityManagerUVE() override;
+    /// `allocator` backs every chunk's component storage (see ArchetypeChunk); `eventSystem` receives
+    /// EntityCreatedEvent/EntityDestroyedEvent publications. Both references must outlive
+    /// this EntityManager.
+    EntityManager(Memory::IAllocator& allocator, Events::IEventSystem& eventSystem);
+    ~EntityManager() override;
 
-    EntityManagerUVE(const EntityManagerUVE&) = delete;
-    EntityManagerUVE& operator=(const EntityManagerUVE&) = delete;
+    EntityManager(const EntityManager&) = delete;
+    EntityManager& operator=(const EntityManager&) = delete;
 
-    [[nodiscard]] EntityUVE CreateEntityUVE() override;
-    void DestroyEntityUVE(EntityUVE entity) override;
-    [[nodiscard]] bool IsAliveUVE(EntityUVE entity) const noexcept override;
-    [[nodiscard]] std::size_t GetEntityCountUVE() const noexcept override;
-    [[nodiscard]] std::vector<std::type_index> GetComponentTypesUVE(EntityUVE entity) const override;
+    [[nodiscard]] Entity CreateEntity() override;
+    void DestroyEntity(Entity entity) override;
+    [[nodiscard]] bool IsAlive(Entity entity) const noexcept override;
+    [[nodiscard]] std::size_t GetEntityCount() const noexcept override;
+    [[nodiscard]] std::vector<std::type_index> GetComponentTypes(Entity entity) const override;
 
 protected:
-    [[nodiscard]] void* AddComponentErased(EntityUVE entity, std::type_index componentType,
-                                            const ComponentTypeInfoUVE& typeInfo) override;
-    void RemoveComponentErased(EntityUVE entity, std::type_index componentType) override;
-    [[nodiscard]] bool HasComponentErased(EntityUVE entity, std::type_index componentType) const override;
-    [[nodiscard]] void* GetComponentErased(EntityUVE entity, std::type_index componentType) override;
+    [[nodiscard]] void* AddComponentErased(Entity entity, std::type_index componentType,
+                                            const ComponentTypeInfo& typeInfo) override;
+    void RemoveComponentErased(Entity entity, std::type_index componentType) override;
+    [[nodiscard]] bool HasComponentErased(Entity entity, std::type_index componentType) const override;
+    [[nodiscard]] void* GetComponentErased(Entity entity, std::type_index componentType) override;
     void ForEachErased(const std::vector<std::type_index>& componentTypes,
-                        const std::function<void(EntityUVE, const std::vector<void*>&)>& callback) override;
+                        const std::function<void(Entity, const std::vector<void*>&)>& callback) override;
 
 private:
-    struct ImplUVE;
-    std::unique_ptr<ImplUVE> m_impl;
+    struct Impl;
+    std::unique_ptr<Impl> m_impl;
 };
 
 } // namespace UVE::Scene

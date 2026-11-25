@@ -40,11 +40,11 @@
 namespace UVE::Editor {
 namespace {
 
-using T = Asset::BlueprintPinTypeUVE;
+using T = Asset::BlueprintPinType;
 using PT = prism::BlueprintPinType;
-using Role = Asset::BlueprintNodeRoleUVE;
+using Role = Asset::BlueprintNodeRole;
 
-[[nodiscard]] PT ToPrismUVE(const T type) {
+[[nodiscard]] PT ToPrism(const T type) {
     switch (type) {
         case T::Exec: return PT::Exec;
         case T::Bool: return PT::Bool;
@@ -61,7 +61,7 @@ using Role = Asset::BlueprintNodeRoleUVE;
     return PT::Float;
 }
 
-[[nodiscard]] T FromPrismUVE(const PT type) {
+[[nodiscard]] T FromPrism(const PT type) {
     switch (type) {
         case PT::Bool: return T::Bool;
         case PT::Int: return T::Int;
@@ -74,7 +74,7 @@ using Role = Asset::BlueprintNodeRoleUVE;
     }
 }
 
-[[nodiscard]] prism::BlueprintNodeCategory CategoryOfUVE(const Asset::BlueprintNodeTypeUVE& type) {
+[[nodiscard]] prism::BlueprintNodeCategory CategoryOf(const Asset::BlueprintNodeType& type) {
     switch (type.role) {
         case Role::Event: return prism::BlueprintNodeCategory::Event;
         case Role::Pure: return prism::BlueprintNodeCategory::PureMath;
@@ -86,10 +86,10 @@ using Role = Asset::BlueprintNodeRoleUVE;
 }
 
 /// A graph node of `type` (for Get / Set, of `variable`), pins as the engine defines them.
-[[nodiscard]] prism::BlueprintNode MakeNodeUVE(const Asset::BlueprintNodeTypeUVE& type, const Asset::BlueprintAssetUVE& blueprint,
+[[nodiscard]] prism::BlueprintNode MakeNode(const Asset::BlueprintNodeType& type, const Asset::BlueprintAsset& blueprint,
                                                const std::string& variable) {
     prism::BlueprintNode node;
-    node.category = CategoryOfUVE(type);
+    node.category = CategoryOf(type);
     node.tooltip = type.tooltip;
     node.typeKey = type.key;
     if (type.role == Role::GetVariable) {
@@ -102,15 +102,15 @@ using Role = Asset::BlueprintNodeRoleUVE;
         const std::size_t bar = type.category.find('|');
         node.subtitle = bar == std::string::npos ? type.category : type.category.substr(bar + 1U);
     }
-    Asset::BlueprintNodeUVE probe;
+    Asset::BlueprintNode probe;
     probe.type = type.key;
     probe.variable = variable;
-    const Asset::BlueprintNodePinsUVE pins = Asset::ResolveBlueprintNodePinsUVE(blueprint, probe);
-    const auto pinOf = [](const Asset::BlueprintPinSpecUVE& spec, const prism::BlueprintPinKind kind) {
+    const Asset::BlueprintNodePins pins = Asset::ResolveBlueprintNodePins(blueprint, probe);
+    const auto pinOf = [](const Asset::BlueprintPinSpec& spec, const prism::BlueprintPinKind kind) {
         prism::BlueprintPin pin;
         pin.name = spec.type == T::Exec && spec.name.empty() ? std::string("Exec") : spec.name;
         pin.hideLabel = spec.type == T::Exec && spec.name.empty();
-        pin.type = ToPrismUVE(spec.type);
+        pin.type = ToPrism(spec.type);
         // A colour is picked, not typed: the colour picker for a Vector named for a colour.
         if (spec.type == T::Vector && (spec.name == "Color" || spec.name == "Colour" || spec.name == "Tint")) {
             pin.type = PT::Color;
@@ -118,13 +118,13 @@ using Role = Asset::BlueprintNodeRoleUVE;
         pin.kind = kind;
         pin.defaultValue = kind == prism::BlueprintPinKind::Input ? spec.defaultText : std::string{};
         // Text and numbers keep their box even when cleared, so they can always be typed into.
-        pin.editable = kind == prism::BlueprintPinKind::Input && spec.type != T::Exec && spec.type != T::Object && !Asset::IsBlueprintArrayTypeUVE(spec.type);
+        pin.editable = kind == prism::BlueprintPinKind::Input && spec.type != T::Exec && spec.type != T::Object && !Asset::IsBlueprintArrayType(spec.type);
         return pin;
     };
-    for (const Asset::BlueprintPinSpecUVE& spec : pins.inputs) {
+    for (const Asset::BlueprintPinSpec& spec : pins.inputs) {
         node.inputs.push_back(pinOf(spec, prism::BlueprintPinKind::Input));
     }
-    for (const Asset::BlueprintPinSpecUVE& spec : pins.outputs) {
+    for (const Asset::BlueprintPinSpec& spec : pins.outputs) {
         node.outputs.push_back(pinOf(spec, prism::BlueprintPinKind::Output));
     }
     if (type.role == Role::GetVariable && !node.outputs.empty()) {
@@ -133,17 +133,17 @@ using Role = Asset::BlueprintNodeRoleUVE;
     return node;
 }
 
-[[nodiscard]] prism::Color ColorOfUVE(const std::uint32_t rgba) {
+[[nodiscard]] prism::Color ColorOf(const std::uint32_t rgba) {
     return prism::Color(static_cast<std::uint8_t>(rgba >> 24U), static_cast<std::uint8_t>(rgba >> 16U), static_cast<std::uint8_t>(rgba >> 8U),
                         static_cast<std::uint8_t>(rgba));
 }
 
-[[nodiscard]] std::uint32_t RgbaOfUVE(const prism::Color c) {
+[[nodiscard]] std::uint32_t RgbaOf(const prism::Color c) {
     return (static_cast<std::uint32_t>(c.r) << 24U) | (static_cast<std::uint32_t>(c.g) << 16U) | (static_cast<std::uint32_t>(c.b) << 8U) |
            static_cast<std::uint32_t>(c.a);
 }
 
-[[nodiscard]] const char* TypeNameUVE(const PT type) {
+[[nodiscard]] const char* TypeName(const PT type) {
     switch (type) {
         case PT::Bool: return "Bool";
         case PT::Int: return "Int";
@@ -158,8 +158,8 @@ using Role = Asset::BlueprintNodeRoleUVE;
 }
 
 /// The kinds of widget a UI node acts on (empty: not a UI node, or any widget).
-[[nodiscard]] std::vector<WidgetKindUVE> WidgetKindsForUVE(const std::string& key) {
-    using K = WidgetKindUVE;
+[[nodiscard]] std::vector<WidgetKind> WidgetKindsFor(const std::string& key) {
+    using K = WidgetKind;
     if (key == "ui_set_text" || key == "ui_get_text") return {K::Text, K::TextBox, K::Button};
     if (key == "ui_on_clicked") return {K::Button};
     if (key == "ui_on_committed") return {K::TextBox};
@@ -175,14 +175,14 @@ using Role = Asset::BlueprintNodeRoleUVE;
     return {};
 }
 
-[[nodiscard]] bool IsWidgetNodeUVE(const std::string& key) {
+[[nodiscard]] bool IsWidgetNode(const std::string& key) {
     return key == "ui_set_visibility" || key == "ui_set_color" || key == "ui_set_position" || key == "ui_set_size" ||
            key == "ui_get_position" || key == "ui_get_size" || key == "ui_play_animation" || key == "ui_stop_animation" ||
-           !WidgetKindsForUVE(key).empty();
+           !WidgetKindsFor(key).empty();
 }
 
 /// The node's widget input: its first input that is not an exec pin.
-[[nodiscard]] int WidgetPinOfUVE(const prism::BlueprintNode& node) {
+[[nodiscard]] int WidgetPinOf(const prism::BlueprintNode& node) {
     for (int i = 0; i < static_cast<int>(node.inputs.size()); ++i) {
         if (node.inputs[static_cast<std::size_t>(i)].type != PT::Exec) {
             return i;
@@ -193,12 +193,12 @@ using Role = Asset::BlueprintNodeRoleUVE;
 
 } // namespace
 
-EditorBlueprintPanelUVE::EditorBlueprintPanelUVE(EditorUVE& editor) : m_editor(editor) {}
+EditorBlueprintPanel::EditorBlueprintPanel(Editor& editor) : m_editor(editor) {}
 
-std::string EditorBlueprintPanelUVE::NodeKeyUVE(const prism::BlueprintNode& node) {
+std::string EditorBlueprintPanel::NodeKey(const prism::BlueprintNode& node) {
     static const std::map<std::string, std::string> byTitle = [] {
         std::map<std::string, std::string> out;
-        for (const Asset::BlueprintNodeTypeUVE& type : Asset::GetBlueprintNodeTypesUVE()) {
+        for (const Asset::BlueprintNodeType& type : Asset::GetBlueprintNodeTypes()) {
             out[type.title] = type.key;
         }
         return out;
@@ -207,14 +207,14 @@ std::string EditorBlueprintPanelUVE::NodeKeyUVE(const prism::BlueprintNode& node
     return found == byTitle.end() ? std::string{} : found->second;
 }
 
-std::vector<std::string> EditorBlueprintPanelUVE::WidgetChoicesUVE(const std::string& key) const {
+std::vector<std::string> EditorBlueprintPanel::WidgetChoices(const std::string& key) const {
     std::vector<std::string> names;
-    if (!widgetsProvider || !IsWidgetNodeUVE(key)) {
+    if (!widgetsProvider || !IsWidgetNode(key)) {
         return names;
     }
-    const std::vector<WidgetKindUVE> kinds = WidgetKindsForUVE(key);
+    const std::vector<WidgetKind> kinds = WidgetKindsFor(key);
     for (const auto& [name, kind] : widgetsProvider()) {
-        const bool screen = kind == WidgetKindUVE::Canvas;
+        const bool screen = kind == WidgetKind::Canvas;
         const bool wantsScreen = key == "ui_show_screen";
         if (screen != wantsScreen || (!kinds.empty() && std::find(kinds.begin(), kinds.end(), kind) == kinds.end())) {
             continue;
@@ -226,24 +226,24 @@ std::vector<std::string> EditorBlueprintPanelUVE::WidgetChoicesUVE(const std::st
     return names;
 }
 
-prism::Ref<prism::Widget> EditorBlueprintPanelUVE::BuildUVE() {
+prism::Ref<prism::Widget> EditorBlueprintPanel::Build() {
     // A rebuilt window keeps the open Blueprint: what the old graph held (unsaved edits too),
     // else the file itself. A fresh graph alone would show it empty.
-    std::optional<Asset::BlueprintAssetUVE> keep;
-    if (IsOpenUVE()) {
+    std::optional<Asset::BlueprintAsset> keep;
+    if (IsOpen()) {
         if (m_graph) {
-            keep = FromGraphUVE();
+            keep = FromGraph();
         } else {
-            Asset::BlueprintAssetUVE fromFile;
-            std::filesystem::path real = m_editor.m_services->GetFileSystemUVE().ResolveRealPathUVE(m_path);
+            Asset::BlueprintAsset fromFile;
+            std::filesystem::path real = m_editor.m_services->GetFileSystem().ResolveRealPath(m_path);
             if (real.empty()) {
                 real = m_path;
             }
-            if (Asset::IsWidgetBlueprintPathUVE(m_path)) {
-                if (std::optional<Asset::BlueprintAssetUVE> graph = Asset::LoadWidgetBlueprintGraphUVE(real)) {
+            if (Asset::IsWidgetBlueprintPath(m_path)) {
+                if (std::optional<Asset::BlueprintAsset> graph = Asset::LoadWidgetBlueprintGraph(real)) {
                     keep = std::move(*graph);
                 }
-            } else if (Asset::LoadBlueprintAssetUVE(real, fromFile)) {
+            } else if (Asset::LoadBlueprintAsset(real, fromFile)) {
                 keep = std::move(fromFile);
             }
         }
@@ -264,22 +264,22 @@ prism::Ref<prism::Widget> EditorBlueprintPanelUVE::BuildUVE() {
     m_graph->setPreset(prism::BlueprintGraphPreset::EventBlueprint);   // not PRISM's demo Widget Blueprint
     m_graph->setWatermark("Blueprint Class", "Gameplay graph", prism::Icon::BlueprintClass);
     m_graph->clear();
-    m_graph->setNodeLibrary(LibraryUVE());
+    m_graph->setNodeLibrary(Library());
     // A widget pin lists the widget's own widgets of the kind the node acts on.
     m_graph->pinChoices = [this](const prism::BlueprintNode& node, const int pin) -> std::vector<std::string> {
         // An Anim node's Parameter pin lists the entity's Animation Graph parameters.
-        if (animParametersProvider && NodeKeyUVE(node).rfind("anim_", 0U) == 0U && pin >= 0 &&
+        if (animParametersProvider && NodeKey(node).rfind("anim_", 0U) == 0U && pin >= 0 &&
             pin < static_cast<int>(node.inputs.size()) && node.inputs[static_cast<std::size_t>(pin)].name == "Parameter") {
             return animParametersProvider();
         }
-        if (pin != WidgetPinOfUVE(node)) {
+        if (pin != WidgetPinOf(node)) {
             return {};
         }
-        return WidgetChoicesUVE(NodeKeyUVE(node));
+        return WidgetChoices(NodeKey(node));
     };
     m_graph->onSelectionChanged = [this](const std::vector<int>&) { m_sideDirty = true; };
-    m_graph->onSaveRequested = [this] { static_cast<void>(SaveUVE()); };
-    m_graph->onCompileRequested = [this] { CompileUVE(); };
+    m_graph->onSaveRequested = [this] { static_cast<void>(Save()); };
+    m_graph->onCompileRequested = [this] { Compile(); };
     m_graph->onCommit = [this](const std::string&) {
         if (!m_loading) {
             m_dirty = true;
@@ -294,31 +294,31 @@ prism::Ref<prism::Widget> EditorBlueprintPanelUVE::BuildUVE() {
     };
 
     if (keep) {
-        if (Asset::IsWidgetBlueprintPathUVE(m_path)) {
+        if (Asset::IsWidgetBlueprintPath(m_path)) {
             m_graph->setWatermark("Widget Blueprint", "UI graph", prism::Icon::BlueprintClass);
         }
-        LoadIntoGraphUVE(*keep);
+        LoadIntoGraph(*keep);
         m_dirty = keepDirty;
     }
     m_side = prism::make<prism::ScrollBox>();
     m_sidePanel = m_side;
-    RebuildSideUVE();
+    RebuildSide();
     return m_graph;
 }
 
-std::vector<prism::BlueprintNodeSpec> EditorBlueprintPanelUVE::LibraryUVE() const {
+std::vector<prism::BlueprintNodeSpec> EditorBlueprintPanel::Library() const {
     // The engine's palette, then a Get and a Set for each variable.
     std::vector<prism::BlueprintNodeSpec> library;
-    const Asset::BlueprintAssetUVE blueprint = m_graph ? FromGraphUVE() : Asset::BlueprintAssetUVE{};
+    const Asset::BlueprintAsset blueprint = m_graph ? FromGraph() : Asset::BlueprintAsset{};
     // Only what belongs in this graph: a widget's controls in a widget's graph, an object's
     // movement and physics in an object's, and nothing the object lacks the component for.
-    const Asset::BlueprintGraphKindUVE graphKind =
-        Asset::IsWidgetBlueprintPathUVE(m_path) ? Asset::BlueprintGraphKindUVE::Widget : Asset::BlueprintGraphKindUVE::Object;
-    for (const Asset::BlueprintNodeTypeUVE& type : Asset::GetBlueprintNodeTypesUVE()) {
+    const Asset::BlueprintGraphKind graphKind =
+        Asset::IsWidgetBlueprintPath(m_path) ? Asset::BlueprintGraphKind::Widget : Asset::BlueprintGraphKind::Object;
+    for (const Asset::BlueprintNodeType& type : Asset::GetBlueprintNodeTypes()) {
         if (type.role == Role::GetVariable || type.role == Role::SetVariable) {
             continue;
         }
-        if (!Asset::IsBlueprintNodeForGraphUVE(type, graphKind) || (!type.needs.empty() && hasComponent && !hasComponent(type.needs))) {
+        if (!Asset::IsBlueprintNodeForGraph(type, graphKind) || (!type.needs.empty() && hasComponent && !hasComponent(type.needs))) {
             continue;
         }
         prism::BlueprintNodeSpec spec;
@@ -326,11 +326,11 @@ std::vector<prism::BlueprintNodeSpec> EditorBlueprintPanelUVE::LibraryUVE() cons
         spec.name = type.title;
         spec.keywords = type.keywords + " " + type.tooltip;
         spec.make = [this, &type, blueprint] {
-            prism::BlueprintNode node = MakeNodeUVE(type, blueprint, {});
+            prism::BlueprintNode node = MakeNode(type, blueprint, {});
             // A UI node starts on the first widget it can act on, not a placeholder name.
-            const std::vector<std::string> widgets = WidgetChoicesUVE(type.key);
-            const int pin = WidgetPinOfUVE(node);
-            if (!widgets.empty() && pin >= 0 && IsWidgetNodeUVE(type.key)) {
+            const std::vector<std::string> widgets = WidgetChoices(type.key);
+            const int pin = WidgetPinOf(node);
+            if (!widgets.empty() && pin >= 0 && IsWidgetNode(type.key)) {
                 const std::string& current = node.inputs[static_cast<std::size_t>(pin)].defaultValue;
                 if (std::find(widgets.begin(), widgets.end(), current) == widgets.end()) {
                     node.inputs[static_cast<std::size_t>(pin)].defaultValue = widgets.front();
@@ -342,7 +342,7 @@ std::vector<prism::BlueprintNodeSpec> EditorBlueprintPanelUVE::LibraryUVE() cons
     }
     if (widgetsProvider) {
         // Widgets, one sub-category each: its events and calls, already pointed at it by name.
-        using K = WidgetKindUVE;
+        using K = WidgetKind;
         const auto keysFor = [](const K kind) -> std::vector<const char*> {
             switch (kind) {
                 case K::Button: return {"ui_on_clicked", "ui_set_visibility", "ui_set_color"};
@@ -362,16 +362,16 @@ std::vector<prism::BlueprintNodeSpec> EditorBlueprintPanelUVE::LibraryUVE() cons
         };
         for (const auto& [name, kind] : widgetsProvider()) {
             for (const char* key : keysFor(kind)) {
-                const Asset::BlueprintNodeTypeUVE* const type = Asset::FindBlueprintNodeTypeUVE(key);
+                const Asset::BlueprintNodeType* const type = Asset::FindBlueprintNodeType(key);
                 if (type == nullptr) {
                     continue;
                 }
                 prism::BlueprintNodeSpec spec;
                 spec.category = std::string("Widgets|") + name;
                 spec.name = type->title + " (" + name + ")";
-                spec.keywords = name + " " + WidgetKindLabelUVE(kind) + " " + type->keywords;
+                spec.keywords = name + " " + WidgetKindLabel(kind) + " " + type->keywords;
                 spec.make = [type, blueprint, name = name] {
-                    prism::BlueprintNode node = MakeNodeUVE(*type, blueprint, {});
+                    prism::BlueprintNode node = MakeNode(*type, blueprint, {});
                     // The widget pin is the first that is not an exec pin.
                     for (prism::BlueprintPin& pin : node.inputs) {
                         if (pin.type != PT::Exec) {
@@ -386,38 +386,38 @@ std::vector<prism::BlueprintNodeSpec> EditorBlueprintPanelUVE::LibraryUVE() cons
         }
     }
     if (m_graph) {
-        const Asset::BlueprintNodeTypeUVE* const get = Asset::FindBlueprintNodeTypeUVE("get_variable");
-        const Asset::BlueprintNodeTypeUVE* const set = Asset::FindBlueprintNodeTypeUVE("set_variable");
+        const Asset::BlueprintNodeType* const get = Asset::FindBlueprintNodeType("get_variable");
+        const Asset::BlueprintNodeType* const set = Asset::FindBlueprintNodeType("set_variable");
         for (const prism::BlueprintVariable& variable : m_graph->variables()) {
             const std::string name = variable.name;
             library.push_back(prism::BlueprintNodeSpec{"Variables", "Get " + name, "variable read",
-                                                       [get, blueprint, name] { return MakeNodeUVE(*get, blueprint, name); }});
+                                                       [get, blueprint, name] { return MakeNode(*get, blueprint, name); }});
             library.push_back(prism::BlueprintNodeSpec{"Variables", "Set " + name, "variable write assign",
-                                                       [set, blueprint, name] { return MakeNodeUVE(*set, blueprint, name); }});
+                                                       [set, blueprint, name] { return MakeNode(*set, blueprint, name); }});
         }
     }
     return library;
 }
 
-Asset::BlueprintAssetUVE EditorBlueprintPanelUVE::FromGraphUVE() const {
-    Asset::BlueprintAssetUVE out;
-    out.parentKind = ParentKindUVE();
+Asset::BlueprintAsset EditorBlueprintPanel::FromGraph() const {
+    Asset::BlueprintAsset out;
+    out.parentKind = ParentKind();
     if (!m_graph) {
         return out;
     }
     for (const prism::BlueprintVariable& variable : m_graph->variables()) {
         // An array's item type lives beside the graph (the graph knows only "Array").
         const auto array = m_arrayTypes.find(variable.name);
-        const T type = variable.type == PT::Array ? (array != m_arrayTypes.end() ? array->second : T::ObjectArray) : FromPrismUVE(variable.type);
-        out.variables.push_back(Asset::BlueprintVariableUVE{variable.name, type, variable.value, m_exposed.contains(variable.name)});
+        const T type = variable.type == PT::Array ? (array != m_arrayTypes.end() ? array->second : T::ObjectArray) : FromPrism(variable.type);
+        out.variables.push_back(Asset::BlueprintVariable{variable.name, type, variable.value, m_exposed.contains(variable.name)});
     }
     std::map<std::string, std::string> byTitle;
-    for (const Asset::BlueprintNodeTypeUVE& type : Asset::GetBlueprintNodeTypesUVE()) {
+    for (const Asset::BlueprintNodeType& type : Asset::GetBlueprintNodeTypes()) {
         byTitle[type.title] = type.key;
     }
     std::set<int> kept;
     for (const prism::BlueprintNode& n : m_graph->nodes()) {
-        Asset::BlueprintNodeUVE node;
+        Asset::BlueprintNode node;
         node.id = static_cast<std::uint32_t>(n.id);
         node.x = n.pos.x;
         node.y = n.pos.y;
@@ -428,7 +428,7 @@ Asset::BlueprintAssetUVE EditorBlueprintPanelUVE::FromGraphUVE() const {
             const std::vector<prism::BlueprintPin>& pins = setter ? n.inputs : n.outputs;
             const auto named = std::find_if(pins.begin(), pins.end(), [](const prism::BlueprintPin& p) { return p.type != PT::Exec; });
             node.variable = named != pins.end() && !named->name.empty() ? named->name : (setter ? n.title.substr(4U) : n.title);
-        } else if (!n.typeKey.empty() && Asset::FindBlueprintNodeTypeUVE(n.typeKey) != nullptr) {
+        } else if (!n.typeKey.empty() && Asset::FindBlueprintNodeType(n.typeKey) != nullptr) {
             // The catalogue key the node was made with: renaming the node never loses it.
             node.type = n.typeKey;
         } else if (const auto found = byTitle.find(n.title); found != byTitle.end()) {
@@ -444,17 +444,17 @@ Asset::BlueprintAssetUVE EditorBlueprintPanelUVE::FromGraphUVE() const {
     }
     for (const prism::BlueprintWire& w : m_graph->wires()) {
         if (kept.contains(w.fromNodeId) && kept.contains(w.toNodeId)) {
-            out.wires.push_back(Asset::BlueprintWireUVE{static_cast<std::uint32_t>(w.fromNodeId), static_cast<std::uint32_t>(w.fromPinIndex),
+            out.wires.push_back(Asset::BlueprintWire{static_cast<std::uint32_t>(w.fromNodeId), static_cast<std::uint32_t>(w.fromPinIndex),
                                                         static_cast<std::uint32_t>(w.toNodeId), static_cast<std::uint32_t>(w.toPinIndex)});
         }
     }
     for (const prism::BlueprintComment& c : m_graph->comments()) {
-        out.comments.push_back(Asset::BlueprintCommentUVE{c.title, c.bounds.x, c.bounds.y, c.bounds.w, c.bounds.h, RgbaOfUVE(c.color)});
+        out.comments.push_back(Asset::BlueprintComment{c.title, c.bounds.x, c.bounds.y, c.bounds.w, c.bounds.h, RgbaOf(c.color)});
     }
     return out;
 }
 
-void EditorBlueprintPanelUVE::LoadIntoGraphUVE(const Asset::BlueprintAssetUVE& blueprint) {
+void EditorBlueprintPanel::LoadIntoGraph(const Asset::BlueprintAsset& blueprint) {
     if (!m_graph) {
         return;
     }
@@ -462,21 +462,21 @@ void EditorBlueprintPanelUVE::LoadIntoGraphUVE(const Asset::BlueprintAssetUVE& b
     m_graph->clear();
     m_exposed.clear();
     m_arrayTypes.clear();
-    for (const Asset::BlueprintVariableUVE& variable : blueprint.variables) {
-        static_cast<void>(m_graph->addVariable(variable.name, ToPrismUVE(variable.type), variable.defaultText));
+    for (const Asset::BlueprintVariable& variable : blueprint.variables) {
+        static_cast<void>(m_graph->addVariable(variable.name, ToPrism(variable.type), variable.defaultText));
         if (variable.exposed) {
             m_exposed.insert(variable.name);
         }
-        if (Asset::IsBlueprintArrayTypeUVE(variable.type)) {
+        if (Asset::IsBlueprintArrayType(variable.type)) {
             m_arrayTypes[variable.name] = variable.type;
         }
     }
-    for (const Asset::BlueprintNodeUVE& node : blueprint.nodes) {
-        const Asset::BlueprintNodeTypeUVE* const type = Asset::FindBlueprintNodeTypeUVE(node.type);
+    for (const Asset::BlueprintNode& node : blueprint.nodes) {
+        const Asset::BlueprintNodeType* const type = Asset::FindBlueprintNodeType(node.type);
         if (type == nullptr) {
             continue;
         }
-        prism::BlueprintNode shown = MakeNodeUVE(*type, blueprint, node.variable);
+        prism::BlueprintNode shown = MakeNode(*type, blueprint, node.variable);
         shown.id = static_cast<int>(node.id);
         shown.pos = prism::Vec2{node.x, node.y};
         // As saved, empty included: a value cleared on purpose stays cleared.
@@ -487,7 +487,7 @@ void EditorBlueprintPanelUVE::LoadIntoGraphUVE(const Asset::BlueprintAssetUVE& b
         }
         m_graph->addNode(shown);
     }
-    for (const Asset::BlueprintWireUVE& wire : blueprint.wires) {
+    for (const Asset::BlueprintWire& wire : blueprint.wires) {
         const prism::BlueprintNode* const from = m_graph->findNode(static_cast<int>(wire.fromNode));
         if (from == nullptr || wire.fromPin >= from->outputs.size()) {
             continue;
@@ -495,14 +495,14 @@ void EditorBlueprintPanelUVE::LoadIntoGraphUVE(const Asset::BlueprintAssetUVE& b
         m_graph->connectPins(static_cast<int>(wire.fromNode), static_cast<int>(wire.fromPin), static_cast<int>(wire.toNode),
                              static_cast<int>(wire.toPin), from->outputs[wire.fromPin].type);
     }
-    for (const Asset::BlueprintCommentUVE& comment : blueprint.comments) {
+    for (const Asset::BlueprintComment& comment : blueprint.comments) {
         prism::BlueprintComment box;
         box.title = comment.title;
         box.bounds = prism::Rect{comment.x, comment.y, comment.width, comment.height};
-        box.color = ColorOfUVE(comment.color);
+        box.color = ColorOf(comment.color);
         m_graph->addComment(box);
     }
-    m_graph->setNodeLibrary(LibraryUVE());
+    m_graph->setNodeLibrary(Library());
     m_graph->clearCompileResult();
     m_graph->commit("Open");
     m_graph->frameAll();
@@ -511,19 +511,19 @@ void EditorBlueprintPanelUVE::LoadIntoGraphUVE(const Asset::BlueprintAssetUVE& b
     m_sideDirty = true;
 }
 
-std::string EditorBlueprintPanelUVE::ParentKindUVE() const {
-    const Scene::IEntityManagerUVE& em = m_editor.m_services->GetEntityManagerUVE();
-    if (m_target == Scene::kInvalidEntityUVE || !em.IsAliveUVE(m_target)) {
+std::string EditorBlueprintPanel::ParentKind() const {
+    const Scene::IEntityManager& em = m_editor.m_services->GetEntityManager();
+    if (m_target == Scene::kInvalidEntity || !em.IsAlive(m_target)) {
         return "Object3D";
     }
-    const Scene::Objects::SceneObjectDescriptorUVE* const descriptor =
-        Scene::Objects::FindSceneObjectDescriptorUVE(Scene::ResolveSceneObjectKindUVE(em, m_target));
+    const Scene::Objects::SceneObjectDescriptor* const descriptor =
+        Scene::Objects::FindSceneObjectDescriptor(Scene::ResolveSceneObjectKind(em, m_target));
     return descriptor != nullptr ? std::string(descriptor->displayName) : std::string("Object3D");
 }
 
-std::string EditorBlueprintPanelUVE::ProjectPathUVE(const std::filesystem::path& absolute) const {
+std::string EditorBlueprintPanel::ProjectPath(const std::filesystem::path& absolute) const {
     // The project root is the VFS's root mount: what a probe path resolves under.
-    const std::filesystem::path probe = m_editor.m_services->GetFileSystemUVE().ResolveRealPathUVE("uve_root_probe");
+    const std::filesystem::path probe = m_editor.m_services->GetFileSystem().ResolveRealPath("uve_root_probe");
     std::error_code error;
     if (!probe.empty()) {
         const std::filesystem::path root = std::filesystem::weakly_canonical(probe.parent_path(), error);
@@ -532,45 +532,45 @@ std::string EditorBlueprintPanelUVE::ProjectPathUVE(const std::filesystem::path&
             return relative.generic_string();
         }
     }
-    const std::filesystem::path content = m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE().contentRoot;
+    const std::filesystem::path content = m_editor.m_services->GetProjectFileIndex().GetSnapshot().contentRoot;
     const std::filesystem::path relative = absolute.lexically_relative(content.parent_path());
     return relative.empty() || *relative.begin() == ".." ? absolute.filename().generic_string() : relative.generic_string();
 }
 
-bool EditorBlueprintPanelUVE::OpenUVE(const std::string& path, const Scene::EntityUVE target) {
-    std::filesystem::path real = m_editor.m_services->GetFileSystemUVE().ResolveRealPathUVE(path);
+bool EditorBlueprintPanel::Open(const std::string& path, const Scene::Entity target) {
+    std::filesystem::path real = m_editor.m_services->GetFileSystem().ResolveRealPath(path);
     if (real.empty()) {
         real = path;
     }
-    Asset::BlueprintAssetUVE blueprint;
+    Asset::BlueprintAsset blueprint;
     // A Widget Blueprint keeps its graph beside its widgets, in the same file.
-    if (Asset::IsWidgetBlueprintPathUVE(path)) {
-        if (std::optional<Asset::BlueprintAssetUVE> graph = Asset::LoadWidgetBlueprintGraphUVE(real)) {
+    if (Asset::IsWidgetBlueprintPath(path)) {
+        if (std::optional<Asset::BlueprintAsset> graph = Asset::LoadWidgetBlueprintGraph(real)) {
             blueprint = std::move(*graph);
         } else {
             m_editor.m_contentStatusMessage = "Could not open the Widget Blueprint " + path + ".";
             return false;
         }
-    } else if (!Asset::LoadBlueprintAssetUVE(real, blueprint)) {
+    } else if (!Asset::LoadBlueprintAsset(real, blueprint)) {
         m_editor.m_contentStatusMessage = "Could not open the Blueprint " + path + ".";
         return false;
     }
     m_path = path;
     m_target = target;
     if (m_graph) {
-        if (Asset::IsWidgetBlueprintPathUVE(path)) {
+        if (Asset::IsWidgetBlueprintPath(path)) {
             m_graph->setWatermark("Widget Blueprint", "UI graph", prism::Icon::BlueprintClass);
         } else {
             m_graph->setWatermark("Blueprint Class", "Gameplay graph", prism::Icon::BlueprintClass);
         }
     }
-    LoadIntoGraphUVE(blueprint);
+    LoadIntoGraph(blueprint);
     return true;
 }
 
-void EditorBlueprintPanelUVE::CloseUVE() {
+void EditorBlueprintPanel::Close() {
     m_path.clear();
-    m_target = Scene::kInvalidEntityUVE;
+    m_target = Scene::kInvalidEntity;
     m_dirty = false;
     if (m_graph) {
         m_loading = true;
@@ -580,23 +580,23 @@ void EditorBlueprintPanelUVE::CloseUVE() {
     m_sideDirty = true;
 }
 
-std::optional<Asset::BlueprintAssetUVE> EditorBlueprintPanelUVE::UnsavedForUVE(const std::string& path) const {
-    if (!IsOpenUVE() || path != m_path) {
+std::optional<Asset::BlueprintAsset> EditorBlueprintPanel::UnsavedFor(const std::string& path) const {
+    if (!IsOpen() || path != m_path) {
         return std::nullopt;
     }
-    return FromGraphUVE();
+    return FromGraph();
 }
 
-bool EditorBlueprintPanelUVE::SaveUVE() {
-    if (!IsOpenUVE()) {
+bool EditorBlueprintPanel::Save() {
+    if (!IsOpen()) {
         return false;
     }
-    std::filesystem::path real = m_editor.m_services->GetFileSystemUVE().ResolveRealPathUVE(m_path);
+    std::filesystem::path real = m_editor.m_services->GetFileSystem().ResolveRealPath(m_path);
     if (real.empty()) {
         real = m_path;
     }
-    const bool saved = Asset::IsWidgetBlueprintPathUVE(m_path) ? Asset::SaveWidgetBlueprintGraphUVE(real, FromGraphUVE())
-                                                                : Asset::SaveBlueprintAssetUVE(FromGraphUVE(), real);
+    const bool saved = Asset::IsWidgetBlueprintPath(m_path) ? Asset::SaveWidgetBlueprintGraph(real, FromGraph())
+                                                                : Asset::SaveBlueprintAsset(FromGraph(), real);
     if (!saved) {
         if (prism::Application::exists()) {
             prism::Application::get().notify("Could not save " + m_path, prism::ToastLevel::Error);
@@ -604,21 +604,21 @@ bool EditorBlueprintPanelUVE::SaveUVE() {
         return false;
     }
     m_dirty = false;
-    m_editor.RefreshProjectFileIndexUVE();
+    m_editor.RefreshProjectFileIndex();
     if (prism::Application::exists()) {
         prism::Application::get().notify("Saved " + std::filesystem::path(m_path).filename().string(), prism::ToastLevel::Success, 1500);
     }
     return true;
 }
 
-void EditorBlueprintPanelUVE::CompileUVE() {
-    if (!IsOpenUVE() || !m_graph) {
+void EditorBlueprintPanel::Compile() {
+    if (!IsOpen() || !m_graph) {
         return;
     }
-    static_cast<void>(m_editor.CompileEntityEditorUVE());
+    static_cast<void>(m_editor.CompileEntityEditor());
     prism::BlueprintCompileReport report;
     if (m_editor.m_entityEditSession.has_value()) {
-        for (const EditorUVE::EntityCompileProblemUVE& problem : m_editor.m_entityEditSession->problems) {
+        for (const Editor::EntityCompileProblem& problem : m_editor.m_entityEditSession->problems) {
             if (problem.scriptPath != m_path) {
                 continue;
             }
@@ -636,9 +636,9 @@ void EditorBlueprintPanelUVE::CompileUVE() {
             all.push_back(entry.first);
         }
         for (const prism::BlueprintNode& node : m_graph->nodes()) {
-            const std::string key = NodeKeyUVE(node);
-            const int pin = WidgetPinOfUVE(node);
-            if (!IsWidgetNodeUVE(key) || pin < 0 || m_graph->isPinConnected(node.id, pin, true)) {
+            const std::string key = NodeKey(node);
+            const int pin = WidgetPinOf(node);
+            if (!IsWidgetNode(key) || pin < 0 || m_graph->isPinConnected(node.id, pin, true)) {
                 continue;
             }
             const std::string& name = node.inputs[static_cast<std::size_t>(pin)].defaultValue;
@@ -655,7 +655,7 @@ void EditorBlueprintPanelUVE::CompileUVE() {
     m_graph->setCompileResult(std::move(report));
 }
 
-void EditorBlueprintPanelUVE::SelectNodeUVE(const std::uint32_t node) {
+void EditorBlueprintPanel::SelectNode(const std::uint32_t node) {
     if (!m_graph || m_graph->findNode(static_cast<int>(node)) == nullptr) {
         return;
     }
@@ -664,23 +664,23 @@ void EditorBlueprintPanelUVE::SelectNodeUVE(const std::uint32_t node) {
     m_graph->frameSelection();
 }
 
-void EditorBlueprintPanelUVE::RefreshUVE() {
-    if (IsOpenUVE()) {
-        const Scene::IEntityManagerUVE& em = m_editor.m_services->GetEntityManagerUVE();
-        if (!em.IsAliveUVE(m_target)) {
+void EditorBlueprintPanel::Refresh() {
+    if (IsOpen()) {
+        const Scene::IEntityManager& em = m_editor.m_services->GetEntityManager();
+        if (!em.IsAlive(m_target)) {
             // The scene was rebuilt (Simulate stopped, Revert): the object whose Script slot names
             // this Blueprint is the same object under a new handle - the graph stays open on it.
-            m_target = FindUserUVE(m_path);
+            m_target = FindUser(m_path);
             m_sideDirty = true;   // Details shows the object under its new handle
-            if (m_target == Scene::kInvalidEntityUVE) {
-                if (DirtyUVE()) {
-                    static_cast<void>(SaveUVE());   // its edits are kept even when its object is gone
+            if (m_target == Scene::kInvalidEntity) {
+                if (Dirty()) {
+                    static_cast<void>(Save());   // its edits are kept even when its object is gone
                 }
-                CloseUVE();
+                Close();
             }
         }
         // Its object came back (the Entity Editor reopened with the same handle): Details names it again.
-        if (em.IsAliveUVE(m_target) != m_shownTargetAlive) {
+        if (em.IsAlive(m_target) != m_shownTargetAlive) {
             m_sideDirty = true;
         }
     }
@@ -696,14 +696,14 @@ void EditorBlueprintPanelUVE::RefreshUVE() {
     if (!same || m_sideDirty) {
         m_shownVariables = now;
         m_shownExposed = m_exposed;
-        m_graph->setNodeLibrary(LibraryUVE());
-        RebuildSideUVE();
+        m_graph->setNodeLibrary(Library());
+        RebuildSide();
     }
 }
 
-void EditorBlueprintPanelUVE::AddNodeDetailsUVE(prism::PropertyGrid& grid, const prism::BlueprintNode& node) {
-    const std::string key = NodeKeyUVE(node);
-    const Asset::BlueprintNodeTypeUVE* const type = key.empty() ? nullptr : Asset::FindBlueprintNodeTypeUVE(key);
+void EditorBlueprintPanel::AddNodeDetails(prism::PropertyGrid& grid, const prism::BlueprintNode& node) {
+    const std::string key = NodeKey(node);
+    const Asset::BlueprintNodeType* const type = key.empty() ? nullptr : Asset::FindBlueprintNodeType(key);
     const int cat = grid.addCategory("Node: " + node.title);
     if (type != nullptr) {
         auto category = prism::make<prism::Label>(type->category);
@@ -716,7 +716,7 @@ void EditorBlueprintPanelUVE::AddNodeDetailsUVE(prism::PropertyGrid& grid, const
         }
     }
     const int nodeId = node.id;
-    const int widgetPin = WidgetPinOfUVE(node);
+    const int widgetPin = WidgetPinOf(node);
     for (int i = 0; i < static_cast<int>(node.inputs.size()); ++i) {
         const prism::BlueprintPin& pin = node.inputs[static_cast<std::size_t>(i)];
         if (pin.type == PT::Exec) {
@@ -744,7 +744,7 @@ void EditorBlueprintPanelUVE::AddNodeDetailsUVE(prism::PropertyGrid& grid, const
             }
         };
         prism::Ref<prism::Widget> editor;
-        const std::vector<std::string> choices = i == widgetPin ? WidgetChoicesUVE(key) : std::vector<std::string>{};
+        const std::vector<std::string> choices = i == widgetPin ? WidgetChoices(key) : std::vector<std::string>{};
         if (!choices.empty()) {
             std::vector<std::string> items = choices;
             int current = -1;
@@ -794,7 +794,7 @@ void EditorBlueprintPanelUVE::AddNodeDetailsUVE(prism::PropertyGrid& grid, const
         // Back to what the node starts with.
         std::string initial;
         if (type != nullptr) {
-            const prism::BlueprintNode fresh = MakeNodeUVE(*type, Asset::BlueprintAssetUVE{}, {});
+            const prism::BlueprintNode fresh = MakeNode(*type, Asset::BlueprintAsset{}, {});
             if (static_cast<std::size_t>(i) < fresh.inputs.size()) {
                 initial = fresh.inputs[static_cast<std::size_t>(i)].defaultValue;
             }
@@ -806,11 +806,11 @@ void EditorBlueprintPanelUVE::AddNodeDetailsUVE(prism::PropertyGrid& grid, const
         auto row = prism::hbox(4.0F);
         row->add(editor, prism::Slot{1.0F, {}, prism::HAlign::Fill, prism::VAlign::Center});
         row->add(reset, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
-        grid.addRow(cat, pin.name, row, std::string(TypeNameUVE(pin.type)) + " input");
+        grid.addRow(cat, pin.name, row, std::string(TypeName(pin.type)) + " input");
     }
 }
 
-void EditorBlueprintPanelUVE::RebuildSideUVE() {
+void EditorBlueprintPanel::RebuildSide() {
     m_sideDirty = false;
     if (!m_side) {
         return;
@@ -819,15 +819,15 @@ void EditorBlueprintPanelUVE::RebuildSideUVE() {
     // The node picked in the graph, as the standard Details: what it is and every input it takes.
     if (m_graph && m_graph->selectedCount() == 1) {
         if (const prism::BlueprintNode* node = m_graph->findNode(m_graph->selectedIds().front())) {
-            AddNodeDetailsUVE(*grid, *node);
+            AddNodeDetails(*grid, *node);
         }
     }
     const int classCat = grid->addCategory("Class");
-    const Scene::IEntityManagerUVE& em = m_editor.m_services->GetEntityManagerUVE();
-    const std::string target = IsOpenUVE() && em.IsAliveUVE(m_target) ? m_editor.GetEntityDisplayLabelUVE(m_target) : std::string("None");
-    m_shownTargetAlive = IsOpenUVE() && em.IsAliveUVE(m_target);
-    grid->addRow(classCat, "Target", prism::make<prism::Label>(target + "  (" + ParentKindUVE() + ")"), "The object this Blueprint drives");
-    auto file = prism::make<prism::Label>(IsOpenUVE() ? m_path : std::string("None"));
+    const Scene::IEntityManager& em = m_editor.m_services->GetEntityManager();
+    const std::string target = IsOpen() && em.IsAlive(m_target) ? m_editor.GetEntityDisplayLabel(m_target) : std::string("None");
+    m_shownTargetAlive = IsOpen() && em.IsAlive(m_target);
+    grid->addRow(classCat, "Target", prism::make<prism::Label>(target + "  (" + ParentKind() + ")"), "The object this Blueprint drives");
+    auto file = prism::make<prism::Label>(IsOpen() ? m_path : std::string("None"));
     file->setColor(prism::ThemeColor(&prism::Theme::textDim));
     grid->addRow(classCat, "File", file, m_path);
 
@@ -881,11 +881,11 @@ void EditorBlueprintPanelUVE::RebuildSideUVE() {
             row->add(value, prism::Slot{1.0F, {}, prism::HAlign::Fill, prism::VAlign::Center});
             row->add(exposed, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
             row->add(remove, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
-            grid->addRow(varsCat, TypeNameUVE(variable.type), row);
+            grid->addRow(varsCat, TypeName(variable.type), row);
         }
     }
     auto add = prism::make<prism::Button>("Add", prism::Icon::Plus, prism::ButtonStyle::Default);
-    add->setEnabled(IsOpenUVE());
+    add->setEnabled(IsOpen());
     std::weak_ptr<prism::Button> weakAdd = add;
     add->onClick = [this, weakAdd] {
         const auto addOf = [this](const PT type) {
@@ -926,21 +926,21 @@ void EditorBlueprintPanelUVE::RebuildSideUVE() {
         }
     };
     grid->addRow(varsCat, "", add);
-    m_side->setContent(prism::make<FitWidthUVE>(grid));
+    m_side->setContent(prism::make<FitWidth>(grid));
 }
 
-Scene::EntityUVE EditorBlueprintPanelUVE::FindUserUVE(const std::string& path) const {
+Scene::Entity EditorBlueprintPanel::FindUser(const std::string& path) const {
     if (path.empty()) {
-        return Scene::kInvalidEntityUVE;
+        return Scene::kInvalidEntity;
     }
-    const Scene::IEntityManagerUVE& em = m_editor.m_services->GetEntityManagerUVE();
-    for (const Scene::EntityUVE object : m_editor.CollectEntityEditorObjectsUVE()) {
-        if (em.IsAliveUVE(object) && em.HasComponentUVE<Scene::ScriptComponentUVE>(object) &&
-            em.GetComponentUVE<Scene::ScriptComponentUVE>(object).scriptAssetPath == path) {
+    const Scene::IEntityManager& em = m_editor.m_services->GetEntityManager();
+    for (const Scene::Entity object : m_editor.CollectEntityEditorObjects()) {
+        if (em.IsAlive(object) && em.HasComponent<Scene::ScriptComponent>(object) &&
+            em.GetComponent<Scene::ScriptComponent>(object).scriptAssetPath == path) {
             return object;
         }
     }
-    return Scene::kInvalidEntityUVE;
+    return Scene::kInvalidEntity;
 }
 
 namespace {
@@ -948,10 +948,10 @@ namespace {
 /// A character's starting controls, on Event Tick (node 2): WASD moves it along its own forward
 /// and right (the Input Map's MoveForward and MoveHorizontal), Jump jumps. Ordinary nodes, so
 /// they can be changed like any others.
-void AddCharacterControlsUVE(Asset::BlueprintAssetUVE& blueprint) {
+void AddCharacterControls(Asset::BlueprintAsset& blueprint) {
     const auto node = [&blueprint](const std::uint32_t id, const char* type, const float x, const float y,
                                    std::vector<std::string> values = {}) {
-        Asset::BlueprintNodeUVE n;
+        Asset::BlueprintNode n;
         n.id = id;
         n.type = type;
         n.x = x;
@@ -960,7 +960,7 @@ void AddCharacterControlsUVE(Asset::BlueprintAssetUVE& blueprint) {
         blueprint.nodes.push_back(std::move(n));
     };
     const auto wire = [&blueprint](const std::uint32_t from, const std::uint32_t fromPin, const std::uint32_t to, const std::uint32_t toPin) {
-        blueprint.wires.push_back(Asset::BlueprintWireUVE{from, fromPin, to, toPin});
+        blueprint.wires.push_back(Asset::BlueprintWire{from, fromPin, to, toPin});
     };
     // Forward and back.
     node(3U, "add_movement_input", 420.0F, 200.0F);
@@ -991,50 +991,50 @@ void AddCharacterControlsUVE(Asset::BlueprintAssetUVE& blueprint) {
 
 } // namespace
 
-std::string EditorBlueprintPanelUVE::CreateForUVE(const Scene::EntityUVE target, const std::filesystem::path& absolutePath) {
-    const Scene::IEntityManagerUVE& em = m_editor.m_services->GetEntityManagerUVE();
-    if (!em.IsAliveUVE(target)) {
+std::string EditorBlueprintPanel::CreateFor(const Scene::Entity target, const std::filesystem::path& absolutePath) {
+    const Scene::IEntityManager& em = m_editor.m_services->GetEntityManager();
+    if (!em.IsAlive(target)) {
         return {};
     }
     m_target = target;
     // The standard starting graph: Event Ready (BeginPlay) and Event Tick.
-    Asset::BlueprintAssetUVE blueprint;
-    blueprint.parentKind = ParentKindUVE();
-    Asset::BlueprintNodeUVE ready;
+    Asset::BlueprintAsset blueprint;
+    blueprint.parentKind = ParentKind();
+    Asset::BlueprintNode ready;
     ready.id = 1U;
     ready.type = "event_ready";
     ready.x = 0.0F;
     ready.y = 0.0F;
-    Asset::BlueprintNodeUVE tick;
+    Asset::BlueprintNode tick;
     tick.id = 2U;
     tick.type = "event_tick";
     tick.x = 0.0F;
     tick.y = 200.0F;
     blueprint.nodes = {ready, tick};
-    if (em.HasComponentUVE<Scene::CharacterControllerComponentUVE>(target)) {
-        AddCharacterControlsUVE(blueprint);
+    if (em.HasComponent<Scene::CharacterControllerComponent>(target)) {
+        AddCharacterControls(blueprint);
     }
     std::error_code error;
     std::filesystem::create_directories(absolutePath.parent_path(), error);
-    if (!Asset::SaveBlueprintAssetUVE(blueprint, absolutePath)) {
+    if (!Asset::SaveBlueprintAsset(blueprint, absolutePath)) {
         return {};
     }
-    const std::string path = ProjectPathUVE(absolutePath);
+    const std::string path = ProjectPath(absolutePath);
     // The target's Script is the Blueprint (one undo step), added when it has none.
-    m_editor.SelectEntityUVE(target);
-    Scene::ScriptComponentUVE script;
-    if (em.HasComponentUVE<Scene::ScriptComponentUVE>(target)) {
-        script = em.GetComponentUVE<Scene::ScriptComponentUVE>(target);
+    m_editor.SelectEntity(target);
+    Scene::ScriptComponent script;
+    if (em.HasComponent<Scene::ScriptComponent>(target)) {
+        script = em.GetComponent<Scene::ScriptComponent>(target);
     }
-    const bool already = em.HasComponentUVE<Scene::ScriptComponentUVE>(target) && script.scriptAssetPath == path;
+    const bool already = em.HasComponent<Scene::ScriptComponent>(target) && script.scriptAssetPath == path;
     script.scriptAssetPath = path;
     script.exportValues.clear();
-    if (!already && !m_editor.SetSelectedSceneComponentUVE(EditorSceneComponentKindUVE::Script, script)) {
+    if (!already && !m_editor.SetSelectedSceneComponent(EditorSceneComponentKind::Script, script)) {
         // Not attached: no Blueprint left lying about that nothing uses.
         std::filesystem::remove(absolutePath, error);
         return {};
     }
-    m_editor.RefreshProjectFileIndexUVE();
+    m_editor.RefreshProjectFileIndex();
     return path;
 }
 

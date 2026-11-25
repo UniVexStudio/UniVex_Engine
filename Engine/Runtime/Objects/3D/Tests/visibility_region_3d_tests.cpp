@@ -23,99 +23,99 @@
 namespace UVE::Scene::Tests {
 namespace {
 
-class VisibilityRegion3DUVETest : public ::testing::Test {
+class VisibilityRegion3DTest : public ::testing::Test {
 protected:
-    Memory::MemoryManagerUVE memoryManager;
-    Events::EventSystemUVE eventSystem;
-    EntityManagerUVE entityManager{memoryManager.GetDefaultAllocatorUVE(), eventSystem};
-    SceneGraphUVE sceneGraph;
+    Memory::MemoryManager memoryManager;
+    Events::EventSystem eventSystem;
+    EntityManager entityManager{memoryManager.GetDefaultAllocator(), eventSystem};
+    SceneGraph sceneGraph;
 
-    EntityUVE PlaceRegionUVE(VisibilityRegion3DComponentUVE config, const TransformComponentUVE& transform = {}) {
-        const EntityUVE entity = entityManager.CreateEntityUVE();
-        sceneGraph.AttachTransformUVE(entityManager, entity, transform);
-        entityManager.AddComponentUVE<VisibilityRegion3DComponentUVE>(entity, config);
-        sceneGraph.UpdateUVE(entityManager);
+    Entity PlaceRegion(VisibilityRegion3DComponent config, const TransformComponent& transform = {}) {
+        const Entity entity = entityManager.CreateEntity();
+        sceneGraph.AttachTransform(entityManager, entity, transform);
+        entityManager.AddComponent<VisibilityRegion3DComponent>(entity, config);
+        sceneGraph.Update(entityManager);
         return entity;
     }
 
-    EntityUVE PlaceEmptyUVE(const TransformComponentUVE& transform = {}) {
-        const EntityUVE entity = entityManager.CreateEntityUVE();
-        sceneGraph.AttachTransformUVE(entityManager, entity, transform);
-        sceneGraph.UpdateUVE(entityManager);
+    Entity PlaceEmpty(const TransformComponent& transform = {}) {
+        const Entity entity = entityManager.CreateEntity();
+        sceneGraph.AttachTransform(entityManager, entity, transform);
+        sceneGraph.Update(entityManager);
         return entity;
     }
 };
 
-TEST_F(VisibilityRegion3DUVETest, DrawableKindsCarryMembershipAndLightsDoNot) {
-    const EntityUVE mesh = PlaceEmptyUVE();
-    MeshComponentUVE meshComponent{};
+TEST_F(VisibilityRegion3DTest, DrawableKindsCarryMembershipAndLightsDoNot) {
+    const Entity mesh = PlaceEmpty();
+    MeshComponent meshComponent{};
     meshComponent.visibilityLayers = 0x00000004U;
-    entityManager.AddComponentUVE<MeshComponentUVE>(mesh, meshComponent);
-    const EntityUVE primitive = PlaceEmptyUVE();
-    entityManager.AddComponentUVE<PrimitiveMeshComponentUVE>(primitive);
-    const EntityUVE decal = PlaceEmptyUVE();
-    entityManager.AddComponentUVE<Decal3DComponentUVE>(decal, Decal3DComponentUVE{});
-    const EntityUVE particles = PlaceEmptyUVE();
-    entityManager.AddComponentUVE<ParticleEmitterComponentUVE>(particles);
-    const EntityUVE fog = PlaceEmptyUVE();
-    entityManager.AddComponentUVE<FogVolume3DComponentUVE>(fog, FogVolume3DComponentUVE{});
-    const EntityUVE light = PlaceEmptyUVE();
-    entityManager.AddComponentUVE<LightComponentUVE>(light);
-    const EntityUVE empty = PlaceEmptyUVE();
+    entityManager.AddComponent<MeshComponent>(mesh, meshComponent);
+    const Entity primitive = PlaceEmpty();
+    entityManager.AddComponent<PrimitiveMeshComponent>(primitive);
+    const Entity decal = PlaceEmpty();
+    entityManager.AddComponent<Decal3DComponent>(decal, Decal3DComponent{});
+    const Entity particles = PlaceEmpty();
+    entityManager.AddComponent<ParticleEmitterComponent>(particles);
+    const Entity fog = PlaceEmpty();
+    entityManager.AddComponent<FogVolume3DComponent>(fog, FogVolume3DComponent{});
+    const Entity light = PlaceEmpty();
+    entityManager.AddComponent<LightComponent>(light);
+    const Entity empty = PlaceEmpty();
 
-    EXPECT_TRUE(CarriesVisibilityRegion3DDrawableUVE(entityManager, mesh));
-    EXPECT_TRUE(CarriesVisibilityRegion3DDrawableUVE(entityManager, primitive));
-    EXPECT_TRUE(CarriesVisibilityRegion3DDrawableUVE(entityManager, decal));
-    EXPECT_TRUE(CarriesVisibilityRegion3DDrawableUVE(entityManager, particles));
-    EXPECT_TRUE(CarriesVisibilityRegion3DDrawableUVE(entityManager, fog));
-    EXPECT_FALSE(CarriesVisibilityRegion3DDrawableUVE(entityManager, light));
-    EXPECT_FALSE(CarriesVisibilityRegion3DDrawableUVE(entityManager, empty));
+    EXPECT_TRUE(CarriesVisibilityRegion3DDrawable(entityManager, mesh));
+    EXPECT_TRUE(CarriesVisibilityRegion3DDrawable(entityManager, primitive));
+    EXPECT_TRUE(CarriesVisibilityRegion3DDrawable(entityManager, decal));
+    EXPECT_TRUE(CarriesVisibilityRegion3DDrawable(entityManager, particles));
+    EXPECT_TRUE(CarriesVisibilityRegion3DDrawable(entityManager, fog));
+    EXPECT_FALSE(CarriesVisibilityRegion3DDrawable(entityManager, light));
+    EXPECT_FALSE(CarriesVisibilityRegion3DDrawable(entityManager, empty));
 
-    EXPECT_EQ(ResolveVisibilityRegion3DDrawableLayersUVE(entityManager, mesh), 0x00000004U);
-    EXPECT_EQ(ResolveVisibilityRegion3DDrawableLayersUVE(entityManager, primitive),
-              kDefaultVisibilityRegionDrawableLayersUVE);
-    EXPECT_EQ(ResolveVisibilityRegion3DDrawableLayersUVE(entityManager, empty), 0U);
+    EXPECT_EQ(ResolveVisibilityRegion3DDrawableLayers(entityManager, mesh), 0x00000004U);
+    EXPECT_EQ(ResolveVisibilityRegion3DDrawableLayers(entityManager, primitive),
+              kDefaultVisibilityRegionDrawableLayers);
+    EXPECT_EQ(ResolveVisibilityRegion3DDrawableLayers(entityManager, empty), 0U);
 }
 
-TEST_F(VisibilityRegion3DUVETest, DrawHiddenTrustsLiveFlagAndFailsOpenWhenTheOwnerDies) {
-    const EntityUVE region = PlaceRegionUVE(VisibilityRegion3DComponentUVE{});
-    const EntityUVE faded = PlaceEmptyUVE();
-    entityManager.AddComponentUVE<VisibilityRegion3DMembershipComponentUVE>(
-        faded, VisibilityRegion3DMembershipComponentUVE{region, false});
-    EXPECT_TRUE(IsVisibilityRegion3DDrawHiddenUVE(entityManager, faded));
+TEST_F(VisibilityRegion3DTest, DrawHiddenTrustsLiveFlagAndFailsOpenWhenTheOwnerDies) {
+    const Entity region = PlaceRegion(VisibilityRegion3DComponent{});
+    const Entity faded = PlaceEmpty();
+    entityManager.AddComponent<VisibilityRegion3DMembershipComponent>(
+        faded, VisibilityRegion3DMembershipComponent{region, false});
+    EXPECT_TRUE(IsVisibilityRegion3DDrawHidden(entityManager, faded));
 
-    const EntityUVE live = PlaceEmptyUVE();
-    entityManager.AddComponentUVE<VisibilityRegion3DMembershipComponentUVE>(
-        live, VisibilityRegion3DMembershipComponentUVE{region, true});
-    EXPECT_FALSE(IsVisibilityRegion3DDrawHiddenUVE(entityManager, live));
-    EXPECT_FALSE(IsVisibilityRegion3DDrawHiddenUVE(entityManager, PlaceEmptyUVE()));
+    const Entity live = PlaceEmpty();
+    entityManager.AddComponent<VisibilityRegion3DMembershipComponent>(
+        live, VisibilityRegion3DMembershipComponent{region, true});
+    EXPECT_FALSE(IsVisibilityRegion3DDrawHidden(entityManager, live));
+    EXPECT_FALSE(IsVisibilityRegion3DDrawHidden(entityManager, PlaceEmpty()));
 
-    entityManager.DestroyEntityUVE(region);
-    EXPECT_FALSE(IsVisibilityRegion3DDrawHiddenUVE(entityManager, faded));
+    entityManager.DestroyEntity(region);
+    EXPECT_FALSE(IsVisibilityRegion3DDrawHidden(entityManager, faded));
 }
 
-TEST_F(VisibilityRegion3DUVETest, CollectGizmosWritesTheCenteredBoxAndSkipsEditorInternal) {
-    VisibilityRegion3DComponentUVE config;
-    config.halfExtents = Math::Vector3UVE{2.0F, 3.0F, 4.0F};
-    TransformComponentUVE transform{};
-    transform.localPosition = Math::Vector3UVE{1.0F, 2.0F, 3.0F};
-    PlaceRegionUVE(config, transform);
+TEST_F(VisibilityRegion3DTest, CollectGizmosWritesTheCenteredBoxAndSkipsEditorInternal) {
+    VisibilityRegion3DComponent config;
+    config.halfExtents = Math::Vector3{2.0F, 3.0F, 4.0F};
+    TransformComponent transform{};
+    transform.localPosition = Math::Vector3{1.0F, 2.0F, 3.0F};
+    PlaceRegion(config, transform);
 
-    VisibilityRegion3DComponentUVE disabled = config;
+    VisibilityRegion3DComponent disabled = config;
     disabled.enabled = false;
-    TransformComponentUVE disabledTransform{};
-    disabledTransform.localPosition = Math::Vector3UVE{40.0F, 0.0F, 0.0F};
-    PlaceRegionUVE(disabled, disabledTransform);
+    TransformComponent disabledTransform{};
+    disabledTransform.localPosition = Math::Vector3{40.0F, 0.0F, 0.0F};
+    PlaceRegion(disabled, disabledTransform);
 
-    const EntityUVE hidden = PlaceRegionUVE(config);
-    entityManager.AddComponentUVE<EditorInternalEntityComponentUVE>(hidden);
+    const Entity hidden = PlaceRegion(config);
+    entityManager.AddComponent<EditorInternalEntityComponent>(hidden);
 
-    std::vector<VisibilityRegion3DGizmoUVE> gizmos;
-    CollectVisibilityRegion3DGizmosUVE(entityManager, gizmos);
+    std::vector<VisibilityRegion3DGizmo> gizmos;
+    CollectVisibilityRegion3DGizmos(entityManager, gizmos);
     ASSERT_EQ(gizmos.size(), 2U);
-    const VisibilityRegion3DGizmoUVE* enabledGizmo = nullptr;
-    const VisibilityRegion3DGizmoUVE* disabledGizmo = nullptr;
-    for (const VisibilityRegion3DGizmoUVE& gizmo : gizmos) {
+    const VisibilityRegion3DGizmo* enabledGizmo = nullptr;
+    const VisibilityRegion3DGizmo* disabledGizmo = nullptr;
+    for (const VisibilityRegion3DGizmo& gizmo : gizmos) {
         if (gizmo.enabled) {
             enabledGizmo = &gizmo;
         } else {

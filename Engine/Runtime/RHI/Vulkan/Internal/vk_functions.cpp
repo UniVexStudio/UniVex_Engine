@@ -30,7 +30,7 @@ template <typename T>
     void* proc = reinterpret_cast<void*>(getInstanceProcAddr(nullptr, name));
     outPointer = reinterpret_cast<T>(proc);
     if (proc == nullptr) {
-        UVE_WARNING("VkFunctionsUVE: required Vulkan entry point '{}' is unavailable", name);
+        UVE_WARNING("VkFunctions: required Vulkan entry point '{}' is unavailable", name);
         return false;
     }
     return true;
@@ -42,7 +42,7 @@ template <typename T>
     void* proc = reinterpret_cast<void*>(getInstanceProcAddr(instance, name));
     outPointer = reinterpret_cast<T>(proc);
     if (proc == nullptr) {
-        UVE_WARNING("VkFunctionsUVE: instance entry point '{}' is unavailable", name);
+        UVE_WARNING("VkFunctions: instance entry point '{}' is unavailable", name);
         return false;
     }
     return true;
@@ -54,7 +54,7 @@ template <typename T>
     void* proc = reinterpret_cast<void*>(getDeviceProcAddr(device, name));
     outPointer = reinterpret_cast<T>(proc);
     if (proc == nullptr) {
-        UVE_WARNING("VkFunctionsUVE: device entry point '{}' is unavailable", name);
+        UVE_WARNING("VkFunctions: device entry point '{}' is unavailable", name);
         return false;
     }
     return true;
@@ -62,7 +62,7 @@ template <typename T>
 
 } // namespace
 
-bool VkFunctionsUVE::LoadGlobalUVE() {
+bool VkFunctions::LoadGlobal() {
     // Conventional Vulkan loader sonames, most-specific first. The try-list duplicates exactly
     // what GLFW itself probes in its own Vulkan path, so hosts GLFW can already enumerate for
     // glfwVulkanSupported() are by construction hosts this loader covers. The handle is
@@ -84,7 +84,7 @@ bool VkFunctionsUVE::LoadGlobalUVE() {
         }
     }
     if (g_vulkanLibraryHandle == nullptr) {
-        UVE_WARNING("VkFunctionsUVE: no Vulkan loader library found (tried libvulkan.so.1 et al.) — "
+        UVE_WARNING("VkFunctions: no Vulkan loader library found (tried libvulkan.so.1 et al.) — "
                     "is an ICD such as mesa-vulkan-drivers installed?");
         return false;
     }
@@ -95,7 +95,7 @@ bool VkFunctionsUVE::LoadGlobalUVE() {
     void* gipaRaw = dlsym(g_vulkanLibraryHandle, "vkGetInstanceProcAddr");
 #endif
     if (gipaRaw == nullptr) {
-        UVE_WARNING("VkFunctionsUVE: Vulkan loader exports no vkGetInstanceProcAddr — unusable loader");
+        UVE_WARNING("VkFunctions: Vulkan loader exports no vkGetInstanceProcAddr — unusable loader");
         return false;
     }
     auto gipa = reinterpret_cast<PFN_vkGetInstanceProcAddr>(gipaRaw);
@@ -111,7 +111,7 @@ bool VkFunctionsUVE::LoadGlobalUVE() {
     return allResolved;
 }
 
-bool VkFunctionsUVE::LoadInstanceUVE(const VkInstance instance) {
+bool VkFunctions::LoadInstance(const VkInstance instance) {
     const PFN_vkGetInstanceProcAddr gipa = m_getInstanceProcAddr;
     bool allResolved = true;
     allResolved &= ResolveInstance(vkDestroyInstance, gipa, instance, "vkDestroyInstance");
@@ -137,7 +137,7 @@ bool VkFunctionsUVE::LoadInstanceUVE(const VkInstance instance) {
     return allResolved;
 }
 
-bool VkFunctionsUVE::LoadDeviceUVE(const VkDevice device) {
+bool VkFunctions::LoadDevice(const VkDevice device) {
     if (vkGetDeviceProcAddr == nullptr) {
         return false;
     }

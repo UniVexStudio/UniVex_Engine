@@ -11,20 +11,20 @@
 namespace UVE::Scene {
 
 /// Global or regional foliage wind animation parameters consumed by GPU instanced vegetation.
-struct FoliageWindZone3DComponentUVE final {
-    Math::Vector3UVE windDirection{1.0F, 0.0F, 0.35F};
+struct FoliageWindZone3DComponent final {
+    Math::Vector3 windDirection{1.0F, 0.0F, 0.35F};
     float windStrength = 0.35F;
     float gustFrequency = 1.6F;
     float turbulence = 0.45F;
     float maxSwayMeters = 0.25F;
     bool enabled = true;
 
-    [[nodiscard]] bool operator==(const FoliageWindZone3DComponentUVE&) const = default;
+    [[nodiscard]] bool operator==(const FoliageWindZone3DComponent&) const = default;
 };
 
-struct FoliageScatterSettingsUVE final {
-    Math::Vector3UVE areaMin{-10.0F, 0.0F, -10.0F};
-    Math::Vector3UVE areaMax{10.0F, 0.0F, 10.0F};
+struct FoliageScatterSettings final {
+    Math::Vector3 areaMin{-10.0F, 0.0F, -10.0F};
+    Math::Vector3 areaMax{10.0F, 0.0F, 10.0F};
     std::uint32_t count = 256U;
     std::uint32_t seed = 1337U;
     float minScale = 0.8F;
@@ -32,13 +32,13 @@ struct FoliageScatterSettingsUVE final {
 };
 
 /// Deterministically scatters foliage transforms into `outMultiMesh.instances` (capped to
-/// kMaximumMultiMeshInstances3DUVE) with varied yaw and scale.
-void GenerateFoliageScatterInstancesUVE(const FoliageScatterSettingsUVE& settings,
-                                        MultiMeshInstance3DComponentUVE& outMultiMesh);
+/// kMaximumMultiMeshInstances3D) with varied yaw and scale.
+void GenerateFoliageScatterInstances(const FoliageScatterSettings& settings,
+                                        MultiMeshInstance3DComponent& outMultiMesh);
 
 /// Evaluates world-space foliage vertex wind displacement matching `lit_shadowed_3d.glsl`.
-[[nodiscard]] Math::Vector3UVE EvaluateFoliageWindDisplacementUVE(
-    const Math::Vector3UVE& worldPos, float heightWeight, float timeSeconds,
-    const FoliageWindZone3DComponentUVE& wind) noexcept;
+[[nodiscard]] Math::Vector3 EvaluateFoliageWindDisplacement(
+    const Math::Vector3& worldPos, float heightWeight, float timeSeconds,
+    const FoliageWindZone3DComponent& wind) noexcept;
 
 } // namespace UVE::Scene

@@ -15,62 +15,62 @@
 namespace UVE::Physics {
 namespace {
 
-[[nodiscard]] bool EntityLessUVE(const Scene::EntityUVE& lhs, const Scene::EntityUVE& rhs) noexcept {
+[[nodiscard]] bool EntityLess(const Scene::Entity& lhs, const Scene::Entity& rhs) noexcept {
     return lhs.index < rhs.index || (lhs.index == rhs.index && lhs.generation < rhs.generation);
 }
 
-struct BodyMembershipUVE final {
-    Scene::EntityUVE body{};
-    Math::Vector3UVE bodyPosition{};
+struct BodyMembership final {
+    Scene::Entity body{};
+    Math::Vector3 bodyPosition{};
     float bodyLinearDamp = 0.0F;
-    Scene::Area3DFieldUVE field{};
+    Scene::Area3DField field{};
 };
 
-[[nodiscard]] bool MembershipLessUVE(const BodyMembershipUVE& lhs, const BodyMembershipUVE& rhs) noexcept {
+[[nodiscard]] bool MembershipLess(const BodyMembership& lhs, const BodyMembership& rhs) noexcept {
     if (lhs.body.index != rhs.body.index || lhs.body.generation != rhs.body.generation) {
-        return EntityLessUVE(lhs.body, rhs.body);
+        return EntityLess(lhs.body, rhs.body);
     }
     if (lhs.field.priority != rhs.field.priority) {
         return lhs.field.priority > rhs.field.priority;
     }
-    return EntityLessUVE(lhs.field.areaEntity, rhs.field.areaEntity);
+    return EntityLess(lhs.field.areaEntity, rhs.field.areaEntity);
 }
 
 } // namespace
 
-bool HasAnyArea3DSpaceOverrideUVE(Scene::IEntityManagerUVE& entityManager) {
+bool HasAnyArea3DSpaceOverride(Scene::IEntityManager& entityManager) {
     bool any = false;
-    entityManager.ForEachUVE<Scene::AreaComponentUVE>(
-        [&any](const Scene::EntityUVE, const Scene::AreaComponentUVE& area) {
-            if (!any && Scene::IsAreaComponentValidUVE(area) && Scene::HasAreaSpaceOverrideUVE(area)) {
+    entityManager.ForEach<Scene::AreaComponent>(
+        [&any](const Scene::Entity, const Scene::AreaComponent& area) {
+            if (!any && Scene::IsAreaComponentValid(area) && Scene::HasAreaSpaceOverride(area)) {
                 any = true;
             }
         });
     return any;
 }
 
-Area3DOccupancySyncResultUVE ApplyArea3DOccupancyUVE(Scene::IEntityManagerUVE& entityManager,
-                                                     const AreaOverlapQueryResultUVE& snapshot) {
-    Area3DOccupancySyncResultUVE result;
-    entityManager.ForEachUVE<Scene::AreaComponentUVE>(
-        [&entityManager, &snapshot, &result](const Scene::EntityUVE entity,
-                                             Scene::AreaComponentUVE& area) {
+Area3DOccupancySyncResult ApplyArea3DOccupancy(Scene::IEntityManager& entityManager,
+                                                     const AreaOverlapQueryResult& snapshot) {
+    Area3DOccupancySyncResult result;
+    entityManager.ForEach<Scene::AreaComponent>(
+        [&entityManager, &snapshot, &result](const Scene::Entity entity,
+                                             Scene::AreaComponent& area) {
             ++result.areaCount;
-            std::vector<Scene::Area3DOverlapUVE> overlaps;
-            if (Scene::IsAreaComponentValidUVE(area) && area.monitoring) {
+            std::vector<Scene::Area3DOverlap> overlaps;
+            if (Scene::IsAreaComponentValid(area) && area.monitoring) {
                 overlaps.reserve(8U);
-                for (const AreaOverlapPairUVE& pair : snapshot.overlaps) {
+                for (const AreaOverlapPair& pair : snapshot.overlaps) {
                     if (pair.area != entity || pair.other == entity) {
                         continue;
                     }
                     const bool otherIsArea =
-                        entityManager.HasComponentUVE<Scene::AreaComponentUVE>(pair.other);
+                        entityManager.HasComponent<Scene::AreaComponent>(pair.other);
                     overlaps.push_back(
-                        Scene::Area3DOverlapUVE{pair.other, pair.penetrationDepth, otherIsArea});
+                        Scene::Area3DOverlap{pair.other, pair.penetrationDepth, otherIsArea});
                 }
                 ++result.refreshedAreaCount;
             }
-            Scene::Area3DUVE::RefreshOccupancyUVE(area, overlaps);
+            Scene::Area3D::RefreshOccupancy(area, overlaps);
             result.listedBodyCount += static_cast<std::size_t>(area.overlappingBodyCount);
             result.listedAreaCount += static_cast<std::size_t>(area.overlappingAreaCount);
             if (area.overlappingBodiesTruncated || area.overlappingAreasTruncated) {
@@ -80,66 +80,66 @@ Area3DOccupancySyncResultUVE ApplyArea3DOccupancyUVE(Scene::IEntityManagerUVE& e
     return result;
 }
 
-Area3DOccupancySyncResultUVE SyncArea3DOccupancyUVE(Scene::IEntityManagerUVE& entityManager) {
-    return ApplyArea3DOccupancyUVE(entityManager, AreaOverlapSystemUVE::QueryUVE(entityManager));
+Area3DOccupancySyncResult SyncArea3DOccupancy(Scene::IEntityManager& entityManager) {
+    return ApplyArea3DOccupancy(entityManager, AreaOverlapSystem::Query(entityManager));
 }
 
-std::vector<Area3DBodySpaceUVE> CollectArea3DBodySpacesUVE(Scene::IEntityManagerUVE& entityManager,
-                                                           const Math::Vector3UVE& worldGravity) {
-    std::vector<Area3DBodySpaceUVE> spaces;
-    if (!HasAnyArea3DSpaceOverrideUVE(entityManager)) {
+std::vector<Area3DBodySpace> CollectArea3DBodySpaces(Scene::IEntityManager& entityManager,
+                                                           const Math::Vector3& worldGravity) {
+    std::vector<Area3DBodySpace> spaces;
+    if (!HasAnyArea3DSpaceOverride(entityManager)) {
         return spaces;
     }
 
-    const AreaOverlapQueryResultUVE snapshot = AreaOverlapSystemUVE::QueryUVE(
-        entityManager, kMaximumAreaOverlapResultsUVE, AreaOverlapParticipationUVE::AllValidAreas);
+    const AreaOverlapQueryResult snapshot = AreaOverlapSystem::Query(
+        entityManager, kMaximumAreaOverlapResults, AreaOverlapParticipation::AllValidAreas);
 
-    std::vector<BodyMembershipUVE> memberships;
+    std::vector<BodyMembership> memberships;
     memberships.reserve(snapshot.overlaps.size());
-    for (const AreaOverlapPairUVE& pair : snapshot.overlaps) {
+    for (const AreaOverlapPair& pair : snapshot.overlaps) {
         if (pair.area == pair.other) {
             continue;
         }
-        if (!entityManager.HasComponentUVE<Scene::AreaComponentUVE>(pair.area) ||
-            !entityManager.HasComponentUVE<Scene::WorldTransformComponentUVE>(pair.area) ||
-            !entityManager.HasComponentUVE<Scene::Rigid3DComponentUVE>(pair.other) ||
-            !entityManager.HasComponentUVE<Scene::WorldTransformComponentUVE>(pair.other)) {
+        if (!entityManager.HasComponent<Scene::AreaComponent>(pair.area) ||
+            !entityManager.HasComponent<Scene::WorldTransformComponent>(pair.area) ||
+            !entityManager.HasComponent<Scene::Rigid3DComponent>(pair.other) ||
+            !entityManager.HasComponent<Scene::WorldTransformComponent>(pair.other)) {
             continue;
         }
-        const Scene::AreaComponentUVE& area =
-            entityManager.GetComponentUVE<Scene::AreaComponentUVE>(pair.area);
-        if (!Scene::IsAreaComponentValidUVE(area) || !Scene::HasAreaSpaceOverrideUVE(area)) {
+        const Scene::AreaComponent& area =
+            entityManager.GetComponent<Scene::AreaComponent>(pair.area);
+        if (!Scene::IsAreaComponentValid(area) || !Scene::HasAreaSpaceOverride(area)) {
             continue;
         }
-        const Scene::Rigid3DComponentUVE& rigidBody =
-            entityManager.GetComponentUVE<Scene::Rigid3DComponentUVE>(pair.other);
-        if (!Scene::IsRigid3DComponentValidUVE(rigidBody) || rigidBody.isKinematic ||
-            !Scene::IsPhysicsObjectSimulatedUVE(entityManager, pair.other)) {
+        const Scene::Rigid3DComponent& rigidBody =
+            entityManager.GetComponent<Scene::Rigid3DComponent>(pair.other);
+        if (!Scene::IsRigid3DComponentValid(rigidBody) || rigidBody.isKinematic ||
+            !Scene::IsPhysicsObjectSimulated(entityManager, pair.other)) {
             continue;
         }
-        const Scene::WorldTransformComponentUVE& areaWorld =
-            entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(pair.area);
-        const Scene::WorldTransformComponentUVE& bodyWorld =
-            entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(pair.other);
-        BodyMembershipUVE membership;
+        const Scene::WorldTransformComponent& areaWorld =
+            entityManager.GetComponent<Scene::WorldTransformComponent>(pair.area);
+        const Scene::WorldTransformComponent& bodyWorld =
+            entityManager.GetComponent<Scene::WorldTransformComponent>(pair.other);
+        BodyMembership membership;
         membership.body = pair.other;
         membership.bodyPosition = bodyWorld.worldPosition;
         membership.bodyLinearDamp = rigidBody.drag;
-        membership.field = Scene::Area3DUVE::MakeFieldUVE(pair.area, area, areaWorld.worldPosition);
+        membership.field = Scene::Area3D::MakeField(pair.area, area, areaWorld.worldPosition);
         memberships.push_back(membership);
     }
 
-    std::sort(memberships.begin(), memberships.end(), MembershipLessUVE);
+    std::sort(memberships.begin(), memberships.end(), MembershipLess);
     spaces.reserve(memberships.size());
     std::size_t index = 0U;
     while (index < memberships.size()) {
-        const Scene::EntityUVE body = memberships[index].body;
-        const Math::Vector3UVE bodyPosition = memberships[index].bodyPosition;
+        const Scene::Entity body = memberships[index].body;
+        const Math::Vector3 bodyPosition = memberships[index].bodyPosition;
         const float bodyLinearDamp = memberships[index].bodyLinearDamp;
-        std::vector<Scene::Area3DFieldUVE> fields;
+        std::vector<Scene::Area3DField> fields;
         while (index < memberships.size() && memberships[index].body == body) {
             bool duplicate = false;
-            for (const Scene::Area3DFieldUVE& existing : fields) {
+            for (const Scene::Area3DField& existing : fields) {
                 if (existing.areaEntity == memberships[index].field.areaEntity) {
                     duplicate = true;
                     break;
@@ -150,9 +150,9 @@ std::vector<Area3DBodySpaceUVE> CollectArea3DBodySpacesUVE(Scene::IEntityManager
             }
             ++index;
         }
-        const Scene::Area3DSpaceResultUVE resolved = Scene::Area3DUVE::ResolveSpaceUVE(
+        const Scene::Area3DSpaceResult resolved = Scene::Area3D::ResolveSpace(
             worldGravity, bodyLinearDamp, 0.0F, bodyPosition, fields);
-        Area3DBodySpaceUVE space;
+        Area3DBodySpace space;
         space.body = body;
         space.gravity = resolved.gravity;
         space.linearDamp = resolved.linearDamp;
@@ -162,12 +162,12 @@ std::vector<Area3DBodySpaceUVE> CollectArea3DBodySpacesUVE(Scene::IEntityManager
     return spaces;
 }
 
-const Area3DBodySpaceUVE* FindArea3DBodySpaceUVE(const std::span<const Area3DBodySpaceUVE> spaces,
-                                                 const Scene::EntityUVE body) noexcept {
+const Area3DBodySpace* FindArea3DBodySpace(const std::span<const Area3DBodySpace> spaces,
+                                                 const Scene::Entity body) noexcept {
     const auto iterator = std::lower_bound(
         spaces.begin(), spaces.end(), body,
-        [](const Area3DBodySpaceUVE& space, const Scene::EntityUVE& value) {
-            return EntityLessUVE(space.body, value);
+        [](const Area3DBodySpace& space, const Scene::Entity& value) {
+            return EntityLess(space.body, value);
         });
     if (iterator == spaces.end() || iterator->body != body) {
         return nullptr;

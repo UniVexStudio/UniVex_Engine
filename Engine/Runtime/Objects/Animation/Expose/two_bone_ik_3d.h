@@ -35,45 +35,45 @@ namespace UVE::Scene {
 /// between two nearly-equal answers. Reach is respected rather than exceeded: a target further away
 /// than the two bones put together leaves the limb straight, aimed at the target and short of it,
 /// and `reached` reports which of the two happened.
-struct TwoBoneIK3DComponentUVE final {
+struct TwoBoneIK3DComponent final {
     /// The skeleton this chain belongs to, as a real entity reference, serialized as the file-local
     /// id under the `skeletonLocalId` key and remapped back on load - the same reference every other
     /// skeleton-shaped object carries.
-    EntityUVE skeleton = kInvalidEntityUVE;
+    Entity skeleton = kInvalidEntity;
 
     /// Which bone the chain starts at - the shoulder, the hip. By index, which takes precedence when
     /// it names a bone that exists; the sentinel means "ask the name instead".
-    std::uint32_t rootBoneIndex = kInvalidSkeletonBoneIndexUVE;
+    std::uint32_t rootBoneIndex = kInvalidSkeletonBoneIndex;
     /// The root bone's name, for a reference that survives a re-export with its bones reordered.
     std::string rootBoneName;
 
     /// The bone the chain bends at - the elbow, the knee. Must be a child of the root bone.
-    std::uint32_t middleBoneIndex = kInvalidSkeletonBoneIndexUVE;
+    std::uint32_t middleBoneIndex = kInvalidSkeletonBoneIndex;
     std::string middleBoneName;
 
     /// The bone whose origin is the effector that reaches the target - the wrist, the ankle. Must be
     /// a child of the middle bone. Its own rotation is left alone: it is the point the chain aims,
     /// not a third joint the solver drives.
-    std::uint32_t endBoneIndex = kInvalidSkeletonBoneIndexUVE;
+    std::uint32_t endBoneIndex = kInvalidSkeletonBoneIndex;
     std::string endBoneName;
 
     /// Where the effector should go: another object's world position, which is how a hand is placed
     /// on a moving prop. When it names nothing, `targetPosition` is used instead, so a target that is
     /// a fixed point in the rig needs no helper object in the scene.
-    EntityUVE target = kInvalidEntityUVE;
+    Entity target = kInvalidEntity;
     /// A point in the SKELETON's own space, scaled and rotated with it. Ignored while `target` names
     /// a live object.
-    Math::Vector3UVE targetPosition{};
+    Math::Vector3 targetPosition{};
 
     /// Which way the joint should bend: another object's world position. An elbow has a circle of
     /// positions that all put the wrist on the target, and this is what picks one of them - place it
     /// behind the elbow and the arm bends backwards, place it at the hip and the arm bends down.
-    EntityUVE poleTarget = kInvalidEntityUVE;
+    Entity poleTarget = kInvalidEntity;
     /// The bend direction instead of a pole object, in the SKELETON's own space. Used when
     /// `poleTarget` names nothing. Zero means no authored pole at all: the chain then keeps the plane
     /// the pose already put it in, which is the answer that does not pop when nothing asked for a
     /// particular one.
-    Math::Vector3UVE poleDirection{};
+    Math::Vector3 poleDirection{};
 
     /// Off leaves the skeleton alone. An IK chain that is switched off in the editor is inert, the
     /// same as one whose bones do not resolve.
@@ -84,9 +84,9 @@ struct TwoBoneIK3DComponentUVE final {
     /// index the matching name resolved to, else the sentinel. This is what makes a name-based chain
     /// observable - a bone renamed in the source file stops the chain binding instead of silently
     /// driving a different limb.
-    std::uint32_t resolvedRootBoneIndex = kInvalidSkeletonBoneIndexUVE;
-    std::uint32_t resolvedMiddleBoneIndex = kInvalidSkeletonBoneIndexUVE;
-    std::uint32_t resolvedEndBoneIndex = kInvalidSkeletonBoneIndexUVE;
+    std::uint32_t resolvedRootBoneIndex = kInvalidSkeletonBoneIndex;
+    std::uint32_t resolvedMiddleBoneIndex = kInvalidSkeletonBoneIndex;
+    std::uint32_t resolvedEndBoneIndex = kInvalidSkeletonBoneIndex;
 
     /// True while the chain was solved and its two rotations written into the skeleton's pose. False
     /// is the authored state: the pose is left exactly as the animation wrote it.
@@ -101,7 +101,7 @@ struct TwoBoneIK3DComponentUVE final {
     float endToTargetDistanceMetres = 0.0F;
 
     /// Authored data only: a chain that has not been solved equals its saved self.
-    [[nodiscard]] bool operator==(const TwoBoneIK3DComponentUVE& other) const {
+    [[nodiscard]] bool operator==(const TwoBoneIK3DComponent& other) const {
         return skeleton == other.skeleton && rootBoneIndex == other.rootBoneIndex &&
                rootBoneName == other.rootBoneName && middleBoneIndex == other.middleBoneIndex &&
                middleBoneName == other.middleBoneName && endBoneIndex == other.endBoneIndex &&
@@ -111,18 +111,18 @@ struct TwoBoneIK3DComponentUVE final {
     }
 };
 
-[[nodiscard]] bool IsTwoBoneIK3DObjectComponentValidUVE(const TwoBoneIK3DComponentUVE& value) noexcept;
+[[nodiscard]] bool IsTwoBoneIK3DObjectComponentValid(const TwoBoneIK3DComponent& value) noexcept;
 
 /// Whether a chain has enough to be worth solving: enabled, pointed at a skeleton, naming all three
 /// bones by index or by name, and carrying a finite target point and pole direction. A default chain
 /// is valid scene data and stays inert until this is true.
-[[nodiscard]] inline bool IsTwoBoneIK3DObjectComponentResolvableUVE(
-    const TwoBoneIK3DComponentUVE& value) noexcept {
-    const bool hasSkeleton = value.skeleton != kInvalidEntityUVE;
-    const bool hasRoot = value.rootBoneIndex != kInvalidSkeletonBoneIndexUVE || !value.rootBoneName.empty();
+[[nodiscard]] inline bool IsTwoBoneIK3DObjectComponentResolvable(
+    const TwoBoneIK3DComponent& value) noexcept {
+    const bool hasSkeleton = value.skeleton != kInvalidEntity;
+    const bool hasRoot = value.rootBoneIndex != kInvalidSkeletonBoneIndex || !value.rootBoneName.empty();
     const bool hasMiddle =
-        value.middleBoneIndex != kInvalidSkeletonBoneIndexUVE || !value.middleBoneName.empty();
-    const bool hasEnd = value.endBoneIndex != kInvalidSkeletonBoneIndexUVE || !value.endBoneName.empty();
+        value.middleBoneIndex != kInvalidSkeletonBoneIndex || !value.middleBoneName.empty();
+    const bool hasEnd = value.endBoneIndex != kInvalidSkeletonBoneIndex || !value.endBoneName.empty();
     return value.enabled && hasSkeleton && hasRoot && hasMiddle && hasEnd;
 }
 
@@ -132,33 +132,33 @@ struct TwoBoneIK3DComponentUVE final {
 /// Positions are world space and rotations are world space, because that is the frame the bones meet
 /// in: a local rotation means nothing until its parent's world rotation is known, and the parent's is
 /// exactly what the caller can read off the same pose the joints came from.
-struct TwoBoneIKChainUVE final {
+struct TwoBoneIKChain final {
     /// The joint the chain starts at (the shoulder's own origin).
-    Math::Vector3UVE root{};
+    Math::Vector3 root{};
     /// The joint the chain bends at (the elbow's own origin).
-    Math::Vector3UVE middle{};
+    Math::Vector3 middle{};
     /// The joint the chain ends at (the wrist's own origin).
-    Math::Vector3UVE end{};
+    Math::Vector3 end{};
     /// The world rotation of the root bone's PARENT - the skeleton itself when the root is a top-level
     /// bone. The root's solved rotation is written local to this, the same way its current local
     /// rotation is.
-    Math::QuaternionUVE parentRotation{};
+    Math::Quaternion parentRotation{};
     /// The root bone's world rotation right now.
-    Math::QuaternionUVE rootRotation{};
+    Math::Quaternion rootRotation{};
     /// The middle bone's world rotation right now.
-    Math::QuaternionUVE middleRotation{};
+    Math::Quaternion middleRotation{};
 };
 
 /// What one solve did: the two local rotations to write, where the effector landed, and whether it
 /// got there.
-struct TwoBoneIKSolutionUVE final {
+struct TwoBoneIKSolution final {
     /// The root bone's rotation in its parent's space.
-    Math::QuaternionUVE rootLocalRotation{};
+    Math::Quaternion rootLocalRotation{};
     /// The middle bone's rotation in the root bone's space.
-    Math::QuaternionUVE middleLocalRotation{};
+    Math::Quaternion middleLocalRotation{};
     /// Where the effector landed: the target when it was reachable, else the closest point on the
     /// line to it that the chain's own length allows.
-    Math::Vector3UVE endPosition{};
+    Math::Vector3 endPosition{};
     /// Distance from `endPosition` to the target.
     float endToTargetDistanceMetres = 0.0F;
     bool reached = false;
@@ -178,26 +178,26 @@ struct TwoBoneIKSolutionUVE final {
 /// None of those is an ordinary pose a rig reaches; each one means the data or the caller is wrong.
 /// A target too far away is NOT one of them - that is a pose that exists, and the straight limb aimed
 /// at the target is the honest answer to it.
-[[nodiscard]] std::optional<TwoBoneIKSolutionUVE> SolveTwoBoneIKUVE(const TwoBoneIKChainUVE& chain,
-                                                                    const Math::Vector3UVE& target,
-                                                                    const Math::Vector3UVE& poleDirection) noexcept;
+[[nodiscard]] std::optional<TwoBoneIKSolution> SolveTwoBoneIK(const TwoBoneIKChain& chain,
+                                                                    const Math::Vector3& target,
+                                                                    const Math::Vector3& poleDirection) noexcept;
 
 /// Blends a solved rotation over the one the pose has: `influence` 0 keeps the animation's own
 /// rotation, 1 takes the solve entirely, and anything between eases the limb onto the target so a
 /// character can reach for something instead of snapping to it. Writes `out` and returns true when
 /// the result is usable; returns false, leaving `out` untouched, when either rotation is not finite.
 /// Shortest-arc blending is deliberate: the long way round would swing a limb through the body.
-[[nodiscard]] bool TryBlendTwoBoneIKRotationUVE(const Math::QuaternionUVE& posed,
-                                                const Math::QuaternionUVE& solved, float influence,
-                                                Math::QuaternionUVE& out) noexcept;
+[[nodiscard]] bool TryBlendTwoBoneIKRotation(const Math::Quaternion& posed,
+                                                const Math::Quaternion& solved, float influence,
+                                                Math::Quaternion& out) noexcept;
 
-struct TwoBoneIK3DObjectDefinitionUVE final {
+struct TwoBoneIK3DObjectDefinition final {
     static constexpr std::string_view defaultName = "TwoBoneIK3D";
 };
 
 /// Applies the Object3D recipe and the BoneModifier component every modifier carries, then this
 /// chain's own component.
-void ApplyTwoBoneIK3DObjectDefinitionUVE(IEntityManagerUVE& entityManager, EntityUVE entity,
-                                         const TwoBoneIK3DObjectDefinitionUVE& value);
+void ApplyTwoBoneIK3DObjectDefinition(IEntityManager& entityManager, Entity entity,
+                                         const TwoBoneIK3DObjectDefinition& value);
 
 } // namespace UVE::Scene

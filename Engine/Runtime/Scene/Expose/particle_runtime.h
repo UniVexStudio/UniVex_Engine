@@ -9,7 +9,7 @@
 #include "i_particle_runtime.h"
 
 namespace UVE::Threading {
-class IThreadPoolUVE;
+class IThreadPool;
 } // namespace UVE::Threading
 
 namespace UVE::Scene {
@@ -17,40 +17,40 @@ namespace UVE::Scene {
 /// Bounded CPU particle state for authored emitters. This v1 owns only explicitly emitted particle
 /// values and deterministic integration; GPU resources, renderer registration, asset lifetime, and
 /// backend selection remain outside the runtime.
-class ParticleRuntimeUVE final : public IParticleRuntimeUVE {
+class ParticleRuntime final : public IParticleRuntime {
 public:
-    static constexpr std::size_t kMaximumInstancesUVE = 4096U;
-    static constexpr std::uint64_t kMaximumTotalParticleBudgetUVE = 4'000'000U;
-    static constexpr float kMaximumParticleLifetimeSecondsUVE = 3600.0F;
-    static constexpr float kMaximumSimulationDeltaSecondsUVE = 0.25F;
+    static constexpr std::size_t kMaximumInstances = 4096U;
+    static constexpr std::uint64_t kMaximumTotalParticleBudget = 4'000'000U;
+    static constexpr float kMaximumParticleLifetimeSeconds = 3600.0F;
+    static constexpr float kMaximumSimulationDeltaSeconds = 0.25F;
 
-    ParticleRuntimeUVE() = default;
-    ParticleRuntimeUVE(const ParticleRuntimeUVE&) = delete;
-    ParticleRuntimeUVE& operator=(const ParticleRuntimeUVE&) = delete;
+    ParticleRuntime() = default;
+    ParticleRuntime(const ParticleRuntime&) = delete;
+    ParticleRuntime& operator=(const ParticleRuntime&) = delete;
 
-    [[nodiscard]] ParticleRuntimeResultUVE AttachDetailedUVE(
-        EntityUVE entity, const ParticleEmitterComponentUVE& component) override;
-    [[nodiscard]] bool AttachUVE(EntityUVE entity, const ParticleEmitterComponentUVE& component) {
-        return AttachDetailedUVE(entity, component).IsAcceptedUVE();
+    [[nodiscard]] ParticleRuntimeResult AttachDetailed(
+        Entity entity, const ParticleEmitterComponent& component) override;
+    [[nodiscard]] bool Attach(Entity entity, const ParticleEmitterComponent& component) {
+        return AttachDetailed(entity, component).IsAccepted();
     }
-    [[nodiscard]] ParticleRuntimeResultUVE DetachDetailedUVE(EntityUVE entity) noexcept override;
-    [[nodiscard]] bool DetachUVE(EntityUVE entity) noexcept {
-        return DetachDetailedUVE(entity).IsAcceptedUVE();
+    [[nodiscard]] ParticleRuntimeResult DetachDetailed(Entity entity) noexcept override;
+    [[nodiscard]] bool Detach(Entity entity) noexcept {
+        return DetachDetailed(entity).IsAccepted();
     }
-    [[nodiscard]] ParticleRuntimeResultUVE SetEnabledDetailedUVE(EntityUVE entity, bool enabled) noexcept override;
-    [[nodiscard]] ParticleRuntimeResultUVE SetLiveParticleCountDetailedUVE(
-        EntityUVE entity, std::uint32_t liveParticles) noexcept override;
-    [[nodiscard]] ParticleRuntimeResultUVE EmitDetailedUVE(
-        EntityUVE entity, const ParticleEmissionUVE& emission) override;
-    [[nodiscard]] ParticleRuntimeResultUVE SimulateDetailedUVE(
-        float deltaSeconds, const Math::Vector3UVE& acceleration) noexcept override;
+    [[nodiscard]] ParticleRuntimeResult SetEnabledDetailed(Entity entity, bool enabled) noexcept override;
+    [[nodiscard]] ParticleRuntimeResult SetLiveParticleCountDetailed(
+        Entity entity, std::uint32_t liveParticles) noexcept override;
+    [[nodiscard]] ParticleRuntimeResult EmitDetailed(
+        Entity entity, const ParticleEmission& emission) override;
+    [[nodiscard]] ParticleRuntimeResult SimulateDetailed(
+        float deltaSeconds, const Math::Vector3& acceleration) noexcept override;
 
     /// Marks whether `entity`'s emitter may be simulated on a worker thread - its resolved Thread
     /// Group mode, supplied by the engine. Defaults to false: nothing leaves the main thread unless
     /// it was put there on purpose.
-    [[nodiscard]] ParticleRuntimeResultUVE SetWorkerEligibleDetailedUVE(EntityUVE entity, bool eligible) noexcept;
+    [[nodiscard]] ParticleRuntimeResult SetWorkerEligibleDetailed(Entity entity, bool eligible) noexcept;
 
-    /// SimulateDetailedUVE, with worker-eligible emitters integrated on `threadPool` while the rest
+    /// SimulateDetailed, with worker-eligible emitters integrated on `threadPool` while the rest
     /// stay on the calling thread.
     ///
     /// SAME CONTRACT AS THE SERIAL PATH, INCLUDING ATOMICITY. Simulation is all-or-nothing across
@@ -64,36 +64,36 @@ public:
     ///
     /// A null pool, a pool with no workers, or no worker-eligible emitter takes the serial path.
     /// Not noexcept, unlike the serial overload: handing work to a pool allocates.
-    [[nodiscard]] ParticleRuntimeResultUVE SimulateDetailedUVE(float deltaSeconds,
-                                                               const Math::Vector3UVE& acceleration,
-                                                               Threading::IThreadPoolUVE* threadPool);
-    [[nodiscard]] ParticleRuntimeSnapshotUVE GetSnapshotUVE() const override;
-    [[nodiscard]] std::optional<ParticleStateSnapshotUVE> GetParticleSnapshotUVE(EntityUVE entity) const override;
-    [[nodiscard]] bool HasInstanceUVE(EntityUVE entity) const noexcept override;
-    [[nodiscard]] std::size_t GetInstanceCountUVE() const noexcept override;
-    [[nodiscard]] std::uint64_t GetTotalBudgetUVE() const noexcept override;
+    [[nodiscard]] ParticleRuntimeResult SimulateDetailed(float deltaSeconds,
+                                                               const Math::Vector3& acceleration,
+                                                               Threading::IThreadPool* threadPool);
+    [[nodiscard]] ParticleRuntimeSnapshot GetSnapshot() const override;
+    [[nodiscard]] std::optional<ParticleStateSnapshot> GetParticleSnapshot(Entity entity) const override;
+    [[nodiscard]] bool HasInstance(Entity entity) const noexcept override;
+    [[nodiscard]] std::size_t GetInstanceCount() const noexcept override;
+    [[nodiscard]] std::uint64_t GetTotalBudget() const noexcept override;
 
 private:
-    struct InstanceUVE final {
-        EntityUVE entity;
+    struct Instance final {
+        Entity entity;
         std::uint32_t maxParticles = 0U;
         std::uint32_t liveParticles = 0U;
         std::uint64_t generation = 1U;
         std::uint64_t nextSequence = 1U;
         bool enabled = true;
         bool workerEligible = false;
-        std::vector<ParticleStateUVE> particles;
+        std::vector<ParticleState> particles;
     };
 
     /// Whether one emitter's next step stays finite. Read-only, so it is safe to run for different
     /// emitters on different threads at once.
-    [[nodiscard]] static bool IsStepFiniteUVE(const InstanceUVE& instance, float deltaSeconds,
-                                              const Math::Vector3UVE& acceleration) noexcept;
+    [[nodiscard]] static bool IsStepFinite(const Instance& instance, float deltaSeconds,
+                                              const Math::Vector3& acceleration) noexcept;
     /// Advances one emitter by one step and drops expired particles. Touches only that emitter's
     /// own particle vector, so different emitters may be committed on different threads at once.
-    static void CommitStepUVE(InstanceUVE& instance, float deltaSeconds, const Math::Vector3UVE& acceleration);
+    static void CommitStep(Instance& instance, float deltaSeconds, const Math::Vector3& acceleration);
 
-    std::unordered_map<EntityUVE, InstanceUVE> m_instances;
+    std::unordered_map<Entity, Instance> m_instances;
     std::uint64_t m_totalBudget = 0U;
 };
 

@@ -23,18 +23,18 @@ namespace {
 
 /// The signature bytes each supported embedded image format starts with. Sniffing beats trusting a
 /// filename because the name inside an FBX is routinely wrong or missing entirely.
-[[nodiscard]] bool StartsWithUVE(const std::vector<std::byte>& bytes, const std::span<const std::byte> signature) {
+[[nodiscard]] bool StartsWith(const std::vector<std::byte>& bytes, const std::span<const std::byte> signature) {
     return bytes.size() >= signature.size() &&
            std::equal(signature.begin(), signature.end(), bytes.begin());
 }
 
-constexpr std::array<std::byte, 8U> kPngSignatureUVE{std::byte{0x89}, std::byte{0x50}, std::byte{0x4E},
+constexpr std::array<std::byte, 8U> kPngSignature{std::byte{0x89}, std::byte{0x50}, std::byte{0x4E},
                                                       std::byte{0x47}, std::byte{0x0D}, std::byte{0x0A},
                                                       std::byte{0x1A}, std::byte{0x0A}};
-constexpr std::array<std::byte, 3U> kJpegSignatureUVE{std::byte{0xFF}, std::byte{0xD8}, std::byte{0xFF}};
+constexpr std::array<std::byte, 3U> kJpegSignature{std::byte{0xFF}, std::byte{0xD8}, std::byte{0xFF}};
 
 /// The decoded pixels of whichever format the bytes turned out to be.
-struct DecodedImageUVE final {
+struct DecodedImage final {
     std::uint32_t width = 0U;
     std::uint32_t height = 0U;
     std::vector<std::byte> pixels;
@@ -42,7 +42,7 @@ struct DecodedImageUVE final {
 
 /// Matches a filename ignoring case, which is what a Windows-authored model's reference needs on a
 /// case-sensitive filesystem.
-[[nodiscard]] bool EqualsIgnoringCaseUVE(const std::string_view lhs, const std::string_view rhs) {
+[[nodiscard]] bool EqualsIgnoringCase(const std::string_view lhs, const std::string_view rhs) {
     return lhs.size() == rhs.size() && std::equal(lhs.begin(), lhs.end(), rhs.begin(), [](const char a, const char b) {
                return std::tolower(static_cast<unsigned char>(a)) == std::tolower(static_cast<unsigned char>(b));
            });
@@ -50,24 +50,24 @@ struct DecodedImageUVE final {
 
 } // namespace
 
-bool DecodeImageBytesUVE(const std::vector<std::byte>& bytes, const TextureImportSettingsUVE& settings,
-                         TextureAssetUVE& outTexture) {
+bool DecodeImageBytes(const std::vector<std::byte>& bytes, const TextureImportSettings& settings,
+                         TextureAsset& outTexture) {
     if (bytes.empty()) {
         return false;
     }
-    DecodedImageUVE decoded;
-    if (StartsWithUVE(bytes, std::span<const std::byte>(kPngSignatureUVE))) {
-        PngRgba8ImageUVE png;
-        if (!DecodePngRgba8ImageUVE(bytes, png)) {
+    DecodedImage decoded;
+    if (StartsWith(bytes, std::span<const std::byte>(kPngSignature))) {
+        PngRgba8Image png;
+        if (!DecodePngRgba8Image(bytes, png)) {
             return false;
         }
-        decoded = DecodedImageUVE{png.width, png.height, std::move(png.pixels)};
-    } else if (StartsWithUVE(bytes, std::span<const std::byte>(kJpegSignatureUVE))) {
-        JpegRgba8ImageUVE jpeg;
-        if (!DecodeJpegRgba8ImageUVE(bytes, jpeg)) {
+        decoded = DecodedImage{png.width, png.height, std::move(png.pixels)};
+    } else if (StartsWith(bytes, std::span<const std::byte>(kJpegSignature))) {
+        JpegRgba8Image jpeg;
+        if (!DecodeJpegRgba8Image(bytes, jpeg)) {
             return false;
         }
-        decoded = DecodedImageUVE{jpeg.width, jpeg.height, std::move(jpeg.pixels)};
+        decoded = DecodedImage{jpeg.width, jpeg.height, std::move(jpeg.pixels)};
     } else {
         return false; // neither format this engine can decode from bytes
     }
@@ -78,35 +78,35 @@ bool DecodeImageBytesUVE(const std::vector<std::byte>& bytes, const TextureImpor
         return false;
     }
 
-    TextureAssetUVE texture;
+    TextureAsset texture;
     texture.width = decoded.width;
     texture.height = decoded.height;
-    texture.format = TextureAssetFormatUVE::RGBA8Unorm;
+    texture.format = TextureAssetFormat::RGBA8Unorm;
     texture.colorSpace = settings.colorSpace;
     texture.usage = settings.usage;
     texture.pixels = std::move(decoded.pixels);
-    if (!PrepareTextureForImportUVE(texture, settings)) {
+    if (!PrepareTextureForImport(texture, settings)) {
         return false;
     }
     outTexture = std::move(texture);
     return true;
 }
 
-bool PublishEmbeddedTextureUVE(const std::filesystem::path& destinationPath, const std::vector<std::byte>& bytes,
-                               const TextureImportSettingsUVE& settings, const char* importerName,
+bool PublishEmbeddedTexture(const std::filesystem::path& destinationPath, const std::vector<std::byte>& bytes,
+                               const TextureImportSettings& settings, const char* importerName,
                                const std::string_view describeSource) {
-    TextureAssetUVE texture;
-    if (!DecodeImageBytesUVE(bytes, settings, texture)) {
+    TextureAsset texture;
+    if (!DecodeImageBytes(bytes, settings, texture)) {
         UVE_WARNING("{}: {} is not a PNG or JPEG this engine can decode; the slot stays empty", importerName,
                     describeSource);
         return false;
     }
-    return PublishAssetAtomicallyUVE(
+    return PublishAssetAtomically(
         destinationPath, importerName, std::string_view{".uve_embedded_tex_tmp"},
-        [&texture](const std::filesystem::path& temporaryPath) { return SaveTextureAssetUVE(texture, temporaryPath); });
+        [&texture](const std::filesystem::path& temporaryPath) { return SaveTextureAsset(texture, temporaryPath); });
 }
 
-std::optional<std::filesystem::path> ResolveAuthoredTextureFileUVE(const std::filesystem::path& modelDirectory,
+std::optional<std::filesystem::path> ResolveAuthoredTextureFile(const std::filesystem::path& modelDirectory,
                                                                    const std::string_view modelFileStem,
                                                                    const std::string_view authoredTextureFile) {
     if (authoredTextureFile.empty() || modelDirectory.empty()) {
@@ -155,7 +155,7 @@ std::optional<std::filesystem::path> ResolveAuthoredTextureFileUVE(const std::fi
             if (!entry.is_regular_file(entryError)) {
                 continue;
             }
-            if (EqualsIgnoringCaseUVE(entry.path().filename().string(), baseName)) {
+            if (EqualsIgnoringCase(entry.path().filename().string(), baseName)) {
                 return entry.path();
             }
         }
@@ -163,16 +163,16 @@ std::optional<std::filesystem::path> ResolveAuthoredTextureFileUVE(const std::fi
     return std::nullopt;
 }
 
-AssetGuidUVE ResolveImportedSiblingTextureGuidUVE(const std::filesystem::path& destinationPath,
+AssetGuid ResolveImportedSiblingTextureGuid(const std::filesystem::path& destinationPath,
                                                   const std::string_view authoredTextureFile,
-                                                  const IAssetDatabaseUVE& assetDatabase) {
+                                                  const IAssetDatabase& assetDatabase) {
     if (authoredTextureFile.empty()) {
-        return kInvalidAssetGuidUVE;
+        return kInvalidAssetGuid;
     }
     const std::filesystem::path authored{std::string(authoredTextureFile)};
     const std::string stem = authored.stem().string();
     if (stem.empty()) {
-        return kInvalidAssetGuidUVE;
+        return kInvalidAssetGuid;
     }
     const auto toLower = [](std::string_view s) {
         std::string res;
@@ -189,9 +189,9 @@ AssetGuidUVE ResolveImportedSiblingTextureGuidUVE(const std::filesystem::path& d
     const std::filesystem::path fbmDir =
         (siblingDirectory / (destinationPath.stem().string() + ".fbm")).lexically_normal();
 
-    AssetGuidUVE fallbackGuid = kInvalidAssetGuidUVE;
+    AssetGuid fallbackGuid = kInvalidAssetGuid;
 
-    for (const AssetRecordUVE& record : assetDatabase.GetRegisteredAssetsUVE()) {
+    for (const AssetRecord& record : assetDatabase.GetRegisteredAssets()) {
         if (record.path.extension() != ".uvtex") {
             continue;
         }
@@ -206,7 +206,7 @@ AssetGuidUVE ResolveImportedSiblingTextureGuidUVE(const std::filesystem::path& d
             recParent == fbmDir) {
             return record.guid;
         }
-        if (fallbackGuid == kInvalidAssetGuidUVE && recStemLower == stemLower) {
+        if (fallbackGuid == kInvalidAssetGuid && recStemLower == stemLower) {
             fallbackGuid = record.guid;
         }
     }
@@ -215,8 +215,8 @@ AssetGuidUVE ResolveImportedSiblingTextureGuidUVE(const std::filesystem::path& d
 
 namespace {
 
-void DownsampleRgba8ToMaxExtentUVE(TextureAssetUVE& texture, const std::uint32_t maxExtent) {
-    if (maxExtent == 0U || texture.format != TextureAssetFormatUVE::RGBA8Unorm ||
+void DownsampleRgba8ToMaxExtent(TextureAsset& texture, const std::uint32_t maxExtent) {
+    if (maxExtent == 0U || texture.format != TextureAssetFormat::RGBA8Unorm ||
         (texture.width <= maxExtent && texture.height <= maxExtent) ||
         texture.width == 0U || texture.height == 0U) {
         return;
@@ -286,25 +286,25 @@ void DownsampleRgba8ToMaxExtentUVE(TextureAssetUVE& texture, const std::uint32_t
 
 } // namespace
 
-[[nodiscard]] bool PrepareTextureForImportUVE(TextureAssetUVE& texture,
-                                               const TextureImportSettingsUVE& settings) {
+[[nodiscard]] bool PrepareTextureForImport(TextureAsset& texture,
+                                               const TextureImportSettings& settings) {
     if (settings.maxResolutionClamp > 0U &&
         (texture.width > settings.maxResolutionClamp || texture.height > settings.maxResolutionClamp)) {
-        DownsampleRgba8ToMaxExtentUVE(texture, settings.maxResolutionClamp);
+        DownsampleRgba8ToMaxExtent(texture, settings.maxResolutionClamp);
     }
     if (settings.generateMipmaps &&
-        !GenerateTextureMipmapsUVE(texture, settings.mipFilter, settings.maxMipLevels)) {
+        !GenerateTextureMipmaps(texture, settings.mipFilter, settings.maxMipLevels)) {
         return false;
     }
-    if (settings.compressionMode != TextureCompressionModeUVE::None &&
-        !CompressTextureAssetWithBasisUVE(texture, settings.compressionMode, settings.compressionQuality,
+    if (settings.compressionMode != TextureCompressionMode::None &&
+        !CompressTextureAssetWithBasis(texture, settings.compressionMode, settings.compressionQuality,
                                           settings.compressionEffort)) {
         return false;
     }
-    return IsTextureAssetValidUVE(texture);
+    return IsTextureAssetValid(texture);
 }
 
-std::string MakeMaterialFileStemUVE(const std::string_view modelStem, const std::string_view materialName,
+std::string MakeMaterialFileStem(const std::string_view modelStem, const std::string_view materialName,
                                        const std::size_t materialIndex, const std::string_view fallbackPrefix,
                                        std::vector<std::string>& usedStems) {
     std::string sanitised;
@@ -323,9 +323,9 @@ std::string MakeMaterialFileStemUVE(const std::string_view modelStem, const std:
     // A long authored name must not decide whether the model imports: every mainstream filesystem
     // caps a single component at 255 bytes, and this stem gains a model prefix and an extension on
     // top. Cutting here keeps the published path legal, and the cut is deterministic.
-    constexpr std::size_t kMaximumStemCharactersUVE = 64U;
-    if (sanitised.size() > kMaximumStemCharactersUVE) {
-        sanitised.resize(kMaximumStemCharactersUVE);
+    constexpr std::size_t kMaximumStemCharacters = 64U;
+    if (sanitised.size() > kMaximumStemCharacters) {
+        sanitised.resize(kMaximumStemCharacters);
     }
     std::string candidate = std::string(modelStem) + "." + sanitised;
     for (std::size_t suffix = 2U;; ++suffix) {
@@ -345,7 +345,7 @@ std::string MakeMaterialFileStemUVE(const std::string_view modelStem, const std:
     return candidate;
 }
 
-[[nodiscard]] bool ReadBoundedSourceBytesUVE(const std::filesystem::path& sourcePath,
+[[nodiscard]] bool ReadBoundedSourceBytes(const std::filesystem::path& sourcePath,
                                              const char* importerName,
                                              const std::uint64_t maximumBytes,
                                              std::vector<std::byte>& outBytes) {

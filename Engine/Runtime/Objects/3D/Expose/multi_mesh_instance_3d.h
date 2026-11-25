@@ -18,72 +18,72 @@
 
 namespace UVE::Scene {
 
-class IEntityManagerUVE;
+class IEntityManager;
 
-inline constexpr std::size_t kMaximumMultiMeshInstances3DUVE = 16384U;
+inline constexpr std::size_t kMaximumMultiMeshInstances3D = 16384U;
 
-struct MultiMeshInstanceTransform3DUVE final {
-    Math::Vector3UVE position{0.0F, 0.0F, 0.0F};
-    Math::QuaternionUVE rotation{};
-    Math::Vector3UVE scale{1.0F, 1.0F, 1.0F};
-    Math::ColorUVE customColor{1.0F, 1.0F, 1.0F};
+struct MultiMeshInstanceTransform3D final {
+    Math::Vector3 position{0.0F, 0.0F, 0.0F};
+    Math::Quaternion rotation{};
+    Math::Vector3 scale{1.0F, 1.0F, 1.0F};
+    Math::Color customColor{1.0F, 1.0F, 1.0F};
 
-    [[nodiscard]] bool operator==(const MultiMeshInstanceTransform3DUVE&) const = default;
+    [[nodiscard]] bool operator==(const MultiMeshInstanceTransform3D&) const = default;
 };
 
-/// Mass-instanced 3D mesh component built on `SurfaceInstance3DBaseUVE`. Stores a shared
+/// Mass-instanced 3D mesh component built on `SurfaceInstance3DBase`. Stores a shared
 /// `meshAssetGuid`, `materialAssetGuid`, `visibleInstanceCount` (`-1` draws all instances), and
 /// per-instance local transforms (`instances`).
-struct MultiMeshInstance3DComponentUVE final {
-    Asset::AssetGuidUVE meshAssetGuid = Asset::kInvalidAssetGuidUVE;
-    Asset::AssetGuidUVE materialAssetGuid = Asset::kInvalidAssetGuidUVE;
+struct MultiMeshInstance3DComponent final {
+    Asset::AssetGuid meshAssetGuid = Asset::kInvalidAssetGuid;
+    Asset::AssetGuid materialAssetGuid = Asset::kInvalidAssetGuid;
     std::int32_t visibleInstanceCount = -1;
-    std::vector<MultiMeshInstanceTransform3DUVE> instances{};
+    std::vector<MultiMeshInstanceTransform3D> instances{};
     bool enabled = true;
 
-    [[nodiscard]] bool operator==(const MultiMeshInstance3DComponentUVE&) const = default;
+    [[nodiscard]] bool operator==(const MultiMeshInstance3DComponent&) const = default;
 };
 
-[[nodiscard]] bool IsMultiMeshInstance3DComponentValidUVE(
-    const MultiMeshInstance3DComponentUVE& value) noexcept;
+[[nodiscard]] bool IsMultiMeshInstance3DComponentValid(
+    const MultiMeshInstance3DComponent& value) noexcept;
 
-[[nodiscard]] MultiMeshInstance3DComponentUVE SanitizeMultiMeshInstance3DComponentUVE(
-    const MultiMeshInstance3DComponentUVE& value);
+[[nodiscard]] MultiMeshInstance3DComponent SanitizeMultiMeshInstance3DComponent(
+    const MultiMeshInstance3DComponent& value);
 
-struct MultiMeshInstance3DObjectDefinitionUVE final {
+struct MultiMeshInstance3DObjectDefinition final {
     static constexpr std::string_view defaultName = "MultiMeshInstance3D";
-    MultiMeshInstance3DComponentUVE multiMesh{};
+    MultiMeshInstance3DComponent multiMesh{};
 };
 
-[[nodiscard]] bool IsMultiMeshInstance3DObjectDefinitionValidUVE(
-    const MultiMeshInstance3DObjectDefinitionUVE& value) noexcept;
+[[nodiscard]] bool IsMultiMeshInstance3DObjectDefinitionValid(
+    const MultiMeshInstance3DObjectDefinition& value) noexcept;
 
-/// Applies `ApplySurfaceInstance3DBaseUVE` (giving the node `RenderInstanceComponentUVE` +
-/// `SurfaceInstanceComponentUVE`) and attaches `MultiMeshInstance3DComponentUVE`.
-void ApplyMultiMeshInstance3DObjectDefinitionUVE(
-    IEntityManagerUVE& entityManager, EntityUVE entity,
-    const MultiMeshInstance3DObjectDefinitionUVE& value);
+/// Applies `ApplySurfaceInstance3DBase` (giving the node `RenderInstanceComponent` +
+/// `SurfaceInstanceComponent`) and attaches `MultiMeshInstance3DComponent`.
+void ApplyMultiMeshInstance3DObjectDefinition(
+    IEntityManager& entityManager, Entity entity,
+    const MultiMeshInstance3DObjectDefinition& value);
 
-class MultiMeshInstance3DUVE final {
+class MultiMeshInstance3D final {
 public:
-    MultiMeshInstance3DUVE() = delete;
+    MultiMeshInstance3D() = delete;
 
     /// Returns the number of instances that should be drawn (`min(visibleInstanceCount, instances.size())`
     /// when `visibleInstanceCount >= 0`, else `instances.size()`).
-    [[nodiscard]] static std::size_t ResolveActiveInstanceCountUVE(
-        const MultiMeshInstance3DComponentUVE& multiMesh) noexcept;
+    [[nodiscard]] static std::size_t ResolveActiveInstanceCount(
+        const MultiMeshInstance3DComponent& multiMesh) noexcept;
 
     /// Builds the world-space 4x4 model matrix for instance `index` under `ownerWorldTransform`.
-    [[nodiscard]] static Math::Matrix4x4UVE BuildInstanceWorldMatrixUVE(
-        const MultiMeshInstance3DComponentUVE& multiMesh, std::size_t index,
-        const WorldTransformComponentUVE& ownerWorldTransform) noexcept;
+    [[nodiscard]] static Math::Matrix4x4 BuildInstanceWorldMatrix(
+        const MultiMeshInstance3DComponent& multiMesh, std::size_t index,
+        const WorldTransformComponent& ownerWorldTransform) noexcept;
 
     /// Computes the combined world-space AABB enclosing all active instances (assuming each
     /// instance has `instanceLocalHalfExtents`).
-    [[nodiscard]] static Math::AabbUVE ComputeCombinedWorldBoundsUVE(
-        const MultiMeshInstance3DComponentUVE& multiMesh,
-        const WorldTransformComponentUVE& ownerWorldTransform,
-        const Math::Vector3UVE& instanceLocalHalfExtents = Math::Vector3UVE{0.5F, 0.5F, 0.5F}) noexcept;
+    [[nodiscard]] static Math::Aabb ComputeCombinedWorldBounds(
+        const MultiMeshInstance3DComponent& multiMesh,
+        const WorldTransformComponent& ownerWorldTransform,
+        const Math::Vector3& instanceLocalHalfExtents = Math::Vector3{0.5F, 0.5F, 0.5F}) noexcept;
 };
 
 } // namespace UVE::Scene

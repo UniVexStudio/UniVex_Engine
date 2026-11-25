@@ -12,120 +12,120 @@
 namespace UVE::Render::Tests {
 namespace {
 
-PipelineDescUVE MakeGeometryPipelineUVE(NullRenderDeviceUVE& device) {
-    PipelineDescUVE desc;
-    desc.vertexShader = device.CreateShaderUVE({ShaderStageUVE::Vertex, "vertex"});
-    desc.fragmentShader = device.CreateShaderUVE({ShaderStageUVE::Fragment, "fragment"});
-    desc.geometryShader = device.CreateShaderUVE({ShaderStageUVE::Geometry, "geometry"});
+PipelineDesc MakeGeometryPipeline(NullRenderDevice& device) {
+    PipelineDesc desc;
+    desc.vertexShader = device.CreateShader({ShaderStage::Vertex, "vertex"});
+    desc.fragmentShader = device.CreateShader({ShaderStage::Fragment, "fragment"});
+    desc.geometryShader = device.CreateShader({ShaderStage::Geometry, "geometry"});
     return desc;
 }
 
-TEST(GeometryPipelineUVETest, OptionalStageDefaultsToLegacyPairAndReportsOnlyModelSupport) {
-    NullRenderDeviceUVE device;
-    EXPECT_EQ(RenderDeviceCapabilitiesUVE{}.geometryShaders, RenderFeatureSupportUVE::Unsupported);
-    EXPECT_EQ(device.GetCapabilitiesUVE().geometryShaders, RenderFeatureSupportUVE::Model);
-    EXPECT_EQ(PipelineDescUVE{}.geometryShader, kInvalidShaderHandleUVE);
-    PipelineDescUVE desc;
-    desc.vertexShader = device.CreateShaderUVE({ShaderStageUVE::Vertex, "vertex"});
-    desc.fragmentShader = device.CreateShaderUVE({ShaderStageUVE::Fragment, "fragment"});
-    EXPECT_NE(device.CreatePipelineUVE(desc), kInvalidPipelineHandleUVE);
-    EXPECT_EQ(device.GetLiveResourceCountUVE(), 3U);
+TEST(GeometryPipelineTest, OptionalStageDefaultsToLegacyPairAndReportsOnlyModelSupport) {
+    NullRenderDevice device;
+    EXPECT_EQ(RenderDeviceCapabilities{}.geometryShaders, RenderFeatureSupport::Unsupported);
+    EXPECT_EQ(device.GetCapabilities().geometryShaders, RenderFeatureSupport::Model);
+    EXPECT_EQ(PipelineDesc{}.geometryShader, kInvalidShaderHandle);
+    PipelineDesc desc;
+    desc.vertexShader = device.CreateShader({ShaderStage::Vertex, "vertex"});
+    desc.fragmentShader = device.CreateShader({ShaderStage::Fragment, "fragment"});
+    EXPECT_NE(device.CreatePipeline(desc), kInvalidPipelineHandle);
+    EXPECT_EQ(device.GetLiveResourceCount(), 3U);
 }
 
-TEST(GeometryPipelineUVETest, OptionalStageCreatesARecordedGraphicsDraw) {
-    NullRenderDeviceUVE device;
-    const PipelineDescUVE desc = MakeGeometryPipelineUVE(device);
-    const auto pipeline = device.CreatePipelineUVE(desc);
-    ASSERT_NE(pipeline, kInvalidPipelineHandleUVE);
-    EXPECT_EQ(device.GetLiveResourceCountUVE(), 4U);
-    auto commands = device.CreateCommandBufferUVE();
-    commands->BeginRenderPassUVE({});
-    commands->BindPipelineUVE(pipeline);
-    commands->DrawUVE(3U);
-    commands->EndRenderPassUVE();
-    device.SubmitUVE(std::move(commands));
-    const auto& recorded = device.GetLastSubmittedCommandsUVE();
+TEST(GeometryPipelineTest, OptionalStageCreatesARecordedGraphicsDraw) {
+    NullRenderDevice device;
+    const PipelineDesc desc = MakeGeometryPipeline(device);
+    const auto pipeline = device.CreatePipeline(desc);
+    ASSERT_NE(pipeline, kInvalidPipelineHandle);
+    EXPECT_EQ(device.GetLiveResourceCount(), 4U);
+    auto commands = device.CreateCommandBuffer();
+    commands->BeginRenderPass({});
+    commands->BindPipeline(pipeline);
+    commands->Draw(3U);
+    commands->EndRenderPass();
+    device.Submit(std::move(commands));
+    const auto& recorded = device.GetLastSubmittedCommands();
     ASSERT_EQ(recorded.size(), 4U);
-    EXPECT_EQ(std::get<BindPipelineCommandUVE>(recorded[1]).pipeline, pipeline);
-    EXPECT_EQ(std::get<DrawCommandUVE>(recorded[2]).vertexCount, 3U);
-    device.DestroyPipelineUVE(pipeline);
-    device.DestroyShaderUVE(desc.geometryShader);
-    device.DestroyShaderUVE(desc.fragmentShader);
-    device.DestroyShaderUVE(desc.vertexShader);
-    EXPECT_EQ(device.GetLiveResourceCountUVE(), 0U);
+    EXPECT_EQ(std::get<BindPipelineCommand>(recorded[1]).pipeline, pipeline);
+    EXPECT_EQ(std::get<DrawCommand>(recorded[2]).vertexCount, 3U);
+    device.DestroyPipeline(pipeline);
+    device.DestroyShader(desc.geometryShader);
+    device.DestroyShader(desc.fragmentShader);
+    device.DestroyShader(desc.vertexShader);
+    EXPECT_EQ(device.GetLiveResourceCount(), 0U);
 }
 
-TEST(GeometryPipelineUVETest, UnknownAndDestroyedGeometryAreRejectedBeforePublication) {
-    NullRenderDeviceUVE device;
-    PipelineDescUVE desc = MakeGeometryPipelineUVE(device);
+TEST(GeometryPipelineTest, UnknownAndDestroyedGeometryAreRejectedBeforePublication) {
+    NullRenderDevice device;
+    PipelineDesc desc = MakeGeometryPipeline(device);
     const auto geometry = desc.geometryShader;
-    const std::size_t live = device.GetLiveResourceCountUVE();
-    desc.geometryShader = ShaderHandleUVE{999999U};
+    const std::size_t live = device.GetLiveResourceCount();
+    desc.geometryShader = ShaderHandle{999999U};
     std::string info;
-    EXPECT_EQ(device.CreatePipelineUVE(desc, &info), kInvalidPipelineHandleUVE);
+    EXPECT_EQ(device.CreatePipeline(desc, &info), kInvalidPipelineHandle);
     EXPECT_NE(info.find("geometry"), std::string::npos);
-    EXPECT_EQ(device.GetLiveResourceCountUVE(), live);
+    EXPECT_EQ(device.GetLiveResourceCount(), live);
     desc.geometryShader = geometry;
-    device.DestroyShaderUVE(geometry);
-    EXPECT_EQ(device.CreatePipelineUVE(desc), kInvalidPipelineHandleUVE);
-    EXPECT_EQ(device.GetLiveResourceCountUVE(), live - 1U);
-    desc.geometryShader = kInvalidShaderHandleUVE;
-    EXPECT_NE(device.CreatePipelineUVE(desc), kInvalidPipelineHandleUVE);
+    device.DestroyShader(geometry);
+    EXPECT_EQ(device.CreatePipeline(desc), kInvalidPipelineHandle);
+    EXPECT_EQ(device.GetLiveResourceCount(), live - 1U);
+    desc.geometryShader = kInvalidShaderHandle;
+    EXPECT_NE(device.CreatePipeline(desc), kInvalidPipelineHandle);
 }
 
-TEST(GeometryPipelineUVETest, WrongStageInGeometrySlotIsRejectedForEveryOtherStage) {
-    NullRenderDeviceUVE device;
-    PipelineDescUVE desc = MakeGeometryPipelineUVE(device);
+TEST(GeometryPipelineTest, WrongStageInGeometrySlotIsRejectedForEveryOtherStage) {
+    NullRenderDevice device;
+    PipelineDesc desc = MakeGeometryPipeline(device);
     const auto geometry = desc.geometryShader;
-    for (const auto stage : std::array{ShaderStageUVE::Vertex, ShaderStageUVE::Fragment, ShaderStageUVE::Compute}) {
-        const auto wrong = device.CreateShaderUVE({stage, "wrong stage"});
+    for (const auto stage : std::array{ShaderStage::Vertex, ShaderStage::Fragment, ShaderStage::Compute}) {
+        const auto wrong = device.CreateShader({stage, "wrong stage"});
         desc.geometryShader = wrong;
-        const auto before = device.GetLiveResourceCountUVE();
+        const auto before = device.GetLiveResourceCount();
         std::string info;
-        EXPECT_EQ(device.CreatePipelineUVE(desc, &info), kInvalidPipelineHandleUVE);
+        EXPECT_EQ(device.CreatePipeline(desc, &info), kInvalidPipelineHandle);
         EXPECT_NE(info.find("Geometry-stage"), std::string::npos);
-        EXPECT_EQ(device.GetLiveResourceCountUVE(), before);
-        device.DestroyShaderUVE(wrong);
+        EXPECT_EQ(device.GetLiveResourceCount(), before);
+        device.DestroyShader(wrong);
     }
     desc.geometryShader = geometry;
-    EXPECT_NE(device.CreatePipelineUVE(desc), kInvalidPipelineHandleUVE);
+    EXPECT_NE(device.CreatePipeline(desc), kInvalidPipelineHandle);
 }
 
-TEST(GeometryPipelineUVETest, GeometryCannotReplaceTheRequiredVertexOrFragmentStage) {
-    NullRenderDeviceUVE device;
-    const PipelineDescUVE valid = MakeGeometryPipelineUVE(device);
+TEST(GeometryPipelineTest, GeometryCannotReplaceTheRequiredVertexOrFragmentStage) {
+    NullRenderDevice device;
+    const PipelineDesc valid = MakeGeometryPipeline(device);
     auto desc = valid;
     desc.vertexShader = valid.geometryShader;
-    EXPECT_EQ(device.CreatePipelineUVE(desc), kInvalidPipelineHandleUVE);
+    EXPECT_EQ(device.CreatePipeline(desc), kInvalidPipelineHandle);
     desc = valid;
     desc.fragmentShader = valid.geometryShader;
-    EXPECT_EQ(device.CreatePipelineUVE(desc), kInvalidPipelineHandleUVE);
-    EXPECT_EQ(device.GetLiveResourceCountUVE(), 3U);
+    EXPECT_EQ(device.CreatePipeline(desc), kInvalidPipelineHandle);
+    EXPECT_EQ(device.GetLiveResourceCount(), 3U);
     desc = valid;
     std::swap(desc.vertexShader, desc.fragmentShader);
-    EXPECT_EQ(device.CreatePipelineUVE(desc), kInvalidPipelineHandleUVE);
-    EXPECT_EQ(device.GetLiveResourceCountUVE(), 3U);
+    EXPECT_EQ(device.CreatePipeline(desc), kInvalidPipelineHandle);
+    EXPECT_EQ(device.GetLiveResourceCount(), 3U);
 }
 
-TEST(GeometryPipelineUVETest, PipelineSurvivesShaderDeletionButNewPipelineRejectsStaleHandle) {
-    NullRenderDeviceUVE device;
-    const PipelineDescUVE desc = MakeGeometryPipelineUVE(device);
-    const auto pipeline = device.CreatePipelineUVE(desc);
-    ASSERT_NE(pipeline, kInvalidPipelineHandleUVE);
-    device.DestroyShaderUVE(desc.geometryShader);
-    device.DestroyShaderUVE(desc.fragmentShader);
-    device.DestroyShaderUVE(desc.vertexShader);
-    EXPECT_EQ(device.GetLiveResourceCountUVE(), 1U);
-    EXPECT_EQ(device.CreatePipelineUVE(desc), kInvalidPipelineHandleUVE);
-    auto commands = device.CreateCommandBufferUVE();
-    commands->BeginRenderPassUVE({});
-    commands->BindPipelineUVE(pipeline);
-    commands->DrawUVE(3U);
-    commands->EndRenderPassUVE();
-    device.SubmitUVE(std::move(commands));
-    ASSERT_EQ(device.GetLastSubmittedCommandsUVE().size(), 4U);
-    device.DestroyPipelineUVE(pipeline);
-    EXPECT_EQ(device.GetLiveResourceCountUVE(), 0U);
+TEST(GeometryPipelineTest, PipelineSurvivesShaderDeletionButNewPipelineRejectsStaleHandle) {
+    NullRenderDevice device;
+    const PipelineDesc desc = MakeGeometryPipeline(device);
+    const auto pipeline = device.CreatePipeline(desc);
+    ASSERT_NE(pipeline, kInvalidPipelineHandle);
+    device.DestroyShader(desc.geometryShader);
+    device.DestroyShader(desc.fragmentShader);
+    device.DestroyShader(desc.vertexShader);
+    EXPECT_EQ(device.GetLiveResourceCount(), 1U);
+    EXPECT_EQ(device.CreatePipeline(desc), kInvalidPipelineHandle);
+    auto commands = device.CreateCommandBuffer();
+    commands->BeginRenderPass({});
+    commands->BindPipeline(pipeline);
+    commands->Draw(3U);
+    commands->EndRenderPass();
+    device.Submit(std::move(commands));
+    ASSERT_EQ(device.GetLastSubmittedCommands().size(), 4U);
+    device.DestroyPipeline(pipeline);
+    EXPECT_EQ(device.GetLiveResourceCount(), 0U);
 }
 
 } // namespace

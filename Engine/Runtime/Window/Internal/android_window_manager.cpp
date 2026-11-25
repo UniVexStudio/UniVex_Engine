@@ -20,7 +20,7 @@ namespace {
 ///
 /// Each entry below drops one requirement. The depth buffer stays the longest, because the 3D
 /// renderer needs one; only the last resort trades 24 bits for 16.
-struct EglConfigAttemptUVE {
+struct EglConfigAttempt {
     const char* label;
     EGLint redSize;
     EGLint greenSize;
@@ -30,14 +30,14 @@ struct EglConfigAttemptUVE {
     EGLint stencilSize;
 };
 
-constexpr std::array<EglConfigAttemptUVE, 4> kEglConfigAttemptsUVE{{
+constexpr std::array<EglConfigAttempt, 4> kEglConfigAttempts{{
     {"rgba8 depth24 stencil8", 8, 8, 8, 8, 24, 8},
     {"rgba8 depth24", 8, 8, 8, 8, 24, 0},
     {"rgb8 depth24", 8, 8, 8, 0, 24, 0},
     {"rgb8 depth16", 8, 8, 8, 0, 16, 0},
 }};
 
-[[nodiscard]] EGLConfig ChooseEglConfigUVE(const EGLDisplay display, const EglConfigAttemptUVE& attempt) {
+[[nodiscard]] EGLConfig ChooseEglConfig(const EGLDisplay display, const EglConfigAttempt& attempt) {
     const EGLint attributes[] = {EGL_SURFACE_TYPE, EGL_WINDOW_BIT | EGL_PBUFFER_BIT,
                                  EGL_RENDERABLE_TYPE, EGL_OPENGL_ES3_BIT,
                                  EGL_RED_SIZE, attempt.redSize, EGL_GREEN_SIZE, attempt.greenSize,
@@ -53,10 +53,10 @@ constexpr std::array<EglConfigAttemptUVE, 4> kEglConfigAttemptsUVE{{
 }
 
 } // namespace
-struct AndroidWindowManagerUVE::Impl {
-    Impl(Events::IEventSystemUVE& events, ANativeWindow* window, bool vsync)
+struct AndroidWindowManager::Impl {
+    Impl(Events::IEventSystem& events, ANativeWindow* window, bool vsync)
         : m_events(events), m_window(window), m_vsync(vsync) {}
-    Events::IEventSystemUVE& m_events;
+    Events::IEventSystem& m_events;
     bool m_focused = true;
     std::uint32_t m_lastWidth = 0U;
     std::uint32_t m_lastHeight = 0U;
@@ -70,26 +70,26 @@ struct AndroidWindowManagerUVE::Impl {
     bool m_contextLost = false;
     std::uint64_t m_presentations = 0U;
 };
-AndroidWindowManagerUVE::AndroidWindowManagerUVE(Events::IEventSystemUVE& events, void* native,
-                                               const WindowDescUVE& desc)
+AndroidWindowManager::AndroidWindowManager(Events::IEventSystem& events, void* native,
+                                               const WindowDesc& desc)
     : m_impl(std::make_unique<Impl>(events, static_cast<ANativeWindow*>(native),
-          desc.vsyncModeExplicit ? desc.vsyncMode != Platform::VSyncModeUVE::Off : desc.vsyncEnabled)) {
+          desc.vsyncModeExplicit ? desc.vsyncMode != Platform::VSyncMode::Off : desc.vsyncEnabled)) {
     if (m_impl->m_window == nullptr) return;
     ANativeWindow_acquire(m_impl->m_window);
     m_impl->m_display = eglGetDisplay(EGL_DEFAULT_DISPLAY);
     if (m_impl->m_display == EGL_NO_DISPLAY || eglInitialize(m_impl->m_display, nullptr, nullptr) != EGL_TRUE) return;
     if (eglBindAPI(EGL_OPENGL_ES_API) != EGL_TRUE) return;
-    for (const EglConfigAttemptUVE& attempt : kEglConfigAttemptsUVE) {
-        m_impl->m_config = ChooseEglConfigUVE(m_impl->m_display, attempt);
+    for (const EglConfigAttempt& attempt : kEglConfigAttempts) {
+        m_impl->m_config = ChooseEglConfig(m_impl->m_display, attempt);
         if (m_impl->m_config != nullptr) {
-            UVE_INFO("AndroidWindowManagerUVE: EGL config {}", attempt.label);
+            UVE_INFO("AndroidWindowManager: EGL config {}", attempt.label);
             break;
         }
-        UVE_WARNING("AndroidWindowManagerUVE: no EGL config for {}", attempt.label);
+        UVE_WARNING("AndroidWindowManager: no EGL config for {}", attempt.label);
     }
     if (m_impl->m_config == nullptr) {
         // Nothing matched: say so, because the only other symptom is a black window.
-        UVE_ERROR("AndroidWindowManagerUVE: no usable EGL config (EGL error 0x{:X}); the window will "
+        UVE_ERROR("AndroidWindowManager: no usable EGL config (EGL error 0x{:X}); the window will "
                   "stay black", static_cast<unsigned>(eglGetError()));
         return;
     }
@@ -98,9 +98,9 @@ AndroidWindowManagerUVE::AndroidWindowManagerUVE(Events::IEventSystemUVE& events
     if (m_impl->m_context == EGL_NO_CONTEXT) return;
     const EGLint idleAttributes[] = {EGL_WIDTH, 1, EGL_HEIGHT, 1, EGL_NONE};
     m_impl->m_idleSurface = eglCreatePbufferSurface(m_impl->m_display, m_impl->m_config, idleAttributes);
-    if (m_impl->m_idleSurface == EGL_NO_SURFACE || !TryRecoverSurfaceUVE()) m_impl->m_contextLost = true;
+    if (m_impl->m_idleSurface == EGL_NO_SURFACE || !TryRecoverSurface()) m_impl->m_contextLost = true;
 }
-AndroidWindowManagerUVE::~AndroidWindowManagerUVE() {
+AndroidWindowManager::~AndroidWindowManager() {
     if (m_impl->m_display != EGL_NO_DISPLAY) {
         eglMakeCurrent(m_impl->m_display, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
         if (m_impl->m_surface != EGL_NO_SURFACE) eglDestroySurface(m_impl->m_display, m_impl->m_surface);
@@ -110,8 +110,8 @@ AndroidWindowManagerUVE::~AndroidWindowManagerUVE() {
     }
     if (m_impl->m_window != nullptr) ANativeWindow_release(m_impl->m_window);
 }
-bool AndroidWindowManagerUVE::TryRecoverSurfaceUVE() noexcept {
-    if (!IsValidUVE() || m_impl->m_display == EGL_NO_DISPLAY || m_impl->m_window == nullptr) return false;
+bool AndroidWindowManager::TryRecoverSurface() noexcept {
+    if (!IsValid() || m_impl->m_display == EGL_NO_DISPLAY || m_impl->m_window == nullptr) return false;
     if (m_impl->m_surface != EGL_NO_SURFACE) return true;
     EGLint format = 0;
     if (eglGetConfigAttrib(m_impl->m_display, m_impl->m_config, EGL_NATIVE_VISUAL_ID, &format) != EGL_TRUE) return false;
@@ -127,20 +127,20 @@ bool AndroidWindowManagerUVE::TryRecoverSurfaceUVE() noexcept {
     eglSwapInterval(m_impl->m_display, m_impl->m_vsync ? 1 : 0);
     return true;
 }
-void AndroidWindowManagerUVE::PollEventsUVE() {
-    const auto width = GetWidthUVE();
-    const auto height = GetHeightUVE();
+void AndroidWindowManager::PollEvents() {
+    const auto width = GetWidth();
+    const auto height = GetHeight();
     if (width != m_impl->m_lastWidth || height != m_impl->m_lastHeight) {
         m_impl->m_lastWidth = width; m_impl->m_lastHeight = height;
-        m_impl->m_events.Publish(WindowResizedEventUVE{width, height});
+        m_impl->m_events.Publish(WindowResizedEvent{width, height});
     }
 }
-void AndroidWindowManagerUVE::SetFocusedUVE(const bool focused) {
+void AndroidWindowManager::SetFocused(const bool focused) {
     if (m_impl->m_focused == focused) return;
     m_impl->m_focused = focused;
-    m_impl->m_events.Publish(WindowFocusChangedEventUVE{focused});
+    m_impl->m_events.Publish(WindowFocusChangedEvent{focused});
 }
-void AndroidWindowManagerUVE::DetachNativeWindowUVE() {
+void AndroidWindowManager::DetachNativeWindow() {
     if (m_impl->m_display != EGL_NO_DISPLAY && m_impl->m_context != EGL_NO_CONTEXT && !m_impl->m_contextLost) {
         if (eglMakeCurrent(m_impl->m_display, m_impl->m_idleSurface, m_impl->m_idleSurface, m_impl->m_context) != EGL_TRUE) m_impl->m_contextLost = true;
     }
@@ -149,14 +149,14 @@ void AndroidWindowManagerUVE::DetachNativeWindowUVE() {
     if (m_impl->m_window != nullptr) ANativeWindow_release(m_impl->m_window);
     m_impl->m_window = nullptr;
 }
-bool AndroidWindowManagerUVE::AttachNativeWindowUVE(void* window) {
-    DetachNativeWindowUVE();
+bool AndroidWindowManager::AttachNativeWindow(void* window) {
+    DetachNativeWindow();
     m_impl->m_window = static_cast<ANativeWindow*>(window);
     if (m_impl->m_window != nullptr) ANativeWindow_acquire(m_impl->m_window);
-    return TryRecoverSurfaceUVE();
+    return TryRecoverSurface();
 }
-void AndroidWindowManagerUVE::SwapBuffersUVE() {
-    if (m_impl->m_surface == EGL_NO_SURFACE || !IsValidUVE()) return;
+void AndroidWindowManager::SwapBuffers() {
+    if (m_impl->m_surface == EGL_NO_SURFACE || !IsValid()) return;
     if (eglSwapBuffers(m_impl->m_display, m_impl->m_surface) == EGL_TRUE) {
         ++m_impl->m_presentations;
         return;
@@ -166,15 +166,15 @@ void AndroidWindowManagerUVE::SwapBuffersUVE() {
     eglDestroySurface(m_impl->m_display, m_impl->m_surface);
     m_impl->m_surface = EGL_NO_SURFACE;
 }
-void AndroidWindowManagerUVE::SetVSyncEnabledUVE(const bool enabled) {
+void AndroidWindowManager::SetVSyncEnabled(const bool enabled) {
     if (m_impl->m_display != EGL_NO_DISPLAY && eglSwapInterval(m_impl->m_display, enabled ? 1 : 0) == EGL_TRUE) m_impl->m_vsync = enabled;
 }
-std::uint32_t AndroidWindowManagerUVE::GetWidthUVE() const noexcept {
+std::uint32_t AndroidWindowManager::GetWidth() const noexcept {
     EGLint value = 0;
     if (m_impl->m_surface == EGL_NO_SURFACE || eglQuerySurface(m_impl->m_display, m_impl->m_surface, EGL_WIDTH, &value) != EGL_TRUE) return 0U;
     return value > 0 ? static_cast<std::uint32_t>(value) : 0U;
 }
-std::uint32_t AndroidWindowManagerUVE::GetHeightUVE() const noexcept {
+std::uint32_t AndroidWindowManager::GetHeight() const noexcept {
     EGLint value = 0;
     if (m_impl->m_surface == EGL_NO_SURFACE || eglQuerySurface(m_impl->m_display, m_impl->m_surface, EGL_HEIGHT, &value) != EGL_TRUE) return 0U;
     return value > 0 ? static_cast<std::uint32_t>(value) : 0U;
@@ -182,18 +182,18 @@ std::uint32_t AndroidWindowManagerUVE::GetHeightUVE() const noexcept {
 }
 
 namespace UVE::Window {
-bool AndroidWindowManagerUVE::IsValidUVE() const noexcept {
+bool AndroidWindowManager::IsValid() const noexcept {
     return m_impl->m_context != EGL_NO_CONTEXT && !m_impl->m_contextLost;
 }
-bool AndroidWindowManagerUVE::IsFocusedUVE() const noexcept { return m_impl->m_focused; }
-bool AndroidWindowManagerUVE::IsVSyncEnabledUVE() const noexcept { return m_impl->m_vsync; }
-void* AndroidWindowManagerUVE::GetNativeWindowHandleUVE() const noexcept {
-    return IsValidUVE() ? m_impl->m_window : nullptr;
+bool AndroidWindowManager::IsFocused() const noexcept { return m_impl->m_focused; }
+bool AndroidWindowManager::IsVSyncEnabled() const noexcept { return m_impl->m_vsync; }
+void* AndroidWindowManager::GetNativeWindowHandle() const noexcept {
+    return IsValid() ? m_impl->m_window : nullptr;
 }
 }
 
 namespace UVE::Window {
-std::uint64_t AndroidWindowManagerUVE::GetPresentationCountUVE() const noexcept {
+std::uint64_t AndroidWindowManager::GetPresentationCount() const noexcept {
     return m_impl->m_presentations;
 }
 }

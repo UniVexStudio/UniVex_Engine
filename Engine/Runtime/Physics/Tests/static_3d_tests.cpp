@@ -12,42 +12,42 @@
 namespace UVE::Scene::Tests {
 namespace {
 
-TEST(Static3DUVETest, ImmovableHasNoInverseMass) {
-    EXPECT_TRUE(Static3DUVE::IsImmovableUVE());
-    EXPECT_FLOAT_EQ(Static3DUVE::InverseMassUVE(), 0.0F);
+TEST(Static3DTest, ImmovableHasNoInverseMass) {
+    EXPECT_TRUE(Static3D::IsImmovable());
+    EXPECT_FLOAT_EQ(Static3D::InverseMass(), 0.0F);
 }
 
-class Static3DUVEWorldGeometryTest : public ::testing::Test {
+class Static3DWorldGeometryTest : public ::testing::Test {
 protected:
-    Memory::MemoryManagerUVE memoryManager;
-    Events::EventSystemUVE eventSystem;
-    EntityManagerUVE entityManager{memoryManager.GetDefaultAllocatorUVE(), eventSystem};
+    Memory::MemoryManager memoryManager;
+    Events::EventSystem eventSystem;
+    EntityManager entityManager{memoryManager.GetDefaultAllocator(), eventSystem};
 };
 
-TEST_F(Static3DUVEWorldGeometryTest, ColliderOnlyIsWorldGeometryAndADynamicBodyIsNot) {
-    const EntityUVE wall = entityManager.CreateEntityUVE();
-    entityManager.AddComponentUVE<ColliderComponentUVE>(wall, ColliderComponentUVE{});
-    EXPECT_TRUE(Static3DUVE::IsWorldGeometryUVE(entityManager, wall));
+TEST_F(Static3DWorldGeometryTest, ColliderOnlyIsWorldGeometryAndADynamicBodyIsNot) {
+    const Entity wall = entityManager.CreateEntity();
+    entityManager.AddComponent<ColliderComponent>(wall, ColliderComponent{});
+    EXPECT_TRUE(Static3D::IsWorldGeometry(entityManager, wall));
 
-    ColliderComponentUVE disabled{};
+    ColliderComponent disabled{};
     disabled.disabled = true;
-    const EntityUVE off = entityManager.CreateEntityUVE();
-    entityManager.AddComponentUVE<ColliderComponentUVE>(off, disabled);
-    EXPECT_FALSE(Static3DUVE::IsWorldGeometryUVE(entityManager, off));
+    const Entity off = entityManager.CreateEntity();
+    entityManager.AddComponent<ColliderComponent>(off, disabled);
+    EXPECT_FALSE(Static3D::IsWorldGeometry(entityManager, off));
 
-    const EntityUVE crate = entityManager.CreateEntityUVE();
-    entityManager.AddComponentUVE<ColliderComponentUVE>(crate, ColliderComponentUVE{});
-    entityManager.AddComponentUVE<Rigid3DComponentUVE>(crate, Rigid3DComponentUVE{});
-    EXPECT_FALSE(Static3DUVE::IsWorldGeometryUVE(entityManager, crate));
+    const Entity crate = entityManager.CreateEntity();
+    entityManager.AddComponent<ColliderComponent>(crate, ColliderComponent{});
+    entityManager.AddComponent<Rigid3DComponent>(crate, Rigid3DComponent{});
+    EXPECT_FALSE(Static3D::IsWorldGeometry(entityManager, crate));
 
-    Rigid3DComponentUVE kinematic{};
+    Rigid3DComponent kinematic{};
     kinematic.isKinematic = true;
-    const EntityUVE platform = entityManager.CreateEntityUVE();
-    entityManager.AddComponentUVE<ColliderComponentUVE>(platform, ColliderComponentUVE{});
-    entityManager.AddComponentUVE<Rigid3DComponentUVE>(platform, kinematic);
-    EXPECT_TRUE(Static3DUVE::IsWorldGeometryUVE(entityManager, platform));
+    const Entity platform = entityManager.CreateEntity();
+    entityManager.AddComponent<ColliderComponent>(platform, ColliderComponent{});
+    entityManager.AddComponent<Rigid3DComponent>(platform, kinematic);
+    EXPECT_TRUE(Static3D::IsWorldGeometry(entityManager, platform));
 
-    EXPECT_FALSE(Static3DUVE::IsWorldGeometryUVE(entityManager, kInvalidEntityUVE));
+    EXPECT_FALSE(Static3D::IsWorldGeometry(entityManager, kInvalidEntity));
 }
 
 } // namespace

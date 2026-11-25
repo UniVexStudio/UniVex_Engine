@@ -25,31 +25,31 @@ void Fixture(const std::filesystem::path& directory, bool small) {
     using namespace UVE;
     if(std::filesystem::exists(directory)) throw std::runtime_error("Fixture destination exists");
     std::filesystem::create_directories(directory/"content");
-    Core::EngineConfigUVE config; config.headlessUVE=true; config.enableConsoleLogging=false;
-    config.projectRootDirectoryUVE=directory; config.projectContentRootUVE=directory/"content";
+    Core::EngineConfig config; config.headless=true; config.enableConsoleLogging=false;
+    config.projectRootDirectory=directory; config.projectContentRoot=directory/"content";
     config.settingsFilePath=directory/"settings"; config.logFilePath=directory/"fixture.log";
     config.assetDatabaseFilePath=directory/".uvassetdb"; config.threadPoolWorkerCount=2;
-    Core::EngineCoreUVE engine(config); engine.Init();
-    auto& services=engine.GetServicesUVE(); auto& entities=services.GetEntityManagerUVE();
-    const auto camera=entities.CreateEntityUVE();
-    Scene::TransformComponentUVE transform; transform.localPosition={0,0,4};
-    services.GetSceneGraphUVE().AttachTransformUVE(entities,camera,transform);
-    entities.AddComponentUVE<Scene::CameraComponentUVE>(camera);
-    const auto cube=entities.CreateEntityUVE();
-    services.GetSceneGraphUVE().AttachTransformUVE(entities,cube,{});
-    Scene::PrimitiveMeshComponentUVE primitive; primitive.baseColor={0.2F,0.5F,0.9F};
-    entities.AddComponentUVE<Scene::PrimitiveMeshComponentUVE>(cube,primitive);
-    Scene::SceneSerializerUVE serializer;
-    Require(serializer.SaveUVE(entities,{camera,cube},directory/"content/main.uvscene",Scene::SceneAssetTypeUVE::Scene));
-    Platform::EditorProjectPackageUVE package; package.revision=1; package.projectId="asset-workload";
+    Core::EngineCore engine(config); engine.Init();
+    auto& services=engine.GetServices(); auto& entities=services.GetEntityManager();
+    const auto camera=entities.CreateEntity();
+    Scene::TransformComponent transform; transform.localPosition={0,0,4};
+    services.GetSceneGraph().AttachTransform(entities,camera,transform);
+    entities.AddComponent<Scene::CameraComponent>(camera);
+    const auto cube=entities.CreateEntity();
+    services.GetSceneGraph().AttachTransform(entities,cube,{});
+    Scene::PrimitiveMeshComponent primitive; primitive.baseColor={0.2F,0.5F,0.9F};
+    entities.AddComponent<Scene::PrimitiveMeshComponent>(cube,primitive);
+    Scene::SceneSerializer serializer;
+    Require(serializer.Save(entities,{camera,cube},directory/"content/main.uvscene",Scene::SceneAssetType::Scene));
+    Platform::EditorProjectPackage package; package.revision=1; package.projectId="asset-workload";
     package.displayName="Asset Workload"; package.productMetadata.name="Asset Workload";
     package.productMetadata.shortName="asset-workload"; package.contentRoot="content";
     package.applicationSettings.portableUserData=true;
     package.startupScenePath="main.uvscene"; package.assetDatabasePath=".uvassetdb"; package.settingsPath="project.uvsettings";
-    Require(Platform::EditorProjectPackageCodecUVE::SaveUVE(directory/"sample.uvproject",package).IsAcceptedUVE());
-    Asset::AssetDatabaseUVE db;
+    Require(Platform::EditorProjectPackageCodec::Save(directory/"sample.uvproject",package).IsAccepted());
+    Asset::AssetDatabase db;
     for(unsigned i=0;i<(small ? 0U : 8U);++i) {
-        Asset::TextureAssetUVE texture; texture.width=2048; texture.height=1024;
+        Asset::TextureAsset texture; texture.width=2048; texture.height=1024;
         texture.pixels.resize(static_cast<std::size_t>(texture.width)*texture.height*4);
         for(std::size_t j=0;j<texture.pixels.size();j+=4) {
             texture.pixels[j]=static_cast<std::byte>((j/4+i)%256);
@@ -57,21 +57,21 @@ void Fixture(const std::filesystem::path& directory, bool small) {
             texture.pixels[j+2]=std::byte{128};texture.pixels[j+3]=std::byte{255};
         }
         const auto relative=std::filesystem::path("content")/("texture-"+std::to_string(i)+".uvtex");
-        Require(Asset::SaveTextureAssetUVE(texture,directory/relative));
-        static_cast<void>(db.RegisterUVE(relative));
+        Require(Asset::SaveTextureAsset(texture,directory/relative));
+        static_cast<void>(db.Register(relative));
     }
-    Asset::TextureAssetUVE surface; surface.width=4; surface.height=4;
+    Asset::TextureAsset surface; surface.width=4; surface.height=4;
     surface.pixels.resize(64);
     for(std::size_t j=0;j<surface.pixels.size();j+=4) {
         surface.pixels[j]=std::byte{64};surface.pixels[j+1]=std::byte{128};
         surface.pixels[j+2]=std::byte{255};surface.pixels[j+3]=std::byte{255};
     }
-    Require(Asset::SaveTextureAssetUVE(surface,directory/"content/surface.uvtex"));
-    Asset::MaterialAssetUVE material;material.albedoTexture=db.RegisterUVE("content/surface.uvtex");
-    Require(Asset::SaveMaterialAssetUVE(material,directory/"content/surface.uvmat"));
-    entities.GetComponentUVE<Scene::PrimitiveMeshComponentUVE>(cube).materialGuid=db.RegisterUVE("content/surface.uvmat");
-    Require(serializer.SaveUVE(entities,{camera,cube},directory/"content/main.uvscene",Scene::SceneAssetTypeUVE::Scene));
-    Require(db.SaveUVE(directory/".uvassetdb"));
+    Require(Asset::SaveTextureAsset(surface,directory/"content/surface.uvtex"));
+    Asset::MaterialAsset material;material.albedoTexture=db.Register("content/surface.uvtex");
+    Require(Asset::SaveMaterialAsset(material,directory/"content/surface.uvmat"));
+    entities.GetComponent<Scene::PrimitiveMeshComponent>(cube).materialGuid=db.Register("content/surface.uvmat");
+    Require(serializer.Save(entities,{camera,cube},directory/"content/main.uvscene",Scene::SceneAssetType::Scene));
+    Require(db.Save(directory/".uvassetdb"));
     std::ofstream(directory/"content/authoring.png") << "source excluded";
     engine.Shutdown();
 }
@@ -83,31 +83,31 @@ int main(int argc,char** argv) {
             Fixture(std::filesystem::absolute(argv[2]),std::string_view(argv[1])=="--create-smoke-fixture");return 0;
         }
         if(argc!=4) {std::cerr<<"Usage: uve_asset_workload <catalog> <package-root> <report.json> OR --create-fixture <new-directory>\n";return 2;}
-        Asset::AssetDatabaseUVE db; Require(db.LoadUVE(argv[1])); Require(db.RootPathsUVE(argv[2]));
-        Threading::ThreadPoolUVE pool(2); Events::EventSystemUVE events; Asset::AssetManagerUVE manager(pool,events);
-        manager.RegisterLoaderUVE<Asset::TextureAssetUVE>(&Asset::LoadTextureAssetUVE,
-            [](const auto& v){return Asset::AssetResidentBytesUVE(v);});
-        constexpr std::size_t budget=16U*1024*1024; manager.SetResidentBudgetUVE(budget);
+        Asset::AssetDatabase db; Require(db.Load(argv[1])); Require(db.RootPaths(argv[2]));
+        Threading::ThreadPool pool(2); Events::EventSystem events; Asset::AssetManager manager(pool,events);
+        manager.RegisterLoader<Asset::TextureAsset>(&Asset::LoadTextureAsset,
+            [](const auto& v){return Asset::AssetResidentBytes(v);});
+        constexpr std::size_t budget=16U*1024*1024; manager.SetResidentBudget(budget);
         nlohmann::json samples=nlohmann::json::array();
         const auto begin=std::chrono::steady_clock::now();
-        Require(manager.GetLoadedAssetCountUVE()==0);
-        for(const auto& record:db.GetRegisteredAssetsUVE()) {
+        Require(manager.GetLoadedAssetCount()==0);
+        for(const auto& record:db.GetRegisteredAssets()) {
             if(record.path.extension()!=".uvtex") continue;
             const auto start=std::chrono::steady_clock::now();
             {
-                auto h=manager.LoadUVE<Asset::TextureAssetUVE>(record.guid,db);
+                auto h=manager.Load<Asset::TextureAsset>(record.guid,db);
                 const auto deadline=start+std::chrono::seconds(30);
-                while(!h.IsReadyUVE()&&!h.HasFailedUVE()&&std::chrono::steady_clock::now()<deadline) std::this_thread::yield();
-                Require(h.IsReadyUVE()); Require(manager.GetResidentBytesUVE()<=budget);
+                while(!h.IsReady()&&!h.HasFailed()&&std::chrono::steady_clock::now()<deadline) std::this_thread::yield();
+                Require(h.IsReady()); Require(manager.GetResidentBytes()<=budget);
                 samples.push_back({{"guid",record.guid.value},{"loadMs",std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-start).count()},
-                    {"residentBytes",manager.GetResidentBytesUVE()}});
+                    {"residentBytes",manager.GetResidentBytes()}});
             }
-            manager.CollectGarbageUVE(); Require(manager.GetResidentBytesUVE()==0);
+            manager.CollectGarbage(); Require(manager.GetResidentBytes()==0);
         }
         Require(!samples.empty());
         nlohmann::json report{{"schema",1},{"workload","sequential native texture demand load and release"},
-            {"budgetBytes",budget},{"peakCountedResidentBytes",manager.GetPeakResidentBytesUVE()},
-            {"finalCountedResidentBytes",manager.GetResidentBytesUVE()},
+            {"budgetBytes",budget},{"peakCountedResidentBytes",manager.GetPeakResidentBytes()},
+            {"finalCountedResidentBytes",manager.GetResidentBytes()},
             {"elapsedMs",std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-begin).count()},
             {"samples",samples},{"physical3GbDeviceVerified",false},{"gpuMemoryMeasured",false}};
         std::ofstream output(argv[3]); output<<report.dump(2); Require(static_cast<bool>(output));return 0;

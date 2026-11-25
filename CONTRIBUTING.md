@@ -18,16 +18,16 @@ Thank you for your interest in contributing to the **UniVex Engine**! This docum
 - **Standard**: The entire engine compiles under **C++23** (`cxx_std_23`).
 - **Warnings as Errors**: All code must build cleanly with zero warnings (`-Wall -Wextra -Wpedantic` on GCC/Clang, `/W4 /WX` on MSVC).
 - **Naming Conventions**:
-  - Types and classes end with `UVE` (e.g., `TransformComponentUVE`, `PhysicsConstraintSystemUVE`).
-  - Public functions and member methods end with `UVE` (e.g., `SolveUVE()`, `AddDistanceConstraintUVE()`).
-  - Constants use `k` prefix with camelCase and end with `UVE` (e.g., `kConstraintEpsilonUVE`, `kMaximumConstraintsUVE`).
+  - Types and classes end with `UVE` (e.g., `TransformComponent`, `PhysicsConstraintSystem`).
+  - Public functions and member methods end with `UVE` (e.g., `Solve()`, `AddDistanceConstraint()`).
+  - Constants use `k` prefix with camelCase and end with `UVE` (e.g., `kConstraintEpsilon`, `kMaximumConstraints`).
   - Member variables use trailing underscore `m_name` or `name_`.
 - **Safety & Resource Management**:
   - Use `[[nodiscard]]` on all pure queries, validation helpers, factories, and return values that indicate success/failure or mutation codes.
   - Mark functions `noexcept` whenever they do not throw or allocate.
   - Prefer value semantics and explicit lifecycle owners over raw shared pointers or unowned pointers.
   - Never allow raw array buffer overruns; use `std::span` or `std::array` with explicit bounds checking.
-  - Ensure all math operations guard against non-finite floats (`NaN`, `Inf`) using `Math::IsFiniteUVE()`.
+  - Ensure all math operations guard against non-finite floats (`NaN`, `Inf`) using `Math::IsFinite()`.
 
 ---
 
@@ -37,7 +37,7 @@ Thank you for your interest in contributing to the **UniVex Engine**! This docum
 - **Coverage Standard**: Tests must verify:
   1. Default and valid configurations.
   2. Degenerate and invalid configurations (out-of-range, null/invalid handles, infinite/NaN inputs).
-  3. Bounded limits and capacity saturation (e.g., `kMaximumConstraintsUVE`).
+  3. Bounded limits and capacity saturation (e.g., `kMaximumConstraints`).
   4. Generation safety and stale handle rejection where generational handles are used.
 - Build and run with UVBT: `./uvbt build UniVexTests Linux Debug && LIBGL_ALWAYS_SOFTWARE=1 xvfb-run -a ./.uvbt/bin/Linux/Debug/UniVexTests`.
 

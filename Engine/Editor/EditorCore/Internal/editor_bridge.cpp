@@ -20,57 +20,57 @@
 namespace UVE::Editor {
 namespace {
 
-[[nodiscard]] std::string SourceKindLabelUVE(const Asset::AssetImportSourceKindUVE kind) {
-    return std::string(Asset::AssetImportSourceKindLabelUVE(kind));
+[[nodiscard]] std::string SourceKindLabel(const Asset::AssetImportSourceKind kind) {
+    return std::string(Asset::AssetImportSourceKindLabel(kind));
 }
 
-[[nodiscard]] const std::vector<EditorBridgeCapabilityUVE>& CapabilitiesUVE() noexcept {
-    static const std::vector<EditorBridgeCapabilityUVE> capabilities{
-        EditorBridgeCapabilityUVE::ReadSnapshot,
-        EditorBridgeCapabilityUVE::SelectEntity,
-        EditorBridgeCapabilityUVE::ClearSelection,
-        EditorBridgeCapabilityUVE::SetSelectedEntityName,
-        EditorBridgeCapabilityUVE::CreateDocumentEntity,
-        EditorBridgeCapabilityUVE::Undo,
-        EditorBridgeCapabilityUVE::Redo,
-        EditorBridgeCapabilityUVE::ReadHierarchy,
-        EditorBridgeCapabilityUVE::ReadInspector,
-        EditorBridgeCapabilityUVE::ReadAssetTable,
-        EditorBridgeCapabilityUVE::ToggleEntitySelection,
-        EditorBridgeCapabilityUVE::SetHierarchyFilter,
-        EditorBridgeCapabilityUVE::SetAssetTableDirectory,
-        EditorBridgeCapabilityUVE::SetAssetTableFilter,
-        EditorBridgeCapabilityUVE::SetAssetTableFocus,
-        EditorBridgeCapabilityUVE::RefreshAssetTable,
-        EditorBridgeCapabilityUVE::SelectAssetTableEntry,
-        EditorBridgeCapabilityUVE::QueueAssetTableImport,
-        EditorBridgeCapabilityUVE::ReadViewportSurface,
-        EditorBridgeCapabilityUVE::ReadDeveloperConsole,
-        EditorBridgeCapabilityUVE::SubmitDeveloperConsoleCommand,
-        EditorBridgeCapabilityUVE::ClearDeveloperConsole,
-        EditorBridgeCapabilityUVE::SetDeveloperConsoleSeverityFilter,
-        EditorBridgeCapabilityUVE::SetDeveloperConsoleCompletionPrefix,
-        EditorBridgeCapabilityUVE::MoveDeveloperConsoleHistory,
-        EditorBridgeCapabilityUVE::SelectDataTablePreview,
+[[nodiscard]] const std::vector<EditorBridgeCapability>& Capabilities() noexcept {
+    static const std::vector<EditorBridgeCapability> capabilities{
+        EditorBridgeCapability::ReadSnapshot,
+        EditorBridgeCapability::SelectEntity,
+        EditorBridgeCapability::ClearSelection,
+        EditorBridgeCapability::SetSelectedEntityName,
+        EditorBridgeCapability::CreateDocumentEntity,
+        EditorBridgeCapability::Undo,
+        EditorBridgeCapability::Redo,
+        EditorBridgeCapability::ReadHierarchy,
+        EditorBridgeCapability::ReadInspector,
+        EditorBridgeCapability::ReadAssetTable,
+        EditorBridgeCapability::ToggleEntitySelection,
+        EditorBridgeCapability::SetHierarchyFilter,
+        EditorBridgeCapability::SetAssetTableDirectory,
+        EditorBridgeCapability::SetAssetTableFilter,
+        EditorBridgeCapability::SetAssetTableFocus,
+        EditorBridgeCapability::RefreshAssetTable,
+        EditorBridgeCapability::SelectAssetTableEntry,
+        EditorBridgeCapability::QueueAssetTableImport,
+        EditorBridgeCapability::ReadViewportSurface,
+        EditorBridgeCapability::ReadDeveloperConsole,
+        EditorBridgeCapability::SubmitDeveloperConsoleCommand,
+        EditorBridgeCapability::ClearDeveloperConsole,
+        EditorBridgeCapability::SetDeveloperConsoleSeverityFilter,
+        EditorBridgeCapability::SetDeveloperConsoleCompletionPrefix,
+        EditorBridgeCapability::MoveDeveloperConsoleHistory,
+        EditorBridgeCapability::SelectDataTablePreview,
     };
     return capabilities;
 }
 
-[[nodiscard]] bool IsMutationRequestUVE(const EditorBridgeRequestKindUVE kind) noexcept {
-    return kind != EditorBridgeRequestKindUVE::ReadSnapshot &&
-           kind != EditorBridgeRequestKindUVE::ReadViewportSurface &&
-           kind != EditorBridgeRequestKindUVE::ReadDeveloperConsole;
+[[nodiscard]] bool IsMutationRequest(const EditorBridgeRequestKind kind) noexcept {
+    return kind != EditorBridgeRequestKind::ReadSnapshot &&
+           kind != EditorBridgeRequestKind::ReadViewportSurface &&
+           kind != EditorBridgeRequestKind::ReadDeveloperConsole;
 }
 
-[[nodiscard]] bool IsBoundedRequestTextUVE(const std::string& value) noexcept {
-    return value.size() <= kEditorBridgeMaximumPresentationTextBytesUVE;
+[[nodiscard]] bool IsBoundedRequestText(const std::string& value) noexcept {
+    return value.size() <= kEditorBridgeMaximumPresentationTextBytes;
 }
 
-[[nodiscard]] bool IsBoundedContentPathUVE(const std::string& value) noexcept {
-    return value.size() <= kEditorBridgeMaximumContentPathBytesUVE;
+[[nodiscard]] bool IsBoundedContentPath(const std::string& value) noexcept {
+    return value.size() <= kEditorBridgeMaximumContentPathBytes;
 }
 
-[[nodiscard]] std::string FormatDataTableValueUVE(const Asset::DataTableValueUVE& value) {
+[[nodiscard]] std::string FormatDataTableValue(const Asset::DataTableValue& value) {
     return std::visit([](const auto& current) {
         using ValueType = std::decay_t<decltype(current)>;
         if constexpr (std::is_same_v<ValueType, bool>) {
@@ -93,19 +93,19 @@ namespace {
 
 } // namespace
 
-EditorBridgeUVE::EditorBridgeUVE(EditorUVE& editor, const Asset::DataTableRegistryUVE* dataTableRegistry)
+EditorBridge::EditorBridge(Editor& editor, const Asset::DataTableRegistry* dataTableRegistry)
     : m_editor(&editor), m_dataTableRegistry(dataTableRegistry) {
 }
 
-const std::vector<EditorBridgeCapabilityUVE>& EditorBridgeUVE::GetCapabilitiesUVE() noexcept {
-    return CapabilitiesUVE();
+const std::vector<EditorBridgeCapability>& EditorBridge::GetCapabilities() noexcept {
+    return Capabilities();
 }
 
-bool EditorBridgeUVE::SetPreviewTableUVE(const std::string_view name) {
-    if (m_dataTableRegistry == nullptr || name.size() > kEditorBridgeMaximumPresentationTextBytesUVE) {
+bool EditorBridge::SetPreviewTable(const std::string_view name) {
+    if (m_dataTableRegistry == nullptr || name.size() > kEditorBridgeMaximumPresentationTextBytes) {
         return false;
     }
-    if (!name.empty() && !m_dataTableRegistry->ContainsUVE(name)) {
+    if (!name.empty() && !m_dataTableRegistry->Contains(name)) {
         return false;
     }
     const std::optional<std::string> nextName = name.empty()
@@ -116,162 +116,162 @@ bool EditorBridgeUVE::SetPreviewTableUVE(const std::string_view name) {
     }
     m_dataTablePreviewName = nextName;
     if (m_lastObservedState.has_value()) {
-        SynchronizeRevisionUVE();
+        SynchronizeRevision();
     }
     return true;
 }
 
-void EditorBridgeUVE::SetDataTableCatalogSnapshotUVE(Asset::DataTableCatalogSnapshotUVE snapshot) {
+void EditorBridge::SetDataTableCatalogSnapshot(Asset::DataTableCatalogSnapshot snapshot) {
     if (m_dataTableRegistry != nullptr || m_dataTableCatalogSnapshot == snapshot) {
         return;
     }
     m_dataTableCatalogSnapshot = std::move(snapshot);
     if (m_lastObservedState.has_value()) {
-        SynchronizeRevisionUVE();
+        SynchronizeRevision();
     }
 }
 
-void EditorBridgeUVE::SetDataTablePreviewSnapshotUVE(Asset::DataTableSnapshotUVE snapshot) {
+void EditorBridge::SetDataTablePreviewSnapshot(Asset::DataTableSnapshot snapshot) {
     if (m_dataTableRegistry != nullptr || m_dataTablePreviewSnapshot == snapshot) {
         return;
     }
     m_dataTablePreviewSnapshot = std::move(snapshot);
     if (m_lastObservedState.has_value()) {
-        SynchronizeRevisionUVE();
+        SynchronizeRevision();
     }
 }
 
 
-EditorBridgeSnapshotUVE EditorBridgeUVE::GetSnapshotUVE() {
-    SynchronizeRevisionUVE();
-    return BuildSnapshotUVE();
+EditorBridgeSnapshot EditorBridge::GetSnapshot() {
+    SynchronizeRevision();
+    return BuildSnapshot();
 }
 
-EditorBridgeResponseUVE EditorBridgeUVE::DispatchUVE(const EditorBridgeRequestUVE& request) {
-    SynchronizeRevisionUVE();
-    if (request.protocolVersion != kEditorBridgeProtocolVersionUVE) {
-        return MakeResponseUVE(request, false, "bridge.protocol.unsupported",
+EditorBridgeResponse EditorBridge::Dispatch(const EditorBridgeRequest& request) {
+    SynchronizeRevision();
+    if (request.protocolVersion != kEditorBridgeProtocolVersion) {
+        return MakeResponse(request, false, "bridge.protocol.unsupported",
                                "The request protocol version is not supported by this editor backend.");
     }
-    if (request.kind == EditorBridgeRequestKindUVE::ReadSnapshot) {
-        return MakeResponseUVE(request, true, "bridge.snapshot.read", "Bridge-visible editor state was copied.");
+    if (request.kind == EditorBridgeRequestKind::ReadSnapshot) {
+        return MakeResponse(request, true, "bridge.snapshot.read", "Bridge-visible editor state was copied.");
     }
-    if (request.kind == EditorBridgeRequestKindUVE::ReadDeveloperConsole) {
-        return MakeResponseUVE(request, true, "bridge.developer_console.snapshot.read",
+    if (request.kind == EditorBridgeRequestKind::ReadDeveloperConsole) {
+        return MakeResponse(request, true, "bridge.developer_console.snapshot.read",
                                "The bounded developer-console snapshot was copied.");
     }
-    if (m_editor->GetStateUVE() != EditorStateUVE::Running) {
-        return MakeResponseUVE(request, false, "bridge.editor.not_running",
+    if (m_editor->GetState() != EditorState::Running) {
+        return MakeResponse(request, false, "bridge.editor.not_running",
                                "The editor is not in a running state and cannot accept bridge commands.");
     }
-    if (IsMutationRequestUVE(request.kind) && request.expectedRevision != m_revision) {
-        return MakeResponseUVE(request, false, "bridge.snapshot.stale",
+    if (IsMutationRequest(request.kind) && request.expectedRevision != m_revision) {
+        return MakeResponse(request, false, "bridge.snapshot.stale",
                                "The request was based on an older bridge-visible editor snapshot.");
     }
 
     bool applied = false;
     std::string code = "bridge.command.rejected";
     std::string message = "The editor command was rejected without applying a mutation.";
-    std::optional<EditorBridgeEntityRefUVE> createdEntity;
+    std::optional<EditorBridgeEntityRef> createdEntity;
     std::optional<std::uint64_t> responseContentImportJobId;
     switch (request.kind) {
-        case EditorBridgeRequestKindUVE::SelectEntity: {
-            if (!request.entity.has_value() || !request.entity->IsValidUVE() ||
-                !m_editor->IsDocumentEntityUVE(ToEntityUVE(*request.entity))) {
-                return MakeResponseUVE(request, false, "bridge.entity.invalid",
+        case EditorBridgeRequestKind::SelectEntity: {
+            if (!request.entity.has_value() || !request.entity->IsValid() ||
+                !m_editor->IsDocumentEntity(ToEntity(*request.entity))) {
+                return MakeResponse(request, false, "bridge.entity.invalid",
                                        "The requested entity is not a live document entity.");
             }
-            m_editor->SelectEntityUVE(ToEntityUVE(*request.entity));
+            m_editor->SelectEntity(ToEntity(*request.entity));
             applied = true;
             code = "bridge.command.applied";
             message = "The document entity became the active selection.";
             break;
         }
-        case EditorBridgeRequestKindUVE::ClearSelection:
-            m_editor->ClearSelectionUVE();
+        case EditorBridgeRequestKind::ClearSelection:
+            m_editor->ClearSelection();
             applied = true;
             code = "bridge.command.applied";
             message = "The editor selection was cleared.";
             break;
-        case EditorBridgeRequestKindUVE::SetSelectedEntityName:
-            if (!request.entityName.has_value() || !IsBoundedRequestTextUVE(*request.entityName)) {
-                return MakeResponseUVE(request, false, "bridge.request.invalid",
+        case EditorBridgeRequestKind::SetSelectedEntityName:
+            if (!request.entityName.has_value() || !IsBoundedRequestText(*request.entityName)) {
+                return MakeResponse(request, false, "bridge.request.invalid",
                                        "SetSelectedEntityName requires a bounded name payload.");
             }
-            applied = m_editor->SetSelectedEntityNameUVE(*request.entityName);
+            applied = m_editor->SetSelectedEntityName(*request.entityName);
             if (applied) {
                 code = "bridge.command.applied";
                 message = "The selected document entity name was updated through the native command path.";
             }
             break;
-        case EditorBridgeRequestKindUVE::CreateDocumentEntity: {
-            if (!request.entityKind.has_value() || !IsSupportedEntityKindUVE(*request.entityKind)) {
-                return MakeResponseUVE(request, false, "bridge.request.invalid",
+        case EditorBridgeRequestKind::CreateDocumentEntity: {
+            if (!request.entityKind.has_value() || !IsSupportedEntityKind(*request.entityKind)) {
+                return MakeResponse(request, false, "bridge.request.invalid",
                                        "CreateDocumentEntity requires one supported document entity kind.");
             }
-            const Scene::EntityUVE entity = m_editor->CreateDocumentEntityUVE(*request.entityKind);
-            if (entity != Scene::kInvalidEntityUVE) {
+            const Scene::Entity entity = m_editor->CreateDocumentEntity(*request.entityKind);
+            if (entity != Scene::kInvalidEntity) {
                 applied = true;
-                createdEntity = ToBridgeEntityUVE(entity);
+                createdEntity = ToBridgeEntity(entity);
                 code = "bridge.command.applied";
                 message = "A document entity was created through the native command path.";
             }
             break;
         }
-        case EditorBridgeRequestKindUVE::Undo:
-            applied = m_editor->UndoUVE();
+        case EditorBridgeRequestKind::Undo:
+            applied = m_editor->Undo();
             if (applied) {
                 code = "bridge.command.applied";
                 message = "The native editor undo command completed.";
             }
             break;
-        case EditorBridgeRequestKindUVE::Redo:
-            applied = m_editor->RedoUVE();
+        case EditorBridgeRequestKind::Redo:
+            applied = m_editor->Redo();
             if (applied) {
                 code = "bridge.command.applied";
                 message = "The native editor redo command completed.";
             }
             break;
-        case EditorBridgeRequestKindUVE::ToggleEntitySelection: {
-            if (!request.entity.has_value() || !request.entity->IsValidUVE() ||
-                !m_editor->IsDocumentEntityUVE(ToEntityUVE(*request.entity))) {
-                return MakeResponseUVE(request, false, "bridge.entity.invalid",
+        case EditorBridgeRequestKind::ToggleEntitySelection: {
+            if (!request.entity.has_value() || !request.entity->IsValid() ||
+                !m_editor->IsDocumentEntity(ToEntity(*request.entity))) {
+                return MakeResponse(request, false, "bridge.entity.invalid",
                                        "The requested entity is not a live document entity.");
             }
-            m_editor->ToggleEntitySelectionUVE(ToEntityUVE(*request.entity));
+            m_editor->ToggleEntitySelection(ToEntity(*request.entity));
             applied = true;
             code = "bridge.command.applied";
             message = "The document entity selection was toggled through the native selection path.";
             break;
         }
-        case EditorBridgeRequestKindUVE::SetHierarchyFilter:
-            if (!request.hierarchyFilter.has_value() || !IsBoundedRequestTextUVE(*request.hierarchyFilter)) {
-                return MakeResponseUVE(request, false, "bridge.request.invalid",
+        case EditorBridgeRequestKind::SetHierarchyFilter:
+            if (!request.hierarchyFilter.has_value() || !IsBoundedRequestText(*request.hierarchyFilter)) {
+                return MakeResponse(request, false, "bridge.request.invalid",
                                        "SetHierarchyFilter requires a bounded filter payload.");
             }
             if (m_editor->m_hierarchyFilter != *request.hierarchyFilter) {
                 m_editor->m_hierarchyFilter = *request.hierarchyFilter;
-                m_editor->InvalidateHierarchyFilterCacheUVE();
+                m_editor->InvalidateHierarchyFilterCache();
                 applied = true;
                 code = "bridge.command.applied";
                 message = "The native hierarchy filter was updated.";
             }
             break;
-        case EditorBridgeRequestKindUVE::SetAssetTableDirectory: {
-            if (!request.contentDirectory.has_value() || !IsBoundedContentPathUVE(*request.contentDirectory)) {
-                return MakeResponseUVE(request, false, "bridge.request.invalid",
+        case EditorBridgeRequestKind::SetAssetTableDirectory: {
+            if (!request.contentDirectory.has_value() || !IsBoundedContentPath(*request.contentDirectory)) {
+                return MakeResponse(request, false, "bridge.request.invalid",
                                        "SetAssetTableDirectory requires a bounded relative directory payload.");
             }
             const std::filesystem::path requestedDirectory = std::filesystem::path{*request.contentDirectory}.lexically_normal();
             if (requestedDirectory.is_absolute() || requestedDirectory.has_root_name() ||
                 std::find(requestedDirectory.begin(), requestedDirectory.end(), std::filesystem::path{".."}) !=
                     requestedDirectory.end()) {
-                return MakeResponseUVE(request, false, "bridge.request.invalid",
+                return MakeResponse(request, false, "bridge.request.invalid",
                                        "The requested asset table directory must be a normalized relative path.");
             }
-            const Asset::ProjectFileSnapshotUVE snapshot = m_editor->m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
-            if (!m_editor->IsAssetTableDirectoryInSnapshotUVE(snapshot, requestedDirectory)) {
-                return MakeResponseUVE(request, false, "bridge.content.directory.invalid",
+            const Asset::ProjectFileSnapshot snapshot = m_editor->m_services->GetProjectFileIndex().GetSnapshot();
+            if (!m_editor->IsAssetTableDirectoryInSnapshot(snapshot, requestedDirectory)) {
+                return MakeResponse(request, false, "bridge.content.directory.invalid",
                                        "The requested asset table directory is absent from the current native snapshot.");
             }
             if (m_editor->m_assetTableDirectory != requestedDirectory) {
@@ -282,9 +282,9 @@ EditorBridgeResponseUVE EditorBridgeUVE::DispatchUVE(const EditorBridgeRequestUV
             }
             break;
         }
-        case EditorBridgeRequestKindUVE::SetAssetTableFilter:
-            if (!request.contentFilter.has_value() || !IsBoundedRequestTextUVE(*request.contentFilter)) {
-                return MakeResponseUVE(request, false, "bridge.request.invalid",
+        case EditorBridgeRequestKind::SetAssetTableFilter:
+            if (!request.contentFilter.has_value() || !IsBoundedRequestText(*request.contentFilter)) {
+                return MakeResponse(request, false, "bridge.request.invalid",
                                        "SetAssetTableFilter requires a bounded filter payload.");
             }
             if (m_editor->m_assetFilter != *request.contentFilter) {
@@ -294,15 +294,15 @@ EditorBridgeResponseUVE EditorBridgeUVE::DispatchUVE(const EditorBridgeRequestUV
                 message = "The native asset table filter was updated.";
             }
             break;
-        case EditorBridgeRequestKindUVE::SetAssetTableFocus: {
-            if (!request.contentFocus.has_value() || !IsBoundedRequestTextUVE(*request.contentFocus)) {
-                return MakeResponseUVE(request, false, "bridge.request.invalid",
+        case EditorBridgeRequestKind::SetAssetTableFocus: {
+            if (!request.contentFocus.has_value() || !IsBoundedRequestText(*request.contentFocus)) {
+                return MakeResponse(request, false, "bridge.request.invalid",
                                        "SetAssetTableFocus requires one known bounded focus identifier.");
             }
-            const std::optional<EditorUVE::AssetTableTypeFocusUVE> focus =
-                ParseAssetTableFocusUVE(*request.contentFocus);
+            const std::optional<Editor::AssetTableTypeFocus> focus =
+                ParseAssetTableFocus(*request.contentFocus);
             if (!focus.has_value()) {
-                return MakeResponseUVE(request, false, "bridge.request.invalid",
+                return MakeResponse(request, false, "bridge.request.invalid",
                                        "The requested asset table focus is not supported.");
             }
             if (m_editor->m_assetTableTypeFocus != *focus) {
@@ -313,47 +313,47 @@ EditorBridgeResponseUVE EditorBridgeUVE::DispatchUVE(const EditorBridgeRequestUV
             }
             break;
         }
-        case EditorBridgeRequestKindUVE::RefreshAssetTable: {
-            Asset::IProjectFileIndexUVE& projectFileIndex = m_editor->m_services->GetProjectFileIndexUVE();
-            Asset::IProjectChangeWatcherUVE& projectChangeWatcher = m_editor->m_services->GetProjectChangeWatcherUVE();
-            const Asset::ProjectChangeSnapshotUVE changesBeforeRefresh = projectChangeWatcher.GetSnapshotUVE();
+        case EditorBridgeRequestKind::RefreshAssetTable: {
+            Asset::IProjectFileIndex& projectFileIndex = m_editor->m_services->GetProjectFileIndex();
+            Asset::IProjectChangeWatcher& projectChangeWatcher = m_editor->m_services->GetProjectChangeWatcher();
+            const Asset::ProjectChangeSnapshot changesBeforeRefresh = projectChangeWatcher.GetSnapshot();
             m_editor->m_projectFileLastRefreshSucceeded =
-                projectFileIndex.RefreshUVE(m_editor->m_services->GetAssetDatabaseUVE());
+                projectFileIndex.Refresh(m_editor->m_services->GetAssetDatabase());
             m_editor->m_projectFileSnapshotInitialized = true;
             if (!m_editor->m_projectFileLastRefreshSucceeded) {
-                SynchronizeRevisionUVE();
-                return MakeResponseUVE(request, false, "bridge.content.refresh.failed",
+                SynchronizeRevision();
+                return MakeResponse(request, false, "bridge.content.refresh.failed",
                                        "The native project content index retained its last successful snapshot after refresh failure.");
             }
-            projectChangeWatcher.AcknowledgeThroughUVE(changesBeforeRefresh.latestSequence);
+            projectChangeWatcher.AcknowledgeThrough(changesBeforeRefresh.latestSequence);
             if (changesBeforeRefresh.rescanRequired) {
-                projectChangeWatcher.AcknowledgeRescanUVE();
+                projectChangeWatcher.AcknowledgeRescan();
             }
-            const Asset::ProjectFileSnapshotUVE refreshedSnapshot = projectFileIndex.GetSnapshotUVE();
-            m_editor->ReconcileAssetTableDirectoryUVE(refreshedSnapshot);
+            const Asset::ProjectFileSnapshot refreshedSnapshot = projectFileIndex.GetSnapshot();
+            m_editor->ReconcileAssetTableDirectory(refreshedSnapshot);
             applied = true;
             code = "bridge.command.applied";
             message = "The native cached project content snapshot was refreshed explicitly.";
             break;
         }
-        case EditorBridgeRequestKindUVE::SelectAssetTableEntry: {
-            if (!request.contentEntryPath.has_value() || !IsBoundedContentPathUVE(*request.contentEntryPath)) {
-                return MakeResponseUVE(request, false, "bridge.request.invalid",
+        case EditorBridgeRequestKind::SelectAssetTableEntry: {
+            if (!request.contentEntryPath.has_value() || !IsBoundedContentPath(*request.contentEntryPath)) {
+                return MakeResponse(request, false, "bridge.request.invalid",
                                        "SelectAssetTableEntry requires a bounded relative entry path.");
             }
             const std::filesystem::path requestedPath = std::filesystem::path{*request.contentEntryPath}.lexically_normal();
             if (requestedPath.empty() || requestedPath.is_absolute() || requestedPath.has_root_name() ||
                 std::find(requestedPath.begin(), requestedPath.end(), std::filesystem::path{".."}) != requestedPath.end()) {
-                return MakeResponseUVE(request, false, "bridge.request.invalid",
+                return MakeResponse(request, false, "bridge.request.invalid",
                                        "The requested asset table entry must be a normalized relative path.");
             }
-            const Asset::ProjectFileSnapshotUVE snapshot = m_editor->m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
+            const Asset::ProjectFileSnapshot snapshot = m_editor->m_services->GetProjectFileIndex().GetSnapshot();
             const auto selected = std::find_if(snapshot.entries.cbegin(), snapshot.entries.cend(),
-                                               [&requestedPath](const Asset::ProjectFileEntryUVE& entry) {
+                                               [&requestedPath](const Asset::ProjectFileEntry& entry) {
                                                    return entry.relativePath == requestedPath;
                                                });
             if (selected == snapshot.entries.cend()) {
-                return MakeResponseUVE(request, false, "bridge.content.entry.invalid",
+                return MakeResponse(request, false, "bridge.content.entry.invalid",
                                        "The requested cached project content entry is absent from the native snapshot.");
             }
             if (!m_editor->m_selectedProjectFile.has_value() ||
@@ -361,7 +361,7 @@ EditorBridgeResponseUVE EditorBridgeUVE::DispatchUVE(const EditorBridgeRequestUV
                 m_editor->m_selectedProjectFile->kind != selected->kind) {
                 m_editor->m_selectedProjectFile = *selected;
                 if (selected->registeredAssetGuid.has_value()) {
-                    m_editor->m_selectedAsset = Asset::AssetRecordUVE{
+                    m_editor->m_selectedAsset = Asset::AssetRecord{
                         *selected->registeredAssetGuid, snapshot.contentRoot / selected->relativePath};
                 } else {
                     m_editor->m_selectedAsset.reset();
@@ -372,21 +372,21 @@ EditorBridgeResponseUVE EditorBridgeUVE::DispatchUVE(const EditorBridgeRequestUV
             }
             break;
         }
-        case EditorBridgeRequestKindUVE::QueueAssetTableImport: {
+        case EditorBridgeRequestKind::QueueAssetTableImport: {
             if (!request.contentEntryPath.has_value() || !request.contentImportDestinationPath.has_value() ||
-                !IsBoundedContentPathUVE(*request.contentEntryPath) ||
-                !IsBoundedContentPathUVE(*request.contentImportDestinationPath)) {
-                return MakeResponseUVE(request, false, "bridge.content.import.request.invalid",
+                !IsBoundedContentPath(*request.contentEntryPath) ||
+                !IsBoundedContentPath(*request.contentImportDestinationPath)) {
+                return MakeResponse(request, false, "bridge.content.import.request.invalid",
                                        "QueueAssetTableImport requires bounded source and destination paths.");
             }
             if (!m_editor->m_selectedProjectFile.has_value() ||
                 m_editor->m_selectedProjectFile->relativePath.generic_string() != *request.contentEntryPath) {
-                return MakeResponseUVE(request, false, "bridge.content.import.selection_mismatch",
+                return MakeResponse(request, false, "bridge.content.import.selection_mismatch",
                                        "The import request must target the currently selected Asset Table entry.");
             }
-            const Asset::ProjectFileEntryUVE& selected = *m_editor->m_selectedProjectFile;
-            if (selected.kind == Asset::ProjectFileEntryKindUVE::Directory) {
-                return MakeResponseUVE(request, false, "bridge.content.import.directory",
+            const Asset::ProjectFileEntry& selected = *m_editor->m_selectedProjectFile;
+            if (selected.kind == Asset::ProjectFileEntryKind::Directory) {
+                return MakeResponse(request, false, "bridge.content.import.directory",
                                        "Directories cannot be queued for import.");
             }
             const auto isNormalizedRelativePath = [](const std::string& value) {
@@ -398,28 +398,28 @@ EditorBridgeResponseUVE EditorBridgeUVE::DispatchUVE(const EditorBridgeRequestUV
             if (!isNormalizedRelativePath(*request.contentEntryPath) ||
                 !isNormalizedRelativePath(*request.contentImportDestinationPath) ||
                 *request.contentEntryPath == *request.contentImportDestinationPath) {
-                return MakeResponseUVE(request, false, "bridge.content.import.path.invalid",
+                return MakeResponse(request, false, "bridge.content.import.path.invalid",
                                        "Import source and destination must be distinct normalized relative paths.");
             }
-            const Asset::AssetImportSourceClassificationUVE classification =
-                m_editor->m_services->GetAssetImporterUVE().ClassifySourceUVE(selected.relativePath);
+            const Asset::AssetImportSourceClassification classification =
+                m_editor->m_services->GetAssetImporter().ClassifySource(selected.relativePath);
             if (!classification.importerRegistered) {
-                return MakeResponseUVE(request, false, "bridge.content.import.unsupported",
+                return MakeResponse(request, false, "bridge.content.import.unsupported",
                                        classification.diagnostic);
             }
-            const Asset::ProjectFileSnapshotUVE projectSnapshot =
-                m_editor->m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
+            const Asset::ProjectFileSnapshot projectSnapshot =
+                m_editor->m_services->GetProjectFileIndex().GetSnapshot();
             const std::filesystem::path sourcePath = projectSnapshot.contentRoot / selected.relativePath;
             const std::filesystem::path destinationPath =
                 projectSnapshot.contentRoot / std::filesystem::path{*request.contentImportDestinationPath};
-            Asset::AssetImportRequestUVE importRequest;
+            Asset::AssetImportRequest importRequest;
             importRequest.sourcePath = sourcePath;
             importRequest.destinationPath = destinationPath;
-            importRequest.settings = std::make_shared<const Asset::AssetImportSettingsUVE>();
-            const std::optional<Asset::AssetImportJobIdUVE> jobId =
-                m_editor->m_services->GetAssetImportQueueUVE().EnqueueUVE(std::move(importRequest));
+            importRequest.settings = std::make_shared<const Asset::AssetImportSettings>();
+            const std::optional<Asset::AssetImportJobId> jobId =
+                m_editor->m_services->GetAssetImportQueue().Enqueue(std::move(importRequest));
             if (!jobId.has_value()) {
-                return MakeResponseUVE(request, false, "bridge.content.import.rejected",
+                return MakeResponse(request, false, "bridge.content.import.rejected",
                                        "The native import queue rejected the bounded request.");
             }
             applied = true;
@@ -428,168 +428,168 @@ EditorBridgeResponseUVE EditorBridgeUVE::DispatchUVE(const EditorBridgeRequestUV
             responseContentImportJobId = jobId->value;
             break;
         }
-        case EditorBridgeRequestKindUVE::ReadViewportSurface:
+        case EditorBridgeRequestKind::ReadViewportSurface:
             code = "bridge.viewport_surface.unavailable";
             message = "This headless bridge session has no attachable managed viewport surface; native C++ retains window and OpenGL ownership.";
             break;
-        case EditorBridgeRequestKindUVE::SubmitDeveloperConsoleCommand:
+        case EditorBridgeRequestKind::SubmitDeveloperConsoleCommand:
             if (!request.developerConsoleCommand.has_value() ||
-                request.developerConsoleCommand->size() > DeveloperConsoleUVE::kMaximumValueBytesUVE) {
-                return MakeResponseUVE(request, false, "bridge.developer_console.request.invalid",
+                request.developerConsoleCommand->size() > DeveloperConsole::kMaximumValueBytes) {
+                return MakeResponse(request, false, "bridge.developer_console.request.invalid",
                                        "SubmitDeveloperConsoleCommand requires a bounded command payload.");
             }
-            applied = m_developerConsole.ExecuteUVE(*request.developerConsoleCommand);
+            applied = m_developerConsole.Execute(*request.developerConsoleCommand);
             code = applied ? "bridge.command.applied" : "bridge.developer_console.command.rejected";
             message = applied ? "The registered native console command executed."
                               : "The native console rejected or could not execute the console command.";
             break;
-        case EditorBridgeRequestKindUVE::ClearDeveloperConsole:
-            applied = m_developerConsole.ClearUVE();
+        case EditorBridgeRequestKind::ClearDeveloperConsole:
+            applied = m_developerConsole.Clear();
             code = applied ? "bridge.command.applied" : "bridge.developer_console.clear.noop";
             message = applied ? "The native developer-console output was cleared."
                               : "The native developer-console output was already empty.";
             break;
-        case EditorBridgeRequestKindUVE::SetDeveloperConsoleSeverityFilter:
+        case EditorBridgeRequestKind::SetDeveloperConsoleSeverityFilter:
             if (!request.developerConsoleSeverityFilter.has_value()) {
-                return MakeResponseUVE(request, false, "bridge.developer_console.request.invalid",
+                return MakeResponse(request, false, "bridge.developer_console.request.invalid",
                                        "SetDeveloperConsoleSeverityFilter requires a severity-filter payload.");
             }
-            if (!m_developerConsole.IsAvailableUVE()) {
-                return MakeResponseUVE(request, false, "bridge.developer_console.unavailable",
+            if (!m_developerConsole.IsAvailable()) {
+                return MakeResponse(request, false, "bridge.developer_console.unavailable",
                                        "Developer-console discovery is disabled by the native shipping build policy.");
             }
-            applied = m_developerConsole.SetSeverityFilterUVE(*request.developerConsoleSeverityFilter);
+            applied = m_developerConsole.SetSeverityFilter(*request.developerConsoleSeverityFilter);
             code = applied ? "bridge.command.applied" : "bridge.developer_console.filter.noop";
             message = applied ? "The native developer-console severity filter was updated."
                               : "The native developer-console severity filter was already set.";
             break;
-        case EditorBridgeRequestKindUVE::SetDeveloperConsoleCompletionPrefix:
+        case EditorBridgeRequestKind::SetDeveloperConsoleCompletionPrefix:
             if (!request.developerConsoleCompletionPrefix.has_value() ||
-                request.developerConsoleCompletionPrefix->size() > DeveloperConsoleUVE::kMaximumValueBytesUVE) {
-                return MakeResponseUVE(request, false, "bridge.developer_console.request.invalid",
+                request.developerConsoleCompletionPrefix->size() > DeveloperConsole::kMaximumValueBytes) {
+                return MakeResponse(request, false, "bridge.developer_console.request.invalid",
                                        "SetDeveloperConsoleCompletionPrefix requires a bounded prefix payload.");
             }
-            if (!m_developerConsole.IsAvailableUVE()) {
-                return MakeResponseUVE(request, false, "bridge.developer_console.unavailable",
+            if (!m_developerConsole.IsAvailable()) {
+                return MakeResponse(request, false, "bridge.developer_console.unavailable",
                                        "Developer-console discovery is disabled by the native shipping build policy.");
             }
-            applied = m_developerConsole.SetCompletionPrefixUVE(*request.developerConsoleCompletionPrefix);
+            applied = m_developerConsole.SetCompletionPrefix(*request.developerConsoleCompletionPrefix);
             code = applied ? "bridge.command.applied" : "bridge.developer_console.completion.noop";
             message = applied ? "The native developer-console completion prefix was updated."
                               : "The native developer-console completion prefix was already set.";
             break;
-        case EditorBridgeRequestKindUVE::SelectDataTablePreview:
+        case EditorBridgeRequestKind::SelectDataTablePreview:
             if (!request.dataTableName.has_value() ||
-                request.dataTableName->size() > kEditorBridgeMaximumPresentationTextBytesUVE) {
-                return MakeResponseUVE(request, false, "bridge.data_table.request.invalid",
+                request.dataTableName->size() > kEditorBridgeMaximumPresentationTextBytes) {
+                return MakeResponse(request, false, "bridge.data_table.request.invalid",
                                        "SelectDataTablePreview requires a bounded table name payload.");
             }
             if (m_dataTableRegistry == nullptr) {
-                return MakeResponseUVE(request, false, "bridge.data_table.registry.unavailable",
+                return MakeResponse(request, false, "bridge.data_table.registry.unavailable",
                                        "Data-table preview selection requires a native registry-backed bridge session.");
             }
-            applied = SetPreviewTableUVE(*request.dataTableName);
+            applied = SetPreviewTable(*request.dataTableName);
             code = applied ? "bridge.command.applied" : "bridge.data_table.preview.invalid";
             message = applied
                 ? "The selected native data-table preview was updated."
                 : "The requested native data-table name is not available in the session registry.";
             break;
-        case EditorBridgeRequestKindUVE::MoveDeveloperConsoleHistory:
+        case EditorBridgeRequestKind::MoveDeveloperConsoleHistory:
             if (!request.developerConsoleHistoryDelta.has_value() || *request.developerConsoleHistoryDelta == 0) {
-                return MakeResponseUVE(request, false, "bridge.developer_console.request.invalid",
+                return MakeResponse(request, false, "bridge.developer_console.request.invalid",
                                        "MoveDeveloperConsoleHistory requires a non-zero history delta.");
             }
-            if (!m_developerConsole.IsAvailableUVE()) {
-                return MakeResponseUVE(request, false, "bridge.developer_console.unavailable",
+            if (!m_developerConsole.IsAvailable()) {
+                return MakeResponse(request, false, "bridge.developer_console.unavailable",
                                        "Developer-console history is disabled by the native shipping build policy.");
             }
-            applied = m_developerConsole.MoveHistoryUVE(*request.developerConsoleHistoryDelta);
+            applied = m_developerConsole.MoveHistory(*request.developerConsoleHistoryDelta);
             code = applied ? "bridge.command.applied" : "bridge.developer_console.history.noop";
             message = applied ? "The native developer-console history cursor moved."
                               : "The native developer-console history cursor did not move.";
             break;
-        case EditorBridgeRequestKindUVE::ReadDeveloperConsole:
+        case EditorBridgeRequestKind::ReadDeveloperConsole:
             code = "bridge.developer_console.snapshot.read";
             message = "The bounded developer-console snapshot was copied.";
             break;
-        case EditorBridgeRequestKindUVE::ReadSnapshot:
+        case EditorBridgeRequestKind::ReadSnapshot:
             break;
     }
 
-    SynchronizeRevisionUVE();
-    EditorBridgeResponseUVE response = MakeResponseUVE(request, applied, std::move(code), std::move(message));
+    SynchronizeRevision();
+    EditorBridgeResponse response = MakeResponse(request, applied, std::move(code), std::move(message));
     response.createdEntity = createdEntity;
     response.contentImportJobId = responseContentImportJobId;
     return response;
 }
 
-EditorBridgeUVE::ObservedStateUVE EditorBridgeUVE::CaptureObservedStateUVE() {
-    ObservedStateUVE observed{};
-    observed.editorState = m_editor->GetStateUVE();
-    observed.playModeState = m_editor->GetPlayModeStateUVE();
-    observed.sceneDirty = m_editor->IsSceneDirtyUVE();
-    observed.canUndo = m_editor->CanUndoUVE();
-    observed.canRedo = m_editor->CanRedoUVE();
-    observed.activeScenePath = m_editor->GetActiveScenePathUVE();
-    for (const Scene::EntityUVE entity : m_editor->GetSelectedEntitiesUVE()) {
-        if (observed.selectedEntities.size() >= kEditorBridgeMaximumPanelEntriesUVE) {
+EditorBridge::ObservedState EditorBridge::CaptureObservedState() {
+    ObservedState observed{};
+    observed.editorState = m_editor->GetState();
+    observed.playModeState = m_editor->GetPlayModeState();
+    observed.sceneDirty = m_editor->IsSceneDirty();
+    observed.canUndo = m_editor->CanUndo();
+    observed.canRedo = m_editor->CanRedo();
+    observed.activeScenePath = m_editor->GetActiveScenePath();
+    for (const Scene::Entity entity : m_editor->GetSelectedEntities()) {
+        if (observed.selectedEntities.size() >= kEditorBridgeMaximumPanelEntries) {
             observed.selectedEntitiesTruncated = true;
             break;
         }
         observed.selectedEntities.push_back(
-            EditorBridgeEntitySnapshotUVE{ToBridgeEntityUVE(entity), BoundPresentationTextUVE(m_editor->GetEntityDisplayLabelUVE(entity))});
+            EditorBridgeEntitySnapshot{ToBridgeEntity(entity), BoundPresentationText(m_editor->GetEntityDisplayLabel(entity))});
     }
-    const Scene::EntityUVE active = m_editor->GetSelectedEntityUVE();
-    if (m_editor->IsDocumentEntityUVE(active)) {
-        observed.activeEntity = ToBridgeEntityUVE(active);
+    const Scene::Entity active = m_editor->GetSelectedEntity();
+    if (m_editor->IsDocumentEntity(active)) {
+        observed.activeEntity = ToBridgeEntity(active);
     }
-    observed.hierarchy = CaptureHierarchyUVE();
-    observed.inspector = CaptureInspectorUVE();
-    observed.assetTable = CaptureAssetTableUVE();
-    observed.viewportSurface = EditorBridgeViewportSurfaceSnapshotUVE{
-        EditorBridgeViewportSurfaceStateUVE::Unavailable, 0U, 0U, 0U, true, false,
+    observed.hierarchy = CaptureHierarchy();
+    observed.inspector = CaptureInspector();
+    observed.assetTable = CaptureAssetTable();
+    observed.viewportSurface = EditorBridgeViewportSurfaceSnapshot{
+        EditorBridgeViewportSurfaceState::Unavailable, 0U, 0U, 0U, true, false,
         "No managed viewport surface transport is available in this headless bridge session."};
-    observed.developerConsole = CaptureDeveloperConsoleUVE();
-    observed.dataTableCatalog = CaptureDataTableCatalogUVE();
-    observed.dataTablePreview = CaptureDataTablePreviewUVE();
+    observed.developerConsole = CaptureDeveloperConsole();
+    observed.dataTableCatalog = CaptureDataTableCatalog();
+    observed.dataTablePreview = CaptureDataTablePreview();
     return observed;
 }
 
-EditorBridgeDeveloperConsoleSnapshotUVE EditorBridgeUVE::CaptureDeveloperConsoleUVE() const {
-    return EditorBridgeDeveloperConsoleSnapshotUVE{m_developerConsole.GetSnapshotUVE()};
+EditorBridgeDeveloperConsoleSnapshot EditorBridge::CaptureDeveloperConsole() const {
+    return EditorBridgeDeveloperConsoleSnapshot{m_developerConsole.GetSnapshot()};
 }
 
-EditorBridgeDataTableCatalogSnapshotUVE EditorBridgeUVE::CaptureDataTableCatalogUVE() const {
-    const Asset::DataTableCatalogSnapshotUVE source = m_dataTableRegistry != nullptr
-        ? m_dataTableRegistry->GetCatalogSnapshotUVE()
+EditorBridgeDataTableCatalogSnapshot EditorBridge::CaptureDataTableCatalog() const {
+    const Asset::DataTableCatalogSnapshot source = m_dataTableRegistry != nullptr
+        ? m_dataTableRegistry->GetCatalogSnapshot()
         : m_dataTableCatalogSnapshot;
-    EditorBridgeDataTableCatalogSnapshotUVE snapshot{};
+    EditorBridgeDataTableCatalogSnapshot snapshot{};
     snapshot.generation = source.generation;
     snapshot.entriesTruncated = source.entriesTruncated;
     snapshot.entries.reserve(source.entries.size());
-    for (const Asset::DataTableCatalogEntryUVE& entry : source.entries) {
-        if (snapshot.entries.size() >= kEditorBridgeMaximumPanelEntriesUVE) {
+    for (const Asset::DataTableCatalogEntry& entry : source.entries) {
+        if (snapshot.entries.size() >= kEditorBridgeMaximumPanelEntries) {
             snapshot.entriesTruncated = true;
             break;
         }
-        snapshot.entries.push_back(EditorBridgeDataTableCatalogEntryUVE{
-            BoundPresentationTextUVE(entry.name), entry.generation, entry.columnCount, entry.rowCount, entry.valid});
+        snapshot.entries.push_back(EditorBridgeDataTableCatalogEntry{
+            BoundPresentationText(entry.name), entry.generation, entry.columnCount, entry.rowCount, entry.valid});
     }
     return snapshot;
 }
 
-EditorBridgeDataTablePreviewSnapshotUVE EditorBridgeUVE::CaptureDataTablePreviewUVE() const {
-    Asset::DataTableSnapshotUVE source = m_dataTablePreviewSnapshot;
+EditorBridgeDataTablePreviewSnapshot EditorBridge::CaptureDataTablePreview() const {
+    Asset::DataTableSnapshot source = m_dataTablePreviewSnapshot;
     if (m_dataTableRegistry != nullptr) {
-        source = Asset::DataTableSnapshotUVE{};
+        source = Asset::DataTableSnapshot{};
         if (m_dataTablePreviewName.has_value()) {
-            static_cast<void>(m_dataTableRegistry->TryGetSnapshotUVE(*m_dataTablePreviewName, source));
+            static_cast<void>(m_dataTableRegistry->TryGetSnapshot(*m_dataTablePreviewName, source));
         }
     }
 
-    EditorBridgeDataTablePreviewSnapshotUVE preview{};
+    EditorBridgeDataTablePreviewSnapshot preview{};
     preview.generation = source.generation;
-    preview.name = BoundPresentationTextUVE(source.name);
+    preview.name = BoundPresentationText(source.name);
     preview.available = !preview.name.empty();
     preview.totalColumnCount = source.columns.size();
     preview.totalRowCount = source.rows.size();
@@ -599,26 +599,26 @@ EditorBridgeDataTablePreviewSnapshotUVE EditorBridgeUVE::CaptureDataTablePreview
             ? "The selected native data-table preview is no longer available."
             : "No native data-table preview is selected in this bridge session.";
 
-    for (const Asset::DataTableColumnUVE& column : source.columns) {
-        if (preview.columns.size() >= kEditorBridgeMaximumPanelEntriesUVE) {
+    for (const Asset::DataTableColumn& column : source.columns) {
+        if (preview.columns.size() >= kEditorBridgeMaximumPanelEntries) {
             preview.columnsTruncated = true;
             break;
         }
-        preview.columns.push_back(EditorBridgeDataTablePreviewColumnUVE{
-            BoundPresentationTextUVE(column.name), column.type});
+        preview.columns.push_back(EditorBridgeDataTablePreviewColumn{
+            BoundPresentationText(column.name), column.type});
     }
-    for (const Asset::DataTableRowUVE& row : source.rows) {
-        if (preview.rows.size() >= kEditorBridgeMaximumPanelEntriesUVE) {
+    for (const Asset::DataTableRow& row : source.rows) {
+        if (preview.rows.size() >= kEditorBridgeMaximumPanelEntries) {
             preview.rowsTruncated = true;
             break;
         }
-        EditorBridgeDataTablePreviewRowUVE copiedRow{};
-        copiedRow.identifier = BoundPresentationTextUVE(row.identifier);
+        EditorBridgeDataTablePreviewRow copiedRow{};
+        copiedRow.identifier = BoundPresentationText(row.identifier);
         const std::size_t visibleValueCount = std::min(row.values.size(), preview.columns.size());
         for (std::size_t index = 0U; index < visibleValueCount; ++index) {
-            std::string displayValue = FormatDataTableValueUVE(row.values[index]);
-            if (displayValue.size() > kEditorBridgeMaximumPresentationTextBytesUVE) {
-                displayValue.resize(kEditorBridgeMaximumPresentationTextBytesUVE);
+            std::string displayValue = FormatDataTableValue(row.values[index]);
+            if (displayValue.size() > kEditorBridgeMaximumPresentationTextBytes) {
+                displayValue.resize(kEditorBridgeMaximumPresentationTextBytes);
                 preview.valuesTruncated = true;
             }
             copiedRow.values.push_back(std::move(displayValue));
@@ -631,8 +631,8 @@ EditorBridgeDataTablePreviewSnapshotUVE EditorBridgeUVE::CaptureDataTablePreview
     return preview;
 }
 
-void EditorBridgeUVE::SynchronizeRevisionUVE() {
-    ObservedStateUVE observed = CaptureObservedStateUVE();
+void EditorBridge::SynchronizeRevision() {
+    ObservedState observed = CaptureObservedState();
     if (!m_lastObservedState.has_value()) {
         m_lastObservedState = std::move(observed);
         m_revision = 1U;
@@ -644,9 +644,9 @@ void EditorBridgeUVE::SynchronizeRevisionUVE() {
     }
 }
 
-EditorBridgeSnapshotUVE EditorBridgeUVE::BuildSnapshotUVE() const {
-    const ObservedStateUVE& observed = *m_lastObservedState;
-    EditorBridgeSnapshotUVE snapshot{};
+EditorBridgeSnapshot EditorBridge::BuildSnapshot() const {
+    const ObservedState& observed = *m_lastObservedState;
+    EditorBridgeSnapshot snapshot{};
     snapshot.revision = m_revision;
     snapshot.editorState = observed.editorState;
     snapshot.playModeState = observed.playModeState;
@@ -664,209 +664,209 @@ EditorBridgeSnapshotUVE EditorBridgeUVE::BuildSnapshotUVE() const {
     snapshot.developerConsole = observed.developerConsole;
     snapshot.dataTableCatalog = observed.dataTableCatalog;
     snapshot.dataTablePreview = observed.dataTablePreview;
-    snapshot.capabilities = GetCapabilitiesUVE();
+    snapshot.capabilities = GetCapabilities();
     return snapshot;
 }
 
-EditorBridgeResponseUVE EditorBridgeUVE::MakeResponseUVE(const EditorBridgeRequestUVE& request, const bool applied,
+EditorBridgeResponse EditorBridge::MakeResponse(const EditorBridgeRequest& request, const bool applied,
                                                            std::string code, std::string message) const {
-    return EditorBridgeResponseUVE{kEditorBridgeProtocolVersionUVE, request.requestId, applied,
-                                   std::move(code), std::move(message), BuildSnapshotUVE(), std::nullopt,
+    return EditorBridgeResponse{kEditorBridgeProtocolVersion, request.requestId, applied,
+                                   std::move(code), std::move(message), BuildSnapshot(), std::nullopt,
                                    std::nullopt};
 }
 
-Scene::EntityUVE EditorBridgeUVE::ToEntityUVE(const EditorBridgeEntityRefUVE entity) noexcept {
-    return Scene::EntityUVE{entity.index, entity.generation};
+Scene::Entity EditorBridge::ToEntity(const EditorBridgeEntityRef entity) noexcept {
+    return Scene::Entity{entity.index, entity.generation};
 }
 
-EditorBridgeEntityRefUVE EditorBridgeUVE::ToBridgeEntityUVE(const Scene::EntityUVE entity) noexcept {
-    return EditorBridgeEntityRefUVE{entity.index, entity.generation};
+EditorBridgeEntityRef EditorBridge::ToBridgeEntity(const Scene::Entity entity) noexcept {
+    return EditorBridgeEntityRef{entity.index, entity.generation};
 }
 
-bool EditorBridgeUVE::IsSupportedEntityKindUVE(const EditorEntityKindUVE kind) const noexcept {
+bool EditorBridge::IsSupportedEntityKind(const EditorEntityKind kind) const noexcept {
     switch (kind) {
-        case EditorEntityKindUVE::Empty:
-        case EditorEntityKindUVE::Camera:
-        case EditorEntityKindUVE::DirectionalLight:
-        case EditorEntityKindUVE::CollisionBox:
-        case EditorEntityKindUVE::Cube:
-        case EditorEntityKindUVE::UVSphere:
-        case EditorEntityKindUVE::Plane:
+        case EditorEntityKind::Empty:
+        case EditorEntityKind::Camera:
+        case EditorEntityKind::DirectionalLight:
+        case EditorEntityKind::CollisionBox:
+        case EditorEntityKind::Cube:
+        case EditorEntityKind::UVSphere:
+        case EditorEntityKind::Plane:
             return true;
     }
     return false;
 }
 
-std::string EditorBridgeUVE::BoundPresentationTextUVE(std::string value) {
-    if (value.size() > kEditorBridgeMaximumPresentationTextBytesUVE) {
-        value.resize(kEditorBridgeMaximumPresentationTextBytesUVE);
+std::string EditorBridge::BoundPresentationText(std::string value) {
+    if (value.size() > kEditorBridgeMaximumPresentationTextBytes) {
+        value.resize(kEditorBridgeMaximumPresentationTextBytes);
     }
     return value;
 }
 
-std::string EditorBridgeUVE::BoundContentPathUVE(std::string value) {
-    if (value.size() > kEditorBridgeMaximumContentPathBytesUVE) {
-        value.resize(kEditorBridgeMaximumContentPathBytesUVE);
+std::string EditorBridge::BoundContentPath(std::string value) {
+    if (value.size() > kEditorBridgeMaximumContentPathBytes) {
+        value.resize(kEditorBridgeMaximumContentPathBytes);
     }
     return value;
 }
 
-EditorBridgeHierarchySnapshotUVE EditorBridgeUVE::CaptureHierarchyUVE() {
-    EditorBridgeHierarchySnapshotUVE snapshot{};
-    snapshot.filter = BoundPresentationTextUVE(m_editor->m_hierarchyFilter);
-    snapshot.filterActive = m_editor->IsHierarchyFilterActiveUVE();
-    m_editor->RebuildHierarchyFilterCacheUVE();
+EditorBridgeHierarchySnapshot EditorBridge::CaptureHierarchy() {
+    EditorBridgeHierarchySnapshot snapshot{};
+    snapshot.filter = BoundPresentationText(m_editor->m_hierarchyFilter);
+    snapshot.filterActive = m_editor->IsHierarchyFilterActive();
+    m_editor->RebuildHierarchyFilterCache();
 
-    Scene::IEntityManagerUVE& entityManager = m_editor->m_services->GetEntityManagerUVE();
-    const auto visit = [this, &snapshot, &entityManager](const auto& self, const Scene::EntityUVE entity,
+    Scene::IEntityManager& entityManager = m_editor->m_services->GetEntityManager();
+    const auto visit = [this, &snapshot, &entityManager](const auto& self, const Scene::Entity entity,
                                                           const std::size_t depth) -> void {
-        if (!m_editor->IsDocumentEntityUVE(entity) || !m_editor->IsHierarchyEntityVisibleUVE(entity)) {
+        if (!m_editor->IsDocumentEntity(entity) || !m_editor->IsHierarchyEntityVisible(entity)) {
             return;
         }
-        if (snapshot.entries.size() >= kEditorBridgeMaximumPanelEntriesUVE) {
+        if (snapshot.entries.size() >= kEditorBridgeMaximumPanelEntries) {
             snapshot.truncated = true;
             return;
         }
 
-        Scene::EntityUVE parent = Scene::kInvalidEntityUVE;
-        const bool hasParent = m_editor->TryGetDocumentParentUVE(entity, parent) && parent != Scene::kInvalidEntityUVE;
+        Scene::Entity parent = Scene::kInvalidEntity;
+        const bool hasParent = m_editor->TryGetDocumentParent(entity, parent) && parent != Scene::kInvalidEntity;
         // The same tree the panel draws: a placed entity is one row, so an automated reader sees
         // the level as the author does rather than as a flatter tree that no window shows.
-        const std::vector<Scene::EntityUVE> children =
-            m_editor->IsSealedHierarchyRowUVE(entity)
-                ? std::vector<Scene::EntityUVE>{}
-                : m_editor->m_services->GetSceneGraphUVE().GetChildrenUVE(entityManager, entity);
-        snapshot.entries.push_back(EditorBridgeHierarchyEntryUVE{
-            ToBridgeEntityUVE(entity),
-            hasParent ? std::optional<EditorBridgeEntityRefUVE>{ToBridgeEntityUVE(parent)} : std::nullopt,
-            BoundPresentationTextUVE(m_editor->GetEntityDisplayLabelUVE(entity)),
-            BoundPresentationTextUVE(m_editor->GetOutlinerTypeTagUVE(entity)),
+        const std::vector<Scene::Entity> children =
+            m_editor->IsSealedHierarchyRow(entity)
+                ? std::vector<Scene::Entity>{}
+                : m_editor->m_services->GetSceneGraph().GetChildren(entityManager, entity);
+        snapshot.entries.push_back(EditorBridgeHierarchyEntry{
+            ToBridgeEntity(entity),
+            hasParent ? std::optional<EditorBridgeEntityRef>{ToBridgeEntity(parent)} : std::nullopt,
+            BoundPresentationText(m_editor->GetEntityDisplayLabel(entity)),
+            BoundPresentationText(m_editor->GetOutlinerTypeTag(entity)),
             depth,
             children.size(),
-            m_editor->IsEntitySelectedUVE(entity),
+            m_editor->IsEntitySelected(entity),
             entity == m_editor->m_selectedEntity,
         });
-        for (const Scene::EntityUVE child : children) {
+        for (const Scene::Entity child : children) {
             self(self, child, depth + 1U);
         }
     };
-    for (const Scene::EntityUVE root : m_editor->GetDocumentRootsUVE()) {
+    for (const Scene::Entity root : m_editor->GetDocumentRoots()) {
         visit(visit, root, 0U);
     }
     return snapshot;
 }
 
-EditorBridgeInspectorSnapshotUVE EditorBridgeUVE::CaptureInspectorUVE() const {
-    EditorBridgeInspectorSnapshotUVE snapshot{};
-    for (const Scene::EntityUVE entity : m_editor->GetSelectedEntitiesUVE()) {
-        if (snapshot.selectedEntities.size() >= kEditorBridgeMaximumPanelEntriesUVE) {
+EditorBridgeInspectorSnapshot EditorBridge::CaptureInspector() const {
+    EditorBridgeInspectorSnapshot snapshot{};
+    for (const Scene::Entity entity : m_editor->GetSelectedEntities()) {
+        if (snapshot.selectedEntities.size() >= kEditorBridgeMaximumPanelEntries) {
             snapshot.selectedEntitiesTruncated = true;
             break;
         }
         snapshot.selectedEntities.push_back(
-            EditorBridgeEntitySnapshotUVE{ToBridgeEntityUVE(entity), BoundPresentationTextUVE(m_editor->GetEntityDisplayLabelUVE(entity))});
+            EditorBridgeEntitySnapshot{ToBridgeEntity(entity), BoundPresentationText(m_editor->GetEntityDisplayLabel(entity))});
     }
     if (snapshot.selectedEntities.empty()) {
         return snapshot;
     }
 
-    const Scene::EntityUVE active = m_editor->GetSelectedEntityUVE();
-    if (m_editor->IsDocumentEntityUVE(active)) {
-        snapshot.activeEntity = EditorBridgeEntitySnapshotUVE{
-            ToBridgeEntityUVE(active), BoundPresentationTextUVE(m_editor->GetEntityDisplayLabelUVE(active))};
+    const Scene::Entity active = m_editor->GetSelectedEntity();
+    if (m_editor->IsDocumentEntity(active)) {
+        snapshot.activeEntity = EditorBridgeEntitySnapshot{
+            ToBridgeEntity(active), BoundPresentationText(m_editor->GetEntityDisplayLabel(active))};
     }
-    if (!m_editor->HasSingleDocumentSelectionUVE() || !snapshot.activeEntity.has_value()) {
-        snapshot.mode = EditorBridgeInspectorModeUVE::MultiSelection;
+    if (!m_editor->HasSingleDocumentSelection() || !snapshot.activeEntity.has_value()) {
+        snapshot.mode = EditorBridgeInspectorMode::MultiSelection;
         return snapshot;
     }
 
-    snapshot.mode = EditorBridgeInspectorModeUVE::SingleSelection;
-    Scene::IEntityManagerUVE& entityManager = m_editor->m_services->GetEntityManagerUVE();
-    if (entityManager.HasComponentUVE<Scene::PrefabInstanceComponentUVE>(active)) {
-        const Scene::PrefabInstanceComponentUVE& instance =
-            entityManager.GetComponentUVE<Scene::PrefabInstanceComponentUVE>(active);
-        EditorBridgePrefabSnapshotUVE prefabSnapshot{};
-        prefabSnapshot.sourcePrefabGuid = instance.sourcePrefabGuid != Asset::kInvalidAssetGuidUVE
+    snapshot.mode = EditorBridgeInspectorMode::SingleSelection;
+    Scene::IEntityManager& entityManager = m_editor->m_services->GetEntityManager();
+    if (entityManager.HasComponent<Scene::PrefabInstanceComponent>(active)) {
+        const Scene::PrefabInstanceComponent& instance =
+            entityManager.GetComponent<Scene::PrefabInstanceComponent>(active);
+        EditorBridgePrefabSnapshot prefabSnapshot{};
+        prefabSnapshot.sourcePrefabGuid = instance.sourcePrefabGuid != Asset::kInvalidAssetGuid
                                               ? std::optional<std::uint64_t>{instance.sourcePrefabGuid.value}
                                               : std::nullopt;
         prefabSnapshot.instanceRevision = instance.instanceRevision;
         prefabSnapshot.overrideCount = instance.overrides.size();
         const std::filesystem::path sourcePath =
-            m_editor->m_services->GetAssetDatabaseUVE().ResolveUVE(instance.sourcePrefabGuid);
+            m_editor->m_services->GetAssetDatabase().Resolve(instance.sourcePrefabGuid);
         const std::optional<std::uint64_t> observedRevision =
-            Scene::ComputePrefabSourceRevisionUVE(sourcePath);
+            Scene::ComputePrefabSourceRevision(sourcePath);
         if (observedRevision.has_value()) {
             prefabSnapshot.sourceRevision = *observedRevision;
             prefabSnapshot.status = instance.overrides.empty() && *observedRevision == instance.instanceRevision
-                                        ? EditorBridgePrefabRevisionStatusUVE::Current
+                                        ? EditorBridgePrefabRevisionStatus::Current
                                         : (instance.overrides.empty()
-                                               ? EditorBridgePrefabRevisionStatusUVE::Stale
-                                               : EditorBridgePrefabRevisionStatusUVE::MergeRequired);
+                                               ? EditorBridgePrefabRevisionStatus::Stale
+                                               : EditorBridgePrefabRevisionStatus::MergeRequired);
             prefabSnapshot.canRefresh = instance.overrides.empty() &&
-                                        prefabSnapshot.status == EditorBridgePrefabRevisionStatusUVE::Stale &&
-                                        m_editor->IsAuthoringCommandAllowedUVE();
+                                        prefabSnapshot.status == EditorBridgePrefabRevisionStatus::Stale &&
+                                        m_editor->IsAuthoringCommandAllowed();
         }
         snapshot.prefab = prefabSnapshot;
     }
-    if (entityManager.HasComponentUVE<Scene::MeshComponentUVE>(active)) {
-        const Scene::MeshComponentUVE& meshComponent =
-            entityManager.GetComponentUVE<Scene::MeshComponentUVE>(active);
-        snapshot.assetBinding = EditorBridgeAssetBindingSnapshotUVE{
-            meshComponent.meshGuid != Asset::kInvalidAssetGuidUVE ? std::optional<std::uint64_t>{meshComponent.meshGuid.value}
+    if (entityManager.HasComponent<Scene::MeshComponent>(active)) {
+        const Scene::MeshComponent& meshComponent =
+            entityManager.GetComponent<Scene::MeshComponent>(active);
+        snapshot.assetBinding = EditorBridgeAssetBindingSnapshot{
+            meshComponent.meshGuid != Asset::kInvalidAssetGuid ? std::optional<std::uint64_t>{meshComponent.meshGuid.value}
                                                                   : std::nullopt,
-            meshComponent.materialGuid != Asset::kInvalidAssetGuidUVE
+            meshComponent.materialGuid != Asset::kInvalidAssetGuid
                 ? std::optional<std::uint64_t>{meshComponent.materialGuid.value}
                 : std::nullopt};
     }
-    Scene::EntityUVE parent = Scene::kInvalidEntityUVE;
-    if (m_editor->TryGetDocumentParentUVE(active, parent) && parent != Scene::kInvalidEntityUVE) {
-        snapshot.parent = EditorBridgeEntitySnapshotUVE{
-            ToBridgeEntityUVE(parent), BoundPresentationTextUVE(m_editor->GetHierarchyCandidateLabelUVE(parent))};
+    Scene::Entity parent = Scene::kInvalidEntity;
+    if (m_editor->TryGetDocumentParent(active, parent) && parent != Scene::kInvalidEntity) {
+        snapshot.parent = EditorBridgeEntitySnapshot{
+            ToBridgeEntity(parent), BoundPresentationText(m_editor->GetHierarchyCandidateLabel(parent))};
     }
-    for (const Scene::EntityUVE ancestor : m_editor->GetDocumentAncestryUVE(active)) {
-        if (snapshot.ancestry.size() >= kEditorBridgeMaximumPanelEntriesUVE) {
+    for (const Scene::Entity ancestor : m_editor->GetDocumentAncestry(active)) {
+        if (snapshot.ancestry.size() >= kEditorBridgeMaximumPanelEntries) {
             break;
         }
-        snapshot.ancestry.push_back(EditorBridgeEntitySnapshotUVE{
-            ToBridgeEntityUVE(ancestor), BoundPresentationTextUVE(m_editor->GetHierarchyCandidateLabelUVE(ancestor))});
+        snapshot.ancestry.push_back(EditorBridgeEntitySnapshot{
+            ToBridgeEntity(ancestor), BoundPresentationText(m_editor->GetHierarchyCandidateLabel(ancestor))});
     }
-    for (std::string identifier : m_editor->m_inspectorDrawerRegistry.GetEligibleDrawerIdsUVE(active)) {
-        if (snapshot.eligibleDrawerIds.size() >= kEditorBridgeMaximumPanelEntriesUVE) {
+    for (std::string identifier : m_editor->m_inspectorDrawerRegistry.GetEligibleDrawerIds(active)) {
+        if (snapshot.eligibleDrawerIds.size() >= kEditorBridgeMaximumPanelEntries) {
             break;
         }
-        const std::string boundedIdentifier = BoundPresentationTextUVE(identifier);
+        const std::string boundedIdentifier = BoundPresentationText(identifier);
         snapshot.eligibleDrawerIds.push_back(boundedIdentifier);
         if (identifier != "name" && identifier != "hierarchy" && identifier != "transform" &&
             identifier != "primitive-mesh") {
             snapshot.attachedComponentIds.push_back(boundedIdentifier);
         }
     }
-    snapshot.canEditSelectedName = m_editor->IsAuthoringCommandAllowedUVE();
+    snapshot.canEditSelectedName = m_editor->IsAuthoringCommandAllowed();
     return snapshot;
 }
 
-EditorBridgeAssetTableSnapshotUVE EditorBridgeUVE::CaptureAssetTableUVE() {
-    EditorBridgeAssetTableSnapshotUVE snapshot{};
-    Asset::IProjectFileIndexUVE& projectFileIndex = m_editor->m_services->GetProjectFileIndexUVE();
-    const Asset::ProjectFileSnapshotUVE nativeSnapshot = projectFileIndex.GetSnapshotUVE();
-    m_editor->ReconcileAssetTableDirectoryUVE(nativeSnapshot);
+EditorBridgeAssetTableSnapshot EditorBridge::CaptureAssetTable() {
+    EditorBridgeAssetTableSnapshot snapshot{};
+    Asset::IProjectFileIndex& projectFileIndex = m_editor->m_services->GetProjectFileIndex();
+    const Asset::ProjectFileSnapshot nativeSnapshot = projectFileIndex.GetSnapshot();
+    m_editor->ReconcileAssetTableDirectory(nativeSnapshot);
 
-    snapshot.contentRoot = BoundPresentationTextUVE(nativeSnapshot.contentRoot.generic_string());
-    snapshot.currentDirectory = BoundContentPathUVE(m_editor->m_assetTableDirectory.generic_string());
-    snapshot.filter = BoundPresentationTextUVE(m_editor->m_assetFilter);
-    snapshot.typeFocus = BoundPresentationTextUVE(EditorUVE::GetAssetTableFocusLabelUVE(m_editor->m_assetTableTypeFocus));
+    snapshot.contentRoot = BoundPresentationText(nativeSnapshot.contentRoot.generic_string());
+    snapshot.currentDirectory = BoundContentPath(m_editor->m_assetTableDirectory.generic_string());
+    snapshot.filter = BoundPresentationText(m_editor->m_assetFilter);
+    snapshot.typeFocus = BoundPresentationText(Editor::GetAssetTableFocusLabel(m_editor->m_assetTableTypeFocus));
     for (const std::filesystem::path& segment : m_editor->m_assetTableDirectory) {
-        if (snapshot.breadcrumbs.size() >= kEditorBridgeMaximumPanelEntriesUVE) {
+        if (snapshot.breadcrumbs.size() >= kEditorBridgeMaximumPanelEntries) {
             break;
         }
-        snapshot.breadcrumbs.push_back(BoundPresentationTextUVE(segment.generic_string()));
+        snapshot.breadcrumbs.push_back(BoundPresentationText(segment.generic_string()));
     }
     snapshot.refreshGeneration = nativeSnapshot.refreshGeneration;
     snapshot.contentRootExists = nativeSnapshot.contentRootExists;
     snapshot.initialized = m_editor->m_projectFileSnapshotInitialized;
     snapshot.lastRefreshSucceeded = m_editor->m_projectFileLastRefreshSucceeded;
 
-    for (const Asset::ProjectFileEntryUVE& entry : nativeSnapshot.entries) {
+    for (const Asset::ProjectFileEntry& entry : nativeSnapshot.entries) {
         if (entry.relativePath.parent_path() == m_editor->m_assetTableDirectory) {
             ++snapshot.directEntryCount;
         }
@@ -874,32 +874,32 @@ EditorBridgeAssetTableSnapshotUVE EditorBridgeUVE::CaptureAssetTableUVE() {
     // The same items the panel lists: a folder's children, or with a search everything under it
     // whose name matches (a shelf the panel may show is not a bridge location).
     for (const std::size_t index :
-         ListContentFolderUVE(nativeSnapshot.entries, m_editor->m_assetTableDirectory, m_editor->m_assetFilter)) {
-        const Asset::ProjectFileEntryUVE& entry = nativeSnapshot.entries[index];
-        if (!m_editor->DoesAssetTableEntryMatchFocusUVE(entry)) {
+         ListContentFolder(nativeSnapshot.entries, m_editor->m_assetTableDirectory, m_editor->m_assetFilter)) {
+        const Asset::ProjectFileEntry& entry = nativeSnapshot.entries[index];
+        if (!m_editor->DoesAssetTableEntryMatchFocus(entry)) {
             continue;
         }
         ++snapshot.visibleEntryCount;
-        if (snapshot.entries.size() >= kEditorBridgeMaximumPanelEntriesUVE) {
+        if (snapshot.entries.size() >= kEditorBridgeMaximumPanelEntries) {
             snapshot.truncated = true;
             continue;
         }
-        snapshot.entries.push_back(ToContentEntryUVE(entry));
+        snapshot.entries.push_back(ToContentEntry(entry));
     }
 
     if (m_editor->m_selectedProjectFile.has_value()) {
-        const Asset::ProjectFileEntryUVE& selected = *m_editor->m_selectedProjectFile;
-        snapshot.selectedEntry = ToContentEntryUVE(selected);
+        const Asset::ProjectFileEntry& selected = *m_editor->m_selectedProjectFile;
+        snapshot.selectedEntry = ToContentEntry(selected);
         snapshot.importAction.hasSelection = true;
-        if (selected.kind == Asset::ProjectFileEntryKindUVE::Directory) {
+        if (selected.kind == Asset::ProjectFileEntryKind::Directory) {
             snapshot.importAction.sourceKind = "directory";
             snapshot.importAction.diagnostic = "directories cannot be imported or reimported";
         } else {
-            const Asset::AssetImportSourceClassificationUVE classification =
-                m_editor->m_services->GetAssetImporterUVE().ClassifySourceUVE(selected.relativePath);
+            const Asset::AssetImportSourceClassification classification =
+                m_editor->m_services->GetAssetImporter().ClassifySource(selected.relativePath);
             snapshot.importAction.importerRegistered = classification.importerRegistered;
             snapshot.importAction.requiresFormatSpecificParser = classification.requiresFormatSpecificParser;
-            snapshot.importAction.sourceKind = SourceKindLabelUVE(classification.kind);
+            snapshot.importAction.sourceKind = SourceKindLabel(classification.kind);
             snapshot.importAction.canImport = !selected.registeredAssetGuid.has_value() &&
                                               classification.importerRegistered;
             snapshot.importAction.canReimport = selected.registeredAssetGuid.has_value() &&
@@ -912,18 +912,18 @@ EditorBridgeAssetTableSnapshotUVE EditorBridgeUVE::CaptureAssetTableUVE() {
     return snapshot;
 }
 
-EditorBridgeAssetTableEntryUVE EditorBridgeUVE::ToContentEntryUVE(const Asset::ProjectFileEntryUVE& entry) const {
-    return EditorBridgeAssetTableEntryUVE{
-        BoundContentPathUVE(entry.relativePath.generic_string()),
-        entry.kind == Asset::ProjectFileEntryKindUVE::Directory,
-        BoundPresentationTextUVE(EditorUVE::GetAssetTableItemTypeLabelUVE(m_editor->GetAssetTableEntryTypeUVE(entry))),
+EditorBridgeAssetTableEntry EditorBridge::ToContentEntry(const Asset::ProjectFileEntry& entry) const {
+    return EditorBridgeAssetTableEntry{
+        BoundContentPath(entry.relativePath.generic_string()),
+        entry.kind == Asset::ProjectFileEntryKind::Directory,
+        BoundPresentationText(Editor::GetAssetTableItemTypeLabel(m_editor->GetAssetTableEntryType(entry))),
         entry.registeredAssetGuid.has_value() ? std::optional<std::uint64_t>{entry.registeredAssetGuid->value} : std::nullopt,
     };
 }
 
-std::optional<EditorUVE::AssetTableTypeFocusUVE> EditorBridgeUVE::ParseAssetTableFocusUVE(
+std::optional<Editor::AssetTableTypeFocus> EditorBridge::ParseAssetTableFocus(
     const std::string& focus) noexcept {
-    using Focus = EditorUVE::AssetTableTypeFocusUVE;
+    using Focus = Editor::AssetTableTypeFocus;
     if (focus == "all") {
         return Focus::All;
     }

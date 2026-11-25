@@ -95,7 +95,7 @@ def read_source_version(app_name: str = "runtime") -> tuple[int, int, int, int]:
         raise RuntimeError(f"Unsupported Android app '{app_name}' (UniVex Hub now builds in UniVexStudio/UniVex_Hub)")
     source = REPO_ROOT.joinpath(*ENGINE_VERSION_SOURCE).read_text(encoding="utf-8")
     match = re.search(
-        r"GetEngineVersionUVE\s*\(\s*\)[^{]*\{\s*return\s+VersionUVE\s*\{\s*(\d+)U?\s*,\s*(\d+)U?\s*,\s*(\d+)U?\s*,\s*(\d+)U?\s*\}",
+        r"GetEngineVersion\s*\(\s*\)[^{]*\{\s*return\s+Version\s*\{\s*(\d+)U?\s*,\s*(\d+)U?\s*,\s*(\d+)U?\s*,\s*(\d+)U?\s*\}",
         source,
         re.DOTALL,
     )

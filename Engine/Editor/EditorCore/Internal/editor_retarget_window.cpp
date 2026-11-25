@@ -38,24 +38,24 @@
 namespace UVE::Editor {
 namespace {
 
-constexpr std::size_t kAsyncPlanThresholdUVE = 8U;
-constexpr double kFolderImportFrameBudgetSecondsUVE = 0.012;
+constexpr std::size_t kAsyncPlanThreshold = 8U;
+constexpr double kFolderImportFrameBudgetSeconds = 0.012;
 
-[[nodiscard]] std::string LowerUVE(std::string text) {
+[[nodiscard]] std::string Lower(std::string text) {
     std::ranges::transform(text, text.begin(), [](const unsigned char c) { return static_cast<char>(std::tolower(c)); });
     return text;
 }
 
-[[nodiscard]] std::string NormalizedAnimationKeyUVE(const std::filesystem::path& path) {
+[[nodiscard]] std::string NormalizedAnimationKey(const std::filesystem::path& path) {
     std::filesystem::path model;
     std::string take;
-    if (Asset::SplitEmbeddedClipPathUVE(path, model, take)) {
+    if (Asset::SplitEmbeddedClipPath(path, model, take)) {
         return model.lexically_normal().generic_string() + "#" + take;
     }
     return path.lexically_normal().generic_string();
 }
 
-[[nodiscard]] bool IsRelativePathUnderFolderUVE(const std::filesystem::path& relativeEntry,
+[[nodiscard]] bool IsRelativePathUnderFolder(const std::filesystem::path& relativeEntry,
                                                 const std::filesystem::path& relativeFolder) {
     if (relativeFolder.empty()) {
         return true;
@@ -67,7 +67,7 @@ constexpr double kFolderImportFrameBudgetSecondsUVE = 0.012;
             entryStr[folderStr.size()] == '/');
 }
 
-void CancelPendingPlanJobUVE(RetargetWindowStateUVE& window) {
+void CancelPendingPlanJob(RetargetWindowState& window) {
     if (window.planCancel) {
         window.planCancel->store(true, std::memory_order_relaxed);
     }
@@ -80,26 +80,26 @@ void CancelPendingPlanJobUVE(RetargetWindowStateUVE& window) {
 
 } // namespace
 
-void EditorUVE::OpenRetargetWindowUVE(std::vector<std::filesystem::path> animations, std::filesystem::path target) {
+void Editor::OpenRetargetWindow(std::vector<std::filesystem::path> animations, std::filesystem::path target) {
     if (m_retargetWindow.has_value()) {
-        CloseRetargetWindowUVE();
+        CloseRetargetWindow();
     }
     std::deque<std::filesystem::path> pendingImports;
-    const Asset::ProjectFileSnapshotUVE project = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
+    const Asset::ProjectFileSnapshot project = m_services->GetProjectFileIndex().GetSnapshot();
     std::unordered_set<std::string> seen;
     seen.reserve(animations.size() + 16U);
     for (const std::filesystem::path& path : animations) {
-        seen.insert(NormalizedAnimationKeyUVE(path));
+        seen.insert(NormalizedAnimationKey(path));
     }
     const auto addAnim = [&](const std::filesystem::path& path) {
-        if (!path.empty() && seen.insert(NormalizedAnimationKeyUVE(path)).second) {
+        if (!path.empty() && seen.insert(NormalizedAnimationKey(path)).second) {
             animations.push_back(path);
         }
     };
 
-    if (!target.empty() && IsModelSourcePathUVE(target)) {
+    if (!target.empty() && IsModelSourcePath(target)) {
         const std::filesystem::path absSource = project.contentRoot / target;
-        const EditorModelSourceInfoUVE* const info = FindModelSourceInfoUVE(target);
+        const EditorModelSourceInfo* const info = FindModelSourceInfo(target);
         if (animations.empty()) {
             const std::filesystem::path parentDir = absSource.parent_path();
             const std::string stem = absSource.stem().string();
@@ -109,7 +109,7 @@ void EditorUVE::OpenRetargetWindowUVE(std::vector<std::filesystem::path> animati
                     continue;
                 }
                 const std::filesystem::path candidate = entry.path();
-                if (LowerUVE(candidate.extension().string()) != ".uvanim") {
+                if (Lower(candidate.extension().string()) != ".uvanim") {
                     continue;
                 }
                 const std::string candidateStem = candidate.stem().string();
@@ -125,17 +125,17 @@ void EditorUVE::OpenRetargetWindowUVE(std::vector<std::filesystem::path> animati
                 pendingImports.push_back(absSource);
             }
             target.clear();
-        } else if (info != nullptr && info->animationCount > 0U && !IsRetargetedModelCurrentUVE(target)) {
-            const std::filesystem::path importedModel = GetImportedModelPathUVE(target);
+        } else if (info != nullptr && info->animationCount > 0U && !IsRetargetedModelCurrent(target)) {
+            const std::filesystem::path importedModel = GetImportedModelPath(target);
             std::error_code existsErr;
             if (std::filesystem::is_regular_file(importedModel, existsErr) &&
-                Asset::ListModelAnimationsUVE(importedModel).empty()) {
+                Asset::ListModelAnimations(importedModel).empty()) {
                 pendingImports.push_back(absSource);
             }
         }
     }
 
-    RetargetWindowStateUVE window;
+    RetargetWindowState window;
     window.autoSelectDefaultCandidate = animations.empty() && target.empty() && pendingImports.empty();
     window.animations = std::move(animations);
     window.target = std::move(target);
@@ -143,24 +143,24 @@ void EditorUVE::OpenRetargetWindowUVE(std::vector<std::filesystem::path> animati
     window.pendingFolderImports = std::move(pendingImports);
     m_retargetWindow = std::move(window);
     // The window's own world (the level is not touched), and the Rig Brain trained meanwhile.
-    static_cast<void>(BeginRetargetPreviewUVE());
-    Retarget::WarmDefaultRigBrainUVE();
+    static_cast<void>(BeginRetargetPreview());
+    Retarget::WarmDefaultRigBrain();
 }
 
-void EditorUVE::OpenRetargetWindowForPathsUVE(const std::vector<std::filesystem::path>& relativePaths) {
+void Editor::OpenRetargetWindowForPaths(const std::vector<std::filesystem::path>& relativePaths) {
     if (m_retargetWindow.has_value()) {
-        CloseRetargetWindowUVE();
+        CloseRetargetWindow();
     }
-    const Asset::ProjectFileSnapshotUVE project = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
+    const Asset::ProjectFileSnapshot project = m_services->GetProjectFileIndex().GetSnapshot();
 
     // Index existing .uvanim files by directory once (O(N)) so checking whether an animation-only
     // FBX already has extracted .uvanim clips never rescans the filesystem per file.
     std::unordered_map<std::string, std::vector<std::filesystem::path>> dirUvanims;
     std::unordered_set<std::string> directoryEntries;
-    for (const Asset::ProjectFileEntryUVE& entry : project.entries) {
-        if (entry.kind == Asset::ProjectFileEntryKindUVE::Directory) {
+    for (const Asset::ProjectFileEntry& entry : project.entries) {
+        if (entry.kind == Asset::ProjectFileEntryKind::Directory) {
             directoryEntries.insert(entry.relativePath.generic_string());
-        } else if (LowerUVE(entry.relativePath.extension().string()) == ".uvanim") {
+        } else if (Lower(entry.relativePath.extension().string()) == ".uvanim") {
             dirUvanims[entry.relativePath.parent_path().generic_string()].push_back(project.contentRoot / entry.relativePath);
         }
     }
@@ -173,7 +173,7 @@ void EditorUVE::OpenRetargetWindowForPathsUVE(const std::vector<std::filesystem:
     std::unordered_set<std::string> seenCharacters;
 
     const auto addAnimation = [&](const std::filesystem::path& path) {
-        if (!path.empty() && seenAnimations.insert(NormalizedAnimationKeyUVE(path)).second) {
+        if (!path.empty() && seenAnimations.insert(NormalizedAnimationKey(path)).second) {
             animations.push_back(path);
         }
     };
@@ -206,7 +206,7 @@ void EditorUVE::OpenRetargetWindowForPathsUVE(const std::vector<std::filesystem:
     };
 
     const auto processFile = [&](const std::filesystem::path& relPath) {
-        const std::string ext = LowerUVE(relPath.extension().string());
+        const std::string ext = Lower(relPath.extension().string());
         const std::filesystem::path absPath = project.contentRoot / relPath;
         if (ext == ".uvanim") {
             addAnimation(absPath);
@@ -214,26 +214,26 @@ void EditorUVE::OpenRetargetWindowForPathsUVE(const std::vector<std::filesystem:
         }
         if (ext == ".uvmodel") {
             addCharacter(relPath);
-            for (const Asset::ModelAnimationEntryUVE& take : Asset::ListModelAnimationsUVE(absPath)) {
-                addAnimation(Asset::MakeEmbeddedClipPathUVE(absPath, take.name));
+            for (const Asset::ModelAnimationEntry& take : Asset::ListModelAnimations(absPath)) {
+                addAnimation(Asset::MakeEmbeddedClipPath(absPath, take.name));
             }
             return;
         }
-        if (!IsModelSourcePathUVE(relPath)) {
+        if (!IsModelSourcePath(relPath)) {
             return;
         }
-        const EditorModelSourceInfoUVE* const info = FindModelSourceInfoUVE(relPath);
+        const EditorModelSourceInfo* const info = FindModelSourceInfo(relPath);
         const bool riggedMesh = info != nullptr && info->rigged && !info->animationOnly;
         if (riggedMesh) {
             addCharacter(relPath);
-            const std::filesystem::path importedModel = GetImportedModelPathUVE(relPath);
+            const std::filesystem::path importedModel = GetImportedModelPath(relPath);
             std::error_code ec;
             if (std::filesystem::is_regular_file(importedModel, ec)) {
-                const std::vector<Asset::ModelAnimationEntryUVE> takes = Asset::ListModelAnimationsUVE(importedModel);
-                for (const Asset::ModelAnimationEntryUVE& take : takes) {
-                    addAnimation(Asset::MakeEmbeddedClipPathUVE(importedModel, take.name));
+                const std::vector<Asset::ModelAnimationEntry> takes = Asset::ListModelAnimations(importedModel);
+                for (const Asset::ModelAnimationEntry& take : takes) {
+                    addAnimation(Asset::MakeEmbeddedClipPath(importedModel, take.name));
                 }
-                if (takes.empty() && info->animationCount > 0U && !IsRetargetedModelCurrentUVE(relPath)) {
+                if (takes.empty() && info->animationCount > 0U && !IsRetargetedModelCurrent(relPath)) {
                     queueImport(absPath);
                 }
             }
@@ -255,11 +255,11 @@ void EditorUVE::OpenRetargetWindowForPathsUVE(const std::vector<std::filesystem:
         const bool isDir = cleanRel.empty() || directoryEntries.contains(cleanRel.generic_string()) ||
                            std::filesystem::is_directory(project.contentRoot / cleanRel, ec);
         if (isDir) {
-            for (const Asset::ProjectFileEntryUVE& entry : project.entries) {
-                if (entry.kind == Asset::ProjectFileEntryKindUVE::Directory) {
+            for (const Asset::ProjectFileEntry& entry : project.entries) {
+                if (entry.kind == Asset::ProjectFileEntryKind::Directory) {
                     continue;
                 }
-                if (IsRelativePathUnderFolderUVE(entry.relativePath, cleanRel)) {
+                if (IsRelativePathUnderFolder(entry.relativePath, cleanRel)) {
                     processFile(entry.relativePath);
                 }
             }
@@ -269,7 +269,7 @@ void EditorUVE::OpenRetargetWindowForPathsUVE(const std::vector<std::filesystem:
     }
 
     std::ranges::sort(animations);
-    RetargetWindowStateUVE window;
+    RetargetWindowState window;
     // Never auto-pick an unrelated character when opening an explicit selection or animation folder.
     window.autoSelectDefaultCandidate = false;
     window.animations = std::move(animations);
@@ -280,56 +280,56 @@ void EditorUVE::OpenRetargetWindowForPathsUVE(const std::vector<std::filesystem:
     window.pendingImportTotal = pendingImports.size();
     window.pendingFolderImports = std::move(pendingImports);
     m_retargetWindow = std::move(window);
-    static_cast<void>(BeginRetargetPreviewUVE());
-    Retarget::WarmDefaultRigBrainUVE();
+    static_cast<void>(BeginRetargetPreview());
+    Retarget::WarmDefaultRigBrain();
 }
 
-void EditorUVE::OpenRetargetWindowForFolderUVE(const std::filesystem::path& relativeFolder) {
-    OpenRetargetWindowForPathsUVE({relativeFolder});
+void Editor::OpenRetargetWindowForFolder(const std::filesystem::path& relativeFolder) {
+    OpenRetargetWindowForPaths({relativeFolder});
 }
 
-void EditorUVE::CloseRetargetWindowUVE() {
+void Editor::CloseRetargetWindow() {
     if (m_retargetWindow.has_value()) {
-        CancelPendingPlanJobUVE(*m_retargetWindow);
+        CancelPendingPlanJob(*m_retargetWindow);
         if (m_retargetWindow->job.valid()) {
             m_retargetWindow->job.wait(); // never leave files half written
             static_cast<void>(m_retargetWindow->job.get());
         }
     }
-    if (!EndRetargetPreviewUVE()) {
+    if (!EndRetargetPreview()) {
         return; // the scene did not come back: the window stays, so nothing is lost
     }
     if (m_retargetWindow.has_value()) {
         // The scene was put aside while files changed: bring its skeletons up to date.
         for (const std::filesystem::path& model : m_retargetWindow->changedModels) {
             if (!model.empty()) {
-                static_cast<void>(RefreshSkeletonsForRetargetedModelUVE(model));
+                static_cast<void>(RefreshSkeletonsForRetargetedModel(model));
             }
         }
     }
     m_retargetWindow.reset();
 }
 
-std::filesystem::path EditorUVE::ResolveRetargetModelFileUVE(const std::filesystem::path& target) const {
+std::filesystem::path Editor::ResolveRetargetModelFile(const std::filesystem::path& target) const {
     if (target.empty()) {
         return {};
     }
-    const Asset::ProjectFileSnapshotUVE project = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
-    if (LowerUVE(target.extension().string()) == ".uvmodel") {
+    const Asset::ProjectFileSnapshot project = m_services->GetProjectFileIndex().GetSnapshot();
+    if (Lower(target.extension().string()) == ".uvmodel") {
         return target.is_absolute() ? target.lexically_normal() : (project.contentRoot / target).lexically_normal();
     }
-    if (const EditorModelSourceInfoUVE* const info = FindModelSourceInfoUVE(target);
+    if (const EditorModelSourceInfo* const info = FindModelSourceInfo(target);
         info != nullptr && info->animationOnly) {
         return {};
     }
-    return GetImportedModelPathUVE(target);
+    return GetImportedModelPath(target);
 }
 
-std::size_t EditorUVE::RefreshSkeletonsForRetargetedModelUVE(const std::filesystem::path& modelFile) {
+std::size_t Editor::RefreshSkeletonsForRetargetedModel(const std::filesystem::path& modelFile) {
     if (modelFile.empty()) {
         return 0U;
     }
-    const Asset::ProjectFileSnapshotUVE project = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
+    const Asset::ProjectFileSnapshot project = m_services->GetProjectFileIndex().GetSnapshot();
     const std::filesystem::path wanted = modelFile.lexically_normal();
     std::error_code canonErr;
     const std::filesystem::path wantedCanon = std::filesystem::weakly_canonical(wanted, canonErr);
@@ -340,9 +340,9 @@ std::size_t EditorUVE::RefreshSkeletonsForRetargetedModelUVE(const std::filesyst
             return false;
         }
         std::filesystem::path resolved;
-        if (IsModelSourcePathUVE(source)) {
-            resolved = GetImportedModelPathUVE(source);
-        } else if (LowerUVE(source.extension().string()) == ".uvmodel") {
+        if (IsModelSourcePath(source)) {
+            resolved = GetImportedModelPath(source);
+        } else if (Lower(source.extension().string()) == ".uvmodel") {
             resolved = source.is_absolute() ? source.lexically_normal() : (project.contentRoot / source).lexically_normal();
         } else {
             return false;
@@ -355,35 +355,35 @@ std::size_t EditorUVE::RefreshSkeletonsForRetargetedModelUVE(const std::filesyst
         return !err && rc.generic_string() == wantedKey;
     };
 
-    const std::optional<Asset::GltfSkeletonUVE> freshBones =
-        ReadSkeletonForModelFileUVE(wanted, Scene::kMaximumSkeletonBonesUVE);
+    const std::optional<Asset::GltfSkeleton> freshBones =
+        ReadSkeletonForModelFile(wanted, Scene::kMaximumSkeletonBones);
     if (!freshBones.has_value()) {
         return 0U;
     }
 
     const auto refreshCurrentDocument = [&]() -> std::size_t {
         std::size_t changed = 0U;
-        Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
-        entityManager.ForEachUVE<Scene::Skeleton3DComponentUVE>(
-            [&](const Scene::EntityUVE, Scene::Skeleton3DComponentUVE& skeleton) {
+        Scene::IEntityManager& entityManager = m_services->GetEntityManager();
+        entityManager.ForEach<Scene::Skeleton3DComponent>(
+            [&](const Scene::Entity, Scene::Skeleton3DComponent& skeleton) {
                 const std::filesystem::path source{skeleton.skeletonAssetPath};
                 if (!matchesWanted(source)) {
                     return;
                 }
                 skeleton.bones.clear();
                 skeleton.bones.reserve(freshBones->joints.size());
-                for (const Asset::GltfJointUVE& joint : freshBones->joints) {
+                for (const Asset::GltfJoint& joint : freshBones->joints) {
                     skeleton.bones.push_back(
-                        Scene::SkeletonBoneUVE{joint.name, joint.parentIndex, joint.translation, joint.rotation, joint.scale});
+                        Scene::SkeletonBone{joint.name, joint.parentIndex, joint.translation, joint.rotation, joint.scale});
                 }
                 skeleton.pose.clear();
                 ++changed;
             });
         if (changed > 0U) {
-            // Re-sync SkinComponentUVE bindings on any meshes in this document bound to the updated rig.
-            entityManager.ForEachUVE<Scene::SkinComponentUVE>(
-                [&](const Scene::EntityUVE entity, Scene::SkinComponentUVE& skin) {
-                    static_cast<void>(AutoPopulateSkinFromModelUVE(entity, skin));
+            // Re-sync SkinComponent bindings on any meshes in this document bound to the updated rig.
+            entityManager.ForEach<Scene::SkinComponent>(
+                [&](const Scene::Entity entity, Scene::SkinComponent& skin) {
+                    static_cast<void>(AutoPopulateSkinFromModel(entity, skin));
                 });
             m_sceneDirty = true;
         }
@@ -392,20 +392,20 @@ std::size_t EditorUVE::RefreshSkeletonsForRetargetedModelUVE(const std::filesyst
 
     std::size_t totalChanged = refreshCurrentDocument();
     if (m_entityEditSession.has_value() && !m_entityDocumentActive) {
-        const EntityDocumentScopeUVE scope(*this);
+        const EntityDocumentScope scope(*this);
         totalChanged += refreshCurrentDocument();
     }
     return totalChanged;
 }
 
-void EditorUVE::ReloadRetargetedFilesUVE(const std::vector<std::filesystem::path>& files) {
+void Editor::ReloadRetargetedFiles(const std::vector<std::filesystem::path>& files) {
     // A file can be registered under more than one spelling (relative to the working folder, or
     // absolute), and each spelling is its own GUID with its own loaded copy: a character placed
     // before Generate plays the clip it loaded then. Every loaded GUID whose path is in `files`
     // reloads — checking load state BEFORE canonicalizing avoids thousands of stat() syscalls when
     // retargeting a 1,000-animation folder.
-    Asset::IAssetDatabaseUVE& database = m_services->GetAssetDatabaseUVE();
-    Asset::IAssetManagerUVE& assets = m_services->GetAssetManagerUVE();
+    Asset::IAssetDatabase& database = m_services->GetAssetDatabase();
+    Asset::IAssetManager& assets = m_services->GetAssetManager();
     std::unordered_map<std::string, std::string> canonicalCache;
     const auto canonicalModel = [&canonicalCache](const std::filesystem::path& path) -> std::string {
         const std::string raw = path.lexically_normal().generic_string();
@@ -421,7 +421,7 @@ void EditorUVE::ReloadRetargetedFilesUVE(const std::vector<std::filesystem::path
     const auto identity = [&canonicalModel](const std::filesystem::path& path) -> std::string {
         std::filesystem::path model;
         std::string take;
-        if (Asset::SplitEmbeddedClipPathUVE(path, model, take)) {
+        if (Asset::SplitEmbeddedClipPath(path, model, take)) {
             return canonicalModel(model) + "#" + take;
         }
         return canonicalModel(path);
@@ -433,26 +433,26 @@ void EditorUVE::ReloadRetargetedFilesUVE(const std::vector<std::filesystem::path
             continue;
         }
         wanted.insert(identity(file));
-        const std::string ext = LowerUVE(file.extension().string());
+        const std::string ext = Lower(file.extension().string());
         if (ext == ".uvmodel" || ext == ".uvskel") {
-            static_cast<void>(database.RegisterUVE(file));
+            static_cast<void>(database.Register(file));
         }
     }
     if (wanted.empty()) {
         return;
     }
-    for (const Asset::AssetRecordUVE& record : database.GetRegisteredAssetsUVE()) {
-        if (record.guid == Asset::kInvalidAssetGuidUVE ||
-            assets.GetLoadStateUVE(record.guid) == Asset::AssetLoadStateUVE::NotLoaded) {
+    for (const Asset::AssetRecord& record : database.GetRegisteredAssets()) {
+        if (record.guid == Asset::kInvalidAssetGuid ||
+            assets.GetLoadState(record.guid) == Asset::AssetLoadState::NotLoaded) {
             continue;
         }
         if (wanted.contains(identity(record.path))) {
-            assets.ReloadUVE(record.guid, database);
+            assets.Reload(record.guid, database);
         }
     }
 }
 
-void EditorUVE::FinishRetargetJobUVE(RetargetWindowStateUVE& window, Retarget::RetargetFilesResultUVE result) {
+void Editor::FinishRetargetJob(RetargetWindowState& window, Retarget::RetargetFilesResult result) {
     window.statusIsError = !result.ok;
     if (!result.ok) {
         window.status = result.error;
@@ -463,23 +463,23 @@ void EditorUVE::FinishRetargetJobUVE(RetargetWindowStateUVE& window, Retarget::R
     std::vector<std::filesystem::path> changedFiles;
     changedFiles.reserve(result.files.size());
     std::size_t changed = 0U;
-    for (const Retarget::RetargetFileReportUVE& file : result.files) {
+    for (const Retarget::RetargetFileReport& file : result.files) {
         if (file.changed) {
             changedFiles.push_back(file.file);
             ++changed;
         }
     }
-    ReloadRetargetedFilesUVE(changedFiles);
+    ReloadRetargetedFiles(changedFiles);
     const std::size_t skeletons =
-        window.jobConformedModel && !window.jobModel.empty() ? RefreshSkeletonsForRetargetedModelUVE(window.jobModel) : 0U;
+        window.jobConformedModel && !window.jobModel.empty() ? RefreshSkeletonsForRetargetedModel(window.jobModel) : 0U;
     if (window.jobConformedModel && !window.jobModel.empty()) {
         window.changedModels.push_back(window.jobModel);
-        MarkRetargetedModelUVE(window.target, true);
+        MarkRetargetedModel(window.target, true);
     }
-    ClearMeshThumbnailCacheUVE();
+    ClearMeshThumbnailCache();
     // The preview's world drew the files as they were (its own renderer caches them): a new one.
-    static_cast<void>(EndRetargetPreviewUVE());
-    static_cast<void>(BeginRetargetPreviewUVE());
+    static_cast<void>(EndRetargetPreview());
+    static_cast<void>(BeginRetargetPreview());
     window.lastBackup = result.backupDir;
     char text[192];
     std::snprintf(text, sizeof(text), "Conformed %zu of %zu files, %zu skeleton%s in the scene updated.", changed, result.files.size(),
@@ -488,23 +488,23 @@ void EditorUVE::FinishRetargetJobUVE(RetargetWindowStateUVE& window, Retarget::R
     window.planStale = true;
 }
 
-void EditorUVE::TickRetargetWindowUVE() {
+void Editor::TickRetargetWindow() {
     if (!m_retargetWindow.has_value()) {
         return;
     }
-    RetargetWindowStateUVE& window = *m_retargetWindow;
+    RetargetWindowState& window = *m_retargetWindow;
     // A finished Generate job hands its result back here, on the editor's thread.
     if (window.job.valid() && window.job.wait_for(std::chrono::seconds{0}) == std::future_status::ready) {
-        FinishRetargetJobUVE(window, window.job.get());
+        FinishRetargetJob(window, window.job.get());
     }
     // A finished background plan scan publishes the new plan and refreshes the preview.
     if (window.planJob.valid() && window.planJob.wait_for(std::chrono::seconds{0}) == std::future_status::ready) {
-        RetargetPlanUVE nextPlan = window.planJob.get();
+        RetargetPlan nextPlan = window.planJob.get();
         if (!window.planCancel || !window.planCancel->load(std::memory_order_relaxed)) {
-            nextPlan.alreadyRetargeted = !window.target.empty() && IsRetargetedModelCurrentUVE(window.target);
+            nextPlan.alreadyRetargeted = !window.target.empty() && IsRetargetedModelCurrent(window.target);
             window.plan = std::move(nextPlan);
             ++window.planSerial;
-            RebuildRetargetPreviewUVE(window.plan, window.planModelFile);
+            RebuildRetargetPreview(window.plan, window.planModelFile);
         }
     }
     // Drain un-imported folder animation sources incrementally within a per-frame budget so
@@ -514,15 +514,15 @@ void EditorUVE::TickRetargetWindowUVE() {
         std::unordered_set<std::string> seen;
         seen.reserve(window.animations.size() + 16U);
         for (const std::filesystem::path& existing : window.animations) {
-            seen.insert(NormalizedAnimationKeyUVE(existing));
+            seen.insert(NormalizedAnimationKey(existing));
         }
         bool addedAny = false;
         while (!window.pendingFolderImports.empty()) {
             const std::filesystem::path absSource = std::move(window.pendingFolderImports.front());
             window.pendingFolderImports.pop_front();
-            const std::vector<std::filesystem::path> imported = ImportModelAnimationsUVE(absSource);
+            const std::vector<std::filesystem::path> imported = ImportModelAnimations(absSource);
             for (const std::filesystem::path& clipPath : imported) {
-                if (seen.insert(NormalizedAnimationKeyUVE(clipPath)).second) {
+                if (seen.insert(NormalizedAnimationKey(clipPath)).second) {
                     window.animations.push_back(clipPath);
                     addedAny = true;
                 }
@@ -530,7 +530,7 @@ void EditorUVE::TickRetargetWindowUVE() {
             ++window.pendingImportDone;
             if (m_prismUiRequested &&
                 std::chrono::duration<double>(std::chrono::steady_clock::now() - began).count() >=
-                    kFolderImportFrameBudgetSecondsUVE) {
+                    kFolderImportFrameBudgetSeconds) {
                 break;
             }
         }
@@ -544,13 +544,13 @@ void EditorUVE::TickRetargetWindowUVE() {
         }
         return;
     }
-    const std::vector<std::filesystem::path> candidates = RetargetCandidatesUVE();
+    const std::vector<std::filesystem::path> candidates = RetargetCandidates();
     if (window.autoSelectDefaultCandidate && window.target.empty() && !candidates.empty() && window.animations.empty()) {
         window.target = candidates.front();
         window.planStale = true;
     }
     // The Rig Brain finished training: plan again with it.
-    if (!window.plan.usedBrain && window.plan.modelReadable && Retarget::IsDefaultRigBrainReadyUVE() &&
+    if (!window.plan.usedBrain && window.plan.modelReadable && Retarget::IsDefaultRigBrainReady() &&
         !window.planJob.valid()) {
         window.planStale = true;
     }
@@ -562,15 +562,15 @@ void EditorUVE::TickRetargetWindowUVE() {
             }
             return;
         }
-        const std::filesystem::path modelFile = ResolveRetargetModelFileUVE(window.target);
+        const std::filesystem::path modelFile = ResolveRetargetModelFile(window.target);
         window.planStale = false;
         window.planModelFile = modelFile;
-        if (!m_prismUiRequested || window.animations.size() <= kAsyncPlanThresholdUVE) {
-            window.plan = PlanRetargetUVE(modelFile, window.animations);
-            window.plan.alreadyRetargeted = !window.target.empty() && IsRetargetedModelCurrentUVE(window.target);
+        if (!m_prismUiRequested || window.animations.size() <= kAsyncPlanThreshold) {
+            window.plan = PlanRetarget(modelFile, window.animations);
+            window.plan.alreadyRetargeted = !window.target.empty() && IsRetargetedModelCurrent(window.target);
             ++window.planSerial;
             // The picture follows the plan: a new character, or files that just changed.
-            RebuildRetargetPreviewUVE(window.plan, modelFile);
+            RebuildRetargetPreview(window.plan, modelFile);
         } else {
             window.planCancel = std::make_shared<std::atomic<bool>>(false);
             window.planProgress->done = 0U;
@@ -583,7 +583,7 @@ void EditorUVE::TickRetargetWindowUVE() {
             window.planJob = std::async(
                 std::launch::async,
                 [modelFile, animCopy = std::move(animCopy), progress = window.planProgress, cancel = window.planCancel]() {
-                    return PlanRetargetUVE(
+                    return PlanRetarget(
                         modelFile, animCopy,
                         [&progress](const std::size_t done, const std::size_t total, const std::string& what) {
                             progress->done = done;
@@ -597,16 +597,16 @@ void EditorUVE::TickRetargetWindowUVE() {
     }
 }
 
-std::vector<std::filesystem::path> EditorUVE::RetargetCandidatesUVE() const {
+std::vector<std::filesystem::path> Editor::RetargetCandidates() const {
     std::vector<std::filesystem::path> candidates;
     for (const auto& [path, info] : m_modelSources) {
         if (info.rigged) {
             candidates.emplace_back(path);
         }
     }
-    const Asset::ProjectFileSnapshotUVE project = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
-    for (const Asset::ProjectFileEntryUVE& entry : project.entries) {
-        if (entry.kind != Asset::ProjectFileEntryKindUVE::Directory && LowerUVE(entry.relativePath.extension().string()) == ".uvmodel") {
+    const Asset::ProjectFileSnapshot project = m_services->GetProjectFileIndex().GetSnapshot();
+    for (const Asset::ProjectFileEntry& entry : project.entries) {
+        if (entry.kind != Asset::ProjectFileEntryKind::Directory && Lower(entry.relativePath.extension().string()) == ".uvmodel") {
             candidates.push_back(entry.relativePath);
         }
     }
@@ -614,37 +614,37 @@ std::vector<std::filesystem::path> EditorUVE::RetargetCandidatesUVE() const {
     return candidates;
 }
 
-bool EditorUVE::StartRetargetUVE() {
+bool Editor::StartRetarget() {
     if (!m_retargetWindow.has_value()) {
         return false;
     }
-    RetargetWindowStateUVE& window = *m_retargetWindow;
-    const RetargetPlanUVE& plan = window.plan;
+    RetargetWindowState& window = *m_retargetWindow;
+    const RetargetPlan& plan = window.plan;
     if (window.job.valid() || window.planJob.valid() || !window.pendingFolderImports.empty() ||
-        !plan.CanGenerateUVE() || !IsAuthoringCommandAllowedUVE()) {
+        !plan.CanGenerate() || !IsAuthoringCommandAllowed()) {
         return false;
     }
-    const Asset::ProjectFileSnapshotUVE project = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
-    Retarget::RetargetFilesRequestUVE request;
+    const Asset::ProjectFileSnapshot project = m_services->GetProjectFileIndex().GetSnapshot();
+    Retarget::RetargetFilesRequest request;
     // A character done already is left alone: only the animations (including embedded takes!) are conformed.
-    request.model = plan.CharacterDoneUVE() ? std::filesystem::path{} : plan.model;
+    request.model = plan.CharacterDone() ? std::filesystem::path{} : plan.model;
     std::unordered_set<std::string> seen;
     seen.reserve(plan.animations.size() + window.animations.size() + 8U);
     const auto pushAnim = [&](const std::filesystem::path& path) {
-        if (!path.empty() && seen.insert(NormalizedAnimationKeyUVE(path)).second) {
+        if (!path.empty() && seen.insert(NormalizedAnimationKey(path)).second) {
             request.animations.push_back(path);
         }
     };
     // Plan animations already include both explicit window.animations and all embedded takes of plan.model.
-    for (const RetargetAnimationRowUVE& row : plan.animations) {
+    for (const RetargetAnimationRow& row : plan.animations) {
         pushAnim(row.file);
     }
     for (const std::filesystem::path& path : window.animations) {
         pushAnim(path);
     }
     if (!plan.model.empty()) {
-        for (const Asset::ModelAnimationEntryUVE& take : Asset::ListModelAnimationsUVE(plan.model)) {
-            pushAnim(Asset::MakeEmbeddedClipPathUVE(plan.model, take.name));
+        for (const Asset::ModelAnimationEntry& take : Asset::ListModelAnimations(plan.model)) {
+            pushAnim(Asset::MakeEmbeddedClipPath(plan.model, take.name));
         }
     }
     request.backupRoot = project.contentRoot.parent_path() / ".retarget-backup";
@@ -654,7 +654,7 @@ bool EditorUVE::StartRetargetUVE() {
     window.progress->done = 0U;
     window.progress->total = (request.model.empty() ? 0U : 1U) + request.animations.size();
     window.job = std::async(std::launch::async, [request, progress = window.progress]() {
-        return Retarget::RetargetFilesUVE(request, Retarget::GetHumanoidReferenceUVE(),
+        return Retarget::RetargetFiles(request, Retarget::GetHumanoidReference(),
                                           [&progress](const std::size_t done, const std::size_t total, const std::string& what) {
                                               progress->done = done;
                                               progress->total = total;
@@ -665,21 +665,21 @@ bool EditorUVE::StartRetargetUVE() {
     return true;
 }
 
-bool EditorUVE::UndoLastRetargetUVE() {
+bool Editor::UndoLastRetarget() {
     if (!m_retargetWindow.has_value()) {
         return false;
     }
-    RetargetWindowStateUVE& window = *m_retargetWindow;
+    RetargetWindowState& window = *m_retargetWindow;
     if (window.lastBackup.empty() || window.job.valid() || window.planJob.valid()) {
         return false;
     }
     std::string error;
-    if (!Retarget::RestoreRetargetBackupUVE(window.lastBackup, &error)) {
+    if (!Retarget::RestoreRetargetBackup(window.lastBackup, &error)) {
         window.status = error;
         window.statusIsError = true;
         return false;
     }
-    const std::filesystem::path modelFile = ResolveRetargetModelFileUVE(window.target);
+    const std::filesystem::path modelFile = ResolveRetargetModelFile(window.target);
     std::vector<std::filesystem::path> files;
     if (!modelFile.empty()) {
         // The character and everything published beside it (parts, skeleton, embedded takes) came back.
@@ -688,28 +688,28 @@ bool EditorUVE::UndoLastRetargetUVE() {
         const std::string prefix = modelFile.stem().string() + ".";
         for (const std::filesystem::directory_entry& entry : std::filesystem::directory_iterator(modelFile.parent_path(), dirErr)) {
             const std::string name = entry.path().filename().string();
-            const std::string extension = LowerUVE(entry.path().extension().string());
+            const std::string extension = Lower(entry.path().extension().string());
             if (entry.path() != modelFile && name.starts_with(prefix) && (extension == ".uvmodel" || extension == ".uvskel")) {
                 files.push_back(entry.path());
             }
         }
-        for (const Asset::ModelAnimationEntryUVE& take : Asset::ListModelAnimationsUVE(modelFile)) {
-            files.push_back(Asset::MakeEmbeddedClipPathUVE(modelFile, take.name));
+        for (const Asset::ModelAnimationEntry& take : Asset::ListModelAnimations(modelFile)) {
+            files.push_back(Asset::MakeEmbeddedClipPath(modelFile, take.name));
         }
     }
     files.insert(files.end(), window.animations.begin(), window.animations.end());
-    for (const RetargetAnimationRowUVE& row : window.plan.animations) {
+    for (const RetargetAnimationRow& row : window.plan.animations) {
         files.push_back(row.file);
     }
-    ReloadRetargetedFilesUVE(files);
+    ReloadRetargetedFiles(files);
     const std::size_t skeletons =
-        window.jobConformedModel && !modelFile.empty() ? RefreshSkeletonsForRetargetedModelUVE(modelFile) : 0U;
+        window.jobConformedModel && !modelFile.empty() ? RefreshSkeletonsForRetargetedModel(modelFile) : 0U;
     if (window.jobConformedModel && !window.target.empty()) {
-        MarkRetargetedModelUVE(window.target, false);
+        MarkRetargetedModel(window.target, false);
     }
-    ClearMeshThumbnailCacheUVE();
-    static_cast<void>(EndRetargetPreviewUVE());
-    static_cast<void>(BeginRetargetPreviewUVE());
+    ClearMeshThumbnailCache();
+    static_cast<void>(EndRetargetPreview());
+    static_cast<void>(BeginRetargetPreview());
     window.status = "Put the originals back (" + std::to_string(skeletons) + " skeleton" + (skeletons == 1U ? "" : "s") + " updated).";
     window.statusIsError = false;
     window.lastBackup.clear();

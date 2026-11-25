@@ -8,32 +8,32 @@
 
 namespace UVE::Scene {
 
-/// True when `entity` is alive and carries no `DisabledComponentUVE`. Debug builds assert that
-/// the entity is alive (matching `HasComponentUVE`'s contract); release builds return false for
+/// True when `entity` is alive and carries no `DisabledComponent`. Debug builds assert that
+/// the entity is alive (matching `HasComponent`'s contract); release builds return false for
 /// a stale or invalid handle rather than reporting a dead entity as enabled.
-[[nodiscard]] inline bool IsEntityEnabledUVE(const IEntityManagerUVE& manager, const EntityUVE entity) {
-    if (!manager.IsAliveUVE(entity)) {
-        UVE_ASSERT(manager.IsAliveUVE(entity));
+[[nodiscard]] inline bool IsEntityEnabled(const IEntityManager& manager, const Entity entity) {
+    if (!manager.IsAlive(entity)) {
+        UVE_ASSERT(manager.IsAlive(entity));
         return false;
     }
-    return !manager.HasComponentUVE<DisabledComponentUVE>(entity);
+    return !manager.HasComponent<DisabledComponent>(entity);
 }
 
-/// Enables or disables `entity` by removing or attaching `DisabledComponentUVE`. Idempotent:
+/// Enables or disables `entity` by removing or attaching `DisabledComponent`. Idempotent:
 /// setting the state the entity already has is a no-op, so callers never need to check first.
 /// Debug builds assert that the entity is alive; release builds return without mutation for a
 /// stale or invalid handle. Toggling migrates the entity's archetype, exactly like any other
 /// component add/remove — correct to call at runtime, not something to do per frame.
-inline void SetEntityEnabledUVE(IEntityManagerUVE& manager, const EntityUVE entity, const bool enabled) {
-    UVE_ASSERT(manager.IsAliveUVE(entity));
-    if (!manager.IsAliveUVE(entity)) {
+inline void SetEntityEnabled(IEntityManager& manager, const Entity entity, const bool enabled) {
+    UVE_ASSERT(manager.IsAlive(entity));
+    if (!manager.IsAlive(entity)) {
         return;
     }
-    const bool disabled = manager.HasComponentUVE<DisabledComponentUVE>(entity);
+    const bool disabled = manager.HasComponent<DisabledComponent>(entity);
     if (enabled && disabled) {
-        manager.RemoveComponentUVE<DisabledComponentUVE>(entity);
+        manager.RemoveComponent<DisabledComponent>(entity);
     } else if (!enabled && !disabled) {
-        manager.AddComponentUVE<DisabledComponentUVE>(entity);
+        manager.AddComponent<DisabledComponent>(entity);
     }
 }
 

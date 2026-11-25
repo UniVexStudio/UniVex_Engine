@@ -13,14 +13,14 @@
 
 namespace UVE::Scene {
 
-class IEntityManagerUVE;
+class IEntityManager;
 
-inline constexpr std::size_t kMaximumLodLevelsUVE = 8U;
+inline constexpr std::size_t kMaximumLodLevels = 8U;
 
 /// The largest hysteresis band an author can ask for, as a fraction of a threshold. At 0.5 a
 /// level's entry point is half again its exit point, which is already a very wide band; anything
 /// more would start to overlap the neighbouring level's band.
-inline constexpr float kMaximumLodHysteresisUVE = 0.5F;
+inline constexpr float kMaximumLodHysteresis = 0.5F;
 
 /// Distance-based detail selection for one entity.
 ///
@@ -30,26 +30,26 @@ inline constexpr float kMaximumLodHysteresisUVE = 0.5F;
 /// on alternate frames - the band is what makes the switch a decision instead of a coin flip.
 ///
 /// WHICH MESH. `lodMeshGuids[level]` names the mesh to draw at that level; an empty slot falls back
-/// to the entity's own MeshComponentUVE mesh, which is why an author who assigns only levels 1..N
+/// to the entity's own MeshComponent mesh, which is why an author who assigns only levels 1..N
 /// still gets the full-detail mesh at level 0. The renderer reads the resolved GUID through
-/// ResolveLodGroup3DMeshGuidUVE(): one call, so the "which mesh" rule has one home and cannot drift
+/// ResolveLodGroup3DMeshGuid(): one call, so the "which mesh" rule has one home and cannot drift
 /// between the extraction walk and anything else that draws.
 ///
 /// The resolved fields are derived, not authored: writing `currentLevel`, `culledByDistance` or the
 /// mesh choice by hand has no effect, because the next extraction overwrites them.
-struct LodGroup3DComponentUVE final {
+struct LodGroup3DComponent final {
     /// Distance at which each level takes over, nearest first. An entity beyond
     /// `distanceThresholds[levelCount - 1]` is not drawn at all.
     ///
     /// The array is fixed-size rather than a vector so the component stays trivially copyable and
     /// cache-friendly - it is read once per entity per frame in the extraction walk, which is the
     /// hottest loop in the renderer.
-    std::array<float, kMaximumLodLevelsUVE> distanceThresholds{10.0F, 25.0F, 60.0F, 120.0F, 240.0F, 480.0F, 960.0F, 1920.0F};
+    std::array<float, kMaximumLodLevels> distanceThresholds{10.0F, 25.0F, 60.0F, 120.0F, 240.0F, 480.0F, 960.0F, 1920.0F};
 
     /// The mesh drawn at each level, index for index with `distanceThresholds`. An invalid GUID
-    /// means "draw the entity's MeshComponentUVE mesh at this level", so a group only has to name
+    /// means "draw the entity's MeshComponent mesh at this level", so a group only has to name
     /// the levels it actually replaces detail on.
-    std::array<Asset::AssetGuidUVE, kMaximumLodLevelsUVE> lodMeshGuids{};
+    std::array<Asset::AssetGuid, kMaximumLodLevels> lodMeshGuids{};
 
     /// How many entries of `distanceThresholds` and `lodMeshGuids` are in use. Levels beyond this
     /// are ignored, so an author can shorten a chain without having to rewrite the distances.
@@ -90,22 +90,22 @@ struct LodGroup3DComponentUVE final {
 /// stateless rule an object resolved by before the field existed - the level a distance maps to,
 /// with no memory - so opting in is the only way to get a band, and nothing changes for anyone who
 /// does not.
-void ResolveLodGroup3DLevelUVE(LodGroup3DComponentUVE& value, float distanceToCamera) noexcept;
+void ResolveLodGroup3DLevel(LodGroup3DComponent& value, float distanceToCamera) noexcept;
 
 /// The mesh to draw for the level `value` currently resolves to. `baseMeshGuid` is the entity's
-/// MeshComponentUVE mesh, used for every level the group does not override - including every level
+/// MeshComponent mesh, used for every level the group does not override - including every level
 /// when it overrides none - so the fallback is one rule rather than a special first level.
-[[nodiscard]] Asset::AssetGuidUVE ResolveLodGroup3DMeshGuidUVE(
-    const LodGroup3DComponentUVE& value, const Asset::AssetGuidUVE& baseMeshGuid) noexcept;
+[[nodiscard]] Asset::AssetGuid ResolveLodGroup3DMeshGuid(
+    const LodGroup3DComponent& value, const Asset::AssetGuid& baseMeshGuid) noexcept;
 
-[[nodiscard]] bool IsLodGroup3DObjectComponentValidUVE(const LodGroup3DComponentUVE& value) noexcept;
+[[nodiscard]] bool IsLodGroup3DObjectComponentValid(const LodGroup3DComponent& value) noexcept;
 
-struct LodGroup3DObjectDefinitionUVE final {
+struct LodGroup3DObjectDefinition final {
     static constexpr std::string_view defaultName = "LODGroup3D";
-    LodGroup3DComponentUVE lod{};
+    LodGroup3DComponent lod{};
 };
 
-void ApplyLodGroup3DObjectDefinitionUVE(IEntityManagerUVE& entityManager, EntityUVE entity,
-                                        const LodGroup3DObjectDefinitionUVE& value);
+void ApplyLodGroup3DObjectDefinition(IEntityManager& entityManager, Entity entity,
+                                        const LodGroup3DObjectDefinition& value);
 
 } // namespace UVE::Scene

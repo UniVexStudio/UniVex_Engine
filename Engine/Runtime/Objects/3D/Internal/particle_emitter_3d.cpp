@@ -10,74 +10,74 @@
 
 namespace UVE::Scene {
 
-bool IsParticleEmitter3DObjectDefinitionValidUVE(const ParticleEmitter3DObjectDefinitionUVE& value) noexcept {
-    return IsParticleEmitterComponentValidUVE(value.emitter);
+bool IsParticleEmitter3DObjectDefinitionValid(const ParticleEmitter3DObjectDefinition& value) noexcept {
+    return IsParticleEmitterComponentValid(value.emitter);
 }
 
-void ApplyParticleEmitter3DObjectDefinitionUVE(IEntityManagerUVE& entityManager, const EntityUVE entity,
-                                               const ParticleEmitter3DObjectDefinitionUVE& value) {
-    ApplySurfaceInstance3DBaseUVE(entityManager, entity, ParticleEmitter3DObjectDefinitionUVE::defaultName);
-    entityManager.AddComponentUVE<ParticleEmitterComponentUVE>(entity, value.emitter);
+void ApplyParticleEmitter3DObjectDefinition(IEntityManager& entityManager, const Entity entity,
+                                               const ParticleEmitter3DObjectDefinition& value) {
+    ApplySurfaceInstance3DBase(entityManager, entity, ParticleEmitter3DObjectDefinition::defaultName);
+    entityManager.AddComponent<ParticleEmitterComponent>(entity, value.emitter);
 }
 
-void ApplyGPUParticles3DObjectDefinitionUVE(IEntityManagerUVE& entityManager,
-                                            const EntityUVE entity,
-                                            const GPUParticles3DObjectDefinitionUVE& value) {
-    ApplySurfaceInstance3DBaseUVE(entityManager, entity,
-                                  GPUParticles3DObjectDefinitionUVE::defaultName);
-    entityManager.AddComponentUVE<ParticleEmitterComponentUVE>(entity, value.emitter);
-    entityManager.AddComponentUVE<ParticleBackendTagComponentUVE>(
-        entity, ParticleBackendTagComponentUVE{ParticleSimulationBackend3DUVE::GPU});
+void ApplyGPUParticles3DObjectDefinition(IEntityManager& entityManager,
+                                            const Entity entity,
+                                            const GPUParticles3DObjectDefinition& value) {
+    ApplySurfaceInstance3DBase(entityManager, entity,
+                                  GPUParticles3DObjectDefinition::defaultName);
+    entityManager.AddComponent<ParticleEmitterComponent>(entity, value.emitter);
+    entityManager.AddComponent<ParticleBackendTagComponent>(
+        entity, ParticleBackendTagComponent{ParticleSimulationBackend3D::GPU});
 }
 
-void ApplyCPUParticles3DObjectDefinitionUVE(IEntityManagerUVE& entityManager,
-                                            const EntityUVE entity,
-                                            const CPUParticles3DObjectDefinitionUVE& value) {
-    ApplySurfaceInstance3DBaseUVE(entityManager, entity,
-                                  CPUParticles3DObjectDefinitionUVE::defaultName);
-    entityManager.AddComponentUVE<ParticleEmitterComponentUVE>(entity, value.emitter);
-    entityManager.AddComponentUVE<ParticleBackendTagComponentUVE>(
-        entity, ParticleBackendTagComponentUVE{ParticleSimulationBackend3DUVE::CPU});
+void ApplyCPUParticles3DObjectDefinition(IEntityManager& entityManager,
+                                            const Entity entity,
+                                            const CPUParticles3DObjectDefinition& value) {
+    ApplySurfaceInstance3DBase(entityManager, entity,
+                                  CPUParticles3DObjectDefinition::defaultName);
+    entityManager.AddComponent<ParticleEmitterComponent>(entity, value.emitter);
+    entityManager.AddComponent<ParticleBackendTagComponent>(
+        entity, ParticleBackendTagComponent{ParticleSimulationBackend3D::CPU});
 }
 
-bool ParticleEmitter3DUVE::IsEmittingUVE(const ParticleEmitterComponentUVE& emitter) noexcept {
-    return IsParticleEmitterComponentValidUVE(emitter) && emitter.emitting &&
+bool ParticleEmitter3D::IsEmitting(const ParticleEmitterComponent& emitter) noexcept {
+    return IsParticleEmitterComponentValid(emitter) && emitter.emitting &&
            emitter.emissionRate > 0.0F && emitter.maxParticles > 0U;
 }
 
-float ParticleEmitter3DUVE::SpawnIntervalSecondsUVE(
-    const ParticleEmitterComponentUVE& emitter) noexcept {
-    if (!IsEmittingUVE(emitter)) {
+float ParticleEmitter3D::SpawnIntervalSeconds(
+    const ParticleEmitterComponent& emitter) noexcept {
+    if (!IsEmitting(emitter)) {
         return 0.0F;
     }
     return 1.0F / emitter.emissionRate;
 }
 
-std::uint32_t ParticleEmitter3DUVE::AccumulateSpawnCountUVE(
-    const ParticleEmitterComponentUVE& emitter, const float deltaSeconds,
+std::uint32_t ParticleEmitter3D::AccumulateSpawnCount(
+    const ParticleEmitterComponent& emitter, const float deltaSeconds,
     float& inOutRemainderParticles, const std::uint32_t currentLiveParticles) noexcept {
-    if (!IsEmittingUVE(emitter)) {
+    if (!IsEmitting(emitter)) {
         return 0U;
     }
-    return ConsumeParticleEmitterAutoEmitCountUVE(
+    return ConsumeParticleEmitterAutoEmitCount(
         inOutRemainderParticles, emitter, deltaSeconds, currentLiveParticles);
 }
 
-Math::Vector3UVE ParticleEmitter3DUVE::StepVelocityUVE(
-    const Math::Vector3UVE& velocity, const Math::Vector3UVE& gravity,
+Math::Vector3 ParticleEmitter3D::StepVelocity(
+    const Math::Vector3& velocity, const Math::Vector3& gravity,
     const float deltaSeconds) noexcept {
-    if (!Math::IsFiniteUVE(velocity) || !Math::IsFiniteUVE(gravity) ||
+    if (!Math::IsFinite(velocity) || !Math::IsFinite(gravity) ||
         !std::isfinite(deltaSeconds) || deltaSeconds <= 0.0F) {
         return velocity;
     }
-    return Math::Vector3UVE{velocity.x + gravity.x * deltaSeconds,
+    return Math::Vector3{velocity.x + gravity.x * deltaSeconds,
                             velocity.y + gravity.y * deltaSeconds,
                             velocity.z + gravity.z * deltaSeconds};
 }
 
-float ParticleEmitter3DUVE::NormalizedAgeUVE(
-    const ParticleEmitterComponentUVE& emitter, const float elapsedSeconds) noexcept {
-    if (!IsParticleEmitterComponentValidUVE(emitter) || !std::isfinite(elapsedSeconds) ||
+float ParticleEmitter3D::NormalizedAge(
+    const ParticleEmitterComponent& emitter, const float elapsedSeconds) noexcept {
+    if (!IsParticleEmitterComponentValid(emitter) || !std::isfinite(elapsedSeconds) ||
         elapsedSeconds <= 0.0F) {
         return 0.0F;
     }

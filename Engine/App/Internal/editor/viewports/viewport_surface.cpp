@@ -21,11 +21,11 @@
 namespace UVE::App::Viewports {
 namespace {
 
-// Coverage comes from alpha, not depth: Renderer3DUVE's tone-mapping pass reports which pixels it
+// Coverage comes from alpha, not depth: Renderer3D's tone-mapping pass reports which pixels it
 // actually drew by writing alpha 1 there and 0 elsewhere (see fullscreen_quad.glsl), because the
-// depth attachment handed to RenderFrameToTargetUVE is cleared by that pass and never written,
+// depth attachment handed to RenderFrameToTarget is cleared by that pass and never written,
 // and the scene's own clear colour is indistinguishable from dark geometry.
-constexpr std::string_view kMeshBlitFragmentShaderUVE = R"(#version 330 core
+constexpr std::string_view kMeshBlitFragmentShader = R"(#version 330 core
 uniform sampler2D uMeshColor;
 uniform sampler2D uSceneDepth;
 uniform int uHasDepth;
@@ -68,7 +68,7 @@ void main() {
 // Runs ONCE after sky, PBR meshes, infinite grid, and GPU selection outline are composited so
 // silhouettes, fine mesh edges, and grid lines are smoothed without double-blurring, then crisped
 // with zero extra texture taps via adaptive anti-ringing CAS.
-constexpr std::string_view kPostAaCasFragmentShaderUVE = R"(#version 330 core
+constexpr std::string_view kPostAaCasFragmentShader = R"(#version 330 core
 uniform sampler2D uSceneColor;
 uniform vec2 uInvSize;
 uniform int uFxaaQuality;
@@ -225,40 +225,40 @@ void main() {
 
 } // namespace
 
-ViewportSurfaceUVE::ViewportSurfaceUVE(Core::EngineServicesUVE& services)
-    : m_services(services), m_entityManager(services.GetEntityManagerUVE()), m_meshLayer(services) {}
+ViewportSurface::ViewportSurface(Core::EngineServices& services)
+    : m_services(services), m_entityManager(services.GetEntityManager()), m_meshLayer(services) {}
 
-ViewportSurfaceUVE::~ViewportSurfaceUVE() {
-    DestroyFramebuffersUVE();
+ViewportSurface::~ViewportSurface() {
+    DestroyFramebuffers();
     if (m_meshBlitVao != 0U) {
         glDeleteVertexArrays(1, &m_meshBlitVao);
         m_meshBlitVao = 0U;
     }
 }
 
-ViewportSurfaceUVE::QualityConfigUVE ViewportSurfaceUVE::ResolveQualityConfigUVE(const int /*qualityPreset*/) {
-    const Platform::RendererProfileUVE effective =
-        m_services.GetRenderer3DUVE().GetRendererProfileResolutionUVE().effective;
+ViewportSurface::QualityConfig ViewportSurface::ResolveQualityConfig(const int /*qualityPreset*/) {
+    const Platform::RendererProfile effective =
+        m_services.GetRenderer3D().GetRendererProfileResolution().effective;
     switch (effective) {
-        case Platform::RendererProfileUVE::Compatibility:
+        case Platform::RendererProfile::Compatibility:
             // Zero MSAA, zero post-AA resolve pass, 512px shadows, 4 lights, RGBA8 color target.
-            return QualityConfigUVE{0.85F, 0, 0, 0.0F, false, 0U, 512U, 2.0F, 0, true, false};
-        case Platform::RendererProfileUVE::Mobile:
+            return QualityConfig{0.85F, 0, 0, 0.0F, false, 0U, 512U, 2.0F, 0, true, false};
+        case Platform::RendererProfile::Mobile:
             // Balanced mobile PBR: 0x MSAA, lightweight FXAA + subtle CAS, 1024px shadows, 8 lights.
-            return QualityConfigUVE{0.95F, 0, 1, 0.22F, false, 0U, 1024U, 4.0F, 1, true, false};
-        case Platform::RendererProfileUVE::ForwardPlus:
+            return QualityConfig{0.95F, 0, 1, 0.22F, false, 0U, 1024U, 4.0F, 1, true, false};
+        case Platform::RendererProfile::ForwardPlus:
         default:
             // Full desktop PBR: native 1.0x, 2x MSAA, FXAA high + CAS, SSAO + Bloom, 2048px shadows.
-            return QualityConfigUVE{1.00F, 2, 2, 0.20F, true, 1U, 2048U, 8.0F, 2, false, true};
+            return QualityConfig{1.00F, 2, 2, 0.20F, true, 1U, 2048U, 8.0F, 2, false, true};
     }
 }
 
-void ViewportSurfaceUVE::ApplyQualityPresetUVE(const int qualityPreset,
-                                               const Editor::EditorUVE::ViewportOverlayStateUVE& overlayState) {
-    Render::IRenderer3DUVE& renderer = m_services.GetRenderer3DUVE();
-    const Platform::RendererProfileUVE effective = renderer.GetRendererProfileResolutionUVE().effective;
+void ViewportSurface::ApplyQualityPreset(const int qualityPreset,
+                                               const Editor::Editor::ViewportOverlayState& overlayState) {
+    Render::IRenderer3D& renderer = m_services.GetRenderer3D();
+    const Platform::RendererProfile effective = renderer.GetRendererProfileResolution().effective;
     const int effectiveIndex = static_cast<int>(effective);
-    const QualityConfigUVE cfg = ResolveQualityConfigUVE(qualityPreset);
+    const QualityConfig cfg = ResolveQualityConfig(qualityPreset);
     overlayState.resolvedRenderScale = cfg.renderScale;
 
     if (m_appliedEffectiveProfile == effectiveIndex) {
@@ -270,30 +270,30 @@ void ViewportSurfaceUVE::ApplyQualityPresetUVE(const int qualityPreset,
     m_casSharpen = cfg.casSharpen;
     m_gpuOutlineOnly = cfg.gpuOutlineOnly;
 
-    Render::PostProcessSettingsUVE post{};
-    post.bloomEnabledUVE = cfg.bloomEnabled;
-    post.ssaoEnabledUVE = cfg.ssaoEnabled;
-    post.ssaoQualityUVE = cfg.ssaoQuality;
-    post.ssaoBlurEnabledUVE = cfg.ssaoEnabled;
-    post.clusteredLightingEnabledUVE =
-        effective == Platform::RendererProfileUVE::ForwardPlus &&
-        m_services.GetRenderDeviceUVE().GetCapabilitiesUVE().storageBuffers != Render::RenderFeatureSupportUVE::Unsupported;
-    // Post-composite FXAA + CAS runs once in EndPassAndResolveUVE (or is skipped in Compatibility).
-    post.fastApproximateAAEnabledUVE = false;
-    post.sharpeningAmountUVE = 0.0F;
-    post.acesToneMappingEnabledUVE = true;
-    post.toneMappingMethodUVE = 2U;
-    post.ditheringEnabledUVE = effective != Platform::RendererProfileUVE::Compatibility;
-    renderer.SetPostProcessSettingsUVE(post);
-    renderer.SetShadowAtlasTileResolutionUVE(cfg.shadowAtlasResolution);
-    renderer.SetMaterialSamplerSettingsUVE(true, cfg.maxAnisotropy);
+    Render::PostProcessSettings post{};
+    post.bloomEnabled = cfg.bloomEnabled;
+    post.ssaoEnabled = cfg.ssaoEnabled;
+    post.ssaoQuality = cfg.ssaoQuality;
+    post.ssaoBlurEnabled = cfg.ssaoEnabled;
+    post.clusteredLightingEnabled =
+        effective == Platform::RendererProfile::ForwardPlus &&
+        m_services.GetRenderDevice().GetCapabilities().storageBuffers != Render::RenderFeatureSupport::Unsupported;
+    // Post-composite FXAA + CAS runs once in EndPassAndResolve (or is skipped in Compatibility).
+    post.fastApproximateAAEnabled = false;
+    post.sharpeningAmount = 0.0F;
+    post.acesToneMappingEnabled = true;
+    post.toneMappingMethod = 2U;
+    post.ditheringEnabled = effective != Platform::RendererProfile::Compatibility;
+    renderer.SetPostProcessSettings(post);
+    renderer.SetShadowAtlasTileResolution(cfg.shadowAtlasResolution);
+    renderer.SetMaterialSamplerSettings(true, cfg.maxAnisotropy);
 }
 
-bool ViewportSurfaceUVE::PrepareFrameUVE(const int width, const int height) {
-    return EnsureGlewInitializedUVE() && EnsureRenderPassUVE() && EnsureFramebuffersUVE(width, height);
+bool ViewportSurface::PrepareFrame(const int width, const int height) {
+    return EnsureGlewInitialized() && EnsureRenderPass() && EnsureFramebuffers(width, height);
 }
 
-const univex::render::StudioBackdropRenderer* ViewportSurfaceUVE::StudioBackdropUVE() {
+const univex::render::StudioBackdropRenderer* ViewportSurface::StudioBackdrop() {
     if (!m_studioTried) {
         m_studioTried = true;
         std::string error;
@@ -305,25 +305,25 @@ const univex::render::StudioBackdropRenderer* ViewportSurfaceUVE::StudioBackdrop
     return m_studio.has_value() ? &*m_studio : nullptr;
 }
 
-GLuint ViewportSurfaceUVE::FullscreenVaoUVE() {
-    if (!EnsureMeshBlitResourcesUVE()) {
+GLuint ViewportSurface::FullscreenVao() {
+    if (!EnsureMeshBlitResources()) {
         return 0U;
     }
     return m_meshBlitVao;
 }
 
-bool ViewportSurfaceUVE::HasActiveWorldEnvironmentUVE() const {
+bool ViewportSurface::HasActiveWorldEnvironment() const {
     bool hasEnvironment = false;
-    m_entityManager.ForEachUVE<Scene::WorldEnvironment3DComponentUVE>(
-        [&hasEnvironment](Scene::EntityUVE, const Scene::WorldEnvironment3DComponentUVE& value) {
-            hasEnvironment |= Scene::IsWorldEnvironment3DObjectComponentValidUVE(value);
+    m_entityManager.ForEach<Scene::WorldEnvironment3DComponent>(
+        [&hasEnvironment](Scene::Entity, const Scene::WorldEnvironment3DComponent& value) {
+            hasEnvironment |= Scene::IsWorldEnvironment3DObjectComponentValid(value);
         });
-    m_entityManager.ForEachUVE<Scene::Sky3DComponentUVE>(
-        [&hasEnvironment](Scene::EntityUVE, const Scene::Sky3DComponentUVE& sky) {
-            if (!sky.enabled || !Scene::IsSky3DObjectComponentValidUVE(sky)) {
+    m_entityManager.ForEach<Scene::Sky3DComponent>(
+        [&hasEnvironment](Scene::Entity, const Scene::Sky3DComponent& sky) {
+            if (!sky.enabled || !Scene::IsSky3DObjectComponentValid(sky)) {
                 return;
             }
-            if (sky.source == Scene::SkySourceUVE::Panorama && sky.panoramaPath.empty()) {
+            if (sky.source == Scene::SkySource::Panorama && sky.panoramaPath.empty()) {
                 return;
             }
             hasEnvironment = true;
@@ -331,102 +331,102 @@ bool ViewportSurfaceUVE::HasActiveWorldEnvironmentUVE() const {
     return hasEnvironment;
 }
 
-bool ViewportSurfaceUVE::HasAuthoredDirectionalLightUVE() const {
-    return univex::integration::HasAuthoredDirectionalLightNodeUVE(m_entityManager);
+bool ViewportSurface::HasAuthoredDirectionalLight() const {
+    return univex::integration::HasAuthoredDirectionalLightNode(m_entityManager);
 }
 
-void ViewportSurfaceUVE::SetShadingModeUVE(const std::int32_t mode) {
-    m_services.GetRenderer3DUVE().SetShadingModeUVE(mode);
+void ViewportSurface::SetShadingMode(const std::int32_t mode) {
+    m_services.GetRenderer3D().SetShadingMode(mode);
 }
 
-void ViewportSurfaceUVE::ApplyPreviewLightingUVE(const Editor::EditorUVE::ViewportOverlayStateUVE& overlayState,
+void ViewportSurface::ApplyPreviewLighting(const Editor::Editor::ViewportOverlayState& overlayState,
                                                  const bool previewAllowed) {
-    const bool hasAuthoredSun = HasAuthoredDirectionalLightUVE();
-    const bool hasAuthoredEnv = HasActiveWorldEnvironmentUVE();
+    const bool hasAuthoredSun = HasAuthoredDirectionalLight();
+    const bool hasAuthoredEnv = HasActiveWorldEnvironment();
 
-    Scene::PreviewLightingSettingsUVE previewSettings{};
+    Scene::PreviewLightingSettings previewSettings{};
     previewSettings.sunEnabled = overlayState.previewSun && previewAllowed;
     previewSettings.environmentEnabled = overlayState.previewEnvironment && previewAllowed;
     previewSettings.sunAzimuthDegrees = overlayState.previewSunAzimuth;
     previewSettings.sunAltitudeDegrees = overlayState.previewSunAltitude;
     previewSettings.sunEnergy = overlayState.previewSunEnergy;
-    previewSettings.sunColor = Math::Vector3UVE{overlayState.previewSunColor[0],
+    previewSettings.sunColor = Math::Vector3{overlayState.previewSunColor[0],
                                                 overlayState.previewSunColor[1],
                                                 overlayState.previewSunColor[2]};
-    previewSettings.skyColor = Math::Vector3UVE{overlayState.previewSkyColor[0],
+    previewSettings.skyColor = Math::Vector3{overlayState.previewSkyColor[0],
                                                 overlayState.previewSkyColor[1],
                                                 overlayState.previewSkyColor[2]};
-    previewSettings.horizonColor = Math::Vector3UVE{overlayState.previewHorizonColor[0],
+    previewSettings.horizonColor = Math::Vector3{overlayState.previewHorizonColor[0],
                                                     overlayState.previewHorizonColor[1],
                                                     overlayState.previewHorizonColor[2]};
-    previewSettings.groundColor = Math::Vector3UVE{overlayState.previewGroundColor[0],
+    previewSettings.groundColor = Math::Vector3{overlayState.previewGroundColor[0],
                                                    overlayState.previewGroundColor[1],
                                                    overlayState.previewGroundColor[2]};
     previewSettings.ambientEnergy = overlayState.previewAmbientEnergy;
 
-    const Scene::PreviewLightingFrameUVE previewFrame =
-        Scene::ResolvePreviewLightingUVE(hasAuthoredSun, hasAuthoredEnv, previewSettings);
-    m_meshLayer.SetPreviewLightingUVE(previewFrame);
-    m_services.GetRenderer3DUVE().SetPreviewEnvironmentUVE(
+    const Scene::PreviewLightingFrame previewFrame =
+        Scene::ResolvePreviewLighting(hasAuthoredSun, hasAuthoredEnv, previewSettings);
+    m_meshLayer.SetPreviewLighting(previewFrame);
+    m_services.GetRenderer3D().SetPreviewEnvironment(
         previewFrame.environmentActive
-            ? std::optional<Scene::WorldEnvironmentFrameUVE>(previewFrame.environment)
+            ? std::optional<Scene::WorldEnvironmentFrame>(previewFrame.environment)
             : std::nullopt);
 }
 
-void ViewportSurfaceUVE::ApplyAxisPaletteUVE(Editor::EditorUVE& editor,
-                                             const Editor::EditorUVE::ViewportOverlayStateUVE& overlayState) {
+void ViewportSurface::ApplyAxisPalette(Editor::Editor& editor,
+                                             const Editor::Editor::ViewportOverlayState& overlayState) {
     if (!m_renderPass.has_value()) {
         return;
     }
     if (overlayState.axisColorsValid) {
-        static_cast<void>(m_renderPass->SetAxisPaletteUVE(univex::viewport::AxisPaletteUVE{
-            univex::viewport::AxisRgbUVE{overlayState.axisColorX.r, overlayState.axisColorX.g,
+        static_cast<void>(m_renderPass->SetAxisPalette(univex::viewport::AxisPalette{
+            univex::viewport::AxisRgb{overlayState.axisColorX.r, overlayState.axisColorX.g,
                                          overlayState.axisColorX.b},
-            univex::viewport::AxisRgbUVE{overlayState.axisColorY.r, overlayState.axisColorY.g,
+            univex::viewport::AxisRgb{overlayState.axisColorY.r, overlayState.axisColorY.g,
                                          overlayState.axisColorY.b},
-            univex::viewport::AxisRgbUVE{overlayState.axisColorZ.r, overlayState.axisColorZ.g,
+            univex::viewport::AxisRgb{overlayState.axisColorZ.r, overlayState.axisColorZ.g,
                                          overlayState.axisColorZ.b}}));
     } else {
-        SeedEditorAxisColorsFromDefaultsUVE(editor);
+        SeedEditorAxisColorsFromDefaults(editor);
     }
 }
 
-void ViewportSurfaceUVE::ApplyGridAppearanceUVE(const Editor::EditorUVE& editor,
-                                                const Editor::EditorUVE::ViewportOverlayStateUVE& overlayState,
+void ViewportSurface::ApplyGridAppearance(const Editor::Editor& editor,
+                                                const Editor::Editor::ViewportOverlayState& overlayState,
                                                 const bool visible,
                                                 const univex::render::GridPlane plane) {
     if (!m_renderPass.has_value()) {
         return;
     }
     m_renderPass->Settings().viewGrid = visible;
-    m_renderPass->SetGridOpacityUVE(overlayState.gridOpacity);
-    m_renderPass->SetGridCellSizeUVE(overlayState.gridCellSize);
-    const auto& prefs = editor.GetExtendedPreferencesUVE();
+    m_renderPass->SetGridOpacity(overlayState.gridOpacity);
+    m_renderPass->SetGridCellSize(overlayState.gridCellSize);
+    const auto& prefs = editor.GetExtendedPreferences();
     if (prefs.gridFadeDistance > 0.0) {
         auto& gridSettings = m_renderPass->Grid().Settings();
         const float minEnd = gridSettings.fadeStartDistanceScale + 1.0F;
         gridSettings.fadeEndDistanceScale =
             std::max(minEnd, static_cast<float>(std::clamp(prefs.gridFadeDistance * 0.25, 10.0, 500.0)));
     }
-    m_renderPass->SetGridPlaneUVE(plane);
+    m_renderPass->SetGridPlane(plane);
 }
 
-univex::integration::EditorMeshLayerResultUVE ViewportSurfaceUVE::RenderSceneMeshLayerUVE(
+univex::integration::EditorMeshLayerResult ViewportSurface::RenderSceneMeshLayer(
     const univex::camera::OrbitCamera& camera,
     const int width,
     const int height,
-    const std::optional<Scene::EntityUVE> lookThroughCamera) {
+    const std::optional<Scene::Entity> lookThroughCamera) {
     m_lastRenderUsedLookThroughCamera =
-        lookThroughCamera.has_value() && *lookThroughCamera != Scene::kInvalidEntityUVE;
-    return m_meshLayer.RenderUVE(camera, static_cast<std::uint32_t>(width),
+        lookThroughCamera.has_value() && *lookThroughCamera != Scene::kInvalidEntity;
+    return m_meshLayer.Render(camera, static_cast<std::uint32_t>(width),
                                  static_cast<std::uint32_t>(height), lookThroughCamera);
 }
 
-GLint ViewportSurfaceUVE::BeginPassUVE(const int width, const int height) {
+GLint ViewportSurface::BeginPass(const int width, const int height) {
     GLint previousFbo = 0;
     glGetIntegerv(GL_FRAMEBUFFER_BINDING, &previousFbo);
-    glBindFramebuffer(GL_FRAMEBUFFER, ActiveDrawFboUVE());
-    // Renderer3DUVE may leave GL_SCISSOR_TEST or GL_CULL_FACE enabled at pass end; clear them so
+    glBindFramebuffer(GL_FRAMEBUFFER, ActiveDrawFbo());
+    // Renderer3D may leave GL_SCISSOR_TEST or GL_CULL_FACE enabled at pass end; clear them so
     // the full viewport clears and fullscreen backdrop/mesh-blit/grid triangles are never clipped.
     glDisable(GL_SCISSOR_TEST);
     glDisable(GL_CULL_FACE);
@@ -438,15 +438,15 @@ GLint ViewportSurfaceUVE::BeginPassUVE(const int width, const int height) {
         glDisable(GL_MULTISAMPLE);
     }
 #endif
-    m_renderPass->ClearUVE(width, height);
+    m_renderPass->Clear(width, height);
     return previousFbo;
 }
 
-void ViewportSurfaceUVE::BlitMeshLayerUVE(const univex::integration::EditorMeshLayerResultUVE& meshResult,
+void ViewportSurface::BlitMeshLayer(const univex::integration::EditorMeshLayerResult& meshResult,
                                           const univex::camera::OrbitCamera& camera,
                                           const int width,
                                           const int height) {
-    if (meshResult.colorTextureId == 0U || !EnsureMeshBlitResourcesUVE()) {
+    if (meshResult.colorTextureId == 0U || !EnsureMeshBlitResources()) {
         return;
     }
     // GL_ALWAYS rather than disabling GL_DEPTH_TEST: OpenGL skips depth writes while depth testing
@@ -465,10 +465,10 @@ void ViewportSurfaceUVE::BlitMeshLayerUVE(const univex::integration::EditorMeshL
         glUniform1i(m_meshBlitUniforms.meshColor, 0);
     }
 
-    const Render::SceneDepthExportUVE depth = m_services.GetRenderer3DUVE().GetLastSceneDepthUVE();
-    auto* const glDevice = dynamic_cast<Render::GlRenderDeviceUVE*>(&m_services.GetRenderDeviceUVE());
+    const Render::SceneDepthExport depth = m_services.GetRenderer3D().GetLastSceneDepth();
+    auto* const glDevice = dynamic_cast<Render::GlRenderDevice*>(&m_services.GetRenderDevice());
     const GLuint depthTexture =
-        depth.valid && glDevice != nullptr ? static_cast<GLuint>(glDevice->GetNativeTextureIdUVE(depth.depthTexture))
+        depth.valid && glDevice != nullptr ? static_cast<GLuint>(glDevice->GetNativeTextureId(depth.depthTexture))
                                            : 0U;
     if (m_meshBlitUniforms.hasDepth >= 0) {
         glUniform1i(m_meshBlitUniforms.hasDepth, depthTexture != 0U ? 1 : 0);
@@ -509,7 +509,7 @@ void ViewportSurfaceUVE::BlitMeshLayerUVE(const univex::integration::EditorMeshL
     glDepthFunc(GL_LESS);
 }
 
-std::uint64_t ViewportSurfaceUVE::EndPassAndResolveUVE(const int width, const int height, const GLint previousFbo) {
+std::uint64_t ViewportSurface::EndPassAndResolve(const int width, const int height, const GLint previousFbo) {
     if (m_msaaFbo == 0U && m_fxaaQuality == 0 && m_casSharpen <= 0.001F) {
         glBindFramebuffer(GL_FRAMEBUFFER, static_cast<GLuint>(previousFbo));
         return static_cast<std::uint64_t>(m_sceneColorTexture);
@@ -521,7 +521,7 @@ std::uint64_t ViewportSurfaceUVE::EndPassAndResolveUVE(const int width, const in
         glBlitFramebuffer(0, 0, width, height, 0, 0, width, height, GL_COLOR_BUFFER_BIT, GL_NEAREST);
     }
 
-    if ((m_fxaaQuality > 0 || m_casSharpen > 0.001F) && EnsurePostAaResourcesUVE()) {
+    if ((m_fxaaQuality > 0 || m_casSharpen > 0.001F) && EnsurePostAaResources()) {
         std::array<GLint, 4> previousViewport{};
         glGetIntegerv(GL_VIEWPORT, previousViewport.data());
         const GLboolean depthTest = glIsEnabled(GL_DEPTH_TEST);
@@ -583,7 +583,7 @@ std::uint64_t ViewportSurfaceUVE::EndPassAndResolveUVE(const int width, const in
     return static_cast<std::uint64_t>(m_resolveColorTexture);
 }
 
-bool ViewportSurfaceUVE::EnsureGlewInitializedUVE() {
+bool ViewportSurface::EnsureGlewInitialized() {
     if (m_glewInitialized) {
         return true;
     }
@@ -603,7 +603,7 @@ bool ViewportSurfaceUVE::EnsureGlewInitializedUVE() {
     return true;
 }
 
-bool ViewportSurfaceUVE::EnsureRenderPassUVE() {
+bool ViewportSurface::EnsureRenderPass() {
     if (m_renderPass.has_value()) {
         return true;
     }
@@ -616,7 +616,7 @@ bool ViewportSurfaceUVE::EnsureRenderPassUVE() {
     return true;
 }
 
-bool ViewportSurfaceUVE::EnsureFramebuffersUVE(const int width, const int height) {
+bool ViewportSurface::EnsureFramebuffers(const int width, const int height) {
     if (width <= 0 || height <= 0) {
         return false;
     }
@@ -629,7 +629,7 @@ bool ViewportSurfaceUVE::EnsureFramebuffersUVE(const int width, const int height
         targetSamples == m_allocatedMsaaSamples) {
         return true;
     }
-    DestroyFramebuffersUVE();
+    DestroyFramebuffers();
     m_framebufferWidth = width;
     m_framebufferHeight = height;
     m_allocatedMsaaSamples = targetSamples;
@@ -693,7 +693,7 @@ bool ViewportSurfaceUVE::EnsureFramebuffersUVE(const int width, const int height
     return complete;
 }
 
-void ViewportSurfaceUVE::DestroyFramebuffersUVE() {
+void ViewportSurface::DestroyFramebuffers() {
     if (m_resolveColorTexture != 0U) {
         glDeleteTextures(1, &m_resolveColorTexture);
     }
@@ -724,13 +724,13 @@ void ViewportSurfaceUVE::DestroyFramebuffersUVE() {
     m_allocatedMsaaSamples = -1;
 }
 
-bool ViewportSurfaceUVE::EnsureMeshBlitResourcesUVE() {
+bool ViewportSurface::EnsureMeshBlitResources() {
     if (m_meshBlitProgram.has_value()) {
         return true;
     }
     std::string error;
-    m_meshBlitProgram = univex::render::ShaderProgram::Build(kFullscreenTriangleVertexShaderUVE,
-                                                             kMeshBlitFragmentShaderUVE, error);
+    m_meshBlitProgram = univex::render::ShaderProgram::Build(kFullscreenTriangleVertexShader,
+                                                             kMeshBlitFragmentShader, error);
     if (!m_meshBlitProgram.has_value()) {
         UVE_ERROR("uve_editor_app: viewport mesh blit shader build failed: {}", error);
         return false;
@@ -748,14 +748,14 @@ bool ViewportSurfaceUVE::EnsureMeshBlitResourcesUVE() {
     return true;
 }
 
-bool ViewportSurfaceUVE::EnsurePostAaResourcesUVE() {
+bool ViewportSurface::EnsurePostAaResources() {
     if (m_postAaFailed) {
         return false;
     }
     if (!m_postAaProgram.has_value()) {
         std::string error;
-        m_postAaProgram = univex::render::ShaderProgram::Build(kFullscreenTriangleVertexShaderUVE,
-                                                               kPostAaCasFragmentShaderUVE, error);
+        m_postAaProgram = univex::render::ShaderProgram::Build(kFullscreenTriangleVertexShader,
+                                                               kPostAaCasFragmentShader, error);
         if (!m_postAaProgram.has_value()) {
             UVE_ERROR("uve_editor_app: viewport FXAA+CAS shader build failed: {}", error);
             m_postAaFailed = true;
@@ -772,14 +772,14 @@ bool ViewportSurfaceUVE::EnsurePostAaResourcesUVE() {
     return true;
 }
 
-void ViewportSurfaceUVE::SeedEditorAxisColorsFromDefaultsUVE(Editor::EditorUVE& editor) {
-    const univex::viewport::AxisPaletteUVE defaults;
-    using EditorAxisColorUVE = Editor::EditorUVE::ViewportAxisColorUVE;
-    const auto toEditor = [](const univex::viewport::AxisRgbUVE& color) {
-        return EditorAxisColorUVE{color.r, color.g, color.b};
+void ViewportSurface::SeedEditorAxisColorsFromDefaults(Editor::Editor& editor) {
+    const univex::viewport::AxisPalette defaults;
+    using EditorAxisColor = Editor::Editor::ViewportAxisColor;
+    const auto toEditor = [](const univex::viewport::AxisRgb& color) {
+        return EditorAxisColor{color.r, color.g, color.b};
     };
     static_cast<void>(
-        editor.SetViewportAxisColorsUVE(toEditor(defaults.x), toEditor(defaults.y), toEditor(defaults.z)));
+        editor.SetViewportAxisColors(toEditor(defaults.x), toEditor(defaults.y), toEditor(defaults.z)));
 }
 
 } // namespace UVE::App::Viewports

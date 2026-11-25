@@ -12,7 +12,7 @@ namespace UVE::Scene {
 /// Supported authored collider descriptors. Box remains the legacy default; sphere and capsule
 /// are represented here for validation and conservative world-AABB broad-phase bounds. Exact
 /// shape narrow phases remain a separate future contract.
-enum class ColliderShapeTypeUVE : std::uint8_t {
+enum class ColliderShapeType : std::uint8_t {
     Box = 0,
     Sphere = 1,
     Capsule = 2,
@@ -23,14 +23,14 @@ enum class ColliderShapeTypeUVE : std::uint8_t {
 /// fields remain in their established order so existing aggregate initializers stay source
 /// compatible; shape fields are trailing defaults. Capsule height is the total end-to-end height
 /// along the local Y axis, including both hemispherical caps.
-struct ColliderComponentUVE final {
-    Math::Vector3UVE halfExtents{0.5F, 0.5F, 0.5F};
+struct ColliderComponent final {
+    Math::Vector3 halfExtents{0.5F, 0.5F, 0.5F};
     std::uint32_t collisionLayer = 1;
     std::uint32_t collisionMask = 0xFFFFFFFFU;
     float friction = 0.0F;
     float restitution = 0.0F;
     float density = 1.0F;
-    ColliderShapeTypeUVE shapeType = ColliderShapeTypeUVE::Box;
+    ColliderShapeType shapeType = ColliderShapeType::Box;
     float radius = 0.5F;
     float height = 1.0F;
     bool disabled = false;
@@ -39,15 +39,15 @@ struct ColliderComponentUVE final {
 /// Returns conservative local half-extents for the supported descriptors. Collision and raycast
 /// systems intentionally consume these as broad-phase AABBs in v1; callers that need exact sphere
 /// or capsule contacts must not infer them from this helper.
-[[nodiscard]] Math::Vector3UVE GetColliderLocalHalfExtentsUVE(
-    const ColliderComponentUVE& collider) noexcept;
+[[nodiscard]] Math::Vector3 GetColliderLocalHalfExtents(
+    const ColliderComponent& collider) noexcept;
 
 /// Smallest magnitude any one axis of a collider's world scale is allowed to reach.
 ///
 /// A zero-scaled object still has to be a shape: a degenerate extent fails
-/// `IsColliderComponentValidUVE` and the body would leave the world entirely, which reads as an
+/// `IsColliderComponentValid` and the body would leave the world entirely, which reads as an
 /// object that ignores its own collider rather than as one the author shrank to nothing.
-inline constexpr float kMinimumColliderWorldScaleUVE = 1.0e-4F;
+inline constexpr float kMinimumColliderWorldScale = 1.0e-4F;
 
 /// The collider a body actually occupies once its world scale is taken into account.
 ///
@@ -63,18 +63,18 @@ inline constexpr float kMinimumColliderWorldScaleUVE = 1.0e-4F;
 /// the engine could collide against. `Height` is floored at `2 * radius` for the same reason the
 /// authored value is validated that way - a capsule cannot be shorter than the two caps it is
 /// made of.
-[[nodiscard]] ColliderComponentUVE ScaleColliderUVE(const ColliderComponentUVE& collider,
-                                                    const Math::Vector3UVE& worldScale) noexcept;
+[[nodiscard]] ColliderComponent ScaleCollider(const ColliderComponent& collider,
+                                                    const Math::Vector3& worldScale) noexcept;
 
 /// Validates the value-only collider contract before scene persistence and explicit validation
 /// consumers. Collision masks remain opaque bit fields; a zero layer is rejected because it would
 /// make the collider unreachable by the layer-mask raycast contract. Runtime material extraction
 /// retains its established defensive friction/restitution clamp for legacy hand-authored values.
-[[nodiscard]] bool IsColliderComponentValidUVE(const ColliderComponentUVE& collider) noexcept;
+[[nodiscard]] bool IsColliderComponentValid(const ColliderComponent& collider) noexcept;
 
 /// The height below which a capsule has no barrel at all: its two hemispherical caps meet exactly
 /// and the shape is a sphere wearing a capsule's shape type.
-[[nodiscard]] float MinimumCapsuleHeightUVE(float radius) noexcept;
+[[nodiscard]] float MinimumCapsuleHeight(float radius) noexcept;
 
 /// Gives a collider the proportions the shape it now names actually implies.
 ///
@@ -88,6 +88,6 @@ inline constexpr float kMinimumColliderWorldScaleUVE = 1.0e-4F;
 ///
 /// Nothing about the other shapes changes: a Box, Sphere or Cylinder is already exactly what its
 /// numbers say.
-[[nodiscard]] ColliderComponentUVE FitColliderShapeUVE(const ColliderComponentUVE& collider) noexcept;
+[[nodiscard]] ColliderComponent FitColliderShape(const ColliderComponent& collider) noexcept;
 
 } // namespace UVE::Scene

@@ -3,7 +3,7 @@
 The navmesh a `NavMeshVolume3D` bakes, the pathfinder that answers a `NavSeeker3D`, and the
 steering step that turns a path into the velocity the agent publishes.
 
-It sits above Physics on purpose. The bake samples the world through `IRaycastSystemUVE` rather than
+It sits above Physics on purpose. The bake samples the world through `IRaycastSystem` rather than
 reading colliders itself, so what the navmesh believes is walkable is exactly what a body standing
 there would collide with, and this module never grows a second collision representation that could
 disagree with the first.
@@ -16,13 +16,13 @@ disagree with the first.
 | `navmesh_bake_uve.h` | Rasterizing a region's volume into that mesh: ground rays, slope and headroom tests, clearance erosion, merging cells into polygons, and the portals across the borders between them. |
 | `nav_path_uve.h` | A* across the polygons honouring each request's navigation layers, then string-pulling the polygon chain into the corners a body actually walks. |
 | `navmesh_agent_uve.h` | One agent's steering state: when to re-plan, which waypoint it is walking to, the velocity it publishes this step, and the separation push it applies to the agents around it. |
-| `navigation_runtime_uve.h` | The ECS seam: one cached mesh per `NavMeshVolume3D` (baked when it is first seen, or when its volume, settings or `rebuildRequested` say so), one `NavAgentUVE` per `NavSeeker3D`, and the write-back of the published route into the component. The engine core decides WHEN it runs and which agents are ticking; this class decides what a step means. |
+| `navigation_runtime_uve.h` | The ECS seam: one cached mesh per `NavMeshVolume3D` (baked when it is first seen, or when its volume, settings or `rebuildRequested` say so), one `NavAgent` per `NavSeeker3D`, and the write-back of the published route into the component. The engine core decides WHEN it runs and which agents are ticking; this class decides what a step means. |
 
 ## Conventions that hold across the module
 
-* **Winding.** A polygon is counter-clockwise seen from above (`SignedAreaXZUVE` > 0) in the order the
+* **Winding.** A polygon is counter-clockwise seen from above (`SignedAreaXZ` > 0) in the order the
   bake emits it. Every portal's left/right ends and the string-pulling step read that same convention.
-* **Height.** `NavmeshPolygonUVE` corners carry the rasterized surface's own heights, so a mesh over
+* **Height.** `NavmeshPolygon` corners carry the rasterized surface's own heights, so a mesh over
   stepped ground slopes across the step rather than jumping; neighbouring polygons share their corner
   heights, which is what keeps two polygons meeting exactly.
 * **Layers.** A polygon carries the collision layer of the surface it came from, and a path request

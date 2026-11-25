@@ -15,66 +15,66 @@
 namespace UVE::Asset::Tests {
 namespace {
 
-void WriteMtlFixtureUVE(const std::filesystem::path& path, const std::string_view source) {
+void WriteMtlFixture(const std::filesystem::path& path, const std::string_view source) {
     std::ofstream output(path, std::ios::binary | std::ios::trunc);
     ASSERT_TRUE(output.is_open());
     output.write(source.data(), static_cast<std::streamsize>(source.size()));
     ASSERT_TRUE(output.good());
 }
 
-[[nodiscard]] MaterialAssetUVE MakeExistingMaterialUVE() {
-    MaterialAssetUVE material;
-    material.albedoColor = Math::ColorUVE{0.3F, 0.2F, 0.1F};
+[[nodiscard]] MaterialAsset MakeExistingMaterial() {
+    MaterialAsset material;
+    material.albedoColor = Math::Color{0.3F, 0.2F, 0.1F};
     material.metallic = 0.8F;
     material.roughness = 0.2F;
     material.isTransparent = true;
     return material;
 }
 
-TEST(MtlImporterUVETest, ImportUVE_ValidMtlPublishesUveMatAndRegistersGuid) {
+TEST(MtlImporterTest, Import_ValidMtlPublishesUveMatAndRegistersGuid) {
     const std::filesystem::path sourcePath = "uve_mtl_importer_tests_material.mtl";
     const std::filesystem::path destinationPath = "uve_mtl_importer_tests_material.uvmat";
     std::filesystem::remove(sourcePath);
     std::filesystem::remove(destinationPath);
-    WriteMtlFixtureUVE(sourcePath, "newmtl Painted\nKd 0.2 0.4 0.6\nKs 0.75 0.75 0.75\nNs 500\n");
+    WriteMtlFixture(sourcePath, "newmtl Painted\nKd 0.2 0.4 0.6\nKs 0.75 0.75 0.75\nNs 500\n");
 
-    AssetImporterUVE importer;
-    AssetDatabaseUVE database;
-    const AssetGuidUVE guid = importer.ImportUVE(sourcePath, destinationPath, database);
+    AssetImporter importer;
+    AssetDatabase database;
+    const AssetGuid guid = importer.Import(sourcePath, destinationPath, database);
 
-    ASSERT_NE(guid, kInvalidAssetGuidUVE);
-    EXPECT_EQ(database.ResolveUVE(guid), destinationPath);
-    MaterialAssetUVE material;
-    ASSERT_TRUE(LoadMaterialAssetUVE(destinationPath, material));
+    ASSERT_NE(guid, kInvalidAssetGuid);
+    EXPECT_EQ(database.Resolve(guid), destinationPath);
+    MaterialAsset material;
+    ASSERT_TRUE(LoadMaterialAsset(destinationPath, material));
     EXPECT_NEAR(material.albedoColor.r, 0.0331048F, 1e-6F);
     EXPECT_NEAR(material.albedoColor.g, 0.1328683F, 1e-6F);
     EXPECT_NEAR(material.albedoColor.b, 0.3185468F, 1e-6F);
     EXPECT_FLOAT_EQ(material.metallic, 0.75F);
     EXPECT_FLOAT_EQ(material.roughness, 0.5F);
     EXPECT_FALSE(material.isTransparent);
-    EXPECT_EQ(material.albedoTexture, kInvalidAssetGuidUVE);
+    EXPECT_EQ(material.albedoTexture, kInvalidAssetGuid);
 
     std::filesystem::remove(sourcePath);
     std::filesystem::remove(destinationPath);
 }
 
-TEST(MtlImporterUVETest, ImportUVE_InvalidMtlPreservesExistingDestinationAndDoesNotRegister) {
+TEST(MtlImporterTest, Import_InvalidMtlPreservesExistingDestinationAndDoesNotRegister) {
     const std::filesystem::path sourcePath = "uve_mtl_importer_tests_invalid.mtl";
     const std::filesystem::path destinationPath = "uve_mtl_importer_tests_existing.uvmat";
     std::filesystem::remove(sourcePath);
     std::filesystem::remove(destinationPath);
-    WriteMtlFixtureUVE(sourcePath, "newmtl Broken\nd 1.5\n");
-    const MaterialAssetUVE original = MakeExistingMaterialUVE();
-    ASSERT_TRUE(SaveMaterialAssetUVE(original, destinationPath));
+    WriteMtlFixture(sourcePath, "newmtl Broken\nd 1.5\n");
+    const MaterialAsset original = MakeExistingMaterial();
+    ASSERT_TRUE(SaveMaterialAsset(original, destinationPath));
 
-    AssetImporterUVE importer;
-    AssetDatabaseUVE database;
-    const AssetGuidUVE guid = importer.ImportUVE(sourcePath, destinationPath, database);
+    AssetImporter importer;
+    AssetDatabase database;
+    const AssetGuid guid = importer.Import(sourcePath, destinationPath, database);
 
-    EXPECT_EQ(guid, kInvalidAssetGuidUVE);
-    EXPECT_TRUE(database.ResolveUVE(guid).empty());
-    MaterialAssetUVE retained;
-    ASSERT_TRUE(LoadMaterialAssetUVE(destinationPath, retained));
+    EXPECT_EQ(guid, kInvalidAssetGuid);
+    EXPECT_TRUE(database.Resolve(guid).empty());
+    MaterialAsset retained;
+    ASSERT_TRUE(LoadMaterialAsset(destinationPath, retained));
     EXPECT_EQ(retained.albedoColor, original.albedoColor);
     EXPECT_FLOAT_EQ(retained.metallic, original.metallic);
     EXPECT_EQ(retained.isTransparent, original.isTransparent);
@@ -83,16 +83,16 @@ TEST(MtlImporterUVETest, ImportUVE_InvalidMtlPreservesExistingDestinationAndDoes
     std::filesystem::remove(destinationPath);
 }
 
-TEST(MtlImporterUVETest, ImportUVE_WrongDestinationExtensionFailsBeforePublish) {
+TEST(MtlImporterTest, Import_WrongDestinationExtensionFailsBeforePublish) {
     const std::filesystem::path sourcePath = "uve_mtl_importer_tests_wrong_destination.mtl";
     const std::filesystem::path destinationPath = "uve_mtl_importer_tests_wrong_destination.uvmat.tmp";
     std::filesystem::remove(sourcePath);
     std::filesystem::remove(destinationPath);
-    WriteMtlFixtureUVE(sourcePath, "newmtl Valid\nKd 1 1 1\n");
+    WriteMtlFixture(sourcePath, "newmtl Valid\nKd 1 1 1\n");
 
-    AssetImporterUVE importer;
-    AssetDatabaseUVE database;
-    EXPECT_EQ(importer.ImportUVE(sourcePath, destinationPath, database), kInvalidAssetGuidUVE);
+    AssetImporter importer;
+    AssetDatabase database;
+    EXPECT_EQ(importer.Import(sourcePath, destinationPath, database), kInvalidAssetGuid);
     EXPECT_FALSE(std::filesystem::exists(destinationPath));
 
     std::filesystem::remove(sourcePath);

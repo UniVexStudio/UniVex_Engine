@@ -19,85 +19,85 @@
 namespace UVE::Physics::Tests {
 namespace {
 
-class AreaOverlapSystemUVETest : public ::testing::Test {
+class AreaOverlapSystemTest : public ::testing::Test {
 protected:
-    Memory::MemoryManagerUVE memoryManager;
-    Events::EventSystemUVE eventSystem;
-    Scene::EntityManagerUVE entityManager{memoryManager.GetDefaultAllocatorUVE(), eventSystem};
-    Scene::SceneGraphUVE sceneGraph;
+    Memory::MemoryManager memoryManager;
+    Events::EventSystem eventSystem;
+    Scene::EntityManager entityManager{memoryManager.GetDefaultAllocator(), eventSystem};
+    Scene::SceneGraph sceneGraph;
 
-    Scene::EntityUVE MakeAreaEntityUVE(Math::Vector3UVE position, Math::Vector3UVE halfExtents,
+    Scene::Entity MakeAreaEntity(Math::Vector3 position, Math::Vector3 halfExtents,
                                        std::uint32_t collisionLayer = 1U,
                                        std::uint32_t collisionMask = 0xFFFFFFFFU) {
-        const Scene::EntityUVE entity = entityManager.CreateEntityUVE();
-        Scene::TransformComponentUVE transform;
+        const Scene::Entity entity = entityManager.CreateEntity();
+        Scene::TransformComponent transform;
         transform.localPosition = position;
-        sceneGraph.AttachTransformUVE(entityManager, entity, transform);
-        sceneGraph.UpdateUVE(entityManager);
-        entityManager.AddComponentUVE<Scene::AreaComponentUVE>(
-            entity, Scene::AreaComponentUVE{halfExtents, collisionLayer, collisionMask});
+        sceneGraph.AttachTransform(entityManager, entity, transform);
+        sceneGraph.Update(entityManager);
+        entityManager.AddComponent<Scene::AreaComponent>(
+            entity, Scene::AreaComponent{halfExtents, collisionLayer, collisionMask});
         return entity;
     }
 
-    Scene::EntityUVE MakeColliderEntityUVE(Math::Vector3UVE position, Math::Vector3UVE halfExtents,
+    Scene::Entity MakeColliderEntity(Math::Vector3 position, Math::Vector3 halfExtents,
                                            std::uint32_t collisionLayer = 1U,
                                            std::uint32_t collisionMask = 0xFFFFFFFFU) {
-        const Scene::EntityUVE entity = entityManager.CreateEntityUVE();
-        Scene::TransformComponentUVE transform;
+        const Scene::Entity entity = entityManager.CreateEntity();
+        Scene::TransformComponent transform;
         transform.localPosition = position;
-        sceneGraph.AttachTransformUVE(entityManager, entity, transform);
-        sceneGraph.UpdateUVE(entityManager);
-        entityManager.AddComponentUVE<Scene::ColliderComponentUVE>(
-            entity, Scene::ColliderComponentUVE{halfExtents, collisionLayer, collisionMask});
+        sceneGraph.AttachTransform(entityManager, entity, transform);
+        sceneGraph.Update(entityManager);
+        entityManager.AddComponent<Scene::ColliderComponent>(
+            entity, Scene::ColliderComponent{halfExtents, collisionLayer, collisionMask});
         return entity;
     }
 
-    Scene::EntityUVE MakeTypedColliderEntityUVE(Math::Vector3UVE position,
-                                                 const Scene::ColliderComponentUVE& collider,
-                                                 Math::QuaternionUVE rotation = {}) {
-        const Scene::EntityUVE entity = entityManager.CreateEntityUVE();
-        Scene::TransformComponentUVE transform;
+    Scene::Entity MakeTypedColliderEntity(Math::Vector3 position,
+                                                 const Scene::ColliderComponent& collider,
+                                                 Math::Quaternion rotation = {}) {
+        const Scene::Entity entity = entityManager.CreateEntity();
+        Scene::TransformComponent transform;
         transform.localPosition = position;
         transform.localRotation = rotation;
-        sceneGraph.AttachTransformUVE(entityManager, entity, transform);
-        sceneGraph.UpdateUVE(entityManager);
-        entityManager.AddComponentUVE<Scene::ColliderComponentUVE>(entity, collider);
+        sceneGraph.AttachTransform(entityManager, entity, transform);
+        sceneGraph.Update(entityManager);
+        entityManager.AddComponent<Scene::ColliderComponent>(entity, collider);
         return entity;
     }
 };
 
-TEST_F(AreaOverlapSystemUVETest, QueryUVE_ExactShapeRoutingRejectsDiagonalAabbFalsePositives) {
-    MakeAreaEntityUVE({0.0F, 0.0F, 0.0F}, {0.5F, 0.5F, 0.5F});
+TEST_F(AreaOverlapSystemTest, Query_ExactShapeRoutingRejectsDiagonalAabbFalsePositives) {
+    MakeAreaEntity({0.0F, 0.0F, 0.0F}, {0.5F, 0.5F, 0.5F});
 
-    Scene::ColliderComponentUVE sphere;
-    sphere.shapeType = Scene::ColliderShapeTypeUVE::Sphere;
+    Scene::ColliderComponent sphere;
+    sphere.shapeType = Scene::ColliderShapeType::Sphere;
     sphere.radius = 0.5F;
-    MakeTypedColliderEntityUVE({0.9F, 0.9F, 0.0F}, sphere);
-    ASSERT_EQ(AreaOverlapSystemUVE::QueryUVE(entityManager).overlaps.size(), 0U);
+    MakeTypedColliderEntity({0.9F, 0.9F, 0.0F}, sphere);
+    ASSERT_EQ(AreaOverlapSystem::Query(entityManager).overlaps.size(), 0U);
 
-    Scene::ColliderComponentUVE capsule;
-    capsule.shapeType = Scene::ColliderShapeTypeUVE::Capsule;
+    Scene::ColliderComponent capsule;
+    capsule.shapeType = Scene::ColliderShapeType::Capsule;
     capsule.radius = 0.5F;
     capsule.height = 4.0F;
-    MakeTypedColliderEntityUVE({0.9F, 0.0F, 0.9F}, capsule);
-    ASSERT_EQ(AreaOverlapSystemUVE::QueryUVE(entityManager).overlaps.size(), 0U);
+    MakeTypedColliderEntity({0.9F, 0.0F, 0.9F}, capsule);
+    ASSERT_EQ(AreaOverlapSystem::Query(entityManager).overlaps.size(), 0U);
 
-    Scene::ColliderComponentUVE box;
-    box.shapeType = Scene::ColliderShapeTypeUVE::Box;
+    Scene::ColliderComponent box;
+    box.shapeType = Scene::ColliderShapeType::Box;
     box.halfExtents = {1.0F, 0.2F, 0.2F};
-    MakeTypedColliderEntityUVE({0.7F, 0.0F, 0.7F}, box,
-                               Math::QuaternionUVE{0.0F, 0.3826834324F, 0.0F, 0.9238795325F});
+    MakeTypedColliderEntity({0.7F, 0.0F, 0.7F}, box,
+                               Math::Quaternion{0.0F, 0.3826834324F, 0.0F, 0.9238795325F});
 
-    EXPECT_TRUE(AreaOverlapSystemUVE::QueryUVE(entityManager).overlaps.empty());
+    EXPECT_TRUE(AreaOverlapSystem::Query(entityManager).overlaps.empty());
 }
 
-TEST_F(AreaOverlapSystemUVETest, QueryUVE_CompatibleOverlapReturnsCopiedPair) {
-    const Scene::EntityUVE area = MakeAreaEntityUVE(
-        Math::Vector3UVE{0.0F, 0.0F, 0.0F}, Math::Vector3UVE{1.0F, 1.0F, 1.0F}, 1U, 2U);
-    const Scene::EntityUVE collider = MakeColliderEntityUVE(
-        Math::Vector3UVE{0.5F, 0.0F, 0.0F}, Math::Vector3UVE{1.0F, 1.0F, 1.0F}, 2U, 1U);
+TEST_F(AreaOverlapSystemTest, Query_CompatibleOverlapReturnsCopiedPair) {
+    const Scene::Entity area = MakeAreaEntity(
+        Math::Vector3{0.0F, 0.0F, 0.0F}, Math::Vector3{1.0F, 1.0F, 1.0F}, 1U, 2U);
+    const Scene::Entity collider = MakeColliderEntity(
+        Math::Vector3{0.5F, 0.0F, 0.0F}, Math::Vector3{1.0F, 1.0F, 1.0F}, 2U, 1U);
 
-    const AreaOverlapQueryResultUVE result = AreaOverlapSystemUVE::QueryUVE(entityManager);
+    const AreaOverlapQueryResult result = AreaOverlapSystem::Query(entityManager);
 
     ASSERT_EQ(result.inspectedAreas, 1U);
     ASSERT_EQ(result.inspectedColliders, 1U);
@@ -108,15 +108,15 @@ TEST_F(AreaOverlapSystemUVETest, QueryUVE_CompatibleOverlapReturnsCopiedPair) {
     EXPECT_GT(result.overlaps.front().penetrationDepth, 0.0F);
 }
 
-TEST_F(AreaOverlapSystemUVETest, QueryUVE_SkipsFiniteAreaBoundsThatOverflowPublication) {
-    const Scene::EntityUVE validArea =
-        MakeAreaEntityUVE(Math::Vector3UVE{0.0F, 0.0F, 0.0F}, Math::Vector3UVE{1.0F, 1.0F, 1.0F});
-    MakeAreaEntityUVE(Math::Vector3UVE{std::numeric_limits<float>::max(), 0.0F, 0.0F},
-                      Math::Vector3UVE{1.0e38F, 1.0F, 1.0F});
-    const Scene::EntityUVE collider =
-        MakeColliderEntityUVE(Math::Vector3UVE{0.5F, 0.0F, 0.0F}, Math::Vector3UVE{1.0F, 1.0F, 1.0F});
+TEST_F(AreaOverlapSystemTest, Query_SkipsFiniteAreaBoundsThatOverflowPublication) {
+    const Scene::Entity validArea =
+        MakeAreaEntity(Math::Vector3{0.0F, 0.0F, 0.0F}, Math::Vector3{1.0F, 1.0F, 1.0F});
+    MakeAreaEntity(Math::Vector3{std::numeric_limits<float>::max(), 0.0F, 0.0F},
+                      Math::Vector3{1.0e38F, 1.0F, 1.0F});
+    const Scene::Entity collider =
+        MakeColliderEntity(Math::Vector3{0.5F, 0.0F, 0.0F}, Math::Vector3{1.0F, 1.0F, 1.0F});
 
-    const AreaOverlapQueryResultUVE result = AreaOverlapSystemUVE::QueryUVE(entityManager);
+    const AreaOverlapQueryResult result = AreaOverlapSystem::Query(entityManager);
 
     ASSERT_EQ(result.inspectedAreas, 1U);
     ASSERT_EQ(result.inspectedColliders, 1U);
@@ -126,14 +126,14 @@ TEST_F(AreaOverlapSystemUVETest, QueryUVE_SkipsFiniteAreaBoundsThatOverflowPubli
     EXPECT_FALSE(result.truncated);
 }
 
-TEST_F(AreaOverlapSystemUVETest, QueryUVE_SkipsOverflowedFinitePenetrationDepth) {
+TEST_F(AreaOverlapSystemTest, Query_SkipsOverflowedFinitePenetrationDepth) {
     const float maximumFloat = std::numeric_limits<float>::max();
-    MakeAreaEntityUVE(Math::Vector3UVE{0.0F, 0.0F, 0.0F},
-                      Math::Vector3UVE{maximumFloat, maximumFloat, maximumFloat});
-    MakeColliderEntityUVE(Math::Vector3UVE{0.0F, 0.0F, 0.0F},
-                          Math::Vector3UVE{maximumFloat, maximumFloat, maximumFloat});
+    MakeAreaEntity(Math::Vector3{0.0F, 0.0F, 0.0F},
+                      Math::Vector3{maximumFloat, maximumFloat, maximumFloat});
+    MakeColliderEntity(Math::Vector3{0.0F, 0.0F, 0.0F},
+                          Math::Vector3{maximumFloat, maximumFloat, maximumFloat});
 
-    const AreaOverlapQueryResultUVE result = AreaOverlapSystemUVE::QueryUVE(entityManager);
+    const AreaOverlapQueryResult result = AreaOverlapSystem::Query(entityManager);
 
     EXPECT_EQ(result.inspectedAreas, 1U);
     EXPECT_EQ(result.inspectedColliders, 1U);
@@ -141,33 +141,33 @@ TEST_F(AreaOverlapSystemUVETest, QueryUVE_SkipsOverflowedFinitePenetrationDepth)
     EXPECT_FALSE(result.truncated);
 }
 
-TEST_F(AreaOverlapSystemUVETest, QueryUVE_IncompatibleOrOneSidedMaskDoesNotReportOverlap) {
-    MakeAreaEntityUVE(Math::Vector3UVE{0.0F, 0.0F, 0.0F}, Math::Vector3UVE{1.0F, 1.0F, 1.0F}, 1U, 1U);
-    MakeColliderEntityUVE(Math::Vector3UVE{0.5F, 0.0F, 0.0F}, Math::Vector3UVE{1.0F, 1.0F, 1.0F}, 2U, 1U);
+TEST_F(AreaOverlapSystemTest, Query_IncompatibleOrOneSidedMaskDoesNotReportOverlap) {
+    MakeAreaEntity(Math::Vector3{0.0F, 0.0F, 0.0F}, Math::Vector3{1.0F, 1.0F, 1.0F}, 1U, 1U);
+    MakeColliderEntity(Math::Vector3{0.5F, 0.0F, 0.0F}, Math::Vector3{1.0F, 1.0F, 1.0F}, 2U, 1U);
 
-    const AreaOverlapQueryResultUVE result = AreaOverlapSystemUVE::QueryUVE(entityManager);
+    const AreaOverlapQueryResult result = AreaOverlapSystem::Query(entityManager);
 
     EXPECT_TRUE(result.overlaps.empty());
     EXPECT_FALSE(result.truncated);
 }
 
-TEST_F(AreaOverlapSystemUVETest, QueryUVE_MonitoringAndMonitorableFlagsControlAreaPairs) {
-    const Scene::EntityUVE firstArea = MakeAreaEntityUVE(
-        Math::Vector3UVE{0.0F, 0.0F, 0.0F}, Math::Vector3UVE{1.0F, 1.0F, 1.0F});
-    const Scene::EntityUVE secondArea = MakeAreaEntityUVE(
-        Math::Vector3UVE{0.5F, 0.0F, 0.0F}, Math::Vector3UVE{1.0F, 1.0F, 1.0F});
-    Scene::AreaComponentUVE& first = entityManager.GetComponentUVE<Scene::AreaComponentUVE>(firstArea);
-    Scene::AreaComponentUVE& second = entityManager.GetComponentUVE<Scene::AreaComponentUVE>(secondArea);
+TEST_F(AreaOverlapSystemTest, Query_MonitoringAndMonitorableFlagsControlAreaPairs) {
+    const Scene::Entity firstArea = MakeAreaEntity(
+        Math::Vector3{0.0F, 0.0F, 0.0F}, Math::Vector3{1.0F, 1.0F, 1.0F});
+    const Scene::Entity secondArea = MakeAreaEntity(
+        Math::Vector3{0.5F, 0.0F, 0.0F}, Math::Vector3{1.0F, 1.0F, 1.0F});
+    Scene::AreaComponent& first = entityManager.GetComponent<Scene::AreaComponent>(firstArea);
+    Scene::AreaComponent& second = entityManager.GetComponent<Scene::AreaComponent>(secondArea);
     first.collisionMask = 1U;
     second.collisionLayer = 1U;
     first.monitorable = false;
     second.monitorable = false;
 
-    EXPECT_TRUE(AreaOverlapSystemUVE::QueryUVE(entityManager).overlaps.empty());
+    EXPECT_TRUE(AreaOverlapSystem::Query(entityManager).overlaps.empty());
 
     first.monitorable = true;
     second.monitorable = true;
-    const AreaOverlapQueryResultUVE bidirectional = AreaOverlapSystemUVE::QueryUVE(entityManager);
+    const AreaOverlapQueryResult bidirectional = AreaOverlapSystem::Query(entityManager);
     ASSERT_EQ(bidirectional.overlaps.size(), 2U);
     EXPECT_EQ(bidirectional.overlaps[0].area, firstArea);
     EXPECT_EQ(bidirectional.overlaps[0].other, secondArea);
@@ -175,17 +175,17 @@ TEST_F(AreaOverlapSystemUVETest, QueryUVE_MonitoringAndMonitorableFlagsControlAr
     EXPECT_EQ(bidirectional.overlaps[1].other, firstArea);
 
     first.monitoring = false;
-    EXPECT_TRUE(AreaOverlapSystemUVE::QueryUVE(entityManager).overlaps.empty());
+    EXPECT_TRUE(AreaOverlapSystem::Query(entityManager).overlaps.empty());
 }
 
-TEST_F(AreaOverlapSystemUVETest, QueryUVE_HardCapReportsTruncationAndStableFirstPair) {
-    const Scene::EntityUVE area = MakeAreaEntityUVE(
-        Math::Vector3UVE{0.0F, 0.0F, 0.0F}, Math::Vector3UVE{2.0F, 2.0F, 2.0F});
-    const Scene::EntityUVE first = MakeColliderEntityUVE(
-        Math::Vector3UVE{0.5F, 0.0F, 0.0F}, Math::Vector3UVE{1.0F, 1.0F, 1.0F});
-    MakeColliderEntityUVE(Math::Vector3UVE{-0.5F, 0.0F, 0.0F}, Math::Vector3UVE{1.0F, 1.0F, 1.0F});
+TEST_F(AreaOverlapSystemTest, Query_HardCapReportsTruncationAndStableFirstPair) {
+    const Scene::Entity area = MakeAreaEntity(
+        Math::Vector3{0.0F, 0.0F, 0.0F}, Math::Vector3{2.0F, 2.0F, 2.0F});
+    const Scene::Entity first = MakeColliderEntity(
+        Math::Vector3{0.5F, 0.0F, 0.0F}, Math::Vector3{1.0F, 1.0F, 1.0F});
+    MakeColliderEntity(Math::Vector3{-0.5F, 0.0F, 0.0F}, Math::Vector3{1.0F, 1.0F, 1.0F});
 
-    const AreaOverlapQueryResultUVE result = AreaOverlapSystemUVE::QueryUVE(entityManager, 1U);
+    const AreaOverlapQueryResult result = AreaOverlapSystem::Query(entityManager, 1U);
 
     ASSERT_EQ(result.overlaps.size(), 1U);
     EXPECT_TRUE(result.truncated);
@@ -193,29 +193,29 @@ TEST_F(AreaOverlapSystemUVETest, QueryUVE_HardCapReportsTruncationAndStableFirst
     EXPECT_EQ(result.overlaps.front().other, first);
 }
 
-TEST_F(AreaOverlapSystemUVETest, QueryUVE_AreaCacheCapReportsTruncationAndInspectsBoundedPrefix) {
-    for (std::size_t index = 0U; index < kMaximumAreaOverlapQueryAreasUVE + 1U; ++index) {
-        const Scene::EntityUVE entity = entityManager.CreateEntityUVE();
-        Scene::TransformComponentUVE transform;
-        transform.localPosition = Math::Vector3UVE{static_cast<float>(index) * 4.0F, 0.0F, 0.0F};
-        sceneGraph.AttachTransformUVE(entityManager, entity, transform);
-        entityManager.AddComponentUVE<Scene::AreaComponentUVE>(
-            entity, Scene::AreaComponentUVE{Math::Vector3UVE{0.25F, 0.25F, 0.25F}, 1U, 0xFFFFFFFFU});
+TEST_F(AreaOverlapSystemTest, Query_AreaCacheCapReportsTruncationAndInspectsBoundedPrefix) {
+    for (std::size_t index = 0U; index < kMaximumAreaOverlapQueryAreas + 1U; ++index) {
+        const Scene::Entity entity = entityManager.CreateEntity();
+        Scene::TransformComponent transform;
+        transform.localPosition = Math::Vector3{static_cast<float>(index) * 4.0F, 0.0F, 0.0F};
+        sceneGraph.AttachTransform(entityManager, entity, transform);
+        entityManager.AddComponent<Scene::AreaComponent>(
+            entity, Scene::AreaComponent{Math::Vector3{0.25F, 0.25F, 0.25F}, 1U, 0xFFFFFFFFU});
     }
-    sceneGraph.UpdateUVE(entityManager);
+    sceneGraph.Update(entityManager);
 
-    const AreaOverlapQueryResultUVE result = AreaOverlapSystemUVE::QueryUVE(entityManager);
+    const AreaOverlapQueryResult result = AreaOverlapSystem::Query(entityManager);
 
-    EXPECT_EQ(result.inspectedAreas, kMaximumAreaOverlapQueryAreasUVE);
+    EXPECT_EQ(result.inspectedAreas, kMaximumAreaOverlapQueryAreas);
     EXPECT_TRUE(result.truncated);
     EXPECT_TRUE(result.overlaps.empty());
 }
 
-TEST_F(AreaOverlapSystemUVETest, QueryUVE_NoAreaEntitiesDoesNotTreatColliderPairsAsAreaOverlaps) {
-    MakeColliderEntityUVE(Math::Vector3UVE{0.0F, 0.0F, 0.0F}, Math::Vector3UVE{1.0F, 1.0F, 1.0F});
-    MakeColliderEntityUVE(Math::Vector3UVE{0.5F, 0.0F, 0.0F}, Math::Vector3UVE{1.0F, 1.0F, 1.0F});
+TEST_F(AreaOverlapSystemTest, Query_NoAreaEntitiesDoesNotTreatColliderPairsAsAreaOverlaps) {
+    MakeColliderEntity(Math::Vector3{0.0F, 0.0F, 0.0F}, Math::Vector3{1.0F, 1.0F, 1.0F});
+    MakeColliderEntity(Math::Vector3{0.5F, 0.0F, 0.0F}, Math::Vector3{1.0F, 1.0F, 1.0F});
 
-    const AreaOverlapQueryResultUVE result = AreaOverlapSystemUVE::QueryUVE(entityManager);
+    const AreaOverlapQueryResult result = AreaOverlapSystem::Query(entityManager);
 
     EXPECT_EQ(result.inspectedAreas, 0U);
     EXPECT_EQ(result.inspectedColliders, 2U);

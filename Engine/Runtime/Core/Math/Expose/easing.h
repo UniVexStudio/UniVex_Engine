@@ -12,12 +12,12 @@ namespace UVE::Math {
 
 /// The standard easing set (easings.net): every In/Out/InOut curve animation blending, camera
 /// transitions and UI tweens want, in one place. Before this, the only easing in the engine was
-/// the UI tween's private 9-case evaluator — `EaseUITweenUVE` now maps onto these and owns no
+/// the UI tween's private 9-case evaluator — `EaseUITween` now maps onto these and owns no
 /// formulas of its own.
 /// `t` is time in [0, 1]; every curve returns 0 at 0 and 1 at 1 (Back/Elastic/Bounce overshoot
 /// between, by design). Callers clamp `t` themselves — the curves extrapolate past the ends.
 /// Not constexpr: the trigonometric/exponential cases need runtime `<cmath>`.
-enum class EaseKindUVE : std::uint8_t {
+enum class EaseKind : std::uint8_t {
     Linear = 0,
     SineIn, SineOut, SineInOut,
     QuadIn, QuadOut, QuadInOut,
@@ -34,79 +34,79 @@ enum class EaseKindUVE : std::uint8_t {
 namespace Detail {
 
 /// The BounceOut polynomial shared by all three bounce curves.
-[[nodiscard]] inline float BounceOutUVE(const float t) noexcept {
-    constexpr float kN1UVE = 7.5625F;
-    constexpr float kD1UVE = 2.75F;
-    if (t < 1.0F / kD1UVE) {
-        return kN1UVE * t * t;
+[[nodiscard]] inline float BounceOut(const float t) noexcept {
+    constexpr float kN1 = 7.5625F;
+    constexpr float kD1 = 2.75F;
+    if (t < 1.0F / kD1) {
+        return kN1 * t * t;
     }
-    if (t < 2.0F / kD1UVE) {
-        const float u = t - 1.5F / kD1UVE;
-        return kN1UVE * u * u + 0.75F;
+    if (t < 2.0F / kD1) {
+        const float u = t - 1.5F / kD1;
+        return kN1 * u * u + 0.75F;
     }
-    if (t < 2.5F / kD1UVE) {
-        const float u = t - 2.25F / kD1UVE;
-        return kN1UVE * u * u + 0.9375F;
+    if (t < 2.5F / kD1) {
+        const float u = t - 2.25F / kD1;
+        return kN1 * u * u + 0.9375F;
     }
-    const float u = t - 2.625F / kD1UVE;
-    return kN1UVE * u * u + 0.984375F;
+    const float u = t - 2.625F / kD1;
+    return kN1 * u * u + 0.984375F;
 }
 
 } // namespace Detail
 
 /// Evaluates the easing curve `kind` at time `t`.
-[[nodiscard]] inline float EaseUVE(const EaseKindUVE kind, const float t) noexcept {
-    constexpr float kBackOvershootUVE = 1.70158F;
+[[nodiscard]] inline float Ease(const EaseKind kind, const float t) noexcept {
+    constexpr float kBackOvershoot = 1.70158F;
     switch (kind) {
-        case EaseKindUVE::Linear:
+        case EaseKind::Linear:
             return t;
-        case EaseKindUVE::SineIn:
-            return 1.0F - std::cos((t * kPiUVE) * 0.5F);
-        case EaseKindUVE::SineOut:
-            return std::sin((t * kPiUVE) * 0.5F);
-        case EaseKindUVE::SineInOut:
-            return -(std::cos(kPiUVE * t) - 1.0F) * 0.5F;
-        case EaseKindUVE::QuadIn:
+        case EaseKind::SineIn:
+            return 1.0F - std::cos((t * kPi) * 0.5F);
+        case EaseKind::SineOut:
+            return std::sin((t * kPi) * 0.5F);
+        case EaseKind::SineInOut:
+            return -(std::cos(kPi * t) - 1.0F) * 0.5F;
+        case EaseKind::QuadIn:
             return t * t;
-        case EaseKindUVE::QuadOut:
+        case EaseKind::QuadOut:
             return 1.0F - (1.0F - t) * (1.0F - t);
-        case EaseKindUVE::QuadInOut:
+        case EaseKind::QuadInOut:
             return t < 0.5F ? 2.0F * t * t : 1.0F - (-2.0F * t + 2.0F) * (-2.0F * t + 2.0F) * 0.5F;
-        case EaseKindUVE::CubicIn:
+        case EaseKind::CubicIn:
             return t * t * t;
-        case EaseKindUVE::CubicOut: {
+        case EaseKind::CubicOut: {
             const float u = 1.0F - t;
             return 1.0F - u * u * u;
         }
-        case EaseKindUVE::CubicInOut: {
+        case EaseKind::CubicInOut: {
             const float u = -2.0F * t + 2.0F;
             return t < 0.5F ? 4.0F * t * t * t : 1.0F - u * u * u * 0.5F;
         }
-        case EaseKindUVE::QuartIn:
+        case EaseKind::QuartIn:
             return t * t * t * t;
-        case EaseKindUVE::QuartOut: {
+        case EaseKind::QuartOut: {
             const float u = 1.0F - t;
             return 1.0F - u * u * u * u;
         }
-        case EaseKindUVE::QuartInOut: {
+        case EaseKind::QuartInOut: {
             const float u = -2.0F * t + 2.0F;
             return t < 0.5F ? 8.0F * t * t * t * t : 1.0F - u * u * u * u * 0.5F;
         }
-        case EaseKindUVE::QuintIn:
+        case EaseKind::QuintIn:
             return t * t * t * t * t;
-        case EaseKindUVE::QuintOut: {
+        case EaseKind::QuintOut: {
             const float u = 1.0F - t;
             return 1.0F - u * u * u * u * u;
         }
-        case EaseKindUVE::QuintInOut: {
+        case EaseKind::QuintInOut: {
             const float u = -2.0F * t + 2.0F;
             return t < 0.5F ? 16.0F * t * t * t * t * t : 1.0F - u * u * u * u * u * 0.5F;
         }
-        case EaseKindUVE::ExpoIn:
+        case EaseKind::ExpoIn:
             return t <= 0.0F ? 0.0F : std::pow(2.0F, 10.0F * t - 10.0F);
-        case EaseKindUVE::ExpoOut:
+        case EaseKind::ExpoOut:
             return t >= 1.0F ? 1.0F : 1.0F - std::pow(2.0F, -10.0F * t);
-        case EaseKindUVE::ExpoInOut:
+        case EaseKind::ExpoInOut:
             if (t <= 0.0F) {
                 return 0.0F;
             }
@@ -115,36 +115,36 @@ namespace Detail {
             }
             return t < 0.5F ? std::pow(2.0F, 20.0F * t - 10.0F) * 0.5F
                             : (2.0F - std::pow(2.0F, -20.0F * t + 10.0F)) * 0.5F;
-        case EaseKindUVE::CircIn:
+        case EaseKind::CircIn:
             return 1.0F - std::sqrt(1.0F - t * t);
-        case EaseKindUVE::CircOut: {
+        case EaseKind::CircOut: {
             const float u = t - 1.0F;
             return std::sqrt(1.0F - u * u);
         }
-        case EaseKindUVE::CircInOut: {
+        case EaseKind::CircInOut: {
             const float u = -2.0F * t + 2.0F;
             return t < 0.5F ? (1.0F - std::sqrt(1.0F - (2.0F * t) * (2.0F * t))) * 0.5F
                             : (std::sqrt(1.0F - u * u) + 1.0F) * 0.5F;
         }
-        case EaseKindUVE::BackIn: {
-            constexpr float kC3UVE = kBackOvershootUVE + 1.0F;
-            return kC3UVE * t * t * t - kBackOvershootUVE * t * t;
+        case EaseKind::BackIn: {
+            constexpr float kC3 = kBackOvershoot + 1.0F;
+            return kC3 * t * t * t - kBackOvershoot * t * t;
         }
-        case EaseKindUVE::BackOut: {
-            constexpr float kC3UVE = kBackOvershootUVE + 1.0F;
+        case EaseKind::BackOut: {
+            constexpr float kC3 = kBackOvershoot + 1.0F;
             const float u = t - 1.0F;
-            return 1.0F + kC3UVE * u * u * u + kBackOvershootUVE * u * u;
+            return 1.0F + kC3 * u * u * u + kBackOvershoot * u * u;
         }
-        case EaseKindUVE::BackInOut: {
-            constexpr float kC2UVE = kBackOvershootUVE * 1.525F;
+        case EaseKind::BackInOut: {
+            constexpr float kC2 = kBackOvershoot * 1.525F;
             if (t < 0.5F) {
                 const float u = 2.0F * t;
-                return (u * u * ((kC2UVE + 1.0F) * u - kC2UVE)) * 0.5F;
+                return (u * u * ((kC2 + 1.0F) * u - kC2)) * 0.5F;
             }
             const float u = 2.0F * t - 2.0F;
-            return (u * u * ((kC2UVE + 1.0F) * u + kC2UVE) + 2.0F) * 0.5F;
+            return (u * u * ((kC2 + 1.0F) * u + kC2) + 2.0F) * 0.5F;
         }
-        case EaseKindUVE::ElasticIn:
+        case EaseKind::ElasticIn:
             if (t <= 0.0F) {
                 return 0.0F;
             }
@@ -152,17 +152,17 @@ namespace Detail {
                 return 1.0F;
             }
             return -std::pow(2.0F, 10.0F * t - 10.0F) *
-                   std::sin((10.0F * t - 10.75F) * ((2.0F * kPiUVE) / 3.0F));
-        case EaseKindUVE::ElasticOut:
+                   std::sin((10.0F * t - 10.75F) * ((2.0F * kPi) / 3.0F));
+        case EaseKind::ElasticOut:
             if (t <= 0.0F) {
                 return 0.0F;
             }
             if (t >= 1.0F) {
                 return 1.0F;
             }
-            return std::pow(2.0F, -10.0F * t) * std::sin((10.0F * t - 0.75F) * ((2.0F * kPiUVE) / 3.0F)) +
+            return std::pow(2.0F, -10.0F * t) * std::sin((10.0F * t - 0.75F) * ((2.0F * kPi) / 3.0F)) +
                    1.0F;
-        case EaseKindUVE::ElasticInOut:
+        case EaseKind::ElasticInOut:
             if (t <= 0.0F) {
                 return 0.0F;
             }
@@ -171,20 +171,20 @@ namespace Detail {
             }
             if (t < 0.5F) {
                 return -(std::pow(2.0F, 20.0F * t - 10.0F) *
-                         std::sin((20.0F * t - 11.125F) * ((2.0F * kPiUVE) / 4.5F))) *
+                         std::sin((20.0F * t - 11.125F) * ((2.0F * kPi) / 4.5F))) *
                        0.5F;
             }
             return (std::pow(2.0F, -20.0F * t + 10.0F) *
-                    std::sin((20.0F * t - 11.125F) * ((2.0F * kPiUVE) / 4.5F))) *
+                    std::sin((20.0F * t - 11.125F) * ((2.0F * kPi) / 4.5F))) *
                        0.5F +
                    1.0F;
-        case EaseKindUVE::BounceIn:
-            return 1.0F - Detail::BounceOutUVE(1.0F - t);
-        case EaseKindUVE::BounceOut:
-            return Detail::BounceOutUVE(t);
-        case EaseKindUVE::BounceInOut:
-            return t < 0.5F ? (1.0F - Detail::BounceOutUVE(1.0F - 2.0F * t)) * 0.5F
-                            : (1.0F + Detail::BounceOutUVE(2.0F * t - 1.0F)) * 0.5F;
+        case EaseKind::BounceIn:
+            return 1.0F - Detail::BounceOut(1.0F - t);
+        case EaseKind::BounceOut:
+            return Detail::BounceOut(t);
+        case EaseKind::BounceInOut:
+            return t < 0.5F ? (1.0F - Detail::BounceOut(1.0F - 2.0F * t)) * 0.5F
+                            : (1.0F + Detail::BounceOut(2.0F * t - 1.0F)) * 0.5F;
     }
     return t;
 }

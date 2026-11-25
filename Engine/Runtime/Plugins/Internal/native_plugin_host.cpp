@@ -21,11 +21,11 @@ namespace {
 // Memory-safety scan bounds for foreign strings: generous on purpose. The manifest validator
 // enforces the real policy limits afterwards; these only stop the host from reading past a
 // missing NUL into unmapped memory.
-inline constexpr std::size_t kForeignIdentifierScanBytesUVE = 1024U;
-inline constexpr std::size_t kForeignDisplayNameScanBytesUVE = 4096U;
-inline constexpr std::size_t kForeignCapabilityScanBytesUVE = 1024U;
+inline constexpr std::size_t kForeignIdentifierScanBytes = 1024U;
+inline constexpr std::size_t kForeignDisplayNameScanBytes = 4096U;
+inline constexpr std::size_t kForeignCapabilityScanBytes = 1024U;
 
-[[nodiscard]] bool CopyForeignStringUVE(const char* text, const std::size_t scanBytes, std::string& out) {
+[[nodiscard]] bool CopyForeignString(const char* text, const std::size_t scanBytes, std::string& out) {
     out.clear();
     if (text == nullptr) {
         return false;
@@ -41,7 +41,7 @@ inline constexpr std::size_t kForeignCapabilityScanBytesUVE = 1024U;
     return true;
 }
 
-[[nodiscard]] void* OpenLibraryUVE(const std::filesystem::path& path, std::string& outError) {
+[[nodiscard]] void* OpenLibrary(const std::filesystem::path& path, std::string& outError) {
 #ifdef _WIN32
     const std::u8string utf8 = path.u8string();
     if (utf8.size() > static_cast<std::size_t>(std::numeric_limits<int>::max())) {
@@ -77,7 +77,7 @@ inline constexpr std::size_t kForeignCapabilityScanBytesUVE = 1024U;
 #endif
 }
 
-[[nodiscard]] void* FindSymbolUVE(void* handle, const char* name) noexcept {
+[[nodiscard]] void* FindSymbol(void* handle, const char* name) noexcept {
 #ifdef _WIN32
     return reinterpret_cast<void*>(::GetProcAddress(static_cast<HMODULE>(handle), name));
 #else
@@ -85,7 +85,7 @@ inline constexpr std::size_t kForeignCapabilityScanBytesUVE = 1024U;
 #endif
 }
 
-void CloseLibraryUVE(void* handle) noexcept {
+void CloseLibrary(void* handle) noexcept {
 #ifdef _WIN32
     static_cast<void>(::FreeLibrary(static_cast<HMODULE>(handle)));
 #else
@@ -95,121 +95,121 @@ void CloseLibraryUVE(void* handle) noexcept {
 
 } // namespace
 
-NativePluginDescriptorResultUVE ValidateNativePluginDescriptorUVE(
-    const NativePluginDescriptorUVE* descriptor, NativePluginManifestUVE& outManifest) {
-    outManifest = NativePluginManifestUVE{};
+NativePluginDescriptorResult ValidateNativePluginDescriptor(
+    const NativePluginDescriptor* descriptor, NativePluginManifest& outManifest) {
+    outManifest = NativePluginManifest{};
     if (descriptor == nullptr) {
-        return {NativePluginDescriptorCodeUVE::NullDescriptor, "The plugin entry point returned null."};
+        return {NativePluginDescriptorCode::NullDescriptor, "The plugin entry point returned null."};
     }
-    if (descriptor->abiVersion != kNativePluginProtocolVersionUVE) {
-        return {NativePluginDescriptorCodeUVE::UnsupportedAbi,
+    if (descriptor->abiVersion != kNativePluginProtocolVersion) {
+        return {NativePluginDescriptorCode::UnsupportedAbi,
                 "The plugin speaks ABI v" + std::to_string(descriptor->abiVersion) + "; the host speaks v" +
-                    std::to_string(kNativePluginProtocolVersionUVE) + "."};
+                    std::to_string(kNativePluginProtocolVersion) + "."};
     }
-    NativePluginManifestUVE manifest;
+    NativePluginManifest manifest;
     manifest.requiredEngineProtocol = descriptor->requiredEngineProtocol;
-    manifest.version = NativePluginVersionUVE{descriptor->versionMajor, descriptor->versionMinor,
+    manifest.version = NativePluginVersion{descriptor->versionMajor, descriptor->versionMinor,
                                               descriptor->versionPatch};
-    if (!CopyForeignStringUVE(descriptor->pluginId, kForeignIdentifierScanBytesUVE, manifest.pluginId)) {
-        return {NativePluginDescriptorCodeUVE::InvalidIdentifier,
+    if (!CopyForeignString(descriptor->pluginId, kForeignIdentifierScanBytes, manifest.pluginId)) {
+        return {NativePluginDescriptorCode::InvalidIdentifier,
                 "The plugin identifier is null or not NUL-terminated."};
     }
-    if (!CopyForeignStringUVE(descriptor->displayName, kForeignDisplayNameScanBytesUVE, manifest.displayName)) {
-        return {NativePluginDescriptorCodeUVE::InvalidDisplayName,
+    if (!CopyForeignString(descriptor->displayName, kForeignDisplayNameScanBytes, manifest.displayName)) {
+        return {NativePluginDescriptorCode::InvalidDisplayName,
                 "The plugin display name is null or not NUL-terminated."};
     }
-    if (descriptor->capabilityCount > NativePluginRegistryUVE::kMaximumCapabilitiesPerPluginUVE) {
-        return {NativePluginDescriptorCodeUVE::TooManyCapabilities,
+    if (descriptor->capabilityCount > NativePluginRegistry::kMaximumCapabilitiesPerPlugin) {
+        return {NativePluginDescriptorCode::TooManyCapabilities,
                 "The plugin claims " + std::to_string(descriptor->capabilityCount) + " capabilities; at most " +
-                    std::to_string(NativePluginRegistryUVE::kMaximumCapabilitiesPerPluginUVE) + " are read."};
+                    std::to_string(NativePluginRegistry::kMaximumCapabilitiesPerPlugin) + " are read."};
     }
     if (descriptor->capabilityCount > 0U && descriptor->capabilityIds == nullptr) {
-        return {NativePluginDescriptorCodeUVE::InvalidCapabilityId,
+        return {NativePluginDescriptorCode::InvalidCapabilityId,
                 "The plugin claims capabilities but provides no capability array."};
     }
     for (std::uint32_t index = 0U; index < descriptor->capabilityCount; ++index) {
         std::string capability;
-        if (!CopyForeignStringUVE(descriptor->capabilityIds[index], kForeignCapabilityScanBytesUVE, capability)) {
-            return {NativePluginDescriptorCodeUVE::InvalidCapabilityId,
+        if (!CopyForeignString(descriptor->capabilityIds[index], kForeignCapabilityScanBytes, capability)) {
+            return {NativePluginDescriptorCode::InvalidCapabilityId,
                     "Capability " + std::to_string(index) + " is null or not NUL-terminated."};
         }
         manifest.capabilityIds.push_back(std::move(capability));
     }
     outManifest = std::move(manifest);
-    return {NativePluginDescriptorCodeUVE::Valid, {}};
+    return {NativePluginDescriptorCode::Valid, {}};
 }
 
-NativePluginHostUVE::NativePluginHostUVE(NativePluginRegistryUVE& registry) noexcept : m_registry(registry) {}
+NativePluginHost::NativePluginHost(NativePluginRegistry& registry) noexcept : m_registry(registry) {}
 
-NativePluginHostUVE::~NativePluginHostUVE() {
+NativePluginHost::~NativePluginHost() {
     try {
-        UnloadAllUVE();
+        UnloadAll();
     } catch (...) {
         // Best effort by design: destruction must not throw.
     }
 }
 
-NativePluginLoadResultUVE NativePluginHostUVE::LoadUVE(const std::filesystem::path& libraryPath,
-                                                       const NativePluginCapabilityPolicyUVE& policy) {
+NativePluginLoadResult NativePluginHost::Load(const std::filesystem::path& libraryPath,
+                                                       const NativePluginCapabilityPolicy& policy) {
     std::error_code error;
     const bool exists = std::filesystem::exists(libraryPath, error);
     if (error || !exists) {
-        return {NativePluginLoadCodeUVE::FileNotFound,
+        return {NativePluginLoadCode::FileNotFound,
                 "No plugin file at '" + libraryPath.generic_string() + "'.", {}};
     }
     std::string openError;
-    void* handle = OpenLibraryUVE(libraryPath, openError);
+    void* handle = OpenLibrary(libraryPath, openError);
     if (handle == nullptr) {
-        return {NativePluginLoadCodeUVE::OpenFailed, openError, {}};
+        return {NativePluginLoadCode::OpenFailed, openError, {}};
     }
-    const auto entry = reinterpret_cast<NativePluginEntryFnUVE>(
-        FindSymbolUVE(handle, kNativePluginEntrySymbolUVE.data()));
+    const auto entry = reinterpret_cast<NativePluginEntryFn>(
+        FindSymbol(handle, kNativePluginEntrySymbol.data()));
     if (entry == nullptr) {
-        CloseLibraryUVE(handle);
-        return {NativePluginLoadCodeUVE::EntryMissing,
-                "The library exports no '" + std::string(kNativePluginEntrySymbolUVE) + "'.", {}};
+        CloseLibrary(handle);
+        return {NativePluginLoadCode::EntryMissing,
+                "The library exports no '" + std::string(kNativePluginEntrySymbol) + "'.", {}};
     }
-    const NativePluginDescriptorUVE* descriptor = nullptr;
+    const NativePluginDescriptor* descriptor = nullptr;
     try {
         descriptor = entry();
     } catch (...) {
-        CloseLibraryUVE(handle);
-        return {NativePluginLoadCodeUVE::InvalidDescriptor, "The plugin entry point threw an exception.", {}};
+        CloseLibrary(handle);
+        return {NativePluginLoadCode::InvalidDescriptor, "The plugin entry point threw an exception.", {}};
     }
-    NativePluginManifestUVE manifest;
-    const NativePluginDescriptorResultUVE shape = ValidateNativePluginDescriptorUVE(descriptor, manifest);
-    if (!shape.IsValidUVE()) {
-        CloseLibraryUVE(handle);
-        const NativePluginLoadCodeUVE code =
-            shape.code == NativePluginDescriptorCodeUVE::UnsupportedAbi
-                ? NativePluginLoadCodeUVE::UnsupportedProtocol
-                : NativePluginLoadCodeUVE::InvalidDescriptor;
+    NativePluginManifest manifest;
+    const NativePluginDescriptorResult shape = ValidateNativePluginDescriptor(descriptor, manifest);
+    if (!shape.IsValid()) {
+        CloseLibrary(handle);
+        const NativePluginLoadCode code =
+            shape.code == NativePluginDescriptorCode::UnsupportedAbi
+                ? NativePluginLoadCode::UnsupportedProtocol
+                : NativePluginLoadCode::InvalidDescriptor;
         return {code, shape.message, {}};
     }
     if (m_loaded.find(manifest.pluginId) != m_loaded.end()) {
-        CloseLibraryUVE(handle);
-        return {NativePluginLoadCodeUVE::ManifestRejected,
+        CloseLibrary(handle);
+        return {NativePluginLoadCode::ManifestRejected,
                 "The plugin '" + manifest.pluginId + "' is already loaded.", {}};
     }
     // Negotiation before validation: protocol compatibility is the cheapest disqualifier, and it
     // keeps UnsupportedProtocol reachable (validation also rejects unknown protocols, so running it
     // first would swallow every such failure into ManifestRejected).
-    const NativePluginAbiNegotiationResultUVE negotiated = NegotiateNativePluginAbiUVE(manifest);
-    if (!negotiated.IsCompatibleUVE()) {
-        CloseLibraryUVE(handle);
-        return {NativePluginLoadCodeUVE::UnsupportedProtocol, negotiated.message, {}};
+    const NativePluginAbiNegotiationResult negotiated = NegotiateNativePluginAbi(manifest);
+    if (!negotiated.IsCompatible()) {
+        CloseLibrary(handle);
+        return {NativePluginLoadCode::UnsupportedProtocol, negotiated.message, {}};
     }
-    const NativePluginManifestValidationResultUVE valid = ValidateNativePluginManifestUVE(manifest, policy);
-    if (!valid.IsValidUVE()) {
-        CloseLibraryUVE(handle);
-        return {NativePluginLoadCodeUVE::ManifestRejected,
+    const NativePluginManifestValidationResult valid = ValidateNativePluginManifest(manifest, policy);
+    if (!valid.IsValid()) {
+        CloseLibrary(handle);
+        return {NativePluginLoadCode::ManifestRejected,
                 "The manifest is invalid: " + valid.diagnostics.front().message, {}};
     }
     const std::string pluginId = manifest.pluginId;
-    const NativePluginRegistryResultUVE registered = m_registry.RegisterManifestUVE(std::move(manifest), policy);
-    if (!registered.IsAcceptedUVE()) {
-        CloseLibraryUVE(handle);
-        return {NativePluginLoadCodeUVE::ManifestRejected, registered.message, {}};
+    const NativePluginRegistryResult registered = m_registry.RegisterManifest(std::move(manifest), policy);
+    if (!registered.IsAccepted()) {
+        CloseLibrary(handle);
+        return {NativePluginLoadCode::ManifestRejected, registered.message, {}};
     }
     if (descriptor->initialize != nullptr) {
         int status = 0;
@@ -220,26 +220,26 @@ NativePluginLoadResultUVE NativePluginHostUVE::LoadUVE(const std::filesystem::pa
             threw = true;
         }
         if (threw || status != 0) {
-            static_cast<void>(m_registry.UnregisterManifestUVE(pluginId));
-            CloseLibraryUVE(handle);
-            return {NativePluginLoadCodeUVE::InitializeFailed,
+            static_cast<void>(m_registry.UnregisterManifest(pluginId));
+            CloseLibrary(handle);
+            return {NativePluginLoadCode::InitializeFailed,
                     threw ? "The plugin initialize function threw an exception."
                           : "The plugin initialize function returned " + std::to_string(status) + ".",
                     {}};
         }
     }
-    m_loaded.emplace(pluginId, LoadedPluginUVE{handle, descriptor->shutdown});
+    m_loaded.emplace(pluginId, LoadedPlugin{handle, descriptor->shutdown});
     m_loadOrder.push_back(pluginId);
-    return {NativePluginLoadCodeUVE::Loaded, "The plugin '" + pluginId + "' loaded.", pluginId};
+    return {NativePluginLoadCode::Loaded, "The plugin '" + pluginId + "' loaded.", pluginId};
 }
 
-bool NativePluginHostUVE::UnloadUVE(const std::string_view pluginId) {
+bool NativePluginHost::Unload(const std::string_view pluginId) {
     const auto loaded = m_loaded.find(std::string(pluginId));
     if (loaded == m_loaded.end()) {
         return false;
     }
-    const NativePluginRegistryResultUVE removed = m_registry.UnregisterManifestUVE(loaded->first);
-    if (removed.code == NativePluginRegistryCodeUVE::Busy) {
+    const NativePluginRegistryResult removed = m_registry.UnregisterManifest(loaded->first);
+    if (removed.code == NativePluginRegistryCode::Busy) {
         return false;
     }
     if (loaded->second.shutdown != nullptr) {
@@ -249,24 +249,24 @@ bool NativePluginHostUVE::UnloadUVE(const std::string_view pluginId) {
             // A throwing shutdown cannot stop an unload already past unregistering.
         }
     }
-    CloseLibraryUVE(loaded->second.handle);
+    CloseLibrary(loaded->second.handle);
     std::erase(m_loadOrder, loaded->first);
     m_loaded.erase(loaded);
     return true;
 }
 
-void NativePluginHostUVE::UnloadAllUVE() {
+void NativePluginHost::UnloadAll() {
     const std::vector<std::string> order = m_loadOrder;
     for (auto id = order.rbegin(); id != order.rend(); ++id) {
-        static_cast<void>(UnloadUVE(*id));
+        static_cast<void>(Unload(*id));
     }
 }
 
-bool NativePluginHostUVE::IsLoadedUVE(const std::string_view pluginId) const noexcept {
+bool NativePluginHost::IsLoaded(const std::string_view pluginId) const noexcept {
     return m_loaded.find(std::string(pluginId)) != m_loaded.end();
 }
 
-std::size_t NativePluginHostUVE::LoadedCountUVE() const noexcept {
+std::size_t NativePluginHost::LoadedCount() const noexcept {
     return m_loaded.size();
 }
 

@@ -4,8 +4,8 @@
 // Every constant below is a raw string literal transcribed byte-for-byte from its corresponding
 // .glsl file under engine/render/shader/built_in/ - kept in sync by convention, enforced by
 // tests/render/shader/built_in_shaders_parity_uve_tests.cpp (reads the real file and asserts
-// exact equality against the constant here). Used automatically by ShaderManagerUVE as a fallback
-// when the corresponding virtual path isn't reachable (see ShaderProgramDescUVE's doc comment).
+// exact equality against the constant here). Used automatically by ShaderManager as a fallback
+// when the corresponding virtual path isn't reachable (see ShaderProgramDesc's doc comment).
 
 #include "built_in_shaders.h"
 
@@ -56,8 +56,8 @@ void main() {
 in vec2 vTexCoord;
 out vec4 FragColor;
 
-// Placeholder only - no CreateTextureUVE-backed binding exists yet this increment
-// (MaterialSystemUVE, a future increment, is what actually binds a real texture here).
+// Placeholder only - no CreateTexture-backed binding exists yet this increment
+// (MaterialSystem, a future increment, is what actually binds a real texture here).
 uniform sampler2D uTexture;
 
 void main() {
@@ -176,7 +176,7 @@ uniform float uFogSunScatter;
 uniform float uLightVolumetricFogEnergy;
 uniform int uFogVolumeCount;
 
-struct FogVolumeUVE {
+struct FogVolume {
     vec3 position;
     vec3 axisX;
     vec3 axisY;
@@ -190,7 +190,7 @@ struct FogVolumeUVE {
     float edgeFade;
     int shape;
 };
-uniform FogVolumeUVE uFogVolumes[8];
+uniform FogVolume uFogVolumes[8];
 uniform int uVolumetricShadowsEnabled;
 uniform mat4 uLightSpaceMatrices[3];
 uniform float uShadowCascadeSplits[3];
@@ -199,30 +199,30 @@ uniform float uLutContribution;
 uniform int uColorblindMode;
 uniform float uColorblindSeverity;
 
-const int kFogModeLinearUVE = 0; // WorldEnvironmentFogModeUVE::Linear
-const int kFogModeHeightUVE = 2; // Exponential is 1; Height is 2.
-const int kFogVolumeRaySamplesUVE = 12;
-const float kFogVolumeScaleEpsilonUVE = 1.0e-6;
+const int kFogModeLinear = 0; // WorldEnvironmentFogMode::Linear
+const int kFogModeHeight = 2; // Exponential is 1; Height is 2.
+const int kFogVolumeRaySamples = 12;
+const float kFogVolumeScaleEpsilon = 1.0e-6;
 
 // Filled concentric Vogel-disc taps covering inner, middle, and outer bokeh rings cleanly.
-const vec2 kDepthOfFieldOffsetsUVE[12] = vec2[12](
+const vec2 kDepthOfFieldOffsets[12] = vec2[12](
     vec2( 0.2887,  0.0000), vec2(-0.3690,  0.3360), vec2( 0.0567, -0.6426), vec2( 0.4596,  0.6087),
     vec2(-0.8350, -0.1566), vec2( 0.7031, -0.5812), vec2(-0.0884,  0.9600), vec2(-0.6251, -0.7805),
     vec2( 0.9850,  0.1725), vec2(-0.8588,  0.5123), vec2( 0.3420, -0.9397), vec2( 0.1736,  0.9848)
 );
 
-float InterleavedGradientNoiseUVE(vec2 pixel) {
+float InterleavedGradientNoise(vec2 pixel) {
     return fract(52.9829189 * fract(dot(pixel, vec2(0.06711056, 0.00583715))));
 }
 
-float DecodeNdcDepthUVE(float depthSample) {
+float DecodeNdcDepth(float depthSample) {
     float scale = uDepthNdcScale != 0.0 ? uDepthNdcScale : 2.0;
     float bias = uDepthNdcScale != 0.0 ? uDepthNdcBias : -1.0;
     return depthSample * scale + bias;
 }
 
-vec3 ReconstructViewPointUVE(vec2 uv, float depthSample) {
-    float ndcZ = DecodeNdcDepthUVE(clamp(depthSample, 0.0, 1.0));
+vec3 ReconstructViewPoint(vec2 uv, float depthSample) {
+    float ndcZ = DecodeNdcDepth(clamp(depthSample, 0.0, 1.0));
     vec2 ndcXY = uv * 2.0 - 1.0;
     if (uFastReconstruct != 0 && uOrthographic == 0) {
         float viewZ = uProjB / max(uProjA - ndcZ, 1.0e-6);
@@ -233,13 +233,13 @@ vec3 ReconstructViewPointUVE(vec2 uv, float depthSample) {
     return viewPosition.xyz / max(abs(viewPosition.w), 1.0e-6);
 }
 
-float ReconstructViewDistanceUVE(vec2 uv, float depthSample, float fallbackDistance) {
+float ReconstructViewDistance(vec2 uv, float depthSample, float fallbackDistance) {
     float safeNear = max(uCameraNear, 0.01);
-    float ndcZ = DecodeNdcDepthUVE(clamp(depthSample, 0.0, 1.0));
+    float ndcZ = DecodeNdcDepth(clamp(depthSample, 0.0, 1.0));
     if (uOrthographic == 0 && ndcZ <= 0.0001) {
         return safeNear;
     }
-    vec3 viewPos = ReconstructViewPointUVE(uv, depthSample);
+    vec3 viewPos = ReconstructViewPoint(uv, depthSample);
     if (uOrthographic == 0 && viewPos.z >= -1.0e-4) {
         return safeNear;
     }
@@ -248,27 +248,27 @@ float ReconstructViewDistanceUVE(vec2 uv, float depthSample, float fallbackDista
 }
 
 // Exact IEC 61966-2-1 Linear -> sRGB OETF and inverse EOTF.
-vec3 LinearToSrgbUVE(vec3 linearColor) {
+vec3 LinearToSrgb(vec3 linearColor) {
     vec3 c = max(linearColor, vec3(0.0));
     vec3 lo = c * 12.92;
     vec3 hi = 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055;
     return mix(lo, hi, step(vec3(0.0031308), c));
 }
 
-vec3 SrgbToLinearUVE(vec3 srgbColor) {
+vec3 SrgbToLinear(vec3 srgbColor) {
     vec3 c = max(srgbColor, vec3(0.0));
     vec3 lo = c / 12.92;
     vec3 hi = pow((c + 0.055) / 1.055, vec3(2.4));
     return mix(lo, hi, step(vec3(0.04045), c));
 }
 
-float SampleVolumetricShadowDepthUVE(int cascade, vec2 uv) {
+float SampleVolumetricShadowDepth(int cascade, vec2 uv) {
     if (cascade == 0) { return texture(uShadowMapTextures[0], uv).r; }
     if (cascade == 1) { return texture(uShadowMapTextures[1], uv).r; }
     return texture(uShadowMapTextures[2], uv).r;
 }
 
-float VolumetricShadowFactorUVE(vec3 samplePos, float distFromCam) {
+float VolumetricShadowFactor(vec3 samplePos, float distFromCam) {
     if (uVolumetricShadowsEnabled == 0) {
         return 1.0;
     }
@@ -287,13 +287,13 @@ float VolumetricShadowFactorUVE(vec3 samplePos, float distFromCam) {
             depthRef <= 0.0 || depthRef >= 1.0) {
             return 1.0;
         }
-        float shadowDepth = SampleVolumetricShadowDepthUVE(cascade, uv);
+        float shadowDepth = SampleVolumetricShadowDepth(cascade, uv);
         return (depthRef - 0.0015 > shadowDepth) ? 0.0 : 1.0;
     }
     return 1.0;
 }
 
-vec3 SampleLutUVE(sampler2D lut, vec3 color) {
+vec3 SampleLut(sampler2D lut, vec3 color) {
     ivec2 lutSize = textureSize(lut, 0);
     float size = float(max(lutSize.y, 1));
     float maxColor = max(size - 1.0, 1.0);
@@ -310,7 +310,7 @@ vec3 SampleLutUVE(sampler2D lut, vec3 color) {
     return mix(s0, s1, fracZ);
 }
 
-vec3 AcesToneMapUVE(vec3 color) {
+vec3 AcesToneMap(vec3 color) {
     const float a = 2.51;
     const float b = 0.03;
     const float c = 2.43;
@@ -322,7 +322,7 @@ vec3 AcesToneMapUVE(vec3 color) {
 // Smooth filmic curve with wide-gamut inset/outset rotation so bright saturated highlights
 // (fire, sparks, sunlight, emissives) roll smoothly toward luminous neutral whites without
 // harsh hue shifts or brittle clipping.
-vec3 SoftFilmicContrastApproxUVE(vec3 x) {
+vec3 SoftFilmicContrastApprox(vec3 x) {
     vec3 x2 = x * x;
     vec3 x4 = x2 * x2;
     return + 15.5     * x4 * x2
@@ -334,7 +334,7 @@ vec3 SoftFilmicContrastApproxUVE(vec3 x) {
            - 0.00232;
 }
 
-vec3 SoftFilmicToneMapUVE(vec3 color) {
+vec3 SoftFilmicToneMap(vec3 color) {
     const mat3 kInsetMatrix = mat3(
         0.842479062253094,  0.0423282422610123, 0.0423756549057051,
         0.0784335999999992, 0.878468636469772,  0.0784336,
@@ -351,7 +351,7 @@ vec3 SoftFilmicToneMapUVE(vec3 color) {
     vec3 val = kInsetMatrix * max(color, vec3(0.0));
     val = clamp(log2(max(val, vec3(1.0e-6))), vec3(kMinEv), vec3(kMaxEv));
     val = (val - kMinEv) / (kMaxEv - kMinEv);
-    val = SoftFilmicContrastApproxUVE(val);
+    val = SoftFilmicContrastApprox(val);
     val = kOutsetMatrix * val;
     val = clamp(val, 0.0, 1.0);
     // Curve output is perceptual-encoded (~2.2); decode back to linear [0, 1] so downstream
@@ -359,17 +359,17 @@ vec3 SoftFilmicToneMapUVE(vec3 color) {
     return pow(val, vec3(2.2));
 }
 
-vec3 ApplyToneMappingUVE(vec3 color) {
+vec3 ApplyToneMapping(vec3 color) {
     if (uToneMappingMethod == 0) {
         return clamp(color, 0.0, 1.0);
     }
     if (uToneMappingMethod == 1) {
-        return AcesToneMapUVE(color);
+        return AcesToneMap(color);
     }
-    return SoftFilmicToneMapUVE(color);
+    return SoftFilmicToneMap(color);
 }
 
-vec2 LensDistortionSourceUVUVE(vec2 uv) {
+vec2 LensDistortionSourceUV(vec2 uv) {
     float intensity = clamp(uLensDistortionIntensity, 0.0, 1.0);
     if (intensity <= 0.0) {
         return uv;
@@ -385,15 +385,15 @@ vec2 LensDistortionSourceUVUVE(vec2 uv) {
     return centered * 0.5 + 0.5;
 }
 
-vec2 HumanEyeSourceUVUVE(vec2 uv) {
-    uv = LensDistortionSourceUVUVE(uv);
+vec2 HumanEyeSourceUV(vec2 uv) {
+    uv = LensDistortionSourceUV(uv);
     vec2 ndc = uv * 2.0 - 1.0;
     float k0 = uHumanEyeCenterScale;
     vec2 sampleNdc = ndc * (vec2(k0) + (1.0 - k0) * ndc * ndc);
     return sampleNdc * 0.5 + 0.5;
 }
 
-vec4 SampleHdrColorAlphaUVE(vec2 uv) {
+vec4 SampleHdrColorAlpha(vec2 uv) {
     vec4 raw;
     if (uNearestUpscaling != 0) {
         ivec2 sourceSize = textureSize(uSourceTexture, 0);
@@ -407,9 +407,9 @@ vec4 SampleHdrColorAlphaUVE(vec2 uv) {
 }
 
 // Half-res depth-aware bilateral upsample for Screen-Space Reflections.
-vec4 SampleBilateralSsrUVE(vec2 uv, float centerDepth) {
+vec4 SampleBilateralSsr(vec2 uv, float centerDepth) {
     vec2 ssrTexel = 1.0 / max(vec2(textureSize(uSsrTexture, 0)), vec2(1.0));
-    float centerLin = abs(ReconstructViewPointUVE(uv, centerDepth).z);
+    float centerLin = abs(ReconstructViewPoint(uv, centerDepth).z);
     float depthScale = max(centerLin * 0.08, 0.05);
     vec2 offsets[4] = vec2[4](
         vec2(-0.5, -0.5), vec2(0.5, -0.5), vec2(-0.5, 0.5), vec2(0.5, 0.5)
@@ -419,7 +419,7 @@ vec4 SampleBilateralSsrUVE(vec2 uv, float centerDepth) {
     for (int i = 0; i < 4; ++i) {
         vec2 sampleUv = clamp(uv + offsets[i] * ssrTexel, vec2(0.0), vec2(1.0));
         float sampleDepth = texture(uSceneDepthTexture, sampleUv).r;
-        float sampleLin = sampleDepth < 0.999999 ? abs(ReconstructViewPointUVE(sampleUv, sampleDepth).z) : centerLin;
+        float sampleLin = sampleDepth < 0.999999 ? abs(ReconstructViewPoint(sampleUv, sampleDepth).z) : centerLin;
         float w = exp(-abs(sampleLin - centerLin) / depthScale);
         sum += texture(uSsrTexture, sampleUv) * w;
         weightSum += w;
@@ -429,8 +429,8 @@ vec4 SampleBilateralSsrUVE(vec2 uv, float centerDepth) {
 
 // Samples linear HDR scene color with ambient-only SSAO, direct-light contact shadows, and
 // energy-conserving SSR composited cleanly in one unified pass.
-vec3 SampleCompositedHdrUVE(vec2 uv, out float depthSample) {
-    vec4 raw = SampleHdrColorAlphaUVE(uv);
+vec3 SampleCompositedHdr(vec2 uv, out float depthSample) {
+    vec4 raw = SampleHdrColorAlpha(uv);
     vec3 hdr = raw.rgb;
     depthSample = texture(uSceneDepthTexture, uv).r;
     if (depthSample < 0.999999) {
@@ -445,45 +445,45 @@ vec3 SampleCompositedHdrUVE(vec2 uv, out float depthSample) {
             hdr *= mix(1.0, cs, directWeight);
         }
         if (uSsrCompositeEnabled != 0) {
-            vec4 ssr = SampleBilateralSsrUVE(uv, depthSample);
+            vec4 ssr = SampleBilateralSsr(uv, depthSample);
             hdr = mix(hdr, max(ssr.rgb, vec3(0.0)), clamp(ssr.a, 0.0, 0.85));
         }
     }
     return hdr;
 }
 
-vec3 SampleHdrRawUVE(vec2 uv) {
+vec3 SampleHdrRaw(vec2 uv) {
     float unusedDepth = 1.0;
-    return SampleCompositedHdrUVE(uv, unusedDepth);
+    return SampleCompositedHdr(uv, unusedDepth);
 }
 
-vec3 SampleDisplayForAaUVE(vec2 uv, float exposure) {
+vec3 SampleDisplayForAa(vec2 uv, float exposure) {
     float d = 1.0;
-    vec3 hdr = SampleCompositedHdrUVE(uv, d);
+    vec3 hdr = SampleCompositedHdr(uv, d);
     if (uBloomCompositeEnabled != 0) {
         hdr += max(texture(uBloomTexture, uv).rgb, vec3(0.0));
     }
-    return LinearToSrgbUVE(ApplyToneMappingUVE(hdr * exposure));
+    return LinearToSrgb(ApplyToneMapping(hdr * exposure));
 }
 
-float PerceptualLumaUVE(vec3 displayRgb) {
+float PerceptualLuma(vec3 displayRgb) {
     return dot(displayRgb, vec3(0.299, 0.587, 0.114));
 }
 
 // Post-tonemap perceptual-luma FXAA 3.11: operates strictly in [0, 1] display sRGB so bright HDR
 // speculars never corrupt edge contrast thresholds, with diagonal subpixel anti-aliasing and
 // configurable quality edge search (3 / 5 / 7 taps).
-vec3 ApplyFastApproximateAAUVE(vec2 uv, vec3 centerDisplay, float exposure) {
+vec3 ApplyFastApproximateAA(vec2 uv, vec3 centerDisplay, float exposure) {
     if (uFastApproximateAA == 0 || uFxaaTexelX <= 0.0 || uFxaaTexelY <= 0.0) {
         return centerDisplay;
     }
 
     vec2 texel = vec2(uFxaaTexelX, uFxaaTexelY);
-    float lumaM  = PerceptualLumaUVE(centerDisplay);
-    float lumaN  = PerceptualLumaUVE(SampleDisplayForAaUVE(clamp(uv + vec2(0.0,  texel.y), vec2(0.0), vec2(1.0)), exposure));
-    float lumaS  = PerceptualLumaUVE(SampleDisplayForAaUVE(clamp(uv + vec2(0.0, -texel.y), vec2(0.0), vec2(1.0)), exposure));
-    float lumaE  = PerceptualLumaUVE(SampleDisplayForAaUVE(clamp(uv + vec2( texel.x, 0.0), vec2(0.0), vec2(1.0)), exposure));
-    float lumaW  = PerceptualLumaUVE(SampleDisplayForAaUVE(clamp(uv + vec2(-texel.x, 0.0), vec2(0.0), vec2(1.0)), exposure));
+    float lumaM  = PerceptualLuma(centerDisplay);
+    float lumaN  = PerceptualLuma(SampleDisplayForAa(clamp(uv + vec2(0.0,  texel.y), vec2(0.0), vec2(1.0)), exposure));
+    float lumaS  = PerceptualLuma(SampleDisplayForAa(clamp(uv + vec2(0.0, -texel.y), vec2(0.0), vec2(1.0)), exposure));
+    float lumaE  = PerceptualLuma(SampleDisplayForAa(clamp(uv + vec2( texel.x, 0.0), vec2(0.0), vec2(1.0)), exposure));
+    float lumaW  = PerceptualLuma(SampleDisplayForAa(clamp(uv + vec2(-texel.x, 0.0), vec2(0.0), vec2(1.0)), exposure));
 
     float lumaMin = min(lumaM, min(min(lumaN, lumaS), min(lumaE, lumaW)));
     float lumaMax = max(lumaM, max(max(lumaN, lumaS), max(lumaE, lumaW)));
@@ -492,10 +492,10 @@ vec3 ApplyFastApproximateAAUVE(vec2 uv, vec3 centerDisplay, float exposure) {
         return centerDisplay;
     }
 
-    float lumaNW = PerceptualLumaUVE(SampleDisplayForAaUVE(clamp(uv + vec2(-texel.x,  texel.y), vec2(0.0), vec2(1.0)), exposure));
-    float lumaNE = PerceptualLumaUVE(SampleDisplayForAaUVE(clamp(uv + vec2( texel.x,  texel.y), vec2(0.0), vec2(1.0)), exposure));
-    float lumaSW = PerceptualLumaUVE(SampleDisplayForAaUVE(clamp(uv + vec2(-texel.x, -texel.y), vec2(0.0), vec2(1.0)), exposure));
-    float lumaSE = PerceptualLumaUVE(SampleDisplayForAaUVE(clamp(uv + vec2( texel.x, -texel.y), vec2(0.0), vec2(1.0)), exposure));
+    float lumaNW = PerceptualLuma(SampleDisplayForAa(clamp(uv + vec2(-texel.x,  texel.y), vec2(0.0), vec2(1.0)), exposure));
+    float lumaNE = PerceptualLuma(SampleDisplayForAa(clamp(uv + vec2( texel.x,  texel.y), vec2(0.0), vec2(1.0)), exposure));
+    float lumaSW = PerceptualLuma(SampleDisplayForAa(clamp(uv + vec2(-texel.x, -texel.y), vec2(0.0), vec2(1.0)), exposure));
+    float lumaSE = PerceptualLuma(SampleDisplayForAa(clamp(uv + vec2( texel.x, -texel.y), vec2(0.0), vec2(1.0)), exposure));
 
     float lumaNS = lumaN + lumaS;
     float lumaWE = lumaW + lumaE;
@@ -544,8 +544,8 @@ vec3 ApplyFastApproximateAAUVE(vec2 uv, vec3 centerDisplay, float exposure) {
 
     vec2 uvNeg = currentUv - edgeStep;
     vec2 uvPos = currentUv + edgeStep;
-    float lumaEndNeg = PerceptualLumaUVE(SampleDisplayForAaUVE(clamp(uvNeg, vec2(0.0), vec2(1.0)), exposure)) - lumaLocalAvg;
-    float lumaEndPos = PerceptualLumaUVE(SampleDisplayForAaUVE(clamp(uvPos, vec2(0.0), vec2(1.0)), exposure)) - lumaLocalAvg;
+    float lumaEndNeg = PerceptualLuma(SampleDisplayForAa(clamp(uvNeg, vec2(0.0), vec2(1.0)), exposure)) - lumaLocalAvg;
+    float lumaEndPos = PerceptualLuma(SampleDisplayForAa(clamp(uvPos, vec2(0.0), vec2(1.0)), exposure)) - lumaLocalAvg;
     bool reachedNeg = abs(lumaEndNeg) >= gradScaled;
     bool reachedPos = abs(lumaEndPos) >= gradScaled;
 
@@ -556,12 +556,12 @@ vec3 ApplyFastApproximateAAUVE(vec2 uv, vec3 centerDisplay, float exposure) {
         float stepScale = iter >= 4 ? 2.0 : 1.0;
         if (!reachedNeg) {
             uvNeg -= edgeStep * stepScale;
-            lumaEndNeg = PerceptualLumaUVE(SampleDisplayForAaUVE(clamp(uvNeg, vec2(0.0), vec2(1.0)), exposure)) - lumaLocalAvg;
+            lumaEndNeg = PerceptualLuma(SampleDisplayForAa(clamp(uvNeg, vec2(0.0), vec2(1.0)), exposure)) - lumaLocalAvg;
             reachedNeg = abs(lumaEndNeg) >= gradScaled;
         }
         if (!reachedPos) {
             uvPos += edgeStep * stepScale;
-            lumaEndPos = PerceptualLumaUVE(SampleDisplayForAaUVE(clamp(uvPos, vec2(0.0), vec2(1.0)), exposure)) - lumaLocalAvg;
+            lumaEndPos = PerceptualLuma(SampleDisplayForAa(clamp(uvPos, vec2(0.0), vec2(1.0)), exposure)) - lumaLocalAvg;
             reachedPos = abs(lumaEndPos) >= gradScaled;
         }
     }
@@ -582,11 +582,11 @@ vec3 ApplyFastApproximateAAUVE(vec2 uv, vec3 centerDisplay, float exposure) {
     } else {
         finalUv.x += stepLength * finalBlend;
     }
-    return SampleDisplayForAaUVE(clamp(finalUv, vec2(0.0), vec2(1.0)), exposure);
+    return SampleDisplayForAa(clamp(finalUv, vec2(0.0), vec2(1.0)), exposure);
 }
 
 // Single-pass chromatic aberration (3 fetches total, never multiplied inside upstream blur loops).
-vec3 ApplySinglePassChromaticAberrationUVE(vec2 uv, vec3 centerDisplay, float exposure) {
+vec3 ApplySinglePassChromaticAberration(vec2 uv, vec3 centerDisplay, float exposure) {
     float intensity = clamp(uChromaticAberrationIntensity, 0.0, 1.0);
     if (intensity <= 0.0) {
         return centerDisplay;
@@ -602,23 +602,23 @@ vec3 ApplySinglePassChromaticAberrationUVE(vec2 uv, vec3 centerDisplay, float ex
     vec2 direction = radial / radialLength;
     vec2 texelSize = 1.0 / max(vec2(textureSize(uSourceTexture, 0)), vec2(1.0));
     vec2 offset = direction * texelSize * (2.0 * intensity * normalizedRadius * normalizedRadius);
-    float red = SampleDisplayForAaUVE(clamp(uv + offset, vec2(0.0), vec2(1.0)), exposure).r;
-    float blue = SampleDisplayForAaUVE(clamp(uv - offset, vec2(0.0), vec2(1.0)), exposure).b;
+    float red = SampleDisplayForAa(clamp(uv + offset, vec2(0.0), vec2(1.0)), exposure).r;
+    float blue = SampleDisplayForAa(clamp(uv - offset, vec2(0.0), vec2(1.0)), exposure).b;
     return vec3(red, centerDisplay.g, blue);
 }
 
 // Edge-clamped unsharp masking in scene-linear space.
-vec3 ApplySharpeningUVE(vec2 uv, vec3 center) {
+vec3 ApplySharpening(vec2 uv, vec3 center) {
     float amount = clamp(uSharpeningAmount, 0.0, 1.0);
     if (amount <= 0.0) {
         return center;
     }
 
     vec2 texel = 1.0 / max(vec2(textureSize(uSourceTexture, 0)), vec2(1.0));
-    vec3 left = SampleHdrRawUVE(clamp(uv - vec2(texel.x, 0.0), vec2(0.0), vec2(1.0)));
-    vec3 right = SampleHdrRawUVE(clamp(uv + vec2(texel.x, 0.0), vec2(0.0), vec2(1.0)));
-    vec3 down = SampleHdrRawUVE(clamp(uv - vec2(0.0, texel.y), vec2(0.0), vec2(1.0)));
-    vec3 up = SampleHdrRawUVE(clamp(uv + vec2(0.0, texel.y), vec2(0.0), vec2(1.0)));
+    vec3 left = SampleHdrRaw(clamp(uv - vec2(texel.x, 0.0), vec2(0.0), vec2(1.0)));
+    vec3 right = SampleHdrRaw(clamp(uv + vec2(texel.x, 0.0), vec2(0.0), vec2(1.0)));
+    vec3 down = SampleHdrRaw(clamp(uv - vec2(0.0, texel.y), vec2(0.0), vec2(1.0)));
+    vec3 up = SampleHdrRaw(clamp(uv + vec2(0.0, texel.y), vec2(0.0), vec2(1.0)));
     vec3 neighbourhoodAverage = (left + right + down + up) * 0.25;
     vec3 neighbourhoodMinimum = min(center, min(min(left, right), min(down, up)));
     vec3 neighbourhoodMaximum = max(center, max(max(left, right), max(down, up)));
@@ -627,19 +627,19 @@ vec3 ApplySharpeningUVE(vec2 uv, vec3 center) {
 }
 
 // Animated IGN monochrome film grain (no sin/cos Moire patterns).
-float FilmGrainNoiseUVE(vec2 pixel, int frame) {
+float FilmGrainNoise(vec2 pixel, int frame) {
     vec2 jittered = pixel + vec2(float(frame % 64) * 5.588238, float((frame * 7) % 64) * 3.141593);
-    return InterleavedGradientNoiseUVE(jittered) - 0.5;
+    return InterleavedGradientNoise(jittered) - 0.5;
 }
 
 // Triangular Probability Density Function (TPDF) dithering in [-1, 1] / 255 display step.
-float TriangularDitherNoiseUVE(vec2 pixel) {
-    float n1 = InterleavedGradientNoiseUVE(pixel);
-    float n2 = InterleavedGradientNoiseUVE(pixel + vec2(17.0, 31.0));
+float TriangularDitherNoise(vec2 pixel) {
+    float n1 = InterleavedGradientNoise(pixel);
+    float n2 = InterleavedGradientNoise(pixel + vec2(17.0, 31.0));
     return (n1 + n2 - 1.0) / 255.0;
 }
 
-vec2 ApplyBokehShapeOffsetUVE(vec2 offset) {
+vec2 ApplyBokehShapeOffset(vec2 offset) {
     if (uDepthOfFieldBokehShape != 1) {
         return offset;
     }
@@ -647,16 +647,16 @@ vec2 ApplyBokehShapeOffsetUVE(vec2 offset) {
     if (radius <= 1.0e-5) {
         return offset;
     }
-    const float kPiOverThreeUVE = 1.0471975512;
-    const float kPiOverSixUVE = 0.5235987756;
+    const float kPiOverThree = 1.0471975512;
+    const float kPiOverSix = 0.5235987756;
     float angle = atan(offset.y, offset.x);
-    float sector = floor((angle - kPiOverSixUVE) / kPiOverThreeUVE + 0.5);
-    float faceNormal = sector * kPiOverThreeUVE + kPiOverSixUVE;
+    float sector = floor((angle - kPiOverSix) / kPiOverThree + 0.5);
+    float faceNormal = sector * kPiOverThree + kPiOverSix;
     float boundaryScale = 0.8660254038 / max(cos(angle - faceNormal), 1.0e-4);
     return (offset / radius) * (radius * boundaryScale);
 }
 
-vec3 ApplyDepthOfFieldUVE(vec2 uv, vec3 center, float centerDepth) {
+vec3 ApplyDepthOfField(vec2 uv, vec3 center, float centerDepth) {
     float aperture = clamp(uDepthOfFieldAperture, 0.0, 1.0);
     if (uDepthOfFieldEnabled == 0 || aperture <= 0.0) {
         return center;
@@ -664,14 +664,14 @@ vec3 ApplyDepthOfFieldUVE(vec2 uv, vec3 center, float centerDepth) {
 
     float fallbackDistance = max(uCameraFar, uCameraNear);
     float centerDistance = centerDepth < 0.999999
-                               ? ReconstructViewDistanceUVE(uv, centerDepth, fallbackDistance)
+                               ? ReconstructViewDistance(uv, centerDepth, fallbackDistance)
                                : fallbackDistance;
     float focusDistance = max(uDepthOfFieldFocusDistance, max(uCameraNear, 0.05));
     if (uDepthOfFieldFocusMode == 1 && uDepthOfFieldFocusDistance <= 0.0) {
         vec2 focusUv = vec2(0.5);
         float focusDepth = texture(uSceneDepthTexture, focusUv).r;
         focusDistance = focusDepth < 0.999999
-                            ? ReconstructViewDistanceUVE(focusUv, focusDepth, fallbackDistance)
+                            ? ReconstructViewDistance(focusUv, focusDepth, fallbackDistance)
                             : fallbackDistance;
     }
     float circleOfConfusion = abs(centerDistance - focusDistance) /
@@ -684,7 +684,7 @@ vec3 ApplyDepthOfFieldUVE(vec2 uv, vec3 center, float centerDepth) {
     int quality = clamp(uDepthOfFieldQuality, 0, 2);
     int sampleCount = (quality + 1) * 4;
     vec2 texelSize = 1.0 / max(vec2(textureSize(uSourceTexture, 0)), vec2(1.0));
-    float angle = InterleavedGradientNoiseUVE(gl_FragCoord.xy) * 6.28318530718;
+    float angle = InterleavedGradientNoise(gl_FragCoord.xy) * 6.28318530718;
     float cs = cos(angle);
     float sn = sin(angle);
     mat2 rot = mat2(cs, -sn, sn, cs);
@@ -695,30 +695,30 @@ vec3 ApplyDepthOfFieldUVE(vec2 uv, vec3 center, float centerDepth) {
         if (i >= sampleCount) {
             break;
         }
-        vec2 bokehOffset = ApplyBokehShapeOffsetUVE(rot * kDepthOfFieldOffsetsUVE[i]);
+        vec2 bokehOffset = ApplyBokehShapeOffset(rot * kDepthOfFieldOffsets[i]);
         vec2 sampleUv = clamp(uv + bokehOffset * texelSize * blurRadiusPixels, vec2(0.0), vec2(1.0));
         float sampleDepth = texture(uSceneDepthTexture, sampleUv).r;
         float sampleDistance = sampleDepth < 0.999999
-                                   ? ReconstructViewDistanceUVE(sampleUv, sampleDepth, fallbackDistance)
+                                   ? ReconstructViewDistance(sampleUv, sampleDepth, fallbackDistance)
                                    : fallbackDistance;
         // Prevent sharp foreground from being contaminated by blurry background while letting
         // blurry foreground bleed softly over background.
         float depthWeight = sampleDistance >= centerDistance
                                 ? exp(-abs(sampleDistance - centerDistance) / depthTolerance)
                                 : 1.0;
-        colorSum += SampleHdrRawUVE(sampleUv) * depthWeight;
+        colorSum += SampleHdrRaw(sampleUv) * depthWeight;
         weightSum += depthWeight;
     }
     return colorSum / max(weightSum, 1.0e-4);
 }
 
-vec3 ApplyCameraMotionBlurUVE(vec2 uv, vec3 center, float depthSample) {
+vec3 ApplyCameraMotionBlur(vec2 uv, vec3 center, float depthSample) {
     float strength = clamp(uMotionBlurStrength, 0.0, 1.0);
     if (uMotionBlurEnabled == 0 || strength <= 0.0) {
         return center;
     }
 
-    vec3 viewPoint = ReconstructViewPointUVE(uv, depthSample);
+    vec3 viewPoint = ReconstructViewPoint(uv, depthSample);
     vec3 worldPoint = uCameraPosition + uCameraRight * viewPoint.x + uCameraUp * viewPoint.y -
                       uCameraForward * viewPoint.z;
     vec4 previousClip = uPreviousViewProjection * vec4(worldPoint, 1.0);
@@ -736,7 +736,7 @@ vec3 ApplyCameraMotionBlurUVE(vec2 uv, vec3 center, float depthSample) {
     velocity *= min(1.0, 20.0 / velocityPixels) * strength;
 
     float centerDist = abs(viewPoint.z);
-    float jitter = InterleavedGradientNoiseUVE(gl_FragCoord.xy);
+    float jitter = InterleavedGradientNoise(gl_FragCoord.xy);
     int sampleCount = clamp(uMotionBlurSampleCount, 4, 12);
     vec3 colorSum = center;
     float weightSum = 1.0;
@@ -747,10 +747,10 @@ vec3 ApplyCameraMotionBlurUVE(vec2 uv, vec3 center, float depthSample) {
         float t = (float(i) + jitter) / float(sampleCount);
         vec2 sampleUv = clamp(uv - velocity * t, vec2(0.0), vec2(1.0));
         float sDepth = texture(uSceneDepthTexture, sampleUv).r;
-        float sDist = sDepth < 0.999999 ? abs(ReconstructViewPointUVE(sampleUv, sDepth).z) : max(uCameraFar, centerDist);
+        float sDist = sDepth < 0.999999 ? abs(ReconstructViewPoint(sampleUv, sDepth).z) : max(uCameraFar, centerDist);
         // Depth-aware foreground rejection stops distant background leaking across moving foreground silhouettes.
         float depthWeight = sDist + max(centerDist * 0.1, 0.25) >= centerDist ? 1.0 : 0.15;
-        colorSum += SampleHdrRawUVE(sampleUv) * depthWeight;
+        colorSum += SampleHdrRaw(sampleUv) * depthWeight;
         weightSum += depthWeight;
     }
     return colorSum / max(weightSum, 1.0e-4);
@@ -758,7 +758,7 @@ vec3 ApplyCameraMotionBlurUVE(vec2 uv, vec3 center, float depthSample) {
 
 // Exact analytical ray integral of exponential height fog along y(t) = y0 + dy * t for t in [0, rayLen].
 // Splits cleanly at y = fogHeight so every exp() argument is <= 0 (zero overflow at any altitude).
-float AnalyticalHeightFogOpticalDepthUVE(float y0, float dy, float rayLen, float baseDensity,
+float AnalyticalHeightFogOpticalDepth(float y0, float dy, float rayLen, float baseDensity,
                                          float fogHeight, float heightFalloff) {
     if (baseDensity <= 0.0 || rayLen <= 0.0) {
         return 0.0;
@@ -805,18 +805,18 @@ float AnalyticalHeightFogOpticalDepthUVE(float y0, float dy, float rayLen, float
     return baseDensity * (lenBelow + integralAbove);
 }
 
-float FogVolumeSafeScaleUVE(float axis) {
-    return abs(axis) < kFogVolumeScaleEpsilonUVE ? kFogVolumeScaleEpsilonUVE : axis;
+float FogVolumeSafeScale(float axis) {
+    return abs(axis) < kFogVolumeScaleEpsilon ? kFogVolumeScaleEpsilon : axis;
 }
 
-vec3 FogVolumeWorldToLocalUVE(FogVolumeUVE volume, vec3 worldPoint) {
+vec3 FogVolumeWorldToLocal(FogVolume volume, vec3 worldPoint) {
     vec3 delta = worldPoint - volume.position;
-    return vec3(dot(delta, volume.axisX) / FogVolumeSafeScaleUVE(volume.scale.x),
-                dot(delta, volume.axisY) / FogVolumeSafeScaleUVE(volume.scale.y),
-                dot(delta, volume.axisZ) / FogVolumeSafeScaleUVE(volume.scale.z));
+    return vec3(dot(delta, volume.axisX) / FogVolumeSafeScale(volume.scale.x),
+                dot(delta, volume.axisY) / FogVolumeSafeScale(volume.scale.y),
+                dot(delta, volume.axisZ) / FogVolumeSafeScale(volume.scale.z));
 }
 
-float FogVolumeShapeDistanceUVE(FogVolumeUVE volume, vec3 localPoint) {
+float FogVolumeShapeDistance(FogVolume volume, vec3 localPoint) {
     vec3 halfSize = volume.size * 0.5;
     if (halfSize.x <= 0.0 || halfSize.y <= 0.0 || halfSize.z <= 0.0) {
         return 2.0;
@@ -846,7 +846,7 @@ float FogVolumeShapeDistanceUVE(FogVolumeUVE volume, vec3 localPoint) {
     return max(abs(localPoint.y) / halfSize.y, radialN);
 }
 
-float FogVolumeOccupancyUVE(FogVolumeUVE volume, float normalizedDistance) {
+float FogVolumeOccupancy(FogVolume volume, float normalizedDistance) {
     if (volume.shape == 4) {
         return 1.0;
     }
@@ -859,7 +859,7 @@ float FogVolumeOccupancyUVE(FogVolumeUVE volume, float normalizedDistance) {
     return 1.0 - smoothstep(1.0 - volume.edgeFade, 1.0, normalizedDistance);
 }
 
-float FogVolumeHeightTermUVE(FogVolumeUVE volume, vec3 worldPoint, vec3 localPoint) {
+float FogVolumeHeightTerm(FogVolume volume, vec3 worldPoint, vec3 localPoint) {
     if (volume.heightFalloff <= 0.0) {
         return 1.0;
     }
@@ -867,7 +867,7 @@ float FogVolumeHeightTermUVE(FogVolumeUVE volume, vec3 worldPoint, vec3 localPoi
     return exp(-max(height, 0.0) * volume.heightFalloff);
 }
 
-bool FogVolumeIntersectAabbUVE(vec3 origin, vec3 direction, vec3 halfSize, float rayLength, out float enter,
+bool FogVolumeIntersectAabb(vec3 origin, vec3 direction, vec3 halfSize, float rayLength, out float enter,
                                out float exit) {
     enter = 0.0;
     exit = rayLength;
@@ -906,17 +906,17 @@ bool FogVolumeIntersectAabbUVE(vec3 origin, vec3 direction, vec3 halfSize, float
     return exit > enter;
 }
 
-void FogVolumeIntegrateUVE(FogVolumeUVE volume, vec3 rayOrigin, vec3 rayDirection, float rayLength,
+void FogVolumeIntegrate(FogVolume volume, vec3 rayOrigin, vec3 rayDirection, float rayLength,
                            vec3 sunRadiance, float day, float jitter,
                            inout float tau, inout vec3 colorMass, inout float weightMass) {
     float enter = 0.0;
     float exit = rayLength;
     if (volume.shape != 4) {
-        vec3 localOrigin = FogVolumeWorldToLocalUVE(volume, rayOrigin);
-        vec3 localDirection = vec3(dot(rayDirection, volume.axisX) / FogVolumeSafeScaleUVE(volume.scale.x),
-                                   dot(rayDirection, volume.axisY) / FogVolumeSafeScaleUVE(volume.scale.y),
-                                   dot(rayDirection, volume.axisZ) / FogVolumeSafeScaleUVE(volume.scale.z));
-        if (!FogVolumeIntersectAabbUVE(localOrigin, localDirection, volume.size * 0.5, rayLength, enter, exit)) {
+        vec3 localOrigin = FogVolumeWorldToLocal(volume, rayOrigin);
+        vec3 localDirection = vec3(dot(rayDirection, volume.axisX) / FogVolumeSafeScale(volume.scale.x),
+                                   dot(rayDirection, volume.axisY) / FogVolumeSafeScale(volume.scale.y),
+                                   dot(rayDirection, volume.axisZ) / FogVolumeSafeScale(volume.scale.z));
+        if (!FogVolumeIntersectAabb(localOrigin, localDirection, volume.size * 0.5, rayLength, enter, exit)) {
             return;
         }
     }
@@ -924,24 +924,24 @@ void FogVolumeIntegrateUVE(FogVolumeUVE volume, vec3 rayOrigin, vec3 rayDirectio
     if (span <= 0.0) {
         return;
     }
-    float step = span / float(kFogVolumeRaySamplesUVE);
+    float step = span / float(kFogVolumeRaySamples);
     vec3 ambientFill = max(uFogColor, vec3(0.05));
-    for (int i = 0; i < kFogVolumeRaySamplesUVE; ++i) {
+    for (int i = 0; i < kFogVolumeRaySamples; ++i) {
         float t = enter + step * (float(i) + jitter);
         vec3 point = rayOrigin + rayDirection * t;
         float occupancy = 1.0;
         vec3 localPoint = vec3(0.0);
         if (volume.shape != 4) {
-            localPoint = FogVolumeWorldToLocalUVE(volume, point);
-            occupancy = FogVolumeOccupancyUVE(volume, FogVolumeShapeDistanceUVE(volume, localPoint));
+            localPoint = FogVolumeWorldToLocal(volume, point);
+            occupancy = FogVolumeOccupancy(volume, FogVolumeShapeDistance(volume, localPoint));
         }
         if (occupancy <= 0.0) {
             continue;
         }
-        float height = FogVolumeHeightTermUVE(volume, point, localPoint);
+        float height = FogVolumeHeightTerm(volume, point, localPoint);
         float stepDensity = max(volume.density, 0.0) * occupancy * height;
         tau += stepDensity * step;
-        float shadow = VolumetricShadowFactorUVE(point, t);
+        float shadow = VolumetricShadowFactor(point, t);
         vec3 scatterLight = ambientFill + sunRadiance * (shadow * day);
         float sampleWeight = stepDensity * step;
         colorMass += volume.albedo * scatterLight * sampleWeight + volume.emission * (occupancy * step);
@@ -950,38 +950,38 @@ void FogVolumeIntegrateUVE(FogVolumeUVE volume, vec3 rayOrigin, vec3 rayDirectio
 }
 
 void main() {
-    vec2 sourceUV = LensDistortionSourceUVUVE(vTexCoord);
+    vec2 sourceUV = LensDistortionSourceUV(vTexCoord);
     float periphery = 0.0;
     if (uHumanEye != 0) {
         vec2 ndc = vTexCoord * 2.0 - 1.0;
         periphery = smoothstep(0.55, 1.2, length(ndc));
-        sourceUV = HumanEyeSourceUVUVE(vTexCoord);
+        sourceUV = HumanEyeSourceUV(vTexCoord);
     }
 
     float depth = 1.0;
-    vec3 hdrColor = SampleCompositedHdrUVE(sourceUV, depth);
+    vec3 hdrColor = SampleCompositedHdr(sourceUV, depth);
 
     if (periphery > 0.0) {
         vec2 px = vec2(uHumanEyeTexelX, uHumanEyeTexelY) * (1.5 + 4.0 * periphery);
         vec3 blur = hdrColor;
-        blur += SampleHdrRawUVE(HumanEyeSourceUVUVE(vTexCoord + vec2(px.x, 0.0)));
-        blur += SampleHdrRawUVE(HumanEyeSourceUVUVE(vTexCoord + vec2(-px.x, 0.0)));
-        blur += SampleHdrRawUVE(HumanEyeSourceUVUVE(vTexCoord + vec2(0.0, px.y)));
-        blur += SampleHdrRawUVE(HumanEyeSourceUVUVE(vTexCoord + vec2(0.0, -px.y)));
+        blur += SampleHdrRaw(HumanEyeSourceUV(vTexCoord + vec2(px.x, 0.0)));
+        blur += SampleHdrRaw(HumanEyeSourceUV(vTexCoord + vec2(-px.x, 0.0)));
+        blur += SampleHdrRaw(HumanEyeSourceUV(vTexCoord + vec2(0.0, px.y)));
+        blur += SampleHdrRaw(HumanEyeSourceUV(vTexCoord + vec2(0.0, -px.y)));
         vec2 diagonal = px * 0.7;
-        blur += SampleHdrRawUVE(HumanEyeSourceUVUVE(vTexCoord + vec2(diagonal.x, diagonal.y)));
-        blur += SampleHdrRawUVE(HumanEyeSourceUVUVE(vTexCoord + vec2(-diagonal.x, diagonal.y)));
-        blur += SampleHdrRawUVE(HumanEyeSourceUVUVE(vTexCoord + vec2(diagonal.x, -diagonal.y)));
-        blur += SampleHdrRawUVE(HumanEyeSourceUVUVE(vTexCoord + vec2(-diagonal.x, -diagonal.y)));
+        blur += SampleHdrRaw(HumanEyeSourceUV(vTexCoord + vec2(diagonal.x, diagonal.y)));
+        blur += SampleHdrRaw(HumanEyeSourceUV(vTexCoord + vec2(-diagonal.x, diagonal.y)));
+        blur += SampleHdrRaw(HumanEyeSourceUV(vTexCoord + vec2(diagonal.x, -diagonal.y)));
+        blur += SampleHdrRaw(HumanEyeSourceUV(vTexCoord + vec2(-diagonal.x, -diagonal.y)));
         blur *= 1.0 / 9.0;
         hdrColor = mix(hdrColor, blur, periphery * 0.7);
         float grey = dot(hdrColor, vec3(0.2126, 0.7152, 0.0722));
         hdrColor = mix(hdrColor, vec3(grey), periphery * 0.2);
     }
 
-    hdrColor = ApplyDepthOfFieldUVE(sourceUV, hdrColor, depth);
-    hdrColor = ApplyCameraMotionBlurUVE(sourceUV, hdrColor, depth);
-    hdrColor = ApplySharpeningUVE(sourceUV, hdrColor);
+    hdrColor = ApplyDepthOfField(sourceUV, hdrColor, depth);
+    hdrColor = ApplyCameraMotionBlur(sourceUV, hdrColor, depth);
+    hdrColor = ApplySharpening(sourceUV, hdrColor);
 
     int volumeCount = clamp(uFogVolumeCount, 0, 8);
     if (uFogEnabled != 0 || volumeCount > 0) {
@@ -999,19 +999,19 @@ void main() {
         float safeFar = max(uCameraFar, safeNear + 1.0);
         float fallbackDistance = depth < 0.999999 ? mix(safeNear, safeFar, clamp(depth, 0.0, 1.0)) : safeFar;
         float viewDistance = depth < 0.999999
-                                 ? ReconstructViewDistanceUVE(sourceUV, depth, fallbackDistance)
+                                 ? ReconstructViewDistance(sourceUV, depth, fallbackDistance)
                                  : fallbackDistance;
 
         float globalTau = 0.0;
         if (uFogEnabled != 0) {
             if (depth < 0.999999) {
-                if (uFogMode == kFogModeLinearUVE) {
+                if (uFogMode == kFogModeLinear) {
                     float fogAmount = clamp((viewDistance - max(uFogStart, 0.0)) /
                                                 max(uFogEnd - max(uFogStart, 0.0), 1.0e-5),
                                             0.0, 1.0);
                     globalTau = -log(max(1.0 - fogAmount, 1.0e-5));
-                } else if (uFogMode == kFogModeHeightUVE) {
-                    globalTau = AnalyticalHeightFogOpticalDepthUVE(
+                } else if (uFogMode == kFogModeHeight) {
+                    globalTau = AnalyticalHeightFogOpticalDepth(
                         rayOrigin.y, viewDir.y, viewDistance, max(uFogDensity, 0.0),
                         uFogHeight, uFogHeightFalloff);
                 } else {
@@ -1031,13 +1031,13 @@ void main() {
         float towardSun = pow(max(dot(viewDir, sunDir), 0.0), 8.0);
         float day = smoothstep(-0.08, 0.18, sunDir.y);
         vec3 sunRadiance = max(uSunColor, vec3(0.0)) * max(uSunEnergy, 0.0) * max(uLightVolumetricFogEnergy, 0.0);
-        float ignJitter = InterleavedGradientNoiseUVE(gl_FragCoord.xy);
+        float ignJitter = InterleavedGradientNoise(gl_FragCoord.xy);
 
         float localTau = 0.0;
         vec3 localColorMass = vec3(0.0);
         float localWeightMass = 0.0;
         for (int i = 0; i < volumeCount; ++i) {
-            FogVolumeIntegrateUVE(uFogVolumes[i], rayOrigin, viewDir, max(viewDistance, 0.0),
+            FogVolumeIntegrate(uFogVolumes[i], rayOrigin, viewDir, max(viewDistance, 0.0),
                                   sunRadiance, day, ignJitter, localTau, localColorMass, localWeightMass);
         }
 
@@ -1064,10 +1064,10 @@ void main() {
                 for (int s = 0; s < kGodRaySamples; ++s) {
                     float sampleDist = marchStart + stepDist * (float(s) + ignJitter);
                     vec3 samplePos = rayOrigin + viewDir * sampleDist;
-                    float shadow = VolumetricShadowFactorUVE(samplePos, sampleDist);
+                    float shadow = VolumetricShadowFactor(samplePos, sampleDist);
                     if (shadow > 0.0) {
                         float density = uFogDensity;
-                        if (uFogMode == kFogModeHeightUVE) {
+                        if (uFogMode == kFogModeHeight) {
                             float h = exp(-max(samplePos.y - uFogHeight, 0.0) / max(uFogHeightFalloff, 0.01));
                             density *= mix(1.0, h, 0.85);
                         }
@@ -1106,8 +1106,8 @@ void main() {
     // Uncovered background pixels (no geometry and no sky) carry display-authored background clear
     // color, so they bypass linear-to-sRGB re-encoding to preserve exact background charcoal values.
     vec3 ldrLinear = covered > 0.0
-                         ? ApplyToneMappingUVE(hdrColor)
-                         : (uToneMappingMethod != 0 ? AcesToneMapUVE(hdrColor) : clamp(hdrColor, 0.0, 1.0));
+                         ? ApplyToneMapping(hdrColor)
+                         : (uToneMappingMethod != 0 ? AcesToneMap(hdrColor) : clamp(hdrColor, 0.0, 1.0));
     bool encodeSrgbThisPixel = (uEncodeSrgbOutput != 0) && (covered > 0.0);
     float contrast = uHasColorGrading != 0 ? max(uContrast, 0.0) : (uContrast > 0.0 ? uContrast : 1.0);
     float saturation = uHasColorGrading != 0 ? max(uSaturation, 0.0) : (uSaturation > 0.0 ? uSaturation : 1.0);
@@ -1126,10 +1126,10 @@ void main() {
 
     vec3 outColor = ldrLinear;
     if (useDisplaySpace) {
-        vec3 display = covered > 0.0 ? LinearToSrgbUVE(ldrLinear) : ldrLinear;
+        vec3 display = covered > 0.0 ? LinearToSrgb(ldrLinear) : ldrLinear;
         if (covered > 0.0) {
-            display = ApplyFastApproximateAAUVE(sourceUV, display, exposure);
-            display = ApplySinglePassChromaticAberrationUVE(sourceUV, display, exposure);
+            display = ApplyFastApproximateAA(sourceUV, display, exposure);
+            display = ApplySinglePassChromaticAberration(sourceUV, display, exposure);
         }
 
         if (hasGrading) {
@@ -1141,7 +1141,7 @@ void main() {
         }
 
         if (uLutEnabled != 0 && uHasLutTexture != 0) {
-            vec3 graded = SampleLutUVE(uLutTexture, display);
+            vec3 graded = SampleLut(uLutTexture, display);
             display = mix(display, graded, clamp(uLutContribution, 0.0, 1.0));
         }
 
@@ -1181,18 +1181,18 @@ void main() {
 
         float filmGrainIntensity = clamp(uFilmGrainIntensity, 0.0, 1.0);
         if (filmGrainIntensity > 0.0) {
-            float grainNoise = FilmGrainNoiseUVE(floor(gl_FragCoord.xy), uFilmGrainFrame);
+            float grainNoise = FilmGrainNoise(floor(gl_FragCoord.xy), uFilmGrainFrame);
             display = clamp(display + vec3(grainNoise * filmGrainIntensity * 0.08), 0.0, 1.0);
         }
 
         if (uDitheringEnabled != 0 && covered > 0.0) {
-            float dither = TriangularDitherNoiseUVE(floor(gl_FragCoord.xy));
+            float dither = TriangularDitherNoise(floor(gl_FragCoord.xy));
             display = clamp(display + vec3(dither), 0.0, 1.0);
         }
 
         // Hardware sRGB swapchains encode on write, so convert back to linear when uEncodeSrgbOutput == 0
         // to produce identical output across OpenGL, Editor viewports, and Vulkan SRGB swapchains.
-        outColor = (uEncodeSrgbOutput != 0 || covered == 0.0) ? display : SrgbToLinearUVE(display);
+        outColor = (uEncodeSrgbOutput != 0 || covered == 0.0) ? display : SrgbToLinear(display);
     }
 
     float alpha = uWriteCoverageAlpha != 0 ? covered : 1.0;
@@ -1285,7 +1285,7 @@ uniform float uSkyGroundShadowBias;
 //
 // Shared by both skies below, because the disc belongs to the light in either case. It is a 0
 // when the light asks for no disc, so the caller can add it unconditionally.
-float SunDiscUVE(float mu, float sunY) {
+float SunDisc(float mu, float sunY) {
     float sunRadius = radians(max(uSunAngularDiameter, 0.0)) * 0.5;
     if (sunRadius <= 0.0) {
         return 0.0;
@@ -1300,7 +1300,7 @@ float SunDiscUVE(float mu, float sunY) {
     return mask * limb * smoothstep(-0.02, 0.04, sunY) * max(uSunDiscIntensity, 0.0);
 }
 
-vec3 AtmosphereUpperUVE(vec3 dir, vec3 sun) {
+vec3 AtmosphereUpper(vec3 dir, vec3 sun) {
     float mu = clamp(dot(dir, sun), -1.0, 1.0);
     float sunY = sun.y;
     float viewY = dir.y;
@@ -1331,7 +1331,7 @@ vec3 AtmosphereUpperUVE(vec3 dir, vec3 sun) {
     vec3 sunCol = max(uSunColor, vec3(0.0)) * max(uSunEnergy, 0.0);
     sky += sunCol * mie * mix(0.012, 0.09, sunset) * day;
 
-    sky += sunCol * SunDiscUVE(mu, sunY) * mix(7.5, 16.0, sunset);
+    sky += sunCol * SunDisc(mu, sunY) * mix(7.5, 16.0, sunset);
     return max(sky, vec3(0.0));
 }
 
@@ -1344,35 +1344,35 @@ vec3 AtmosphereUpperUVE(vec3 dir, vec3 sun) {
 // The numbers are Earth's, in metres and inverse metres, because that is the only way the model
 // stays honest - the planet's radius sets how fast the air thins, and a coefficient in invented
 // units would produce a sky that only looks right at one sun angle.
-const float kPlanetRadiusUVE = 6360000.0;
-const float kAtmosphereRadiusUVE = 6420000.0;
-const float kRayleighScaleHeightUVE = 8000.0;
-const float kMieScaleHeightUVE = 1200.0;
-const float kOzoneCenterUVE = 25000.0;
-const float kOzoneWidthUVE = 15000.0;
+const float kPlanetRadius = 6360000.0;
+const float kAtmosphereRadius = 6420000.0;
+const float kRayleighScaleHeight = 8000.0;
+const float kMieScaleHeight = 1200.0;
+const float kOzoneCenter = 25000.0;
+const float kOzoneWidth = 15000.0;
 // Rayleigh scattering per metre at sea level, by channel. Blue scatters roughly six times as
 // strongly as red, which is the entire reason the sky is blue.
-const vec3 kRayleighScatterUVE = vec3(5.8e-6, 13.5e-6, 33.1e-6);
+const vec3 kRayleighScatter = vec3(5.8e-6, 13.5e-6, 33.1e-6);
 // Ozone absorbs in the Chappuis band - mostly green, some red - and almost nowhere else. Its tent
 // profile sits high in the stratosphere, and it is what turns a twilight sky from grey to violet.
-const vec3 kOzoneAbsorbUVE = vec3(0.650e-6, 1.881e-6, 0.085e-6);
-const float kMieScatterUVE = 21.0e-6;
+const vec3 kOzoneAbsorb = vec3(0.650e-6, 1.881e-6, 0.085e-6);
+const float kMieScatter = 21.0e-6;
 // Haze both scatters and absorbs; the ratio is its single-scattering albedo, here about 0.91.
-const float kMieExtinctionUVE = 1.1;
+const float kMieExtinction = 1.1;
 // The sun's radiance into this model. Chosen so a noon sky lands in the same range as the lit
 // surfaces around it, which keeps exposure and bloom settings from needing two answers.
-const float kSkySunRadianceUVE = 14.0;
+const float kSkySunRadiance = 14.0;
 // Where the eye sits above the ground, in metres. The air above a person is what a person sees.
-const float kObserverHeightUVE = 120.0;
-const int kLightStepsUVE = 4;
+const float kObserverHeight = 120.0;
+const int kLightSteps = 4;
 // How much of the extinction the multiple-scattering stand-in is allowed to feel. Re-scattered
 // light arrives by many paths, so its own path is not the straight line to the sun.
-const float kMultiScatterTauUVE = 0.12;
-const float kMultiScatterGainUVE = 0.9;
+const float kMultiScatterTau = 0.12;
+const float kMultiScatterGain = 0.9;
 // Above this much direct light the sky is already bright and the stand-in contributes nothing.
-const float kMultiScatterFillUVE = 0.5;
+const float kMultiScatterFill = 0.5;
 
-struct AtmosphereDepthUVE {
+struct AtmosphereDepth {
     float rayleigh;
     float mie;
     float ozone;
@@ -1380,7 +1380,7 @@ struct AtmosphereDepthUVE {
 
 // Entry and exit distances of a ray through a sphere centred on the planet. False when the ray
 // misses it entirely; either root may be negative depending on where the ray starts.
-bool RaySphereUVE(vec3 origin, vec3 dir, float radius, out float tNear, out float tFar) {
+bool RaySphere(vec3 origin, vec3 dir, float radius, out float tNear, out float tFar) {
     float b = dot(origin, dir);
     float c = dot(origin, origin) - radius * radius;
     float discriminant = b * b - c;
@@ -1396,9 +1396,9 @@ bool RaySphereUVE(vec3 origin, vec3 dir, float radius, out float tNear, out floa
 }
 
 // How much air one path passes through, in the same units the coefficients are per.
-AtmosphereDepthUVE AtmosphereOpticalDepthUVE(vec3 origin, vec3 dir, float pathLength, const int steps,
+AtmosphereDepth AtmosphereOpticalDepth(vec3 origin, vec3 dir, float pathLength, const int steps,
                                              const float rayleigh, const float mie, const float ozone) {
-    AtmosphereDepthUVE depth;
+    AtmosphereDepth depth;
     depth.rayleigh = 0.0;
     depth.mie = 0.0;
     depth.ozone = 0.0;
@@ -1413,25 +1413,25 @@ AtmosphereDepthUVE AtmosphereOpticalDepthUVE(vec3 origin, vec3 dir, float pathLe
         // Clamped at the ground: a sample that lands a centimetre under the surface is a rounding
         // artifact of the ray's exit point, not air at negative altitude, and exp() of a negative
         // height would hand back a density larger than the ground itself has.
-        float height = max(length(point) - kPlanetRadiusUVE, -1.0);
-        depth.rayleigh += exp(-height / kRayleighScaleHeightUVE) * rayleigh * segment;
-        depth.mie += exp(-height / kMieScaleHeightUVE) * mie * segment;
-        depth.ozone += max(0.0, 1.0 - abs(height - kOzoneCenterUVE) / kOzoneWidthUVE) * ozone * segment;
+        float height = max(length(point) - kPlanetRadius, -1.0);
+        depth.rayleigh += exp(-height / kRayleighScaleHeight) * rayleigh * segment;
+        depth.mie += exp(-height / kMieScaleHeight) * mie * segment;
+        depth.ozone += max(0.0, 1.0 - abs(height - kOzoneCenter) / kOzoneWidth) * ozone * segment;
     }
     return depth;
 }
 
-vec3 PhysicalSkyUVE(vec3 viewDir, vec3 sunDir) {
+vec3 PhysicalSky(vec3 viewDir, vec3 sunDir) {
     vec3 dir = normalize(viewDir);
     vec3 sun = length(sunDir) > 1.0e-5 ? normalize(sunDir) : vec3(0.0, 1.0, 0.0);
-    vec3 eye = vec3(0.0, kPlanetRadiusUVE + kObserverHeightUVE, 0.0);
+    vec3 eye = vec3(0.0, kPlanetRadius + kObserverHeight, 0.0);
 
     float day = uSunEnergy > 0.0 ? smoothstep(-0.08, 0.18, sun.y) : 1.0;
     vec3 ground = max(uGroundColor, vec3(0.0)) * mix(0.35, 1.0, day);
 
     float groundNear = 0.0;
     float groundFar = 0.0;
-    if (RaySphereUVE(eye, dir, kPlanetRadiusUVE, groundNear, groundFar) && groundNear > 0.0) {
+    if (RaySphere(eye, dir, kPlanetRadius, groundNear, groundFar) && groundNear > 0.0) {
         // The ray meets the ground: there is no sky along it, only terrain the level may or may
         // not have drawn. The band stands in for the missing geometry.
         return ground;
@@ -1439,7 +1439,7 @@ vec3 PhysicalSkyUVE(vec3 viewDir, vec3 sunDir) {
 
     float skyNear = 0.0;
     float skyFar = 0.0;
-    if (!RaySphereUVE(eye, dir, kAtmosphereRadiusUVE, skyNear, skyFar)) {
+    if (!RaySphere(eye, dir, kAtmosphereRadius, skyNear, skyFar)) {
         return ground;
     }
 
@@ -1458,10 +1458,10 @@ vec3 PhysicalSkyUVE(vec3 viewDir, vec3 sunDir) {
 
     for (int i = 0; i < steps; ++i) {
         vec3 point = eye + dir * (segment * (float(i) + 0.5));
-        float height = max(length(point) - kPlanetRadiusUVE, -1.0);
-        float densityRayleigh = exp(-height / kRayleighScaleHeightUVE) * rayleigh;
-        float densityMie = exp(-height / kMieScaleHeightUVE) * mie;
-        float densityOzone = max(0.0, 1.0 - abs(height - kOzoneCenterUVE) / kOzoneWidthUVE) * ozone;
+        float height = max(length(point) - kPlanetRadius, -1.0);
+        float densityRayleigh = exp(-height / kRayleighScaleHeight) * rayleigh;
+        float densityMie = exp(-height / kMieScaleHeight) * mie;
+        float densityOzone = max(0.0, 1.0 - abs(height - kOzoneCenter) / kOzoneWidth) * ozone;
         travelledRayleigh += densityRayleigh * segment;
         travelledMie += densityMie * segment;
         travelledOzone += densityOzone * segment;
@@ -1470,26 +1470,26 @@ vec3 PhysicalSkyUVE(vec3 viewDir, vec3 sunDir) {
         // light at all, which is what makes the sunset terminator a sharp edge on the ground.
         float sunNear = 0.0;
         float sunFar = 0.0;
-        if (RaySphereUVE(point, sun, kPlanetRadiusUVE, sunNear, sunFar) && sunNear > 0.0) {
+        if (RaySphere(point, sun, kPlanetRadius, sunNear, sunFar) && sunNear > 0.0) {
             continue;
         }
         float lightNear = 0.0;
         float lightFar = 0.0;
-        float lightPath = RaySphereUVE(point, sun, kAtmosphereRadiusUVE, lightNear, lightFar) ? lightFar : 0.0;
-        AtmosphereDepthUVE toSun =
-            AtmosphereOpticalDepthUVE(point, sun, lightPath, kLightStepsUVE, rayleigh, mie, ozone);
+        float lightPath = RaySphere(point, sun, kAtmosphereRadius, lightNear, lightFar) ? lightFar : 0.0;
+        AtmosphereDepth toSun =
+            AtmosphereOpticalDepth(point, sun, lightPath, kLightSteps, rayleigh, mie, ozone);
 
-        vec3 extinction = kRayleighScatterUVE * (travelledRayleigh + toSun.rayleigh) +
-                          vec3(kMieScatterUVE * kMieExtinctionUVE) * (travelledMie + toSun.mie) +
-                          kOzoneAbsorbUVE * (travelledOzone + toSun.ozone);
+        vec3 extinction = kRayleighScatter * (travelledRayleigh + toSun.rayleigh) +
+                          vec3(kMieScatter * kMieExtinction) * (travelledMie + toSun.mie) +
+                          kOzoneAbsorb * (travelledOzone + toSun.ozone);
         vec3 transmittance = exp(-extinction);
         scatteredRayleigh += densityRayleigh * segment * transmittance;
         scatteredMie += densityMie * segment * transmittance;
         // The stand-in: the same air, but its light is allowed only part of the extinction it
         // would have earned on a straight path, because it did not take one.
         scatteredMultiple +=
-            (densityRayleigh * kRayleighScatterUVE + vec3(densityMie * kMieScatterUVE)) *
-            exp(-extinction * kMultiScatterTauUVE) * segment;
+            (densityRayleigh * kRayleighScatter + vec3(densityMie * kMieScatter)) *
+            exp(-extinction * kMultiScatterTau) * segment;
     }
 
     // Rayleigh scatters almost evenly in both directions; the 1 + mu^2 is its charge-dipole
@@ -1503,24 +1503,24 @@ vec3 PhysicalSkyUVE(vec3 viewDir, vec3 sunDir) {
     float phaseMie = (3.0 / (8.0 * 3.14159265358979323846)) * ((1.0 - g2) * (1.0 + mu * mu)) /
                      ((2.0 + g2) * pow(max(1.0 + g2 - 2.0 * g * mu, 1.0e-4), 1.5));
 
-    float radiance = max(uAtmosphereIntensity, 0.0) * kSkySunRadianceUVE * (uSunEnergy > 0.0 ? uSunEnergy : 1.0);
-    vec3 direct = radiance * (scatteredRayleigh * kRayleighScatterUVE * phaseRayleigh +
-                              scatteredMie * (kMieScatterUVE * phaseMie));
+    float radiance = max(uAtmosphereIntensity, 0.0) * kSkySunRadiance * (uSunEnergy > 0.0 ? uSunEnergy : 1.0);
+    vec3 direct = radiance * (scatteredRayleigh * kRayleighScatter * phaseRayleigh +
+                              scatteredMie * (kMieScatter * phaseMie));
 
     // Gated on where single scattering came up short instead of added everywhere: added flat, it
     // whitens the sunset it should be filling in, and the reddest part of the sky is exactly the
     // part that needs it least.
     float luminance = dot(direct, vec3(0.2126, 0.7152, 0.0722));
-    float fill = clamp(1.0 - luminance / kMultiScatterFillUVE, 0.0, 1.0);
+    float fill = clamp(1.0 - luminance / kMultiScatterFill, 0.0, 1.0);
     vec3 multiple = radiance * scatteredMultiple *
-                    (kMultiScatterGainUVE * max(uAtmosphereMultiScatter, 0.0) /
+                    (kMultiScatterGain * max(uAtmosphereMultiScatter, 0.0) /
                      (4.0 * 3.14159265358979323846)) *
                     fill;
 
     vec3 sky = direct + multiple;
     // The disc is added inside the atmosphere, not on top of it, so its own light is dimmed by the
     // same air the rest of the sky came through. At the horizon that is what reddens it.
-    sky += max(uSunColor, vec3(0.0)) * max(uSunEnergy, 0.0) * SunDiscUVE(mu, sun.y) * mix(7.5, 16.0, 1.0 - day);
+    sky += max(uSunColor, vec3(0.0)) * max(uSunEnergy, 0.0) * SunDisc(mu, sun.y) * mix(7.5, 16.0, 1.0 - day);
     vec3 nightSky = vec3(0.004, 0.006, 0.018);
     return max(sky * day + nightSky * (1.0 - day), vec3(0.0));
 }
@@ -1535,7 +1535,7 @@ vec3 PhysicalSkyUVE(vec3 viewDir, vec3 sunDir) {
 // A cheap integer hash. Written with 32-bit multiplies instead of sin(): sin() is fast to type and
 // slow to run, and on some drivers its low bits are not random enough for a star field, which
 // shows up as visible diagonal banding in the noise.
-uint SkyHashUVE(uint x) {
+uint SkyHash(uint x) {
     x ^= x >> 16;
     x *= 0x7feb352dU;
     x ^= x >> 15;
@@ -1544,66 +1544,66 @@ uint SkyHashUVE(uint x) {
     return x;
 }
 
-float SkyHashUnitUVE(uint x) {
+float SkyHashUnit(uint x) {
     return float(x & 0x00FFFFFFU) * (1.0 / 16777215.0);
 }
 
-float SkyCellNoiseUVE(ivec3 cell) {
-    uint h = SkyHashUVE(uint(cell.x) * 0x9e3779b1U);
-    h = SkyHashUVE(h ^ (uint(cell.y) * 0x85ebca77U));
-    h = SkyHashUVE(h ^ (uint(cell.z) * 0xc2b2ae3dU));
-    return SkyHashUnitUVE(h);
+float SkyCellNoise(ivec3 cell) {
+    uint h = SkyHash(uint(cell.x) * 0x9e3779b1U);
+    h = SkyHash(h ^ (uint(cell.y) * 0x85ebca77U));
+    h = SkyHash(h ^ (uint(cell.z) * 0xc2b2ae3dU));
+    return SkyHashUnit(h);
 }
 
-vec4 SkyCellRandomsUVE(ivec3 cell, float seed) {
-    uint h = SkyHashUVE(uint(cell.x) * 0x9e3779b1U);
-    h = SkyHashUVE(h ^ (uint(cell.y) * 0x85ebca77U));
-    h = SkyHashUVE(h ^ (uint(cell.z) * 0xc2b2ae3dU));
-    h = SkyHashUVE(h ^ uint(max(seed, 0.0)));
-    return vec4(SkyHashUnitUVE(h), SkyHashUnitUVE(SkyHashUVE(h)),
-                SkyHashUnitUVE(SkyHashUVE(h ^ 0x68bc21ebU)),
-                SkyHashUnitUVE(SkyHashUVE(h ^ 0x02e5be93U)));
+vec4 SkyCellRandoms(ivec3 cell, float seed) {
+    uint h = SkyHash(uint(cell.x) * 0x9e3779b1U);
+    h = SkyHash(h ^ (uint(cell.y) * 0x85ebca77U));
+    h = SkyHash(h ^ (uint(cell.z) * 0xc2b2ae3dU));
+    h = SkyHash(h ^ uint(max(seed, 0.0)));
+    return vec4(SkyHashUnit(h), SkyHashUnit(SkyHash(h)),
+                SkyHashUnit(SkyHash(h ^ 0x68bc21ebU)),
+                SkyHashUnit(SkyHash(h ^ 0x02e5be93U)));
 }
 
 // Value noise, 2D and 3D. Smoothstep-interpolated hashes rather than a gradient noise: the
 // difference is invisible at cloud frequency, and this way the whole thing is integer hashing with
 // no table to upload or keep in sync.
-float SkyNoiseUVE(vec2 p) {
+float SkyNoise(vec2 p) {
     vec2 cell = floor(p);
     vec2 f = fract(p);
     vec2 u = f * f * (3.0 - 2.0 * f);
     ivec3 base = ivec3(int(cell.x), int(cell.y), 0);
-    float a = SkyCellNoiseUVE(base);
-    float b = SkyCellNoiseUVE(base + ivec3(1, 0, 0));
-    float c = SkyCellNoiseUVE(base + ivec3(0, 1, 0));
-    float d = SkyCellNoiseUVE(base + ivec3(1, 1, 0));
+    float a = SkyCellNoise(base);
+    float b = SkyCellNoise(base + ivec3(1, 0, 0));
+    float c = SkyCellNoise(base + ivec3(0, 1, 0));
+    float d = SkyCellNoise(base + ivec3(1, 1, 0));
     return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
 }
 
-float SkyNoiseUVE(vec3 p) {
+float SkyNoise(vec3 p) {
     vec3 cell = floor(p);
     vec3 f = fract(p);
     vec3 u = f * f * (3.0 - 2.0 * f);
     ivec3 base = ivec3(cell);
-    float c000 = SkyCellNoiseUVE(base);
-    float c100 = SkyCellNoiseUVE(base + ivec3(1, 0, 0));
-    float c010 = SkyCellNoiseUVE(base + ivec3(0, 1, 0));
-    float c110 = SkyCellNoiseUVE(base + ivec3(1, 1, 0));
-    float c001 = SkyCellNoiseUVE(base + ivec3(0, 0, 1));
-    float c101 = SkyCellNoiseUVE(base + ivec3(1, 0, 1));
-    float c011 = SkyCellNoiseUVE(base + ivec3(0, 1, 1));
-    float c111 = SkyCellNoiseUVE(base + ivec3(1, 1, 1));
+    float c000 = SkyCellNoise(base);
+    float c100 = SkyCellNoise(base + ivec3(1, 0, 0));
+    float c010 = SkyCellNoise(base + ivec3(0, 1, 0));
+    float c110 = SkyCellNoise(base + ivec3(1, 1, 0));
+    float c001 = SkyCellNoise(base + ivec3(0, 0, 1));
+    float c101 = SkyCellNoise(base + ivec3(1, 0, 1));
+    float c011 = SkyCellNoise(base + ivec3(0, 1, 1));
+    float c111 = SkyCellNoise(base + ivec3(1, 1, 1));
     float bottom = mix(mix(c000, c100, u.x), mix(c010, c110, u.x), u.y);
     float top = mix(mix(c001, c101, u.x), mix(c011, c111, u.x), u.y);
     return mix(bottom, top, u.z);
 }
 
-float SkyFbmUVE(vec2 p, const int octaves) {
+float SkyFbm(vec2 p, const int octaves) {
     float sum = 0.0;
     float amplitude = 0.5;
     float total = 0.0;
     for (int i = 0; i < octaves; ++i) {
-        sum += SkyNoiseUVE(p) * amplitude;
+        sum += SkyNoise(p) * amplitude;
         total += amplitude;
         p = p * 2.03 + vec2(17.1, 9.7);
         amplitude *= 0.5;
@@ -1611,12 +1611,12 @@ float SkyFbmUVE(vec2 p, const int octaves) {
     return sum / max(total, 1.0e-5);
 }
 
-float SkyFbmUVE(vec3 p, const int octaves) {
+float SkyFbm(vec3 p, const int octaves) {
     float sum = 0.0;
     float amplitude = 0.5;
     float total = 0.0;
     for (int i = 0; i < octaves; ++i) {
-        sum += SkyNoiseUVE(p) * amplitude;
+        sum += SkyNoise(p) * amplitude;
         total += amplitude;
         p = p * 2.03 + vec3(5.3, 11.7, 3.1);
         amplitude *= 0.5;
@@ -1628,7 +1628,7 @@ float SkyFbmUVE(vec3 p, const int octaves) {
 // all the same angular size and the field has no seam or pole where they bunch up. The neighbours
 // are checked too, because a star placed near a cell boundary is partly in the next cell and would
 // otherwise be cut in half.
-float StarFieldUVE(vec3 dir) {
+float StarField(vec3 dir) {
     if (uStarBrightness <= 0.0 || uStarDensity <= 0.0) {
         return 0.0;
     }
@@ -1639,7 +1639,7 @@ float StarFieldUVE(vec3 dir) {
         for (int y = -1; y <= 1; ++y) {
             for (int z = -1; z <= 1; ++z) {
                 ivec3 cell = base + ivec3(x, y, z);
-                vec4 r = SkyCellRandomsUVE(cell, uStarSeed);
+                vec4 r = SkyCellRandoms(cell, uStarSeed);
                 // Most cells are empty; this threshold is what makes the sky mostly dark. It uses
                 // a different channel from the size and the brightness on purpose - sharing one
                 // would make every star the same, because a cell that passes the threshold already
@@ -1664,7 +1664,7 @@ float StarFieldUVE(vec3 dir) {
 // The galactic band: a great circle of concentrated starlight, with dust lanes through it. The
 // band is the plane through the eye whose normal is fixed, so it passes through the zenith at a
 // set tilt rather than sitting at a constant altitude.
-float MilkyWayUVE(vec3 dir) {
+float MilkyWay(vec3 dir) {
     if (uMilkyWayStrength <= 0.0) {
         return 0.0;
     }
@@ -1675,9 +1675,9 @@ float MilkyWayUVE(vec3 dir) {
         return 0.0;
     }
     // Stretched noise along the band: a rift reads as structure, isotropic noise reads as fog.
-    float broad = SkyFbmUVE(dir * 5.0, 4);
-    float fine = SkyFbmUVE(dir * 14.0, 3);
-    float stars = SkyFbmUVE(dir * 40.0, 2);
+    float broad = SkyFbm(dir * 5.0, 4);
+    float fine = SkyFbm(dir * 14.0, 3);
+    float stars = SkyFbm(dir * 40.0, 2);
     float dust = smoothstep(0.30, 0.80, broad * 0.62 + fine * 0.38);
     return band * dust * (0.55 + 0.45 * stars);
 }
@@ -1685,7 +1685,7 @@ float MilkyWayUVE(vec3 dir) {
 // The cloud deck: a plane at uCloudAltitude, sampled where the view ray crosses it. Flat rather
 // than volumetric, which is the honest trade - it is one texture lookup's worth of cost and it
 // reads correctly at every angle except straight up through a broken deck.
-vec4 CloudsUVE(vec3 dir, vec3 sun, float day) {
+vec4 Clouds(vec3 dir, vec3 sun, float day) {
     if (uCloudsEnabled == 0 || dir.y <= 0.004 || uCloudAltitude <= 0.0) {
         return vec4(0.0);
     }
@@ -1699,8 +1699,8 @@ vec4 CloudsUVE(vec3 dir, vec3 sun, float day) {
     // rather than as a smear.
     vec2 uv = (crossing.xz + uCloudWind * uSkyTime) * 0.0012;
 
-    float broad = SkyFbmUVE(uv, 4);
-    float detail = SkyFbmUVE(uv * 3.7 + vec2(31.4, 12.9), 3);
+    float broad = SkyFbm(uv, 4);
+    float detail = SkyFbm(uv * 3.7 + vec2(31.4, 12.9), 3);
     // The threshold is the coverage: raising it pushes the noise field further under the cut, so
     // more of the sky is clear. Erring the field by a second, finer noise is what stops the deck
     // reading as one smooth blob and gives it ragged edges.
@@ -1743,20 +1743,20 @@ vec4 CloudsUVE(vec3 dir, vec3 sun, float day) {
 // Draws the two night layers and the deck in the order light arrives at the eye: stars and the
 // band are behind the air, cloud is in front of it. Called by both sky models, so a scene that
 // switches source keeps its stars and its weather.
-vec3 ApplySkyOverlaysUVE(vec3 base, vec3 dir, vec3 sun, float day) {
+vec3 ApplySkyOverlays(vec3 base, vec3 dir, vec3 sun, float day) {
     float night = uSunEnergy > 0.0 ? (1.0 - smoothstep(-0.08, 0.18, sun.y)) : 0.0;
     if (uStarBrightness > 0.0 && night > 0.002) {
         // Slightly cool white: real starlight is not neutral, and a pure white field reads as
         // noise rather than as sky.
         vec3 tint = vec3(0.86, 0.92, 1.0);
-        base += tint * (StarFieldUVE(dir) * uStarBrightness * night);
-        base += tint * (MilkyWayUVE(dir) * uMilkyWayStrength * night * 0.35);
+        base += tint * (StarField(dir) * uStarBrightness * night);
+        base += tint * (MilkyWay(dir) * uMilkyWayStrength * night * 0.35);
     }
-    vec4 cloud = CloudsUVE(dir, sun, day);
+    vec4 cloud = Clouds(dir, sun, day);
     return mix(base, cloud.rgb, cloud.a);
 }
 
-vec3 ProceduralSkyUVE(vec3 viewDir) {
+vec3 ProceduralSky(vec3 viewDir) {
     vec3 dir = normalize(viewDir);
     vec3 sun = length(uSunDirection) > 1.0e-5 ? normalize(uSunDirection) : vec3(0.0, 1.0, 0.0);
 
@@ -1765,7 +1765,7 @@ vec3 ProceduralSkyUVE(vec3 viewDir) {
     // changes how the sky is built without changing what it is lit by.
     float day = uSunEnergy > 0.0 ? smoothstep(-0.08, 0.18, sun.y) : 1.0;
     if (uAtmosphericSky != 0) {
-        return ApplySkyOverlaysUVE(PhysicalSkyUVE(dir, sun), dir, sun, day);
+        return ApplySkyOverlays(PhysicalSky(dir, sun), dir, sun, day);
     }
     vec3 groundBase = max(uGroundColor, vec3(0.0));
     vec3 groundLit = groundBase * mix(0.40, 1.0, day);
@@ -1780,25 +1780,25 @@ vec3 ProceduralSkyUVE(vec3 viewDir) {
         return mix(ground, horizonLit, seamBlend);
     }
 
-    vec3 upperSky = AtmosphereUpperUVE(dir, sun);
+    vec3 upperSky = AtmosphereUpper(dir, sun);
     float horizonBlend = smoothstep(0.0, 0.015, dir.y);
     return mix(horizonLit, upperSky, horizonBlend);
 }
 
 /// The gradient sky with the night and cloud overlays on top. Separate from the body above so the
 /// ground branch below the horizon can return early without skipping them.
-vec3 GradientSkyWithOverlaysUVE(vec3 dir, vec3 sun) {
+vec3 GradientSkyWithOverlays(vec3 dir, vec3 sun) {
     float day = uSunEnergy > 0.0 ? smoothstep(-0.08, 0.18, sun.y) : 1.0;
-    vec3 base = ProceduralSkyUVE(dir);
+    vec3 base = ProceduralSky(dir);
     // Below the horizon there is no sky to overlay: the ground band already stands in for the
     // terrain, and stars under it would be visible through the floor.
     if (dir.y < -0.001) {
         return base;
     }
-    return ApplySkyOverlaysUVE(base, dir, sun, day);
+    return ApplySkyOverlays(base, dir, sun, day);
 }
 
-vec2 SkyEquirectUvUVE(vec3 dir) {
+vec2 SkyEquirectUv(vec3 dir) {
     vec3 d = normalize(dir);
     float longitude = 0.0;
     if (abs(d.x) + abs(d.z) >= 1.0e-8) {
@@ -1812,13 +1812,13 @@ vec2 SkyEquirectUvUVE(vec3 dir) {
 // Ground-plane shadow (y = 0) through the same three directional cascades the lit pass uses. The
 // first cascade whose map contains the point wins, so a shadow far from the camera is no longer
 // dropped for lying outside the near cascade.
-float SkyGroundCascadeDepthUVE(int cascade, vec2 uv) {
+float SkyGroundCascadeDepth(int cascade, vec2 uv) {
     if (cascade == 0) { return texture(uSkyGroundShadowMap0, uv).r; }
     if (cascade == 1) { return texture(uSkyGroundShadowMap1, uv).r; }
     return texture(uSkyGroundShadowMap2, uv).r;
 }
 
-vec2 SkyGroundCascadeTexelUVE(int cascade) {
+vec2 SkyGroundCascadeTexel(int cascade) {
     ivec2 sz;
     if (cascade == 0) { sz = textureSize(uSkyGroundShadowMap0, 0); }
     else if (cascade == 1) { sz = textureSize(uSkyGroundShadowMap1, 0); }
@@ -1826,7 +1826,7 @@ vec2 SkyGroundCascadeTexelUVE(int cascade) {
     return 1.0 / max(vec2(sz), vec2(1.0));
 }
 
-float SkyGroundShadowUVE(vec3 groundPos, float viewDist) {
+float SkyGroundShadow(vec3 groundPos, float viewDist) {
     for (int cascade = 0; cascade < 3; ++cascade) {
         float splitFar = cascade == 0 ? uSkyGroundCascadeSplits.x
                        : (cascade == 1 ? uSkyGroundCascadeSplits.y : uSkyGroundCascadeSplits.z);
@@ -1842,12 +1842,12 @@ float SkyGroundShadowUVE(vec3 groundPos, float viewDist) {
             proj.z <= 0.0 || proj.z >= 1.0) {
             return 0.0;
         }
-        vec2 texel = SkyGroundCascadeTexelUVE(cascade);
+        vec2 texel = SkyGroundCascadeTexel(cascade);
         float bias = max(uSkyGroundShadowBias, 0.0008);
         float shadow = 0.0;
         for (int sx = -1; sx <= 1; ++sx) {
             for (int sy = -1; sy <= 1; ++sy) {
-                float closest = SkyGroundCascadeDepthUVE(cascade, proj.xy + vec2(float(sx), float(sy)) * texel);
+                float closest = SkyGroundCascadeDepth(cascade, proj.xy + vec2(float(sx), float(sy)) * texel);
                 shadow += (proj.z - bias > closest) ? 1.0 : 0.0;
             }
         }
@@ -1872,26 +1872,26 @@ void main() {
             float mu = clamp(dot(worldDir, sunDir), -1.0, 1.0);
             float sunset = exp(-pow(sunDir.y * 6.0, 2.0)) * smoothstep(-0.15, 0.0, sunDir.y);
             vec3 sunCol = max(uSunColor, vec3(0.0)) * max(uSunEnergy, 0.0);
-            color += sunCol * SunDiscUVE(mu, sunDir.y) * mix(7.5, 16.0, sunset);
+            color += sunCol * SunDisc(mu, sunDir.y) * mix(7.5, 16.0, sunset);
         }
     } else if (uSkyTextureEnabled != 0) {
         // A panorama replaces the sky, not the weather: cloud and stars still sit in front of and
         // behind it, so a photographed sky can have a moving deck over it.
-        color = texture(uSkyTexture, SkyEquirectUvUVE(worldDir)).rgb;
+        color = texture(uSkyTexture, SkyEquirectUv(worldDir)).rgb;
         if (worldDir.y > -0.001) {
             float day = uSunEnergy > 0.0 ? smoothstep(-0.08, 0.18, sunDir.y) : 1.0;
-            color = ApplySkyOverlaysUVE(color, worldDir, sunDir, day);
+            color = ApplySkyOverlays(color, worldDir, sunDir, day);
         }
     } else if (uAtmosphericSky != 0) {
-        color = ProceduralSkyUVE(worldDir);
+        color = ProceduralSky(worldDir);
     } else {
-        color = GradientSkyWithOverlaysUVE(worldDir, sunDir);
+        color = GradientSkyWithOverlays(worldDir, sunDir);
     }
     if (uSkyGroundShadowEnabled != 0 && worldDir.y < -0.001 && uCameraPosition.y > 0.001 && sunDir.y > 0.01) {
         float groundDist = -uCameraPosition.y / worldDir.y;
         if (groundDist > 0.0 && groundDist < 120.0) {
             vec3 groundPos = uCameraPosition + worldDir * groundDist;
-            float shadow = SkyGroundShadowUVE(groundPos, groundDist);
+            float shadow = SkyGroundShadow(groundPos, groundDist);
             float distFade = 1.0 - smoothstep(60.0, 120.0, groundDist);
             float shadowFactor =
                 clamp(shadow * clamp(uSkyGroundShadowOpacity, 0.0, 1.0) * distFade, 0.0, 1.0);
@@ -1977,7 +1977,7 @@ void main() {
 
 const std::string_view kOcclusionProxySource = R"GLSLSRC(#version 450 core
 
-// Occlusion proxy for Renderer3DUVE's GPU occlusion stage (Foundation WP3). The pipeline that owns
+// Occlusion proxy for Renderer3D's GPU occlusion stage (Foundation WP3). The pipeline that owns
 // this shader is depth-tested (LessOrEqual), writes no depth, and blends additively; because the
 // fragment contributes exactly zero, the colour attachment is left untouched and the only
 // observable effect is the sample count inside the query bracket that surrounds the draw.
@@ -2035,7 +2035,7 @@ out vec4 vLightSpacePositions[3];
 // the 240-odd lines of lighting below are shared verbatim, so an instanced object and a
 // non-instanced one cannot drift apart in how they are lit.
 //
-// Matrices arrive TRANSPOSED from the host (Matrix4x4UVE is row-major; std430 mat4 is
+// Matrices arrive TRANSPOSED from the host (Matrix4x4 is row-major; std430 mat4 is
 // column-major), exactly as in mesh_skin.glsl - the same convention, deliberately, so there is
 // one rule to remember rather than two.
 //
@@ -2173,7 +2173,7 @@ layout(location = 1) out vec4 FragRevealage;
 out vec4 FragColor;
 #endif
 
-struct LightUVE {
+struct Light {
     int type; // 0 = Directional, 1 = Point, 2 = Spot
     vec3 position;
     vec3 direction;
@@ -2185,18 +2185,18 @@ struct LightUVE {
     float specular;
 };
 
-uniform LightUVE uLights[16];
+uniform Light uLights[16];
 uniform int uActiveLightCount;
 uniform int uLightShadowSlot[16];
 #if !defined(UVE_MOBILE) && !defined(UVE_COMPATIBILITY) && !defined(UVE_MOBILE_PROFILE)
-struct ClusteredGpuLightUVE {
+struct ClusteredGpuLight {
     vec4 positionAndRange;
     vec4 directionAndType;
     vec4 colorAndIntensity;
     vec4 spotMaskSpecShadow;
 };
 layout(std430, binding = 4) readonly buffer ClusteredLightBlock {
-    ClusteredGpuLightUVE clusteredLights[];
+    ClusteredGpuLight clusteredLights[];
 };
 layout(std430, binding = 5) readonly buffer ClusteredCellBlock {
     uvec2 clusteredCells[];
@@ -2273,7 +2273,7 @@ uniform vec3 uUvOffset;
 #else
 uniform vec3 uUvOffset = vec3(0.0, 0.0, 0.0);
 #endif
-// Each map's own reading, on top of its UV set (see MaterialMapSettingsUVE). All zero reads the map
+// Each map's own reading, on top of its UV set (see MaterialMapSettings). All zero reads the map
 // as authored: Transform is (tiling - 1, offset); Control is (channel: 0 RGB, 1 R, 2 G, 3 B, 4 A;
 // invert; 1 - strength; on UV2).
 #if UVE_MOBILE
@@ -2446,7 +2446,7 @@ uniform vec3 uGiIndirectIrradiance;
 // Unified 2D shadow atlas for spot and point lights, sampled from texture slot 15 - the LAST unit
 // inside GLES3's guaranteed 16-unit floor, chosen so it cannot shadow one of the eleven dense
 // material/cascade/probe units below it. The renderer binds it there through
-// kShadowAtlasTextureSlotUVE; the two names are one contract.
+// kShadowAtlasTextureSlot; the two names are one contract.
 //
 // Every array here is indexed by the light's slot in uLights[], not by "nth shadowed light": a light
 // whose tile was dropped this frame simply has uLightShadowEnabled == 0 and its own slot stays empty.
@@ -2460,7 +2460,7 @@ uniform vec4 uLightShadowTileRects[4];
 uniform vec4 uLightShadowCubeRects[24];
 uniform int uLightShadowEnabled[4];
 // (near, far) of each light's projection, needed to convert a world-space bias into normalized
-// depth at the receiver - see AtlasShadowDepthBiasUVE.
+// depth at the receiver - see AtlasShadowDepthBias.
 uniform vec2 uLightShadowDepthRange[4];
 // 1 / atlas resolution, so the PCF tap spacing has one source of truth. Declared with a default so
 // a direct RHI caller that never sets it keeps the spacing this shader has always assumed.
@@ -2469,18 +2469,18 @@ uniform vec2 uShadowAtlasTexelSize;
 #else
 uniform vec2 uShadowAtlasTexelSize = vec2(1.0 / 4096.0);
 #endif
-const float kPiUVE = 3.14159265359;
-const float kBrdfEpsilonUVE = 0.0001;
+const float kPi = 3.14159265359;
+const float kBrdfEpsilon = 0.0001;
 /// The spot cone's bright inner region as a fraction of its authored outer half-angle; the band
 /// between the two is where the light falls off. Derived rather than authored so a material's
 /// existing single spotAngleDegrees keeps meaning exactly what it meant.
-const float kSpotInnerConeRatioUVE = 0.85;
+const float kSpotInnerConeRatio = 0.85;
 
-vec3 SafeNormalizeUVE(vec3 value) {
-    return value / max(length(value), kBrdfEpsilonUVE);
+vec3 SafeNormalize(vec3 value) {
+    return value / max(length(value), kBrdfEpsilon);
 }
 
-vec3 HemisphereAmbientUVE(vec3 normal) {
+vec3 HemisphereAmbient(vec3 normal) {
     if (dot(uSkyAmbient, uSkyAmbient) + dot(uGroundAmbient, uGroundAmbient) < 1.0e-10) {
         return uAmbientColor;
     }
@@ -2495,44 +2495,44 @@ vec3 HemisphereAmbientUVE(vec3 normal) {
     return mix(verticalBlend, horizonFill, horizonWeight * 0.25);
 }
 
-vec2 AmbientEnvironmentUvUVE(vec3 direction) {
-    vec3 dir = SafeNormalizeUVE(direction);
+vec2 AmbientEnvironmentUv(vec3 direction) {
+    vec3 dir = SafeNormalize(direction);
     float longitude = atan(dir.z, dir.x);
     float latitude = asin(clamp(dir.y, -1.0, 1.0));
-    return vec2(longitude * (1.0 / (2.0 * kPiUVE)) + 0.5, latitude * (1.0 / kPiUVE) + 0.5);
+    return vec2(longitude * (1.0 / (2.0 * kPi)) + 0.5, latitude * (1.0 / kPi) + 0.5);
 }
 
-vec3 SampleAmbientEnvironmentUVE(vec3 direction) {
-    return max(texture(uAmbientEnvironmentMap, AmbientEnvironmentUvUVE(direction)).rgb, vec3(0.0));
+vec3 SampleAmbientEnvironment(vec3 direction) {
+    return max(texture(uAmbientEnvironmentMap, AmbientEnvironmentUv(direction)).rgb, vec3(0.0));
 }
 
-vec3 SampleEnvironmentIrradianceUVE(vec3 normal) {
-    vec3 n = SafeNormalizeUVE(normal);
+vec3 SampleEnvironmentIrradiance(vec3 normal) {
+    vec3 n = SafeNormalize(normal);
     vec3 referenceAxis = abs(n.y) < 0.999 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0);
-    vec3 tangent = SafeNormalizeUVE(cross(referenceAxis, n));
+    vec3 tangent = SafeNormalize(cross(referenceAxis, n));
     vec3 bitangent = cross(n, tangent);
     const float spread = 0.65;
-    return SampleAmbientEnvironmentUVE(n) * 0.4 +
-           (SampleAmbientEnvironmentUVE(SafeNormalizeUVE(n + tangent * spread)) +
-            SampleAmbientEnvironmentUVE(SafeNormalizeUVE(n - tangent * spread)) +
-            SampleAmbientEnvironmentUVE(SafeNormalizeUVE(n + bitangent * spread)) +
-            SampleAmbientEnvironmentUVE(SafeNormalizeUVE(n - bitangent * spread))) * 0.15;
+    return SampleAmbientEnvironment(n) * 0.4 +
+           (SampleAmbientEnvironment(SafeNormalize(n + tangent * spread)) +
+            SampleAmbientEnvironment(SafeNormalize(n - tangent * spread)) +
+            SampleAmbientEnvironment(SafeNormalize(n + bitangent * spread)) +
+            SampleAmbientEnvironment(SafeNormalize(n - bitangent * spread))) * 0.15;
 }
 
-vec3 SampleEnvironmentSpecularUVE(vec3 direction, float roughness) {
-    vec3 reflection = SafeNormalizeUVE(direction);
+vec3 SampleEnvironmentSpecular(vec3 direction, float roughness) {
+    vec3 reflection = SafeNormalize(direction);
     vec3 referenceAxis = abs(reflection.y) < 0.999 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0);
-    vec3 tangent = SafeNormalizeUVE(cross(referenceAxis, reflection));
+    vec3 tangent = SafeNormalize(cross(referenceAxis, reflection));
     vec3 bitangent = cross(reflection, tangent);
     float spread = clamp(roughness, 0.0, 1.0) * 0.65;
-    return SampleAmbientEnvironmentUVE(reflection) * 0.4 +
-           (SampleAmbientEnvironmentUVE(SafeNormalizeUVE(reflection + tangent * spread)) +
-            SampleAmbientEnvironmentUVE(SafeNormalizeUVE(reflection - tangent * spread)) +
-            SampleAmbientEnvironmentUVE(SafeNormalizeUVE(reflection + bitangent * spread)) +
-            SampleAmbientEnvironmentUVE(SafeNormalizeUVE(reflection - bitangent * spread))) * 0.15;
+    return SampleAmbientEnvironment(reflection) * 0.4 +
+           (SampleAmbientEnvironment(SafeNormalize(reflection + tangent * spread)) +
+            SampleAmbientEnvironment(SafeNormalize(reflection - tangent * spread)) +
+            SampleAmbientEnvironment(SafeNormalize(reflection + bitangent * spread)) +
+            SampleAmbientEnvironment(SafeNormalize(reflection - bitangent * spread))) * 0.15;
 }
 
-vec3 SkyReflectionUVE(vec3 direction, float roughness) {
+vec3 SkyReflection(vec3 direction, float roughness) {
     float up = clamp(direction.y, -1.0, 1.0);
     vec3 sharp = up >= 0.0
         ? mix(uSkyReflectionHorizon, uSkyReflectionSky, smoothstep(0.0, 0.32, up))
@@ -2545,7 +2545,7 @@ vec3 SkyReflectionUVE(vec3 direction, float roughness) {
     return mix(sharp, soft, blur);
 }
 
-vec3 AmbientFromSourceUVE(vec3 normal) {
+vec3 AmbientFromSource(vec3 normal) {
     if (uAmbientSource == 0) {
         return vec3(0.0);
     }
@@ -2553,22 +2553,22 @@ vec3 AmbientFromSourceUVE(vec3 normal) {
         return max(uAmbientColor, vec3(0.0));
     }
     if (uAmbientSource == 3 && uAmbientEnvironmentMapEnabled != 0) {
-        return max(uAmbientColor, vec3(0.0)) * SampleEnvironmentIrradianceUVE(normal);
+        return max(uAmbientColor, vec3(0.0)) * SampleEnvironmentIrradiance(normal);
     }
     // Sky is the compatibility path and the fallback while an Environment Map asset is loading
     // or missing.
-    return HemisphereAmbientUVE(normal);
+    return HemisphereAmbient(normal);
 }
 
 // Roughness-aware cubemap probe sampling: mirror surfaces sample the exact reflection vector,
 // while rough surfaces integrate a 5-tap orthonormal cone across the cubemap.
-vec3 SampleReflectionProbeUVE(vec3 direction, float roughness) {
-    vec3 dir = SafeNormalizeUVE(direction);
+vec3 SampleReflectionProbe(vec3 direction, float roughness) {
+    vec3 dir = SafeNormalize(direction);
     if (roughness <= 0.08) {
         return texture(uReflectionProbeCube, dir).rgb;
     }
     vec3 referenceAxis = abs(dir.y) < 0.999 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0);
-    vec3 tangent = SafeNormalizeUVE(cross(referenceAxis, dir));
+    vec3 tangent = SafeNormalize(cross(referenceAxis, dir));
     vec3 bitangent = cross(dir, tangent);
     float spread = roughness * roughness * 0.45;
     return texture(uReflectionProbeCube, dir).rgb * 0.4 +
@@ -2578,7 +2578,7 @@ vec3 SampleReflectionProbeUVE(vec3 direction, float roughness) {
             texture(uReflectionProbeCube, dir - bitangent * spread).rgb) * 0.15;
 }
 
-float ReflectionProbeInfluenceUVE(vec3 worldPoint) {
+float ReflectionProbeInfluence(vec3 worldPoint) {
     vec3 halfExtents = uReflectionProbeHalfExtents;
     if (halfExtents.x <= 0.0 || halfExtents.y <= 0.0 || halfExtents.z <= 0.0) {
         return 0.0;
@@ -2594,7 +2594,7 @@ float ReflectionProbeInfluenceUVE(vec3 worldPoint) {
     return 1.0 - smoothstep(0.0, 1.0, normalizedDistance);
 }
 
-vec3 ReflectionProbeBoxProjectUVE(vec3 worldOrigin, vec3 worldDirection) {
+vec3 ReflectionProbeBoxProject(vec3 worldOrigin, vec3 worldDirection) {
     vec3 halfExtents = uReflectionProbeHalfExtents;
     vec3 delta = worldOrigin - uReflectionProbePosition;
     vec3 localOrigin = vec3(dot(delta, uReflectionProbeAxisX), dot(delta, uReflectionProbeAxisY),
@@ -2607,7 +2607,7 @@ vec3 ReflectionProbeBoxProjectUVE(vec3 worldOrigin, vec3 worldDirection) {
         float origin = axis == 0 ? localOrigin.x : (axis == 1 ? localOrigin.y : localOrigin.z);
         float dir = axis == 0 ? localDirection.x : (axis == 1 ? localDirection.y : localDirection.z);
         float halfExtent = axis == 0 ? halfExtents.x : (axis == 1 ? halfExtents.y : halfExtents.z);
-        if (abs(dir) < kBrdfEpsilonUVE) {
+        if (abs(dir) < kBrdfEpsilon) {
             if (origin < -halfExtent || origin > halfExtent) {
                 return worldDirection;
             }
@@ -2618,7 +2618,7 @@ vec3 ReflectionProbeBoxProjectUVE(vec3 worldOrigin, vec3 worldDirection) {
         float t2 = (halfExtent - origin) * inv;
         tFar = min(tFar, max(t1, t2));
     }
-    if (!(tFar > kBrdfEpsilonUVE)) {
+    if (!(tFar > kBrdfEpsilon)) {
         return worldDirection;
     }
     vec3 localHit = localOrigin + localDirection * tFar;
@@ -2627,34 +2627,34 @@ vec3 ReflectionProbeBoxProjectUVE(vec3 worldOrigin, vec3 worldDirection) {
     return worldHit - uReflectionProbePosition;
 }
 
-float Pow5UVE(float x) {
+float Pow5(float x) {
     float x2 = x * x;
     return x2 * x2 * x;
 }
 
-float DistributionGgxUVE(float normalDotHalf, float roughness) {
+float DistributionGgx(float normalDotHalf, float roughness) {
     float alpha = roughness * roughness;
     float alphaSquared = alpha * alpha;
     float normalDotHalfSquared = normalDotHalf * normalDotHalf;
     float denominator = normalDotHalfSquared * (alphaSquared - 1.0) + 1.0;
-    return alphaSquared / max(kPiUVE * denominator * denominator, kBrdfEpsilonUVE);
+    return alphaSquared / max(kPi * denominator * denominator, kBrdfEpsilon);
 }
 
 // Height-correlated Smith-GGX visibility term V = G / (4 * NdotV * NdotL).
-float VisibilitySmithGGXCorrelatedUVE(float normalDotView, float normalDotLight, float roughness) {
+float VisibilitySmithGGXCorrelated(float normalDotView, float normalDotLight, float roughness) {
     float alpha = roughness * roughness;
     float alpha2 = alpha * alpha;
     float ggxV = normalDotLight * sqrt(normalDotView * normalDotView * (1.0 - alpha2) + alpha2);
     float ggxL = normalDotView * sqrt(normalDotLight * normalDotLight * (1.0 - alpha2) + alpha2);
-    return 0.5 / max(ggxV + ggxL, kBrdfEpsilonUVE);
+    return 0.5 / max(ggxV + ggxL, kBrdfEpsilon);
 }
 
-vec3 FresnelSchlickUVE(float halfDotView, vec3 baseReflectance) {
-    return baseReflectance + (vec3(1.0) - baseReflectance) * Pow5UVE(clamp(1.0 - halfDotView, 0.0, 1.0));
+vec3 FresnelSchlick(float halfDotView, vec3 baseReflectance) {
+    return baseReflectance + (vec3(1.0) - baseReflectance) * Pow5(clamp(1.0 - halfDotView, 0.0, 1.0));
 }
 
 // Analytic split-sum GGX environment BRDF approximation (scale, bias).
-vec2 EnvBrdfApproxUVE(float roughness, float normalDotView) {
+vec2 EnvBrdfApprox(float roughness, float normalDotView) {
     const vec4 c0 = vec4(-1.0, -0.0275, -0.572, 0.022);
     const vec4 c1 = vec4(1.0, 0.0425, 1.04, -0.04);
     vec4 r = roughness * c0 + c1;
@@ -2664,7 +2664,7 @@ vec2 EnvBrdfApproxUVE(float roughness, float normalDotView) {
 
 // Screen-space microfacet normal-variance filtering to suppress sub-pixel specular aliasing on
 // curved geometry, thin bevels, and high-frequency normal maps.
-float ApplyGeometricSpecularAAUVE(vec3 geometricNormal, vec3 shadingNormal, float perceptualRoughness) {
+float ApplyGeometricSpecularAA(vec3 geometricNormal, vec3 shadingNormal, float perceptualRoughness) {
     vec3 dGeoU = dFdx(geometricNormal);
     vec3 dGeoV = dFdy(geometricNormal);
     vec3 dShadU = dFdx(shadingNormal);
@@ -2676,7 +2676,7 @@ float ApplyGeometricSpecularAAUVE(vec3 geometricNormal, vec3 shadingNormal, floa
     return clamp(sqrt(r2 + kernelRoughness2), 0.04, 1.0);
 }
 
-float SampleCascadeDepthUVE(int cascadeIndex, vec2 texCoord) {
+float SampleCascadeDepth(int cascadeIndex, vec2 texCoord) {
     if (cascadeIndex == 0) {
         return texture(uShadowMapTextures[0], texCoord).r;
     }
@@ -2686,7 +2686,7 @@ float SampleCascadeDepthUVE(int cascadeIndex, vec2 texCoord) {
     return texture(uShadowMapTextures[2], texCoord).r;
 }
 
-vec2 CascadeTexelSizeUVE(int cascadeIndex) {
+vec2 CascadeTexelSize(int cascadeIndex) {
     ivec2 sz = ivec2(1);
     if (cascadeIndex == 0) {
         sz = textureSize(uShadowMapTextures[0], 0);
@@ -2698,7 +2698,7 @@ vec2 CascadeTexelSizeUVE(int cascadeIndex) {
     return 1.0 / max(vec2(sz), vec2(1.0));
 }
 
-ivec2 CascadeMapSizeUVE(int cascadeIndex) {
+ivec2 CascadeMapSize(int cascadeIndex) {
     if (cascadeIndex == 0) {
         return textureSize(uShadowMapTextures[0], 0);
     }
@@ -2709,7 +2709,7 @@ ivec2 CascadeMapSizeUVE(int cascadeIndex) {
 }
 
 #if !defined(UVE_COMPATIBILITY)
-vec4 CascadeLightSpacePositionUVE(int cascadeIndex) {
+vec4 CascadeLightSpacePosition(int cascadeIndex) {
     if (cascadeIndex == 0) {
         return vLightSpacePositions[0];
     }
@@ -2721,14 +2721,14 @@ vec4 CascadeLightSpacePositionUVE(int cascadeIndex) {
 #endif
 
 // 16-tap golden-angle Vogel disc for isotropic, clumping-free soft shadow penumbra integration.
-const vec2 kVogelDisk16UVE[16] = vec2[16](
+const vec2 kVogelDisk16[16] = vec2[16](
     vec2( 0.176777,  0.000000), vec2(-0.225967,  0.205764), vec2( 0.034729, -0.393506), vec2( 0.281441,  0.372739),
     vec2(-0.511329, -0.095890), vec2( 0.430580, -0.355913), vec2(-0.054116,  0.587895), vec2(-0.382775, -0.477944),
     vec2( 0.677406,  0.118636), vec2(-0.625114,  0.372894), vec2( 0.264935, -0.727892), vec2( 0.140751,  0.798237),
     vec2(-0.800547, -0.252855), vec2( 0.779871, -0.415022), vec2(-0.357475,  0.848231), vec2(-0.427858, -0.875842)
 );
 
-float ShadowFactorFromPositionUVE(vec4 lightSpacePosition, vec3 normal, vec3 lightDirection, int cascadeIndex) {
+float ShadowFactorFromPosition(vec4 lightSpacePosition, vec3 normal, vec3 lightDirection, int cascadeIndex) {
     if (abs(lightSpacePosition.w) <= 0.0001) {
         return 1.0;
     }
@@ -2741,7 +2741,7 @@ float ShadowFactorFromPositionUVE(vec4 lightSpacePosition, vec3 normal, vec3 lig
     }
 
     ivec2 mapSize = cascadeIndex < 0 ? textureSize(uShadowMapTexture, 0)
-                                     : CascadeMapSizeUVE(cascadeIndex);
+                                     : CascadeMapSize(cascadeIndex);
     if (mapSize.x <= 1 || mapSize.y <= 1) {
         return 1.0;
     }
@@ -2769,7 +2769,7 @@ float ShadowFactorFromPositionUVE(vec4 lightSpacePosition, vec3 normal, vec3 lig
 #else
     if (filterMode == 0) {
         float sampledDepth = cascadeIndex < 0 ? texture(uShadowMapTexture, projected.xy).r
-                                              : SampleCascadeDepthUVE(cascadeIndex, projected.xy);
+                                              : SampleCascadeDepth(cascadeIndex, projected.xy);
         visibleWeight = compareDepth > sampledDepth ? 0.0 : 1.0;
         totalWeight = 1.0;
     } else {
@@ -2788,9 +2788,9 @@ float ShadowFactorFromPositionUVE(vec4 lightSpacePosition, vec3 normal, vec3 lig
             float blockerSum = 0.0;
             float blockers = 0.0;
             for (int i = 0; i < 16; i += 2) {
-                vec2 coord = projected.xy + rotation * kVogelDisk16UVE[i] * texelSize * 6.0;
+                vec2 coord = projected.xy + rotation * kVogelDisk16[i] * texelSize * 6.0;
                 float depth = cascadeIndex < 0 ? texture(uShadowMapTexture, coord).r
-                                               : SampleCascadeDepthUVE(cascadeIndex, coord);
+                                               : SampleCascadeDepth(cascadeIndex, coord);
                 if (depth < compareDepth) {
                     blockerSum += depth;
                     blockers += 1.0;
@@ -2810,10 +2810,10 @@ float ShadowFactorFromPositionUVE(vec4 lightSpacePosition, vec3 normal, vec3 lig
         int tapStep = 1;
 #endif
         for (int i = 0; i < 16; i += tapStep) {
-            vec2 offset = kVogelDisk16UVE[i];
+            vec2 offset = kVogelDisk16[i];
             vec2 sampleCoord = projected.xy + rotation * offset * texelSize * radius;
             float sampledDepth = cascadeIndex < 0 ? texture(uShadowMapTexture, sampleCoord).r
-                                                  : SampleCascadeDepthUVE(cascadeIndex, sampleCoord);
+                                                  : SampleCascadeDepth(cascadeIndex, sampleCoord);
             float tapW = 1.0 - 0.25 * dot(offset, offset);
             visibleWeight += (compareDepth > sampledDepth ? 0.0 : 1.0) * tapW;
             totalWeight += tapW;
@@ -2829,7 +2829,7 @@ float ShadowFactorFromPositionUVE(vec4 lightSpacePosition, vec3 normal, vec3 lig
     return factor;
 }
 
-float FadeShadowToLitAtDistanceUVE(float shadowFactor, float viewDepth, float finalCascadeFarDepth) {
+float FadeShadowToLitAtDistance(float shadowFactor, float viewDepth, float finalCascadeFarDepth) {
     float fadeRange = min(max(uShadowMaxDistanceFadeRange, 0.0), max(finalCascadeFarDepth, 0.0));
     if (fadeRange <= 0.0) {
         return shadowFactor;
@@ -2839,11 +2839,11 @@ float FadeShadowToLitAtDistanceUVE(float shadowFactor, float viewDepth, float fi
     return mix(1.0, shadowFactor, shadowWeight);
 }
 
-float DirectionalShadowFactorUVE(vec3 normal, vec3 lightDirection) {
+float DirectionalShadowFactor(vec3 normal, vec3 lightDirection) {
 #if defined(UVE_COMPATIBILITY)
-    float shadowFactor = ShadowFactorFromPositionUVE(vLightSpacePosition, normal, lightDirection, -1);
+    float shadowFactor = ShadowFactorFromPosition(vLightSpacePosition, normal, lightDirection, -1);
     if (uShadowCascadeCount > 0) {
-        float planarDepth = dot(vWorldPosition - uViewPosition, SafeNormalizeUVE(uCameraForward));
+        float planarDepth = dot(vWorldPosition - uViewPosition, SafeNormalize(uCameraForward));
         float viewDepth = (uOrthographic != 0 || planarDepth > 0.0)
                               ? max(planarDepth, 0.0)
                               : length(vWorldPosition - uViewPosition);
@@ -2851,16 +2851,16 @@ float DirectionalShadowFactorUVE(vec3 normal, vec3 lightDirection) {
         if (viewDepth > farDepth) {
             return 1.0;
         }
-        return FadeShadowToLitAtDistanceUVE(shadowFactor, viewDepth, farDepth);
+        return FadeShadowToLitAtDistance(shadowFactor, viewDepth, farDepth);
     }
     return shadowFactor;
 #else
     if (uShadowCascadeCount <= 0) {
         // No cascades: one map in uShadowMapTexture, projected by vLightSpacePosition.
-        return ShadowFactorFromPositionUVE(vLightSpacePosition, normal, lightDirection, -1);
+        return ShadowFactorFromPosition(vLightSpacePosition, normal, lightDirection, -1);
     }
 
-    float planarDepth = dot(vWorldPosition - uViewPosition, SafeNormalizeUVE(uCameraForward));
+    float planarDepth = dot(vWorldPosition - uViewPosition, SafeNormalize(uCameraForward));
     float viewDepth = (uOrthographic != 0 || planarDepth > 0.0)
                           ? max(planarDepth, 0.0)
                           : length(vWorldPosition - uViewPosition);
@@ -2877,7 +2877,7 @@ float DirectionalShadowFactorUVE(vec3 normal, vec3 lightDirection) {
             break;
         }
     }
-    float shadowFactor = ShadowFactorFromPositionUVE(CascadeLightSpacePositionUVE(cascadeIndex), normal,
+    float shadowFactor = ShadowFactorFromPosition(CascadeLightSpacePosition(cascadeIndex), normal,
                                                       lightDirection, cascadeIndex);
     if (cascadeIndex < finalCascadeIndex) {
         float cascadeNearDepth = cascadeIndex == 0 ? 0.0 : uShadowCascadeSplits[cascadeIndex - 1];
@@ -2886,13 +2886,13 @@ float DirectionalShadowFactorUVE(vec3 normal, vec3 lightDirection) {
         float blendWidth = cascadeDepthRange * clamp(uShadowCascadeBlendRatio, 0.0, 0.25);
         float blendStartDepth = cascadeFarDepth - blendWidth;
         if (blendWidth > 0.0 && viewDepth > blendStartDepth) {
-            float nextCascadeShadowFactor = ShadowFactorFromPositionUVE(
-                CascadeLightSpacePositionUVE(cascadeIndex + 1), normal, lightDirection, cascadeIndex + 1);
+            float nextCascadeShadowFactor = ShadowFactorFromPosition(
+                CascadeLightSpacePosition(cascadeIndex + 1), normal, lightDirection, cascadeIndex + 1);
             float blendWeight = smoothstep(blendStartDepth, cascadeFarDepth, viewDepth);
             shadowFactor = mix(shadowFactor, nextCascadeShadowFactor, blendWeight);
         }
     }
-    float finalFactor = FadeShadowToLitAtDistanceUVE(shadowFactor, viewDepth, finalCascadeFarDepth);
+    float finalFactor = FadeShadowToLitAtDistance(shadowFactor, viewDepth, finalCascadeFarDepth);
     if (isnan(finalFactor) || isinf(finalFactor)) {
         return 1.0;
     }
@@ -2900,19 +2900,19 @@ float DirectionalShadowFactorUVE(vec3 normal, vec3 lightDirection) {
 #endif
 }
 
-// kAtlasShadowBiasMetersPerUnitUVE keeps the atlas on the same authored scale as the cascades: the
+// kAtlasShadowBiasMetersPerUnit keeps the atlas on the same authored scale as the cascades: the
 // directional default uShadowBias (0.0025) is authored against roughly a 40 m cascade half-extent,
 // where it is worth about 0.05 m of separation. Reusing that ratio means one authored bias value
 // keeps meaning the same "how much gap", even though the two paths store depth in different spaces.
-const float kAtlasShadowBiasMetersPerUnitUVE = 20.0;
+const float kAtlasShadowBiasMetersPerUnit = 20.0;
 
 /// Converts a world-space shadow bias into normalized depth AT THE RECEIVER'S OWN DEPTH.
 ///
 /// A perspective projection's depth slope varies by orders of magnitude along one ray, so a constant
 /// normalized-depth bias is either acne beside the near plane or metres of peter-panning out at the
 /// light's range - and the same light is both, depending on where the surface is. Mirror of
-/// ShadowDepthSlopeUVE in light_shadow_planner_uve.h; the unit tests pin the two together.
-float AtlasShadowDepthBiasUVE(vec2 depthRange, float projectionDepth, float normalDotLight) {
+/// ShadowDepthSlope in light_shadow_planner_uve.h; the unit tests pin the two together.
+float AtlasShadowDepthBias(vec2 depthRange, float projectionDepth, float normalDotLight) {
     float nearPlane = max(depthRange.x, 0.01);
     float farPlane = max(depthRange.y, nearPlane + 0.1);
     // Same shape as the directional bias, reinterpreted in metres rather than normalized units.
@@ -2923,16 +2923,16 @@ float AtlasShadowDepthBiasUVE(vec2 depthRange, float projectionDepth, float norm
         (nearPlane * farPlane) / max(farPlane - (farPlane - nearPlane) * projectionDepth, 1.0e-6);
     float depthSlope =
         (nearPlane * farPlane) / max((farPlane - nearPlane) * linearDepth * linearDepth, 1.0e-6);
-    return normalizedBias * kAtlasShadowBiasMetersPerUnitUVE * depthSlope;
+    return normalizedBias * kAtlasShadowBiasMetersPerUnit * depthSlope;
 }
 
 /// Spot shadows: one perspective depth tile per light, sampled with the same receiver-plane PCF the
 /// directional cascades use.
 ///
-/// Depth convention: `projectionDepth` is the engine's [0, 1] projection depth (Matrix4x4UVE::
-/// PerspectiveUVE is Vulkan-style), and GL's depth attachment stores `(ndc + 1) / 2`, which is the
-/// `* 0.5 + 0.5` below - exactly the convention ShadowFactorFromPositionUVE has always used.
-float SpotShadowFactorUVE(int lightIndex, vec3 normal, vec3 lightDirection) {
+/// Depth convention: `projectionDepth` is the engine's [0, 1] projection depth (Matrix4x4::
+/// Perspective is Vulkan-style), and GL's depth attachment stores `(ndc + 1) / 2`, which is the
+/// `* 0.5 + 0.5` below - exactly the convention ShadowFactorFromPosition has always used.
+float SpotShadowFactor(int lightIndex, vec3 normal, vec3 lightDirection) {
     if (uLightShadowEnabled[lightIndex] == 0) {
         return 1.0;
     }
@@ -2956,7 +2956,7 @@ float SpotShadowFactorUVE(int lightIndex, vec3 normal, vec3 lightDirection) {
     }
 
     float currentDepth = projectionDepth * 0.5 + 0.5;
-    float bias = AtlasShadowDepthBiasUVE(uLightShadowDepthRange[lightIndex], projectionDepth,
+    float bias = AtlasShadowDepthBias(uLightShadowDepthRange[lightIndex], projectionDepth,
                                          dot(normal, lightDirection));
     vec2 atlasTexelSize = max(uShadowAtlasTexelSize, vec2(0.0));
     int kernelRadius = clamp(uShadowPcfKernelRadius, 0, 2);
@@ -2984,11 +2984,11 @@ float SpotShadowFactorUVE(int lightIndex, vec3 normal, vec3 lightDirection) {
 
 /// The six cube faces, in the order +X, -X, +Y, -Y, +Z, -Z.
 ///
-/// Explicit constants rather than a runtime basis build: `PointLightShadowFaceTableUVE` in
+/// Explicit constants rather than a runtime basis build: `PointLightShadowFaceTable` in
 /// shadow_atlas_manager_uve.h holds the same six triples, and the renderer rasterizes each face
 /// through exactly the one this shader samples with. A seam that lands on the wrong face reads as a
 /// plausible shadow instead of as a bug, so the two tables are pinned together by tests.
-void PointShadowFaceBasisUVE(int faceIndex, out vec3 faceRight, out vec3 faceUp,
+void PointShadowFaceBasis(int faceIndex, out vec3 faceRight, out vec3 faceUp,
                              out vec3 faceForward) {
     if (faceIndex == 0) {
         faceRight = vec3(0.0, 0.0, -1.0); faceUp = vec3(0.0, 1.0, 0.0); faceForward = vec3(1.0, 0.0, 0.0);
@@ -3006,8 +3006,8 @@ void PointShadowFaceBasisUVE(int faceIndex, out vec3 faceRight, out vec3 faceUp,
 }
 
 /// Cube face a direction lands on by dominant axis, ties broken X then Y then Z - the same rule
-/// `ShadowAtlasManagerUVE::PointLightShadowFaceForDirectionUVE` implements.
-int PointShadowFaceUVE(vec3 direction) {
+/// `ShadowAtlasManager::PointLightShadowFaceForDirection` implements.
+int PointShadowFace(vec3 direction) {
     vec3 a = abs(direction);
     if (a.x >= a.y && a.x >= a.z) {
         return direction.x >= 0.0 ? 0 : 1;
@@ -3020,10 +3020,10 @@ int PointShadowFaceUVE(vec3 direction) {
 
 /// `[0, 1]` projection depth a point at `axisDistance` along the face axis writes.
 ///
-/// Mirror of `PointShadowProjectionDepthUVE` in light_shadow_planner_uve.h, which the CPU uses to
+/// Mirror of `PointShadowProjectionDepth` in light_shadow_planner_uve.h, which the CPU uses to
 /// predict the same number with the light's own near/far. Both are the inverse of the
-/// `AtlasShadowDepthBiasUVE` linearization.
-float PointShadowProjectionDepthUVE(vec2 depthRange, float axisDistance) {
+/// `AtlasShadowDepthBias` linearization.
+float PointShadowProjectionDepth(vec2 depthRange, float axisDistance) {
     float nearPlane = max(depthRange.x, 0.01);
     float farPlane = max(depthRange.y, nearPlane + 0.1);
     return farPlane * (1.0 - nearPlane / max(axisDistance, nearPlane)) / (farPlane - nearPlane);
@@ -3037,7 +3037,7 @@ float PointShadowProjectionDepthUVE(vec2 depthRange, float axisDistance) {
 /// are the shape a depth-only pass can actually write - the same face matrices the CPU plans with -
 /// and the shader selects a face by dominant axis, which is exactly the seam rule a cube-map
 /// sampler uses internally.
-float PointShadowFactorUVE(int lightIndex, vec3 normal, vec3 lightPosition, float lightRange) {
+float PointShadowFactor(int lightIndex, vec3 normal, vec3 lightPosition, float lightRange) {
     if (uLightShadowEnabled[lightIndex] == 0) {
         return 1.0;
     }
@@ -3047,11 +3047,11 @@ float PointShadowFactorUVE(int lightIndex, vec3 normal, vec3 lightPosition, floa
         return 1.0;
     }
     vec3 dir = toFrag / dist;
-    int face = PointShadowFaceUVE(dir);
+    int face = PointShadowFace(dir);
     vec3 faceRight;
     vec3 faceUp;
     vec3 faceForward;
-    PointShadowFaceBasisUVE(face, faceRight, faceUp, faceForward);
+    PointShadowFaceBasis(face, faceRight, faceUp, faceForward);
 
     // The face's own coordinates are the ray's components along its basis. Their RATIO is the
     // normalized device position - dividing the absolute distance instead would make the sample
@@ -3079,12 +3079,12 @@ float PointShadowFactorUVE(int lightIndex, vec3 normal, vec3 lightPosition, floa
     // face's matrix, and therefore what the depth attachment stored.
     float axisDistance = axisDot * dist;
     vec2 depthRange = uLightShadowDepthRange[lightIndex];
-    float projectionDepth = PointShadowProjectionDepthUVE(depthRange, axisDistance);
+    float projectionDepth = PointShadowProjectionDepth(depthRange, axisDistance);
     if (projectionDepth <= 0.0 || projectionDepth >= 1.0) {
         return 1.0;
     }
     float currentDepth = projectionDepth * 0.5 + 0.5;
-    float bias = AtlasShadowDepthBiasUVE(depthRange, projectionDepth, dot(normal, -dir));
+    float bias = AtlasShadowDepthBias(depthRange, projectionDepth, dot(normal, -dir));
 
     vec2 atlasTexelSize = max(uShadowAtlasTexelSize, vec2(0.0));
     int kernelRadius = clamp(uShadowPcfKernelRadius, 0, 2);
@@ -3111,20 +3111,20 @@ float PointShadowFactorUVE(int lightIndex, vec3 normal, vec3 lightPosition, floa
 }
 // One exit point for the colour/alpha pair, so the four debug and unshaded early-outs cannot drift
 // from the lit path on premultiplication. Only the pipeline state decides whether it is needed.
-float LuminanceUVE(vec3 color) {
+float Luminance(vec3 color) {
     return dot(max(color, vec3(0.0)), vec3(0.2126, 0.7152, 0.0722));
 }
-vec4 ComposeFragmentUVE(vec3 color, float alpha) {
+vec4 ComposeFragment(vec3 color, float alpha) {
     return vec4(uPremultiplyAlpha != 0 ? color * alpha : color, alpha);
 }
-vec4 ComposeOutputUVE(vec3 color, float surfaceOpacity, float indirectWeight) {
+vec4 ComposeOutput(vec3 color, float surfaceOpacity, float indirectWeight) {
     if (uPackIndirectWeightAlpha != 0) {
         return vec4(color, clamp(indirectWeight, 0.0, 1.0));
     }
-    return ComposeFragmentUVE(color, surfaceOpacity);
+    return ComposeFragment(color, surfaceOpacity);
 }
 #if defined(UVE_COMPATIBILITY)
-vec4 ReadMapCompatUVE(sampler2D map, vec2 uv1, vec2 uv2, vec4 transform, vec4 control, vec4 neutral) {
+vec4 ReadMapCompat(sampler2D map, vec2 uv1, vec2 uv2, vec4 transform, vec4 control, vec4 neutral) {
     if (control.z >= 0.999) {
         return neutral;
     }
@@ -3143,7 +3143,7 @@ vec4 ReadMapCompatUVE(sampler2D map, vec2 uv1, vec2 uv2, vec4 transform, vec4 co
 void main() {
     vec2 uv1 = vTexCoord * uUvScale.xy + uUvOffset.xy;
     vec2 uv2 = vTexCoord * uUv2Scale.xy + uUv2Offset.xy;
-    vec4 albedoSample = ReadMapCompatUVE(uAlbedoTexture, uv1, uv2, uAlbedoMapTransform, uAlbedoMapControl, vec4(1.0));
+    vec4 albedoSample = ReadMapCompat(uAlbedoTexture, uv1, uv2, uAlbedoMapTransform, uAlbedoMapControl, vec4(1.0));
     if (uAlphaCutoff > 0.0 && albedoSample.a < uAlphaCutoff) {
         discard;
     }
@@ -3151,16 +3151,16 @@ void main() {
     float materialAlpha = uAlphaSource == 0 ? clamp(albedoSample.a * uAlbedoAlpha, 0.0, 1.0) : 1.0;
     float surfaceOpacity = clamp(uSurfaceOpacity, 0.0, 1.0) * materialAlpha;
     if (uShadingMode == 1 || uUnshaded != 0) {
-        FragColor = ComposeOutputUVE(albedo, surfaceOpacity, 0.0);
+        FragColor = ComposeOutput(albedo, surfaceOpacity, 0.0);
         return;
     }
     if (uShadingMode == 2) {
-        FragColor = ComposeOutputUVE(mix(albedo * 0.25, vec3(0.05, 0.85, 1.0), 0.75), surfaceOpacity, 0.0);
+        FragColor = ComposeOutput(mix(albedo * 0.25, vec3(0.05, 0.85, 1.0), 0.75), surfaceOpacity, 0.0);
         return;
     }
-    float ambientOcclusion = mix(1.0, ReadMapCompatUVE(uAOTexture, uv1, uv2, uOcclusionMapTransform, uOcclusionMapControl, vec4(1.0)).r, clamp(uOcclusionStrength, 0.0, 1.0));
-    vec3 normal = SafeNormalizeUVE(vWorldNormal);
-    if (dot(normal, normal) <= kBrdfEpsilonUVE * kBrdfEpsilonUVE) {
+    float ambientOcclusion = mix(1.0, ReadMapCompat(uAOTexture, uv1, uv2, uOcclusionMapTransform, uOcclusionMapControl, vec4(1.0)).r, clamp(uOcclusionStrength, 0.0, 1.0));
+    vec3 normal = SafeNormalize(vWorldNormal);
+    if (dot(normal, normal) <= kBrdfEpsilon * kBrdfEpsilon) {
         normal = vec3(0.0, 0.0, 1.0);
     }
     if (uNormalMapControl.z < 0.999) {
@@ -3169,55 +3169,55 @@ void main() {
             vec3 fallbackAxis = abs(normal.y) < 0.999 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0);
             tangent = cross(fallbackAxis, normal);
         }
-        tangent = SafeNormalizeUVE(tangent);
-        vec3 bitangent = SafeNormalizeUVE(cross(normal, tangent)) * (vTangentHandedness < 0.0 ? -1.0 : 1.0);
-        vec3 tsNormal = ReadMapCompatUVE(uNormalTexture, uv1, uv2, uNormalMapTransform, uNormalMapControl, vec4(0.5, 0.5, 1.0, 1.0)).xyz * 2.0 - 1.0;
+        tangent = SafeNormalize(tangent);
+        vec3 bitangent = SafeNormalize(cross(normal, tangent)) * (vTangentHandedness < 0.0 ? -1.0 : 1.0);
+        vec3 tsNormal = ReadMapCompat(uNormalTexture, uv1, uv2, uNormalMapTransform, uNormalMapControl, vec4(0.5, 0.5, 1.0, 1.0)).xyz * 2.0 - 1.0;
         if (uNormalFlipGreen != 0) {
             tsNormal.y = -tsNormal.y;
         }
         tsNormal.xy *= uNormalScale;
-        normal = SafeNormalizeUVE(mat3(tangent, bitangent, normal) * tsNormal);
+        normal = SafeNormalize(mat3(tangent, bitangent, normal) * tsNormal);
     }
     if (uShadingMode == 4) {
-        FragColor = ComposeOutputUVE(normal * 0.5 + 0.5, surfaceOpacity, 0.0);
+        FragColor = ComposeOutput(normal * 0.5 + 0.5, surfaceOpacity, 0.0);
         return;
     }
     vec3 viewDirection = uOrthographic != 0
-                             ? SafeNormalizeUVE(-uCameraForward)
-                             : SafeNormalizeUVE(uViewPosition - vWorldPosition);
+                             ? SafeNormalize(-uCameraForward)
+                             : SafeNormalize(uViewPosition - vWorldPosition);
     if (!gl_FrontFacing) {
         normal = -normal;
     }
     if (uShadingMode == 3) {
         albedo = vec3(0.82);
     }
-    vec3 mrSample = ReadMapCompatUVE(uMetallicRoughnessTexture, uv1, uv2, uMetallicRoughnessMapTransform, uMetallicRoughnessMapControl, vec4(1.0)).rgb;
+    vec3 mrSample = ReadMapCompat(uMetallicRoughnessTexture, uv1, uv2, uMetallicRoughnessMapTransform, uMetallicRoughnessMapControl, vec4(1.0)).rgb;
     float metallic = uShadingMode == 3 ? 0.0 : clamp(uMetallic * mrSample.b, 0.0, 1.0);
     float roughness = uShadingMode == 3 ? 0.5 : clamp(uRoughness * mrSample.g, 0.06, 1.0);
     float dielectricSpec = clamp(uDielectricSpecular, 0.0, 1.0);
     float dielectricF0 = 0.16 * dielectricSpec * dielectricSpec;
     vec3 baseReflectance = mix(vec3(dielectricF0), albedo, metallic);
     float normalDotView = max(dot(normal, viewDirection), 0.001);
-    vec2 envBrdf = EnvBrdfApproxUVE(roughness, normalDotView);
-    vec3 ambientColor = AmbientFromSourceUVE(normal);
-    vec3 specEnv = uSkyReflectionsLinked != 0 ? SkyReflectionUVE(reflect(-viewDirection, normal), roughness) : ambientColor;
+    vec2 envBrdf = EnvBrdfApprox(roughness, normalDotView);
+    vec3 ambientColor = AmbientFromSource(normal);
+    vec3 specEnv = uSkyReflectionsLinked != 0 ? SkyReflection(reflect(-viewDirection, normal), roughness) : ambientColor;
     vec3 indirectLighting = ((vec3(1.0) - baseReflectance) * (1.0 - metallic) * albedo * (ambientColor + max(uGiIndirectIrradiance, vec3(0.0))) +
                              (baseReflectance * envBrdf.x + vec3(envBrdf.y)) * specEnv) * ambientOcclusion;
     vec3 emissiveLighting =
         uEmissiveColor * max(uEmissiveEnergy, 0.0) *
-        ReadMapCompatUVE(uEmissiveTexture, uv1, uv2, uEmissiveMapTransform, uEmissiveMapControl, vec4(1.0)).rgb;
+        ReadMapCompat(uEmissiveTexture, uv1, uv2, uEmissiveMapTransform, uEmissiveMapControl, vec4(1.0)).rgb;
     vec3 lighting = indirectLighting + emissiveLighting;
 
     int activeLightCount = uActiveLightCount < 0 ? 0 : (uActiveLightCount > 0 ? min(uActiveLightCount, 4) : 4);
     for (int lightIndex = 0; lightIndex < activeLightCount; ++lightIndex) {
-        LightUVE light = uLights[lightIndex];
+        Light light = uLights[lightIndex];
         if (light.intensity <= 0.0 || (light.cullMask & uMeshRenderLayers) == 0) {
             continue;
         }
         vec3 lightDirection;
         float attenuation = 1.0;
         if (light.type == 0) {
-            lightDirection = SafeNormalizeUVE(-light.direction);
+            lightDirection = SafeNormalize(-light.direction);
         } else {
             vec3 toLight = light.position - vWorldPosition;
             float distanceToLight = max(length(toLight), 0.0001);
@@ -3231,9 +3231,9 @@ void main() {
             }
             if (light.type == 2) {
                 float cosOuter = cos(radians(light.spotAngleDegrees));
-                float cosInner = cos(radians(light.spotAngleDegrees) * kSpotInnerConeRatioUVE);
-                float coneAlignment = dot(-lightDirection, SafeNormalizeUVE(light.direction));
-                float coneFalloff = clamp((coneAlignment - cosOuter) / max(cosInner - cosOuter, kBrdfEpsilonUVE), 0.0, 1.0);
+                float cosInner = cos(radians(light.spotAngleDegrees) * kSpotInnerConeRatio);
+                float coneAlignment = dot(-lightDirection, SafeNormalize(light.direction));
+                float coneFalloff = clamp((coneAlignment - cosOuter) / max(cosInner - cosOuter, kBrdfEpsilon), 0.0, 1.0);
                 attenuation *= coneFalloff * coneFalloff;
             }
         }
@@ -3241,27 +3241,27 @@ void main() {
         if (normalDotLight <= 0.0 || attenuation <= 0.0) {
             continue;
         }
-        vec3 halfDirection = SafeNormalizeUVE(lightDirection + viewDirection);
+        vec3 halfDirection = SafeNormalize(lightDirection + viewDirection);
         float normalDotHalf = max(dot(normal, halfDirection), 0.0);
         float halfDotView = max(dot(halfDirection, viewDirection), 0.0);
-        vec3 fresnel = FresnelSchlickUVE(halfDotView, baseReflectance);
-        float distribution = DistributionGgxUVE(normalDotHalf, roughness);
-        float visibility = VisibilitySmithGGXCorrelatedUVE(normalDotView, normalDotLight, roughness);
+        vec3 fresnel = FresnelSchlick(halfDotView, baseReflectance);
+        float distribution = DistributionGgx(normalDotHalf, roughness);
+        float visibility = VisibilitySmithGGXCorrelated(normalDotView, normalDotLight, roughness);
         vec3 specular = (distribution * visibility * fresnel) * max(light.specular, 0.0);
-        vec3 diffuse = (vec3(1.0) - fresnel) * (1.0 - metallic) * albedo / kPiUVE;
+        vec3 diffuse = (vec3(1.0) - fresnel) * (1.0 - metallic) * albedo / kPi;
         vec3 directContribution = (diffuse + specular) * (light.color * light.intensity * attenuation) * normalDotLight;
         if (uDisableReceiveShadows == 0 && light.type == 0) {
-            directContribution *= clamp(DirectionalShadowFactorUVE(normal, lightDirection), 0.0, 1.0);
+            directContribution *= clamp(DirectionalShadowFactor(normal, lightDirection), 0.0, 1.0);
         }
         lighting += directContribution;
     }
     vec3 finalColor = max(lighting, vec3(0.0));
-    float indirectWeight = clamp(LuminanceUVE(indirectLighting) / max(LuminanceUVE(finalColor), 1.0e-4), 0.0, 1.0);
-    FragColor = ComposeOutputUVE(finalColor, surfaceOpacity, indirectWeight);
+    float indirectWeight = clamp(Luminance(indirectLighting) / max(Luminance(finalColor), 1.0e-4), 0.0, 1.0);
+    FragColor = ComposeOutput(finalColor, surfaceOpacity, indirectWeight);
 }
 #else
 // One UV set: planar 2D coordinates or normal-weighted triplanar projection.
-struct UvSetUVE {
+struct UvSet {
     vec2 uv;
     int triplanar;
     vec2 uvX;
@@ -3270,8 +3270,8 @@ struct UvSetUVE {
     vec3 weights;
     vec3 triNormal;
 };
-UvSetUVE MakeUvSetUVE(vec3 scale, vec3 offset, int triplanar, float sharpness) {
-    UvSetUVE set;
+UvSet MakeUvSet(vec3 scale, vec3 offset, int triplanar, float sharpness) {
+    UvSet set;
     set.triplanar = triplanar;
     set.uv = vTexCoord * scale.xy + offset.xy;
     set.uvX = set.uv;
@@ -3281,7 +3281,7 @@ UvSetUVE MakeUvSetUVE(vec3 scale, vec3 offset, int triplanar, float sharpness) {
     set.triNormal = vec3(0.0, 1.0, 0.0);
     if (triplanar != 0) {
         vec3 position = triplanar == 2 ? vWorldPosition : vObjectPosition;
-        vec3 n = SafeNormalizeUVE(triplanar == 2 ? vWorldNormal : vObjectNormal);
+        vec3 n = SafeNormalize(triplanar == 2 ? vWorldNormal : vObjectNormal);
         set.triNormal = n;
         vec3 weights = pow(max(abs(n), vec3(1.0e-4)), vec3(max(sharpness, 0.001)));
         set.weights = weights / max(dot(weights, vec3(1.0)), 1.0e-5);
@@ -3295,7 +3295,7 @@ UvSetUVE MakeUvSetUVE(vec3 scale, vec3 offset, int triplanar, float sharpness) {
     }
     return set;
 }
-vec4 SampleUvSetUVE(sampler2D map, UvSetUVE set) {
+vec4 SampleUvSet(sampler2D map, UvSet set) {
     if (set.triplanar == 0) {
         return texture(map, set.uv);
     }
@@ -3304,7 +3304,7 @@ vec4 SampleUvSetUVE(sampler2D map, UvSetUVE set) {
            texture(map, set.uvY) * set.weights.y +
            texture(map, set.uvZ) * set.weights.z;
 }
-vec3 SampleTriplanarNormalUVE(sampler2D normalMap, UvSetUVE set, float normalScale, int flipGreen) {
+vec3 SampleTriplanarNormal(sampler2D normalMap, UvSet set, float normalScale, int flipGreen) {
     vec3 tX = texture(normalMap, set.uvX).xyz * 2.0 - 1.0;
     vec3 tY = texture(normalMap, set.uvY).xyz * 2.0 - 1.0;
     vec3 tZ = texture(normalMap, set.uvZ).xyz * 2.0 - 1.0;
@@ -3328,15 +3328,15 @@ vec3 SampleTriplanarNormalUVE(sampler2D normalMap, UvSetUVE set, float normalSca
     if (set.triplanar == 1) {
         blended = mat3(vNormalAxisX, vNormalAxisY, vNormalAxisZ) * blended;
     }
-    return SafeNormalizeUVE(blended);
+    return SafeNormalize(blended);
 }
 // One map read its own way: its UV set, tiling and offset, then the channel, invert and strength
 // (strength 0 is `neutral`: what the material looks like without the map).
-vec4 ReadMapUVE(sampler2D map, UvSetUVE uv1, UvSetUVE uv2, vec4 transform, vec4 control, vec4 neutral) {
+vec4 ReadMap(sampler2D map, UvSet uv1, UvSet uv2, vec4 transform, vec4 control, vec4 neutral) {
     if (control.z >= 0.999) {
         return neutral;
     }
-    UvSetUVE set = uv1;
+    UvSet set = uv1;
     if (control.w > 0.5) {
         set = uv2;
     }
@@ -3345,7 +3345,7 @@ vec4 ReadMapUVE(sampler2D map, UvSetUVE uv1, UvSetUVE uv2, vec4 transform, vec4 
     set.uvX = set.uvX * tiling + transform.zw;
     set.uvY = set.uvY * tiling + transform.zw;
     set.uvZ = set.uvZ * tiling + transform.zw;
-    vec4 value = SampleUvSetUVE(map, set);
+    vec4 value = SampleUvSet(map, set);
     int channel = int(control.x + 0.5);
     if (channel >= 1) {
         float grey = channel == 1 ? value.r : channel == 2 ? value.g : channel == 3 ? value.b : value.a;
@@ -3357,9 +3357,9 @@ vec4 ReadMapUVE(sampler2D map, UvSetUVE uv1, UvSetUVE uv2, vec4 transform, vec4 
     return mix(value, neutral, clamp(control.z, 0.0, 1.0));
 }
 void main() {
-    UvSetUVE uv1 = MakeUvSetUVE(vec3(uUvScale.xy, uUvScale.x), uUvOffset, uUv1Triplanar, uUv1TriplanarSharpness);
-    UvSetUVE uv2 = MakeUvSetUVE(uUv2Scale, uUv2Offset, uUv2Triplanar, uUv2TriplanarSharpness);
-    vec4 albedoSample = ReadMapUVE(uAlbedoTexture, uv1, uv2, uAlbedoMapTransform, uAlbedoMapControl, vec4(1.0));
+    UvSet uv1 = MakeUvSet(vec3(uUvScale.xy, uUvScale.x), uUvOffset, uUv1Triplanar, uUv1TriplanarSharpness);
+    UvSet uv2 = MakeUvSet(uUv2Scale, uUv2Offset, uUv2Triplanar, uUv2TriplanarSharpness);
+    vec4 albedoSample = ReadMap(uAlbedoTexture, uv1, uv2, uAlbedoMapTransform, uAlbedoMapControl, vec4(1.0));
     if (uAlphaCutoff > 0.0 && albedoSample.a < uAlphaCutoff) {
         discard;
     }
@@ -3371,50 +3371,50 @@ void main() {
     float materialAlpha = uAlphaSource == 0 ? clamp(albedoSample.a * uAlbedoAlpha, 0.0, 1.0) : 1.0;
     float surfaceOpacity = clamp(uSurfaceOpacity, 0.0, 1.0) * materialAlpha;
     if (uShadingMode == 1 || uUnshaded != 0) {
-        FragColor = ComposeOutputUVE(albedo, surfaceOpacity, 0.0);
+        FragColor = ComposeOutput(albedo, surfaceOpacity, 0.0);
         return;
     }
     if (uShadingMode == 2) {
-        FragColor = ComposeOutputUVE(mix(albedo * 0.25, vec3(0.05, 0.85, 1.0), 0.75), surfaceOpacity, 0.0);
+        FragColor = ComposeOutput(mix(albedo * 0.25, vec3(0.05, 0.85, 1.0), 0.75), surfaceOpacity, 0.0);
         return;
     }
-    float ambientOcclusion = mix(1.0, ReadMapUVE(uAOTexture, uv1, uv2, uOcclusionMapTransform, uOcclusionMapControl, vec4(1.0)).r, clamp(uOcclusionStrength, 0.0, 1.0));
-    vec3 geometricNormal = SafeNormalizeUVE(vWorldNormal);
+    float ambientOcclusion = mix(1.0, ReadMap(uAOTexture, uv1, uv2, uOcclusionMapTransform, uOcclusionMapControl, vec4(1.0)).r, clamp(uOcclusionStrength, 0.0, 1.0));
+    vec3 geometricNormal = SafeNormalize(vWorldNormal);
     // A few legacy/direct RHI callers do not provide a usable normal attribute. Keep those
     // materials lit instead of allowing a zero vector to poison the tangent frame and BRDF.
-    if (dot(geometricNormal, geometricNormal) <= kBrdfEpsilonUVE * kBrdfEpsilonUVE) {
+    if (dot(geometricNormal, geometricNormal) <= kBrdfEpsilon * kBrdfEpsilon) {
         geometricNormal = vec3(0.0, 0.0, 1.0);
     }
     vec3 normal = geometricNormal;
     if (uNormalMapControl.z < 0.999) {
         if (uv1.triplanar != 0) {
-            normal = SampleTriplanarNormalUVE(uNormalTexture, uv1, uNormalScale, uNormalFlipGreen);
+            normal = SampleTriplanarNormal(uNormalTexture, uv1, uNormalScale, uNormalFlipGreen);
         } else {
             vec3 tangent = vWorldTangent - normal * dot(normal, vWorldTangent);
             if (dot(tangent, tangent) <= 0.00000001) {
                 vec3 fallbackAxis = abs(normal.y) < 0.999 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0);
                 tangent = cross(fallbackAxis, normal);
             }
-            tangent = SafeNormalizeUVE(tangent);
-            vec3 bitangent = SafeNormalizeUVE(cross(normal, tangent));
+            tangent = SafeNormalize(tangent);
+            vec3 bitangent = SafeNormalize(cross(normal, tangent));
             bitangent *= vTangentHandedness < 0.0 ? -1.0 : 1.0;
-            vec3 tangentSpaceNormal = ReadMapUVE(uNormalTexture, uv1, uv2, uNormalMapTransform, uNormalMapControl, vec4(0.5, 0.5, 1.0, 1.0)).xyz * 2.0 - 1.0;
+            vec3 tangentSpaceNormal = ReadMap(uNormalTexture, uv1, uv2, uNormalMapTransform, uNormalMapControl, vec4(0.5, 0.5, 1.0, 1.0)).xyz * 2.0 - 1.0;
             if (uNormalFlipGreen != 0) {
                 tangentSpaceNormal.y = -tangentSpaceNormal.y;
             }
             tangentSpaceNormal.xy *= uNormalScale;
-            normal = SafeNormalizeUVE(mat3(tangent, bitangent, normal) * tangentSpaceNormal);
+            normal = SafeNormalize(mat3(tangent, bitangent, normal) * tangentSpaceNormal);
         }
     }
 
     if (uShadingMode == 4) {
-        FragColor = ComposeOutputUVE(normal * 0.5 + 0.5, surfaceOpacity, 0.0);
+        FragColor = ComposeOutput(normal * 0.5 + 0.5, surfaceOpacity, 0.0);
         return;
     }
 
     vec3 viewDirection = uOrthographic != 0
-                             ? SafeNormalizeUVE(-uCameraForward)
-                             : SafeNormalizeUVE(uViewPosition - vWorldPosition);
+                             ? SafeNormalize(-uCameraForward)
+                             : SafeNormalize(uViewPosition - vWorldPosition);
     // For two-sided geometry or backfaces, orient the normal outwards from the observed face.
     if (!gl_FrontFacing) {
         normal = -normal;
@@ -3424,35 +3424,35 @@ void main() {
         albedo = vec3(0.82);
     }
 
-    vec3 metallicRoughnessSample = ReadMapUVE(uMetallicRoughnessTexture, uv1, uv2, uMetallicRoughnessMapTransform, uMetallicRoughnessMapControl, vec4(1.0)).rgb;
+    vec3 metallicRoughnessSample = ReadMap(uMetallicRoughnessTexture, uv1, uv2, uMetallicRoughnessMapTransform, uMetallicRoughnessMapControl, vec4(1.0)).rgb;
     float metallic = uShadingMode == 3 ? 0.0 : clamp(uMetallic * metallicRoughnessSample.b, 0.0, 1.0);
     float rawRoughness = uShadingMode == 3 ? 0.5 : clamp(uRoughness * metallicRoughnessSample.g, 0.04, 1.0);
-    float roughness = ApplyGeometricSpecularAAUVE(geometricNormal, normal, rawRoughness);
+    float roughness = ApplyGeometricSpecularAA(geometricNormal, normal, rawRoughness);
     float dielectricSpec = clamp(uDielectricSpecular, 0.0, 1.0);
     float dielectricF0 = 0.16 * dielectricSpec * dielectricSpec;
     vec3 ambientBaseReflectance = mix(vec3(dielectricF0), albedo, metallic);
     float normalDotViewAmbient = max(dot(normal, viewDirection), 0.001);
-    vec2 envBrdf = EnvBrdfApproxUVE(roughness, normalDotViewAmbient);
+    vec2 envBrdf = EnvBrdfApprox(roughness, normalDotViewAmbient);
     vec3 energyCompensation = vec3(1.0) + ambientBaseReflectance * (1.0 / max(envBrdf.x + envBrdf.y, 0.05) - 1.0);
     vec3 ambientFresnel =
         ambientBaseReflectance +
         (max(vec3(1.0 - roughness), ambientBaseReflectance) - ambientBaseReflectance) *
-            Pow5UVE(clamp(1.0 - normalDotViewAmbient, 0.0, 1.0));
+            Pow5(clamp(1.0 - normalDotViewAmbient, 0.0, 1.0));
     vec3 ambientDiffuseWeight = (vec3(1.0) - ambientFresnel) * (1.0 - metallic);
-    vec3 ambientColor = AmbientFromSourceUVE(normal);
+    vec3 ambientColor = AmbientFromSource(normal);
     vec3 reflection = reflect(-viewDirection, normal);
     vec3 specEnv = ambientColor;
     if (uSkyReflectionsLinked != 0) {
-        specEnv = SkyReflectionUVE(reflection, roughness);
+        specEnv = SkyReflection(reflection, roughness);
     }
     if (uAmbientSource == 3 && uAmbientEnvironmentMapEnabled != 0) {
-        specEnv = max(uAmbientColor, vec3(0.0)) * SampleEnvironmentSpecularUVE(reflection, roughness);
+        specEnv = max(uAmbientColor, vec3(0.0)) * SampleEnvironmentSpecular(reflection, roughness);
     }
     if (uReflectionProbeEnabled != 0) {
-        float probeWeight = ReflectionProbeInfluenceUVE(vWorldPosition);
+        float probeWeight = ReflectionProbeInfluence(vWorldPosition);
         if (probeWeight > 0.0) {
-            vec3 sampleDir = ReflectionProbeBoxProjectUVE(vWorldPosition, reflection);
-            vec3 captured = SampleReflectionProbeUVE(sampleDir, roughness);
+            vec3 sampleDir = ReflectionProbeBoxProject(vWorldPosition, reflection);
+            vec3 captured = SampleReflectionProbe(sampleDir, roughness);
             float secondaryBlend = clamp(uReflectionProbeBlendWeight, 0.0, 1.0);
             if (secondaryBlend > 0.001) {
                 vec3 secondaryCaptured = texture(uReflectionProbeSecondaryCube, sampleDir).rgb;
@@ -3467,7 +3467,7 @@ void main() {
     vec3 indirectLighting = (ambientDiffuse + ambientSpecular) * ambientOcclusion;
     vec3 emissiveLighting =
         uEmissiveColor * max(uEmissiveEnergy, 0.0) *
-        ReadMapUVE(uEmissiveTexture, uv1, uv2, uEmissiveMapTransform, uEmissiveMapControl, vec4(1.0)).rgb;
+        ReadMap(uEmissiveTexture, uv1, uv2, uEmissiveMapTransform, uEmissiveMapControl, vec4(1.0)).rgb;
     vec3 lighting = indirectLighting + emissiveLighting;
 
     vec3 baseReflectance = mix(vec3(dielectricF0), albedo, metallic);
@@ -3481,7 +3481,7 @@ void main() {
         vec2 screenUv = clamp(gl_FragCoord.xy / max(uClusterViewportSize, vec2(1.0)), vec2(0.0), vec2(0.999999));
         int cx = clamp(int(screenUv.x * float(gridX)), 0, gridX - 1);
         int cy = clamp(int(screenUv.y * float(gridY)), 0, gridY - 1);
-        float positiveViewDepth = max(dot(vWorldPosition - uViewPosition, SafeNormalizeUVE(uCameraForward)),
+        float positiveViewDepth = max(dot(vWorldPosition - uViewPosition, SafeNormalize(uCameraForward)),
                                       max(uClusterNearFar.x, 0.001));
         float safeNear = max(uClusterNearFar.x, 0.001);
         float safeFar = max(uClusterNearFar.y, safeNear + 0.01);
@@ -3492,8 +3492,8 @@ void main() {
         uint count = min(cell.y, 64u);
         for (uint ci = 0u; ci < count; ++ci) {
             uint li = clusteredLightIndices[cell.x + ci];
-            ClusteredGpuLightUVE gpuLight = clusteredLights[li];
-            LightUVE light;
+            ClusteredGpuLight gpuLight = clusteredLights[li];
+            Light light;
             light.type = int(gpuLight.directionAndType.w + 0.5);
             light.position = gpuLight.positionAndRange.xyz;
             light.direction = gpuLight.directionAndType.xyz;
@@ -3510,7 +3510,7 @@ void main() {
             vec3 lightDirection;
             float attenuation = 1.0;
             if (light.type == 0) {
-                lightDirection = SafeNormalizeUVE(-light.direction);
+                lightDirection = SafeNormalize(-light.direction);
             } else {
                 vec3 toLight = light.position - vWorldPosition;
                 float distanceToLight = max(length(toLight), 0.0001);
@@ -3524,10 +3524,10 @@ void main() {
                 }
                 if (light.type == 2) {
                     float cosOuter = cos(radians(light.spotAngleDegrees));
-                    float cosInner = cos(radians(light.spotAngleDegrees) * kSpotInnerConeRatioUVE);
-                    float coneAlignment = dot(-lightDirection, SafeNormalizeUVE(light.direction));
+                    float cosInner = cos(radians(light.spotAngleDegrees) * kSpotInnerConeRatio);
+                    float coneAlignment = dot(-lightDirection, SafeNormalize(light.direction));
                     float coneFalloff = clamp((coneAlignment - cosOuter) /
-                                                  max(cosInner - cosOuter, kBrdfEpsilonUVE),
+                                                  max(cosInner - cosOuter, kBrdfEpsilon),
                                               0.0, 1.0);
                     attenuation *= coneFalloff * coneFalloff;
                 }
@@ -3536,30 +3536,30 @@ void main() {
             if (normalDotLight <= 0.0 || attenuation <= 0.0) {
                 continue;
             }
-            vec3 halfDirection = SafeNormalizeUVE(lightDirection + viewDirection);
+            vec3 halfDirection = SafeNormalize(lightDirection + viewDirection);
             float normalDotHalf = max(dot(normal, halfDirection), 0.0);
             float halfDotView = max(dot(halfDirection, viewDirection), 0.0);
-            vec3 fresnel = FresnelSchlickUVE(halfDotView, baseReflectance);
-            float distribution = DistributionGgxUVE(normalDotHalf, roughness);
-            float visibility = VisibilitySmithGGXCorrelatedUVE(normalDotView, normalDotLight, roughness);
+            vec3 fresnel = FresnelSchlick(halfDotView, baseReflectance);
+            float distribution = DistributionGgx(normalDotHalf, roughness);
+            float visibility = VisibilitySmithGGXCorrelated(normalDotView, normalDotLight, roughness);
             vec3 specular = (distribution * visibility * fresnel) * energyCompensation * max(light.specular, 0.0);
             vec3 diffuseWeight = (vec3(1.0) - fresnel) * (1.0 - metallic);
-            vec3 diffuse = diffuseWeight * albedo / kPiUVE;
+            vec3 diffuse = diffuseWeight * albedo / kPi;
             vec3 radiance = light.color * light.intensity * attenuation;
             vec3 directContribution = (diffuse + specular) * radiance * normalDotLight;
             if (uDisableReceiveShadows == 0) {
                 int shadowSlot = encodedShadowSlot > 0 ? (encodedShadowSlot - 1) : -1;
                 if (light.type == 0) {
-                    float shadowFactor = DirectionalShadowFactorUVE(normal, lightDirection);
+                    float shadowFactor = DirectionalShadowFactor(normal, lightDirection);
                     if (isnan(shadowFactor) || isinf(shadowFactor)) {
                         shadowFactor = 1.0;
                     }
                     directContribution *= clamp(shadowFactor, 0.0, 1.0);
                 } else if (light.type == 1 && shadowSlot >= 0 && shadowSlot < 4) {
-                    float shadowFactor = PointShadowFactorUVE(shadowSlot, normal, light.position, light.range);
+                    float shadowFactor = PointShadowFactor(shadowSlot, normal, light.position, light.range);
                     directContribution *= clamp(shadowFactor, 0.0, 1.0);
                 } else if (light.type == 2 && shadowSlot >= 0 && shadowSlot < 4) {
-                    float shadowFactor = SpotShadowFactorUVE(shadowSlot, normal, lightDirection);
+                    float shadowFactor = SpotShadowFactor(shadowSlot, normal, lightDirection);
                     directContribution *= clamp(shadowFactor, 0.0, 1.0);
                 }
             }
@@ -3579,7 +3579,7 @@ void main() {
 #endif
         int activeLightCount = uActiveLightCount < 0 ? 0 : (uActiveLightCount > 0 ? min(uActiveLightCount, maxProfileLights) : maxProfileLights);
         for (int lightIndex = 0; lightIndex < activeLightCount; ++lightIndex) {
-            LightUVE light = uLights[lightIndex];
+            Light light = uLights[lightIndex];
             if (light.intensity <= 0.0) {
                 continue;
             }
@@ -3590,7 +3590,7 @@ void main() {
             vec3 lightDirection;
             float attenuation = 1.0;
             if (light.type == 0) {
-                lightDirection = SafeNormalizeUVE(-light.direction);
+                lightDirection = SafeNormalize(-light.direction);
             } else {
                 vec3 toLight = light.position - vWorldPosition;
                 float distanceToLight = max(length(toLight), 0.0001);
@@ -3604,10 +3604,10 @@ void main() {
                 }
                 if (light.type == 2) {
                     float cosOuter = cos(radians(light.spotAngleDegrees));
-                    float cosInner = cos(radians(light.spotAngleDegrees) * kSpotInnerConeRatioUVE);
-                    float coneAlignment = dot(-lightDirection, SafeNormalizeUVE(light.direction));
+                    float cosInner = cos(radians(light.spotAngleDegrees) * kSpotInnerConeRatio);
+                    float coneAlignment = dot(-lightDirection, SafeNormalize(light.direction));
                     float coneFalloff = clamp((coneAlignment - cosOuter) /
-                                                  max(cosInner - cosOuter, kBrdfEpsilonUVE),
+                                                  max(cosInner - cosOuter, kBrdfEpsilon),
                                               0.0, 1.0);
                     attenuation *= coneFalloff * coneFalloff;
                 }
@@ -3618,15 +3618,15 @@ void main() {
                 continue;
             }
 
-            vec3 halfDirection = SafeNormalizeUVE(lightDirection + viewDirection);
+            vec3 halfDirection = SafeNormalize(lightDirection + viewDirection);
             float normalDotHalf = max(dot(normal, halfDirection), 0.0);
             float halfDotView = max(dot(halfDirection, viewDirection), 0.0);
-            vec3 fresnel = FresnelSchlickUVE(halfDotView, baseReflectance);
-            float distribution = DistributionGgxUVE(normalDotHalf, roughness);
-            float visibility = VisibilitySmithGGXCorrelatedUVE(normalDotView, normalDotLight, roughness);
+            vec3 fresnel = FresnelSchlick(halfDotView, baseReflectance);
+            float distribution = DistributionGgx(normalDotHalf, roughness);
+            float visibility = VisibilitySmithGGXCorrelated(normalDotView, normalDotLight, roughness);
             vec3 specular = (distribution * visibility * fresnel) * energyCompensation * max(light.specular, 0.0);
             vec3 diffuseWeight = (vec3(1.0) - fresnel) * (1.0 - metallic);
-            vec3 diffuse = diffuseWeight * albedo / kPiUVE;
+            vec3 diffuse = diffuseWeight * albedo / kPi;
             vec3 radiance = light.color * light.intensity * attenuation;
             vec3 directContribution = (diffuse + specular) * radiance * normalDotLight;
 
@@ -3635,16 +3635,16 @@ void main() {
                 int shadowSlot = encodedShadowSlot > 0 ? (encodedShadowSlot - 1)
                                : (encodedShadowSlot < 0 ? -1 : (lightIndex < 4 ? lightIndex : -1));
                 if (light.type == 0) {
-                    float shadowFactor = DirectionalShadowFactorUVE(normal, lightDirection);
+                    float shadowFactor = DirectionalShadowFactor(normal, lightDirection);
                     if (isnan(shadowFactor) || isinf(shadowFactor)) {
                         shadowFactor = 1.0;
                     }
                     directContribution *= clamp(shadowFactor, 0.0, 1.0);
                 } else if (light.type == 1 && shadowSlot >= 0 && shadowSlot < 4) {
-                    float shadowFactor = PointShadowFactorUVE(shadowSlot, normal, light.position, light.range);
+                    float shadowFactor = PointShadowFactor(shadowSlot, normal, light.position, light.range);
                     directContribution *= clamp(shadowFactor, 0.0, 1.0);
                 } else if (light.type == 2 && shadowSlot >= 0 && shadowSlot < 4) {
-                    float shadowFactor = SpotShadowFactorUVE(shadowSlot, normal, lightDirection);
+                    float shadowFactor = SpotShadowFactor(shadowSlot, normal, lightDirection);
                     directContribution *= clamp(shadowFactor, 0.0, 1.0);
                 }
             }
@@ -3663,8 +3663,8 @@ void main() {
     FragColor = vec4(finalColor * a * weight, a * weight);
     FragRevealage = vec4(-log(max(1.0 - a, 1.0e-4)), 0.0, 0.0, 0.0);
 #else
-    float indirectWeight = clamp(LuminanceUVE(indirectLighting) / max(LuminanceUVE(finalColor), 1.0e-4), 0.0, 1.0);
-    FragColor = ComposeOutputUVE(finalColor, surfaceOpacity, indirectWeight);
+    float indirectWeight = clamp(Luminance(indirectLighting) / max(Luminance(finalColor), 1.0e-4), 0.0, 1.0);
+    FragColor = ComposeOutput(finalColor, surfaceOpacity, indirectWeight);
 #endif
 }
 #endif
@@ -3704,15 +3704,15 @@ void main() {
 const std::string_view kDecalSource = R"GLSLSRC(#version 450 core
 
 // Decal3D's paint pass. The geometry arrives already in world space and already clipped to the
-// decal's volume by the CPU projection pass (see DecalPatchUVE), so the vertex stage only projects
+// decal's volume by the CPU projection pass (see DecalPatch), so the vertex stage only projects
 // it and the fragment stage only asks how much of the decal reaches this pixel.
 //
 // The fades are re-evaluated here, per pixel, from the authored fields: the CPU evaluates the same
 // three fades at each patch's centre to decide whether the patch paints at all, but a patch is one
 // receiving face and a wall's face can span the whole volume - a weight flat across it would end in
 // a hard rectangle where the artist asked for a fade. The rules below mirror
-// Scene::SampleDecal3DUVE() exactly; the coordinate space they read is not mirrored, it is the same
-// matrix the CPU clipped in (DecalDrawCommandUVE::worldToUnit).
+// Scene::SampleDecal3D() exactly; the coordinate space they read is not mirrored, it is the same
+// matrix the CPU clipped in (DecalDrawCommand::worldToUnit).
 
 #ifdef VERTEX_SHADER
 layout(location = 0) in vec3 aPosition;
@@ -3754,7 +3754,7 @@ uniform float uDistanceFadeEnabled;
 uniform float uDistanceFadeBegin;
 uniform float uDistanceFadeLength;
 
-// Scene::SampleDecal3DUVE()'s helper of the same name: 0 leaves the axis unfaded, 1 fades the whole
+// Scene::SampleDecal3D()'s helper of the same name: 0 leaves the axis unfaded, 1 fades the whole
 // half of the volume, and anything between fades the outer band of it.
 float AxisFadeWeight(float unitCoordinate, float band) {
     if (!(band > 0.0)) {
@@ -3802,7 +3802,7 @@ void main() {
 
 const std::string_view kParticleSimulateSource = R"GLSLSRC(#version 430 core
 
-// GPU twin of Scene::ParticleRuntimeUVE::SimulateDetailedUVE's per-particle integration
+// GPU twin of Scene::ParticleRuntime::SimulateDetailed's per-particle integration
 // (CS4). The CPU runtime remains the authority on WHICH particles exist - emission,
 // budgets, lifetime culling and array compaction all stay on the CPU, where they are
 // bounded and testable; this kernel does only the part that is pure arithmetic over an
@@ -3830,7 +3830,7 @@ const std::string_view kParticleSimulateSource = R"GLSLSRC(#version 430 core
 layout(local_size_x = 64) in;
 
 // std430 packs this struct as 8 consecutive floats with no padding, which is what
-// ParticleComputeSimulationUVE::ParticleGpuStateUVE mirrors on the host. vec3 would be
+// ParticleComputeSimulation::ParticleGpuState mirrors on the host. vec3 would be
 // 16-byte aligned and silently introduce padding, so positions and velocities are spelled
 // out as scalars: the host layout assertion and this declaration must agree exactly.
 struct ParticleGpuState {
@@ -3895,8 +3895,8 @@ void main() {
 
 const std::string_view kFrustumCullSource = R"GLSLSRC(#version 430 core
 
-// GPU twin of Math::FrustumUVE::IntersectsUVE (CS5) - the conservative centre/extents AABB test
-// against six inward-facing planes that Renderer3DUVE and MeshRenderEligibilityUVE already use on
+// GPU twin of Math::Frustum::Intersects (CS5) - the conservative centre/extents AABB test
+// against six inward-facing planes that Renderer3D and MeshRenderEligibility already use on
 // the CPU:
 //
 //     radius = extents.x*|n.x| + extents.y*|n.y| + extents.z*|n.z|;
@@ -3912,17 +3912,17 @@ const std::string_view kFrustumCullSource = R"GLSLSRC(#version 430 core
 // borderline decision.
 //
 // The host computes each box's centre and extents and uploads those rather than min/max, so the
-// halving in AabbUVE::GetCenterUVE (including its double-precision fallback for boxes whose
+// halving in Aabb::GetCenter (including its double-precision fallback for boxes whose
 // min+max overflows) happens once, on the CPU, in the CPU's own arithmetic. Recomputing it here
 // would introduce a second place for the two paths to disagree, for no benefit.
 //
 // Deliberately NOT done here: the plane extraction itself. Six planes per frustum is not work
-// worth a dispatch, and keeping FrustumUVE::FromViewProjectionUVE as the single authority means
+// worth a dispatch, and keeping Frustum::FromViewProjection as the single authority means
 // there is exactly one plane-extraction implementation in the engine to be correct.
 
 layout(local_size_x = 64) in;
 
-// std430, 8 floats, no padding - mirrored by CullBoxGpuUVE on the host. Spelled out as scalars
+// std430, 8 floats, no padding - mirrored by CullBoxGpu on the host. Spelled out as scalars
 // for the same reason the particle kernel does: a vec3 here would be 16-byte aligned and silently
 // introduce padding the host struct does not have.
 struct CullBox {
@@ -3936,7 +3936,7 @@ struct CullBox {
     float padding1;
 };
 
-// A plane as normal + distance: exactly Math::PlaneUVE's layout, four floats.
+// A plane as normal + distance: exactly Math::Plane's layout, four floats.
 struct CullPlane {
     float normalX;
     float normalY;
@@ -3978,7 +3978,7 @@ void main() {
     CullBox box = boxes[index];
     uint result = 1u;
 
-    // Plane order is fixed by FrustumUVE (left, right, bottom, top, near, far) and the loop is
+    // Plane order is fixed by Frustum (left, right, bottom, top, near, far) and the loop is
     // unrolled over exactly six - a dynamic count would be a different contract, and the CPU side
     // has no such thing.
     for (int planeIndex = 0; planeIndex < 6; ++planeIndex) {
@@ -4013,7 +4013,7 @@ const std::string_view kFrustumCullIndirectSource = R"GLSLSRC(#version 430 core
 //   1. the instanceCount field of a DrawIndexedIndirectCommand, and
 //   2. a COMPACTED list of which boxes survived, in slot order,
 //
-// so DrawIndexedIndirectUVE can consume the command directly and the vertex shader can look up
+// so DrawIndexedIndirect can consume the command directly and the vertex shader can look up
 // gl_InstanceID in the compacted list. Nothing on the CPU ever learns how many objects passed.
 //
 // The test itself is character-for-character the one in frustum_cull.glsl, including `precise`
@@ -4023,7 +4023,7 @@ const std::string_view kFrustumCullIndirectSource = R"GLSLSRC(#version 430 core
 
 layout(local_size_x = 64) in;
 
-// Mirrored by CullBoxGpuUVE on the host - shared with frustum_cull.glsl, same layout.
+// Mirrored by CullBoxGpu on the host - shared with frustum_cull.glsl, same layout.
 struct CullBox {
     float centerX;
     float centerY;
@@ -4051,7 +4051,7 @@ layout(std430, binding = 1) readonly buffer PlaneBlock {
 };
 
 // The draw parameters themselves, in exactly the five-word order both Vulkan and GL define for an
-// indexed indirect draw and DrawIndexedIndirectCommandUVE mirrors on the host. Only instanceCount
+// indexed indirect draw and DrawIndexedIndirectCommand mirrors on the host. Only instanceCount
 // is touched here: the host seeds the other four (they describe the MESH, which no culling
 // decision can change) and zeroes instanceCount before the dispatch.
 //
@@ -4115,7 +4115,7 @@ void main() {
 
 const std::string_view kMeshSkinSource = R"GLSLSRC(#version 430 core
 
-// GPU twin of Asset::TrySkinMeshUVE (CS9) - linear blend skinning over many vertices at once.
+// GPU twin of Asset::TrySkinMesh (CS9) - linear blend skinning over many vertices at once.
 //
 // The CPU side was written first, deliberately: a GPU kernel with no CPU authority to compare
 // against cannot be shown to be right. Everything below mirrors that implementation step for step,
@@ -4135,16 +4135,16 @@ const std::string_view kMeshSkinSource = R"GLSLSRC(#version 430 core
 //      and therefore produces a DIFFERENT float than the CPU's separate operations. Same rule as
 //      the particle and cull kernels.
 //
-// Note on precision: the CPU's own general-purpose Math::TransformPointUVE accumulates in double,
+// Note on precision: the CPU's own general-purpose Math::TransformPoint accumulates in double,
 // which GLSL has no portable equivalent for (float64 is an optional Vulkan feature absent from
 // whole classes of hardware). Rather than accept a permanent ~1 ULP disagreement on roughly one
 // vertex in six, the CPU skinning path uses a float-accumulating transform of its own - see
-// TransformPointFloatUVE in mesh_skinning_uve.cpp. That is what makes an exact comparison possible
+// TransformPointFloat in mesh_skinning_uve.cpp. That is what makes an exact comparison possible
 // here at all.
 
 layout(local_size_x = 64) in;
 
-// Mirrored by MeshSkinVertexGpuUVE on the host: position, normal, tangent, handedness. Scalars
+// Mirrored by MeshSkinVertexGpu on the host: position, normal, tangent, handedness. Scalars
 // rather than vec3s because a vec3 in std430 is 16-byte aligned and would silently introduce
 // padding the host struct does not have.
 struct SkinVertex {
@@ -4160,7 +4160,7 @@ struct SkinVertex {
     float handedness;
 };
 
-// Four joint indices and four weights per vertex, matching MeshSkinningInfluenceUVE.
+// Four joint indices and four weights per vertex, matching MeshSkinningInfluence.
 struct SkinInfluence {
     uint joints[4];
     float weights[4];
@@ -4177,10 +4177,10 @@ layout(std430, binding = 1) readonly buffer InfluenceBlock {
 // The resolved skinning matrices, one per joint - already composed with each joint's inverse bind
 // matrix on the CPU. Pose resolution stays there on purpose: it is a walk down a parent chain over
 // a handful of joints, which is serial work a dispatch cannot help with, and keeping
-// TryResolvePoseUVE the single authority means there is one implementation to be correct.
+// TryResolvePose the single authority means there is one implementation to be correct.
 //
 // mat4 in std430 is column-major with a 16-byte column stride, which is exactly a dense float[16];
-// the host uploads Matrix4x4UVE::m transposed into that order. See MeshSkinComputeUVE for why the
+// the host uploads Matrix4x4::m transposed into that order. See MeshSkinCompute for why the
 // transpose happens on the host rather than here.
 layout(std430, binding = 2) readonly buffer SkinningMatrixBlock {
     mat4 skinningMatrices[];
@@ -4225,7 +4225,7 @@ void main() {
     // the accumulation order to the compiler.
     //
     // mat4 indexing in GLSL is [column][row], which is why these read transposed relative to the
-    // host's row-major Matrix4x4UVE - the host uploads them transposed to make exactly this work.
+    // host's row-major Matrix4x4 - the host uploads them transposed to make exactly this work.
     precise float positionX = blended[0][0] * source.positionX + blended[1][0] * source.positionY +
                               blended[2][0] * source.positionZ + blended[3][0];
     precise float positionY = blended[0][1] * source.positionX + blended[1][1] * source.positionY +
@@ -4290,7 +4290,7 @@ uniform float uBloomIntensity;
 uniform float uBloomSoftKnee;
 uniform float uExposure;
 
-vec3 SanitizeHdrUVE(vec3 c) {
+vec3 SanitizeHdr(vec3 c) {
     vec3 safe = vec3(
         (isnan(c.r) || isinf(c.r)) ? 0.0 : c.r,
         (isnan(c.g) || isinf(c.g)) ? 0.0 : c.g,
@@ -4299,13 +4299,13 @@ vec3 SanitizeHdrUVE(vec3 c) {
     return clamp(safe, vec3(0.0), vec3(65000.0));
 }
 
-float KarisWeightUVE(vec3 c) {
+float KarisWeight(vec3 c) {
     float luma = dot(c, vec3(0.2126, 0.7152, 0.0722));
     return 1.0 / (1.0 + max(luma, 0.0));
 }
 
-vec3 SampleSafeUVE(vec2 uv, vec2 halfTexel) {
-    return SanitizeHdrUVE(texture(uSourceTexture, clamp(uv, halfTexel, vec2(1.0) - halfTexel)).rgb);
+vec3 SampleSafe(vec2 uv, vec2 halfTexel) {
+    return SanitizeHdr(texture(uSourceTexture, clamp(uv, halfTexel, vec2(1.0) - halfTexel)).rgb);
 }
 
 void main() {
@@ -4316,22 +4316,22 @@ void main() {
     float x = texel.x;
     float y = texel.y;
 
-    vec3 a = SampleSafeUVE(vTexCoord + vec2(-2.0 * x,  2.0 * y), halfTexel);
-    vec3 b = SampleSafeUVE(vTexCoord + vec2(     0.0,  2.0 * y), halfTexel);
-    vec3 c = SampleSafeUVE(vTexCoord + vec2( 2.0 * x,  2.0 * y), halfTexel);
+    vec3 a = SampleSafe(vTexCoord + vec2(-2.0 * x,  2.0 * y), halfTexel);
+    vec3 b = SampleSafe(vTexCoord + vec2(     0.0,  2.0 * y), halfTexel);
+    vec3 c = SampleSafe(vTexCoord + vec2( 2.0 * x,  2.0 * y), halfTexel);
 
-    vec3 d = SampleSafeUVE(vTexCoord + vec2(-2.0 * x,      0.0), halfTexel);
-    vec3 e = SampleSafeUVE(vTexCoord,                            halfTexel);
-    vec3 f = SampleSafeUVE(vTexCoord + vec2( 2.0 * x,      0.0), halfTexel);
+    vec3 d = SampleSafe(vTexCoord + vec2(-2.0 * x,      0.0), halfTexel);
+    vec3 e = SampleSafe(vTexCoord,                            halfTexel);
+    vec3 f = SampleSafe(vTexCoord + vec2( 2.0 * x,      0.0), halfTexel);
 
-    vec3 g = SampleSafeUVE(vTexCoord + vec2(-2.0 * x, -2.0 * y), halfTexel);
-    vec3 h = SampleSafeUVE(vTexCoord + vec2(     0.0, -2.0 * y), halfTexel);
-    vec3 i = SampleSafeUVE(vTexCoord + vec2( 2.0 * x, -2.0 * y), halfTexel);
+    vec3 g = SampleSafe(vTexCoord + vec2(-2.0 * x, -2.0 * y), halfTexel);
+    vec3 h = SampleSafe(vTexCoord + vec2(     0.0, -2.0 * y), halfTexel);
+    vec3 i = SampleSafe(vTexCoord + vec2( 2.0 * x, -2.0 * y), halfTexel);
 
-    vec3 j = SampleSafeUVE(vTexCoord + vec2(    -x,       y), halfTexel);
-    vec3 k = SampleSafeUVE(vTexCoord + vec2(     x,       y), halfTexel);
-    vec3 l = SampleSafeUVE(vTexCoord + vec2(    -x,      -y), halfTexel);
-    vec3 m = SampleSafeUVE(vTexCoord + vec2(     x,      -y), halfTexel);
+    vec3 j = SampleSafe(vTexCoord + vec2(    -x,       y), halfTexel);
+    vec3 k = SampleSafe(vTexCoord + vec2(     x,       y), halfTexel);
+    vec3 l = SampleSafe(vTexCoord + vec2(    -x,      -y), halfTexel);
+    vec3 m = SampleSafe(vTexCoord + vec2(     x,      -y), halfTexel);
 
     vec3 g0 = (j + k + l + m) * 0.25;
     vec3 g1 = (a + b + d + e) * 0.25;
@@ -4339,11 +4339,11 @@ void main() {
     vec3 g3 = (d + e + g + h) * 0.25;
     vec3 g4 = (e + f + h + i) * 0.25;
 
-    float w0 = KarisWeightUVE(g0) * 0.5;
-    float w1 = KarisWeightUVE(g1) * 0.125;
-    float w2 = KarisWeightUVE(g2) * 0.125;
-    float w3 = KarisWeightUVE(g3) * 0.125;
-    float w4 = KarisWeightUVE(g4) * 0.125;
+    float w0 = KarisWeight(g0) * 0.5;
+    float w1 = KarisWeight(g1) * 0.125;
+    float w2 = KarisWeight(g2) * 0.125;
+    float w3 = KarisWeight(g3) * 0.125;
+    float w4 = KarisWeight(g4) * 0.125;
     vec3 hdrColor = (g0 * w0 + g1 * w1 + g2 * w2 + g3 * w3 + g4 * w4) / max(w0 + w1 + w2 + w3 + w4, 1.0e-5);
 
     // Threshold in exposure-adjusted max-channel brightness so pure saturated emissives (such as
@@ -4386,7 +4386,7 @@ out vec4 FragColor;
 
 uniform sampler2D uSourceTexture;
 
-vec3 SampleClampedUVE(vec2 uv, vec2 halfTexel) {
+vec3 SampleClamped(vec2 uv, vec2 halfTexel) {
     return max(texture(uSourceTexture, clamp(uv, halfTexel, vec2(1.0) - halfTexel)).rgb, vec3(0.0));
 }
 
@@ -4398,22 +4398,22 @@ void main() {
     float x = texel.x;
     float y = texel.y;
 
-    vec3 a = SampleClampedUVE(vTexCoord + vec2(-2.0 * x,  2.0 * y), halfTexel);
-    vec3 b = SampleClampedUVE(vTexCoord + vec2(     0.0,  2.0 * y), halfTexel);
-    vec3 c = SampleClampedUVE(vTexCoord + vec2( 2.0 * x,  2.0 * y), halfTexel);
+    vec3 a = SampleClamped(vTexCoord + vec2(-2.0 * x,  2.0 * y), halfTexel);
+    vec3 b = SampleClamped(vTexCoord + vec2(     0.0,  2.0 * y), halfTexel);
+    vec3 c = SampleClamped(vTexCoord + vec2( 2.0 * x,  2.0 * y), halfTexel);
 
-    vec3 d = SampleClampedUVE(vTexCoord + vec2(-2.0 * x,      0.0), halfTexel);
-    vec3 e = SampleClampedUVE(vTexCoord,                            halfTexel);
-    vec3 f = SampleClampedUVE(vTexCoord + vec2( 2.0 * x,      0.0), halfTexel);
+    vec3 d = SampleClamped(vTexCoord + vec2(-2.0 * x,      0.0), halfTexel);
+    vec3 e = SampleClamped(vTexCoord,                            halfTexel);
+    vec3 f = SampleClamped(vTexCoord + vec2( 2.0 * x,      0.0), halfTexel);
 
-    vec3 g = SampleClampedUVE(vTexCoord + vec2(-2.0 * x, -2.0 * y), halfTexel);
-    vec3 h = SampleClampedUVE(vTexCoord + vec2(     0.0, -2.0 * y), halfTexel);
-    vec3 i = SampleClampedUVE(vTexCoord + vec2( 2.0 * x, -2.0 * y), halfTexel);
+    vec3 g = SampleClamped(vTexCoord + vec2(-2.0 * x, -2.0 * y), halfTexel);
+    vec3 h = SampleClamped(vTexCoord + vec2(     0.0, -2.0 * y), halfTexel);
+    vec3 i = SampleClamped(vTexCoord + vec2( 2.0 * x, -2.0 * y), halfTexel);
 
-    vec3 j = SampleClampedUVE(vTexCoord + vec2(    -x,       y), halfTexel);
-    vec3 k = SampleClampedUVE(vTexCoord + vec2(     x,       y), halfTexel);
-    vec3 l = SampleClampedUVE(vTexCoord + vec2(    -x,      -y), halfTexel);
-    vec3 m = SampleClampedUVE(vTexCoord + vec2(     x,      -y), halfTexel);
+    vec3 j = SampleClamped(vTexCoord + vec2(    -x,       y), halfTexel);
+    vec3 k = SampleClamped(vTexCoord + vec2(     x,       y), halfTexel);
+    vec3 l = SampleClamped(vTexCoord + vec2(    -x,      -y), halfTexel);
+    vec3 m = SampleClamped(vTexCoord + vec2(     x,      -y), halfTexel);
 
     vec3 downsampled = e * 0.125;
     downsampled += (a + c + g + i) * 0.03125;
@@ -4453,7 +4453,7 @@ uniform float uTexelSizeY;
 uniform int uUpsampleMode;
 uniform float uUpsampleScatter;
 
-vec3 SampleSourceClampedUVE(vec2 uv, vec2 halfTexel) {
+vec3 SampleSourceClamped(vec2 uv, vec2 halfTexel) {
     return max(texture(uSourceTexture, clamp(uv, halfTexel, vec2(1.0) - halfTexel)).rgb, vec3(0.0));
 }
 
@@ -4467,15 +4467,15 @@ void main() {
         float x = texel.x;
         float y = texel.y;
 
-        vec3 a = SampleSourceClampedUVE(vTexCoord + vec2(-x,  y), halfTexel);
-        vec3 b = SampleSourceClampedUVE(vTexCoord + vec2( 0.0, y), halfTexel);
-        vec3 c = SampleSourceClampedUVE(vTexCoord + vec2( x,  y), halfTexel);
-        vec3 d = SampleSourceClampedUVE(vTexCoord + vec2(-x,  0.0), halfTexel);
-        vec3 e = SampleSourceClampedUVE(vTexCoord, halfTexel);
-        vec3 f = SampleSourceClampedUVE(vTexCoord + vec2( x,  0.0), halfTexel);
-        vec3 g = SampleSourceClampedUVE(vTexCoord + vec2(-x, -y), halfTexel);
-        vec3 h = SampleSourceClampedUVE(vTexCoord + vec2( 0.0, -y), halfTexel);
-        vec3 i = SampleSourceClampedUVE(vTexCoord + vec2( x, -y), halfTexel);
+        vec3 a = SampleSourceClamped(vTexCoord + vec2(-x,  y), halfTexel);
+        vec3 b = SampleSourceClamped(vTexCoord + vec2( 0.0, y), halfTexel);
+        vec3 c = SampleSourceClamped(vTexCoord + vec2( x,  y), halfTexel);
+        vec3 d = SampleSourceClamped(vTexCoord + vec2(-x,  0.0), halfTexel);
+        vec3 e = SampleSourceClamped(vTexCoord, halfTexel);
+        vec3 f = SampleSourceClamped(vTexCoord + vec2( x,  0.0), halfTexel);
+        vec3 g = SampleSourceClamped(vTexCoord + vec2(-x, -y), halfTexel);
+        vec3 h = SampleSourceClamped(vTexCoord + vec2( 0.0, -y), halfTexel);
+        vec3 i = SampleSourceClamped(vTexCoord + vec2( x, -y), halfTexel);
 
         vec3 tent = (e * 4.0 + (b + d + f + h) * 2.0 + (a + c + g + i)) * (1.0 / 16.0);
         vec3 higher = max(texture(uHigherMipTexture, vTexCoord).rgb, vec3(0.0));
@@ -4490,11 +4490,11 @@ void main() {
     vec2 direction = vec2(uBlurDirectionX, uBlurDirectionY);
     vec2 texelSize = vec2(uTexelSizeX, uTexelSizeY);
     vec2 halfTexel = texelSize * 0.5;
-    vec3 result = SampleSourceClampedUVE(vTexCoord, halfTexel) * weights[0];
+    vec3 result = SampleSourceClamped(vTexCoord, halfTexel) * weights[0];
     for (int tap = 1; tap < 5; ++tap) {
         vec2 offset = direction * texelSize * float(tap);
-        result += SampleSourceClampedUVE(vTexCoord + offset, halfTexel) * weights[tap];
-        result += SampleSourceClampedUVE(vTexCoord - offset, halfTexel) * weights[tap];
+        result += SampleSourceClamped(vTexCoord + offset, halfTexel) * weights[tap];
+        result += SampleSourceClamped(vTexCoord - offset, halfTexel) * weights[tap];
     }
     FragColor = vec4(result, 1.0);
 }
@@ -4535,7 +4535,7 @@ uniform int uOrthographic;
 uniform int uFastReconstruct;
 uniform mat4 uInverseProjection;
 
-float LinearDepthUVE(vec2 uv, float depthSample) {
+float LinearDepth(vec2 uv, float depthSample) {
     float scale = uDepthNdcScale != 0.0 ? uDepthNdcScale : 2.0;
     float bias = uDepthNdcScale != 0.0 ? uDepthNdcBias : -1.0;
     float ndcZ = depthSample * scale + bias;
@@ -4546,7 +4546,7 @@ float LinearDepthUVE(vec2 uv, float depthSample) {
     return abs(viewPos.z / max(abs(viewPos.w), 1.0e-6));
 }
 
-vec4 SampleSourceClampedUVE(vec2 uv, vec2 halfTexel) {
+vec4 SampleSourceClamped(vec2 uv, vec2 halfTexel) {
     return texture(uSourceTexture, clamp(uv, halfTexel, vec2(1.0) - halfTexel));
 }
 
@@ -4564,26 +4564,26 @@ void main() {
         return;
     }
 
-    vec4 centerValue = SampleSourceClampedUVE(vTexCoord, halfTexel);
-    float centerLinDepth = LinearDepthUVE(vTexCoord, centerDepth);
+    vec4 centerValue = SampleSourceClamped(vTexCoord, halfTexel);
+    float centerLinDepth = LinearDepth(vTexCoord, centerDepth);
     float depthSharpness = uBilateralDepthSharpness > 0.0 ? uBilateralDepthSharpness : 12.0;
     float depthScale = max(centerLinDepth * 0.05, 0.02);
 
     vec2 axis = vec2(uBilateralAxisX, uBilateralAxisY);
     if (dot(axis, axis) > 1.0e-5) {
         // 7-tap separable Gaussian-bilateral kernel (sigma ~= 1.6 texels).
-        const float kSpatialWeightsUVE[4] = float[](0.25, 0.1875, 0.125, 0.0625);
-        vec4 sum = centerValue * kSpatialWeightsUVE[0];
-        float weightSum = kSpatialWeightsUVE[0];
+        const float kSpatialWeights[4] = float[](0.25, 0.1875, 0.125, 0.0625);
+        vec4 sum = centerValue * kSpatialWeights[0];
+        float weightSum = kSpatialWeights[0];
         vec2 stepUv = axis * texelSize;
         for (int tap = 1; tap <= 3; ++tap) {
-            float spatialW = kSpatialWeightsUVE[tap];
+            float spatialW = kSpatialWeights[tap];
             vec2 offset = stepUv * float(tap);
 
             vec2 uvPos = clamp(vTexCoord + offset, halfTexel, vec2(1.0) - halfTexel);
             float dPos = texture(uDepthTexture, uvPos).r;
             if (dPos < 0.999999) {
-                float deltaPos = abs(LinearDepthUVE(uvPos, dPos) - centerLinDepth) / depthScale;
+                float deltaPos = abs(LinearDepth(uvPos, dPos) - centerLinDepth) / depthScale;
                 float wPos = spatialW * exp(-deltaPos * depthSharpness * 0.15);
                 sum += texture(uSourceTexture, uvPos) * wPos;
                 weightSum += wPos;
@@ -4592,7 +4592,7 @@ void main() {
             vec2 uvNeg = clamp(vTexCoord - offset, halfTexel, vec2(1.0) - halfTexel);
             float dNeg = texture(uDepthTexture, uvNeg).r;
             if (dNeg < 0.999999) {
-                float deltaNeg = abs(LinearDepthUVE(uvNeg, dNeg) - centerLinDepth) / depthScale;
+                float deltaNeg = abs(LinearDepth(uvNeg, dNeg) - centerLinDepth) / depthScale;
                 float wNeg = spatialW * exp(-deltaNeg * depthSharpness * 0.15);
                 sum += texture(uSourceTexture, uvNeg) * wNeg;
                 weightSum += wNeg;
@@ -4616,7 +4616,7 @@ void main() {
             if (sampleDepth >= 0.999999) {
                 continue;
             }
-            float delta = abs(LinearDepthUVE(sampleUv, sampleDepth) - centerLinDepth) / depthScale;
+            float delta = abs(LinearDepth(sampleUv, sampleDepth) - centerLinDepth) / depthScale;
             float w = spatialW * exp(-delta * depthSharpness * 0.15);
             sum += texture(uSourceTexture, sampleUv) * w;
             weightSum += w;
@@ -4667,8 +4667,8 @@ uniform int uSampleCount;
 
 // Stratified 12-sample low-discrepancy hemisphere kernel ordered so the first 4 (Low), 8 (Medium),
 // and 12 (High) taps each span all quadrants and the full radius [0.35..0.95] * uRadius.
-const int kKernelSizeUVE = 12;
-const vec3 kKernelUVE[12] = vec3[](
+const int kKernelSize = 12;
+const vec3 kKernel[12] = vec3[](
     vec3( 0.2400,  0.1400,  0.2200),
     vec3(-0.3600,  0.2900,  0.3400),
     vec3( 0.1900, -0.5200,  0.4100),
@@ -4683,14 +4683,14 @@ const vec3 kKernelUVE[12] = vec3[](
     vec3( 0.5400, -0.6200,  0.4900)
 );
 
-float DecodeNdcDepthUVE(float depthSample) {
+float DecodeNdcDepth(float depthSample) {
     float scale = uDepthNdcScale != 0.0 ? uDepthNdcScale : 2.0;
     float bias = uDepthNdcScale != 0.0 ? uDepthNdcBias : -1.0;
     return depthSample * scale + bias;
 }
 
-vec3 ReconstructViewPositionUVE(vec2 uv, float depthSample) {
-    float ndcZ = DecodeNdcDepthUVE(depthSample);
+vec3 ReconstructViewPosition(vec2 uv, float depthSample) {
+    float ndcZ = DecodeNdcDepth(depthSample);
     vec2 ndcXY = uv * 2.0 - 1.0;
     if (uFastReconstruct != 0 && uOrthographic == 0) {
         float viewZ = uProjB / max(uProjA - ndcZ, 1.0e-6);
@@ -4703,7 +4703,7 @@ vec3 ReconstructViewPositionUVE(vec2 uv, float depthSample) {
 
 // Reconstructs a clean view-space normal from 4-neighbor minimum-difference depth taps.
 // Avoids screen-space derivative UB after early returns and prevents dark halos across depth edges.
-vec3 ReconstructViewNormalUVE(vec2 uv, vec3 centerViewPos) {
+vec3 ReconstructViewNormal(vec2 uv, vec3 centerViewPos) {
     vec2 texel = 1.0 / max(vec2(textureSize(uDepthTexture, 0)), vec2(1.0));
     vec2 halfTexel = texel * 0.5;
     vec2 uvL = clamp(uv - vec2(texel.x, 0.0), halfTexel, vec2(1.0) - halfTexel);
@@ -4716,10 +4716,10 @@ vec3 ReconstructViewNormalUVE(vec2 uv, vec3 centerViewPos) {
     float dD = texture(uDepthTexture, uvD).r;
     float dU = texture(uDepthTexture, uvU).r;
 
-    vec3 pL = dL < 0.999999 ? ReconstructViewPositionUVE(uvL, dL) : centerViewPos;
-    vec3 pR = dR < 0.999999 ? ReconstructViewPositionUVE(uvR, dR) : centerViewPos;
-    vec3 pD = dD < 0.999999 ? ReconstructViewPositionUVE(uvD, dD) : centerViewPos;
-    vec3 pU = dU < 0.999999 ? ReconstructViewPositionUVE(uvU, dU) : centerViewPos;
+    vec3 pL = dL < 0.999999 ? ReconstructViewPosition(uvL, dL) : centerViewPos;
+    vec3 pR = dR < 0.999999 ? ReconstructViewPosition(uvR, dR) : centerViewPos;
+    vec3 pD = dD < 0.999999 ? ReconstructViewPosition(uvD, dD) : centerViewPos;
+    vec3 pU = dU < 0.999999 ? ReconstructViewPosition(uvU, dU) : centerViewPos;
 
     bool validL = dL < 0.999999;
     bool validR = dR < 0.999999;
@@ -4767,12 +4767,12 @@ vec3 ReconstructViewNormalUVE(vec2 uv, vec3 centerViewPos) {
 }
 
 // High-frequency blue-noise-like screen-space rotation with zero Moire patterns.
-float InterleavedGradientNoiseUVE(vec2 pixel) {
+float InterleavedGradientNoise(vec2 pixel) {
     return fract(52.9829189 * fract(dot(pixel, vec2(0.06711056, 0.00583715))));
 }
 
 // Orthonormal basis from a unit normal without any pole singularity.
-void BuildOrthonormalBasisUVE(vec3 n, out vec3 b1, out vec3 b2) {
+void BuildOrthonormalBasis(vec3 n, out vec3 b1, out vec3 b2) {
     if (n.z < -0.999999999) {
         b1 = vec3(0.0, -1.0, 0.0);
         b2 = vec3(-1.0, 0.0, 0.0);
@@ -4790,13 +4790,13 @@ void main() {
         FragColor = vec4(1.0, 1.0, 1.0, 1.0); // Background/far plane: never occluded.
         return;
     }
-    vec3 centerViewPos = ReconstructViewPositionUVE(vTexCoord, centerDepth);
-    vec3 viewNormal = ReconstructViewNormalUVE(vTexCoord, centerViewPos);
+    vec3 centerViewPos = ReconstructViewPosition(vTexCoord, centerDepth);
+    vec3 viewNormal = ReconstructViewNormal(vTexCoord, centerViewPos);
 
     vec3 basisT;
     vec3 basisB;
-    BuildOrthonormalBasisUVE(viewNormal, basisT, basisB);
-    float rotationAngle = InterleavedGradientNoiseUVE(gl_FragCoord.xy) * 6.28318530718;
+    BuildOrthonormalBasis(viewNormal, basisT, basisB);
+    float rotationAngle = InterleavedGradientNoise(gl_FragCoord.xy) * 6.28318530718;
     float cosAngle = cos(rotationAngle);
     float sinAngle = sin(rotationAngle);
     vec3 tangent = basisT * cosAngle + basisB * sinAngle;
@@ -4811,10 +4811,10 @@ void main() {
     float safeRadius = max(uRadius, 0.01);
 
     float occlusion = 0.0;
-    int sampleCount = clamp(uSampleCount, 1, kKernelSizeUVE);
+    int sampleCount = clamp(uSampleCount, 1, kKernelSize);
     int validSamples = 0;
     for (int sampleIndex = 0; sampleIndex < sampleCount; ++sampleIndex) {
-        vec3 samplePos = centerViewPos + (tbn * kKernelUVE[sampleIndex]) * safeRadius;
+        vec3 samplePos = centerViewPos + (tbn * kKernel[sampleIndex]) * safeRadius;
 
         vec4 sampleClip = uProjection * vec4(samplePos, 1.0);
         if (sampleClip.w <= 0.0001) {
@@ -4831,7 +4831,7 @@ void main() {
             ++validSamples;
             continue;
         }
-        vec3 sampledViewPos = ReconstructViewPositionUVE(sampleUv, sampledDepth);
+        vec3 sampledViewPos = ReconstructViewPosition(sampleUv, sampledDepth);
 
         float depthDelta = abs(centerViewPos.z - sampledViewPos.z);
         float rangeCheck = 1.0 - smoothstep(safeRadius * 0.65, safeRadius * 1.5, depthDelta);
@@ -4981,14 +4981,14 @@ uniform float uStrength;
 uniform int uStepCount;
 uniform float uDepthBiasMeters;
 
-float DecodeNdcDepthUVE(float depthSample) {
+float DecodeNdcDepth(float depthSample) {
     float scale = uDepthNdcScale != 0.0 ? uDepthNdcScale : 2.0;
     float bias = uDepthNdcScale != 0.0 ? uDepthNdcBias : -1.0;
     return depthSample * scale + bias;
 }
 
-vec3 ReconstructViewPositionUVE(vec2 uv, float depthSample) {
-    float ndcZ = DecodeNdcDepthUVE(depthSample);
+vec3 ReconstructViewPosition(vec2 uv, float depthSample) {
+    float ndcZ = DecodeNdcDepth(depthSample);
     vec2 ndcXY = uv * 2.0 - 1.0;
     if (uFastReconstruct != 0 && uOrthographic == 0) {
         float viewZ = uProjB / max(uProjA - ndcZ, 1.0e-6);
@@ -4999,7 +4999,7 @@ vec3 ReconstructViewPositionUVE(vec2 uv, float depthSample) {
     return viewPos.xyz / max(abs(viewPos.w), 1.0e-6);
 }
 
-vec3 ViewNormalUVE(vec2 uv, vec3 centerViewPos) {
+vec3 ViewNormal(vec2 uv, vec3 centerViewPos) {
     vec2 texel = 1.0 / max(vec2(textureSize(uDepthTexture, 0)), vec2(1.0));
     vec2 halfTexel = texel * 0.5;
     vec2 uvL = clamp(uv - vec2(texel.x, 0.0), halfTexel, vec2(1.0) - halfTexel);
@@ -5012,10 +5012,10 @@ vec3 ViewNormalUVE(vec2 uv, vec3 centerViewPos) {
     float dD = texture(uDepthTexture, uvD).r;
     float dU = texture(uDepthTexture, uvU).r;
 
-    vec3 pL = dL < 0.999999 ? ReconstructViewPositionUVE(uvL, dL) : centerViewPos;
-    vec3 pR = dR < 0.999999 ? ReconstructViewPositionUVE(uvR, dR) : centerViewPos;
-    vec3 pD = dD < 0.999999 ? ReconstructViewPositionUVE(uvD, dD) : centerViewPos;
-    vec3 pU = dU < 0.999999 ? ReconstructViewPositionUVE(uvU, dU) : centerViewPos;
+    vec3 pL = dL < 0.999999 ? ReconstructViewPosition(uvL, dL) : centerViewPos;
+    vec3 pR = dR < 0.999999 ? ReconstructViewPosition(uvR, dR) : centerViewPos;
+    vec3 pD = dD < 0.999999 ? ReconstructViewPosition(uvD, dD) : centerViewPos;
+    vec3 pU = dU < 0.999999 ? ReconstructViewPosition(uvU, dU) : centerViewPos;
 
     vec3 dPdx = (dR < 0.999999 && dL < 0.999999)
                     ? (abs(pR.z - centerViewPos.z) < abs(centerViewPos.z - pL.z)
@@ -5044,7 +5044,7 @@ vec3 ViewNormalUVE(vec2 uv, vec3 centerViewPos) {
     return viewNormal;
 }
 
-float InterleavedGradientNoiseUVE(vec2 pixel) {
+float InterleavedGradientNoise(vec2 pixel) {
     return fract(52.9829189 * fract(dot(pixel, vec2(0.06711056, 0.00583715))));
 }
 
@@ -5054,7 +5054,7 @@ void main() {
         FragColor = vec4(1.0, 1.0, 1.0, 1.0);
         return;
     }
-    vec3 centerViewPos = ReconstructViewPositionUVE(vTexCoord, centerDepth);
+    vec3 centerViewPos = ReconstructViewPosition(vTexCoord, centerDepth);
 
     vec3 lightDirection = uLightDirectionView;
     float lightLengthSq = dot(lightDirection, lightDirection);
@@ -5064,14 +5064,14 @@ void main() {
     }
     lightDirection *= inversesqrt(lightLengthSq);
 
-    if (dot(ViewNormalUVE(vTexCoord, centerViewPos), lightDirection) <= 0.0) {
+    if (dot(ViewNormal(vTexCoord, centerViewPos), lightDirection) <= 0.0) {
         FragColor = vec4(1.0, 1.0, 1.0, 1.0);
         return;
     }
 
     int stepCount = clamp(uStepCount, 1, 16);
     float inverseStepCount = 1.0 / float(stepCount);
-    float jitter = InterleavedGradientNoiseUVE(gl_FragCoord.xy);
+    float jitter = InterleavedGradientNoise(gl_FragCoord.xy);
     int testedSteps = 0;
     float occludedWeight = 0.0;
     for (int stepIndex = 0; stepIndex < stepCount; ++stepIndex) {
@@ -5093,7 +5093,7 @@ void main() {
         if (sampledDepth >= 0.999999) {
             continue;
         }
-        vec3 sampleSceneViewPos = ReconstructViewPositionUVE(sampleUv, sampledDepth);
+        vec3 sampleSceneViewPos = ReconstructViewPosition(sampleUv, sampledDepth);
         float delta = sampleSceneViewPos.z - samplePoint.z;
         ++testedSteps;
         if (delta > uDepthBiasMeters && delta < uThicknessMeters) {
@@ -5149,14 +5149,14 @@ uniform float uDepthTolerance;
 uniform float uFadeIn;
 uniform float uFadeOut;
 
-float DecodeNdcDepthUVE(float depthSample) {
+float DecodeNdcDepth(float depthSample) {
     float scale = uDepthNdcScale != 0.0 ? uDepthNdcScale : 2.0;
     float bias = uDepthNdcScale != 0.0 ? uDepthNdcBias : -1.0;
     return depthSample * scale + bias;
 }
 
-vec3 ReconstructViewPosUVE(vec2 uv, float depth) {
-    float ndcZ = DecodeNdcDepthUVE(depth);
+vec3 ReconstructViewPos(vec2 uv, float depth) {
+    float ndcZ = DecodeNdcDepth(depth);
     vec2 ndcXY = uv * 2.0 - 1.0;
     if (uFastReconstruct != 0 && uOrthographic == 0) {
         float viewZ = uProjB / max(uProjA - ndcZ, 1.0e-6);
@@ -5167,7 +5167,7 @@ vec3 ReconstructViewPosUVE(vec2 uv, float depth) {
     return view.xyz / max(abs(view.w), 1.0e-5);
 }
 
-vec3 ReconstructViewNormalUVE(vec2 uv, vec3 centerViewPos) {
+vec3 ReconstructViewNormal(vec2 uv, vec3 centerViewPos) {
     vec2 texel = 1.0 / max(vec2(textureSize(uDepthTexture, 0)), vec2(1.0));
     vec2 halfTexel = texel * 0.5;
     vec2 uvL = clamp(uv - vec2(texel.x, 0.0), halfTexel, vec2(1.0) - halfTexel);
@@ -5180,10 +5180,10 @@ vec3 ReconstructViewNormalUVE(vec2 uv, vec3 centerViewPos) {
     float dD = texture(uDepthTexture, uvD).r;
     float dU = texture(uDepthTexture, uvU).r;
 
-    vec3 pL = dL < 0.999999 ? ReconstructViewPosUVE(uvL, dL) : centerViewPos;
-    vec3 pR = dR < 0.999999 ? ReconstructViewPosUVE(uvR, dR) : centerViewPos;
-    vec3 pD = dD < 0.999999 ? ReconstructViewPosUVE(uvD, dD) : centerViewPos;
-    vec3 pU = dU < 0.999999 ? ReconstructViewPosUVE(uvU, dU) : centerViewPos;
+    vec3 pL = dL < 0.999999 ? ReconstructViewPos(uvL, dL) : centerViewPos;
+    vec3 pR = dR < 0.999999 ? ReconstructViewPos(uvR, dR) : centerViewPos;
+    vec3 pD = dD < 0.999999 ? ReconstructViewPos(uvD, dD) : centerViewPos;
+    vec3 pU = dU < 0.999999 ? ReconstructViewPos(uvU, dU) : centerViewPos;
 
     vec3 dPdx = (dR < 0.999999 && dL < 0.999999)
                     ? (abs(pR.z - centerViewPos.z) < abs(centerViewPos.z - pL.z)
@@ -5208,7 +5208,7 @@ vec3 ReconstructViewNormalUVE(vec2 uv, vec3 centerViewPos) {
     return normal;
 }
 
-float InterleavedGradientNoiseUVE(vec2 pixel) {
+float InterleavedGradientNoise(vec2 pixel) {
     return fract(52.9829189 * fract(dot(pixel, vec2(0.06711056, 0.00583715))));
 }
 
@@ -5219,8 +5219,8 @@ void main() {
         return;
     }
 
-    vec3 viewPos = ReconstructViewPosUVE(vTexCoord, depth);
-    vec3 normal = ReconstructViewNormalUVE(vTexCoord, viewPos);
+    vec3 viewPos = ReconstructViewPos(vTexCoord, depth);
+    vec3 normal = ReconstructViewNormal(vTexCoord, viewPos);
     vec3 viewDir = uOrthographic != 0 ? vec3(0.0, 0.0, -1.0) : normalize(viewPos);
     vec3 reflectDir = normalize(reflect(viewDir, normal));
 
@@ -5231,7 +5231,7 @@ void main() {
 
     int steps = clamp(uMaxSteps, 8, 128);
     float stepSize = 0.25;
-    float jitter = InterleavedGradientNoiseUVE(gl_FragCoord.xy);
+    float jitter = InterleavedGradientNoise(gl_FragCoord.xy);
     float currentDist = 0.08 + stepSize * jitter;
     float prevDist = 0.0;
     float tolerance = max(uDepthTolerance, 0.05);
@@ -5260,7 +5260,7 @@ void main() {
             continue;
         }
 
-        vec3 sampledViewPos = ReconstructViewPosUVE(screenUv, sampledDepth);
+        vec3 sampledViewPos = ReconstructViewPos(screenUv, sampledDepth);
         float depthDiff = sampledViewPos.z - rayPos.z;
 
         if (depthDiff >= 0.0 && depthDiff < tolerance) {
@@ -5281,7 +5281,7 @@ void main() {
                 }
                 float midDepth = texture(uDepthTexture, midUv).r;
                 if (midDepth < 0.999999) {
-                    vec3 midSamplePos = ReconstructViewPosUVE(midUv, midDepth);
+                    vec3 midSamplePos = ReconstructViewPos(midUv, midDepth);
                     float midDiff = midSamplePos.z - midPos.z;
                     if (midDiff >= 0.0 && midDiff < tolerance) {
                         hi = mid;
@@ -5863,9 +5863,9 @@ uniform float uLightRanges[4];
 
 out vec4 FragColor;
 
-const float kPiUVE = 3.14159265359;
+const float kPi = 3.14159265359;
 
-vec2 EnvBrdfApproxUVE(float roughness, float NoV) {
+vec2 EnvBrdfApprox(float roughness, float NoV) {
     const vec4 c0 = vec4(-1.0, -0.0275, -0.572, 0.022);
     const vec4 c1 = vec4(1.0, 0.0425, 1.04, -0.04);
     vec4 r = roughness * c0 + c1;
@@ -5873,13 +5873,13 @@ vec2 EnvBrdfApproxUVE(float roughness, float NoV) {
     return vec2(-1.04, 1.04) * a004 + r.zw;
 }
 
-float DistributionGGXUVE(float NoH, float alpha) {
+float DistributionGGX(float NoH, float alpha) {
     float a2 = alpha * alpha;
     float denom = NoH * NoH * (a2 - 1.0) + 1.0;
-    return a2 / max(kPiUVE * denom * denom, 1.0e-7);
+    return a2 / max(kPi * denom * denom, 1.0e-7);
 }
 
-float VisibilitySmithGGXCorrelatedUVE(float NoV, float NoL, float alpha) {
+float VisibilitySmithGGXCorrelated(float NoV, float NoL, float alpha) {
     float a2 = alpha * alpha;
     float ggxV = NoL * sqrt(NoV * NoV * (1.0 - a2) + a2);
     float ggxL = NoV * sqrt(NoL * NoL * (1.0 - a2) + a2);
@@ -5920,7 +5920,7 @@ void main() {
     float NoV = max(dot(N, V), 1.0e-4);
 
     vec3 f0 = mix(vec3(0.04 * clamp(uSpecularStrength / 0.5, 0.0, 2.0)), albedoSample, metallic);
-    vec2 envBrdf = EnvBrdfApproxUVE(roughness, NoV);
+    vec2 envBrdf = EnvBrdfApprox(roughness, NoV);
     vec3 envSpecularColor = f0 * envBrdf.x + envBrdf.y;
     vec3 energyCompensation = 1.0 + f0 * (1.0 / max(envBrdf.x + envBrdf.y, 1.0e-4) - 1.0);
 
@@ -5961,11 +5961,11 @@ void main() {
         float v1 = 1.0 - VoH;
         float v2 = v1 * v1;
         vec3 F = f0 + (1.0 - f0) * (v2 * v2 * v1);
-        float D = DistributionGGXUVE(NoH, alpha);
-        float Vis = VisibilitySmithGGXCorrelatedUVE(NoV, NoL, alpha);
+        float D = DistributionGGX(NoH, alpha);
+        float Vis = VisibilitySmithGGXCorrelated(NoV, NoL, alpha);
 
         vec3 kD = (vec3(1.0) - F) * (1.0 - metallic);
-        vec3 diffuseTerm = kD * albedoSample / kPiUVE;
+        vec3 diffuseTerm = kD * albedoSample / kPi;
         vec3 specularTerm = (D * Vis) * F * energyCompensation;
 
         vec3 radiance = uLightColors[i] * attenuation * NoL;
@@ -6012,7 +6012,7 @@ uniform float uHistoryWeight;
 uniform int uHistoryValid;
 uniform vec2 uTexelSize;
 
-vec3 RgbToYCoCgUVE(vec3 rgb) {
+vec3 RgbToYCoCg(vec3 rgb) {
     float co = rgb.r - rgb.b;
     float t = rgb.b + co * 0.5;
     float cg = rgb.g - t;
@@ -6020,7 +6020,7 @@ vec3 RgbToYCoCgUVE(vec3 rgb) {
     return vec3(y, co, cg);
 }
 
-vec3 YCoCgToRgbUVE(vec3 ycocg) {
+vec3 YCoCgToRgb(vec3 ycocg) {
     float t = ycocg.x - ycocg.z * 0.5;
     float g = ycocg.z + t;
     float b = t - ycocg.y * 0.5;
@@ -6028,17 +6028,17 @@ vec3 YCoCgToRgbUVE(vec3 ycocg) {
     return max(vec3(r, g, b), vec3(0.0));
 }
 
-vec3 ReinhardCompressUVE(vec3 c) {
+vec3 ReinhardCompress(vec3 c) {
     float luma = dot(c, vec3(0.2126, 0.7152, 0.0722));
     return c / (1.0 + max(luma, 0.0));
 }
 
-vec3 ReinhardDecompressUVE(vec3 c) {
+vec3 ReinhardDecompress(vec3 c) {
     float luma = dot(c, vec3(0.2126, 0.7152, 0.0722));
     return c / max(1.0 - luma, 1.0e-4);
 }
 
-float DecodeNdcDepthUVE(float depthSample) {
+float DecodeNdcDepth(float depthSample) {
     float scale = uDepthNdcScale != 0.0 ? uDepthNdcScale : 2.0;
     float bias = uDepthNdcScale != 0.0 ? uDepthNdcBias : -1.0;
     return depthSample * scale + bias;
@@ -6067,7 +6067,7 @@ void main() {
     }
 
     vec2 reprojectUv = vTexCoord + bestOffset;
-    float ndcZ = DecodeNdcDepthUVE(bestDepth);
+    float ndcZ = DecodeNdcDepth(bestDepth);
     vec4 worldPos = uInverseViewProjection * vec4(reprojectUv * 2.0 - 1.0, ndcZ, 1.0);
     vec2 prevUv = vTexCoord;
     bool validReprojection = false;
@@ -6092,7 +6092,7 @@ void main() {
     for (int dy = -1; dy <= 1; ++dy) {
         for (int dx = -1; dx <= 1; ++dx) {
             vec2 sampleUv = clamp(vTexCoord + vec2(float(dx), float(dy)) * uTexelSize, vec2(0.0), vec2(1.0));
-            vec3 c = RgbToYCoCgUVE(ReinhardCompressUVE(max(texture(uCurrentColorTexture, sampleUv).rgb, vec3(0.0))));
+            vec3 c = RgbToYCoCg(ReinhardCompress(max(texture(uCurrentColorTexture, sampleUv).rgb, vec3(0.0))));
             m1 += c;
             m2 += c * c;
         }
@@ -6104,12 +6104,12 @@ void main() {
     vec3 boxMax = mean + kGamma * sigma;
 
     vec3 historyRgb = max(texture(uHistoryColorTexture, prevUv).rgb, vec3(0.0));
-    vec3 historyYcc = clamp(RgbToYCoCgUVE(ReinhardCompressUVE(historyRgb)), boxMin, boxMax);
-    vec3 currentYcc = RgbToYCoCgUVE(ReinhardCompressUVE(currentRgb));
+    vec3 historyYcc = clamp(RgbToYCoCg(ReinhardCompress(historyRgb)), boxMin, boxMax);
+    vec3 currentYcc = RgbToYCoCg(ReinhardCompress(currentRgb));
 
     float blendWeight = clamp(uHistoryWeight, 0.0, 0.96);
     vec3 resolvedYcc = mix(currentYcc, historyYcc, blendWeight);
-    vec3 resolvedRgb = ReinhardDecompressUVE(YCoCgToRgbUVE(resolvedYcc));
+    vec3 resolvedRgb = ReinhardDecompress(YCoCgToRgb(resolvedYcc));
     if (any(isnan(resolvedRgb)) || any(isinf(resolvedRgb))) {
         resolvedRgb = currentRgb;
     }
@@ -6163,12 +6163,12 @@ void main() {
 const std::string_view kRtTraceSource = R"GLSLSRC(#version 430 core
 
 // Compute ray-traced shadows, 1-bounce specular reflections, and 1-bounce diffuse GI over the
-// scene AABB proxy buffer (RtSceneBoxNodeUVE). Works universally on desktop OpenGL 4.3+ and
+// scene AABB proxy buffer (RtSceneBoxNode). Works universally on desktop OpenGL 4.3+ and
 // Vulkan compute queues (including software lavapipe in CI).
 
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 
-struct RtSceneBoxNodeUVE {
+struct RtSceneBoxNode {
     vec4 minAndMetallic;
     vec4 maxAndRoughness;
     vec4 albedo;
@@ -6176,7 +6176,7 @@ struct RtSceneBoxNodeUVE {
 };
 
 layout(std430, binding = 0) readonly buffer RtSceneBoxesBlock {
-    RtSceneBoxNodeUVE sceneBoxes[];
+    RtSceneBoxNode sceneBoxes[];
 };
 
 layout(std430, binding = 1) readonly buffer RtParamsBlock {
@@ -6190,7 +6190,7 @@ layout(std430, binding = 1) readonly buffer RtParamsBlock {
 layout(binding = 0) uniform sampler2D uDepthTexture;
 layout(rgba16f, binding = 1) uniform writeonly image2D uRtOutputImage;
 
-bool IntersectBoxUVE(vec3 origin, vec3 invDir, RtSceneBoxNodeUVE box, float tMin, float tMax,
+bool IntersectBox(vec3 origin, vec3 invDir, RtSceneBoxNode box, float tMin, float tMax,
                      out float outT, out vec3 outNormal) {
     vec3 t0 = (box.minAndMetallic.xyz - origin) * invDir;
     vec3 t1 = (box.maxAndRoughness.xyz - origin) * invDir;
@@ -6243,7 +6243,7 @@ void main() {
     float hitT = 0.0;
     vec3 hitN = vec3(0.0, 1.0, 0.0);
     for (uint i = 0u; i < boxCount; ++i) {
-        if (IntersectBoxUVE(worldPos + sunDir * 0.02, invSunDir, sceneBoxes[i], 0.005, 250.0, hitT, hitN)) {
+        if (IntersectBox(worldPos + sunDir * 0.02, invSunDir, sceneBoxes[i], 0.005, 250.0, hitT, hitN)) {
             sunVis = 0.0;
             break;
         }

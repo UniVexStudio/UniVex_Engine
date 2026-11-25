@@ -4,26 +4,26 @@
 
 namespace UVE::Scene {
 
-bool IsVisibilityComponentValidUVE(const VisibilityComponentUVE&) noexcept {
+bool IsVisibilityComponentValid(const VisibilityComponent&) noexcept {
     // Two plain bools: there is no representable invalid state. Defined out of line rather than
     // made constexpr in the header so the component matches every other one's shape - a validator
     // that lives in a different place for one component is a trap for generic code.
     return true;
 }
 
-bool IsVisibilityComponentValidForEntityUVE(const VisibilityComponentUVE& component,
-                                            const EntityUVE selfEntity) noexcept {
-    if (selfEntity == kInvalidEntityUVE) {
+bool IsVisibilityComponentValidForEntity(const VisibilityComponent& component,
+                                            const Entity selfEntity) noexcept {
+    if (selfEntity == kInvalidEntity) {
         return true;
     }
     return component.visibilityParent != selfEntity;
 }
 
-bool HasVisibilityRedirectUVE(const VisibilityComponentUVE& component) noexcept {
-    return component.visibilityParent != kInvalidEntityUVE;
+bool HasVisibilityRedirect(const VisibilityComponent& component) noexcept {
+    return component.visibilityParent != kInvalidEntity;
 }
 
-bool ResolveInheritedVisibilityUVE(VisibilityComponentUVE* const visibility,
+bool ResolveInheritedVisibility(VisibilityComponent* const visibility,
                                    const bool parentVisible) noexcept {
     if (visibility == nullptr) {
         return parentVisible;
@@ -33,15 +33,15 @@ bool ResolveInheritedVisibilityUVE(VisibilityComponentUVE* const visibility,
     return resolved;
 }
 
-bool IsEffectivelyVisibleUVE(const VisibilityComponentUVE* const visibility) noexcept {
+bool IsEffectivelyVisible(const VisibilityComponent* const visibility) noexcept {
     return visibility == nullptr ? true : visibility->visibleInHierarchy;
 }
 
-VisibilityComponentUVE SanitizeVisibilityComponentForEntityUVE(
-    const VisibilityComponentUVE& component, const EntityUVE selfEntity) noexcept {
-    VisibilityComponentUVE out = component;
-    if (selfEntity != kInvalidEntityUVE && out.visibilityParent == selfEntity) {
-        out.visibilityParent = kInvalidEntityUVE;
+VisibilityComponent SanitizeVisibilityComponentForEntity(
+    const VisibilityComponent& component, const Entity selfEntity) noexcept {
+    VisibilityComponent out = component;
+    if (selfEntity != kInvalidEntity && out.visibilityParent == selfEntity) {
+        out.visibilityParent = kInvalidEntity;
     }
     return out;
 }

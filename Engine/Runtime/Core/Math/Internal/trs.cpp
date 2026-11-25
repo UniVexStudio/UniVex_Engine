@@ -7,91 +7,91 @@
 
 namespace UVE::Math {
 
-TrsUVE ComposeUVE(const TrsUVE& parent, const TrsUVE& child) noexcept {
+Trs Compose(const Trs& parent, const Trs& child) noexcept {
     // Byte-identical expressions to the scene graph's long-standing parent/child composition
-    // (SceneGraphUVE::UpdateUVE), so adopting this function cannot change a single world matrix.
-    TrsUVE result;
+    // (SceneGraph::Update), so adopting this function cannot change a single world matrix.
+    Trs result;
     result.scale = parent.scale * child.scale;
-    result.rotation = MultiplyUVE(parent.rotation, child.rotation);
+    result.rotation = Multiply(parent.rotation, child.rotation);
     result.translation =
-        parent.translation + RotateVectorUVE(parent.rotation, parent.scale * child.translation);
+        parent.translation + RotateVector(parent.rotation, parent.scale * child.translation);
     return result;
 }
 
-Vector3UVE TransformPointUVE(const TrsUVE& trs, const Vector3UVE& point) noexcept {
-    return trs.translation + RotateVectorUVE(trs.rotation, trs.scale * point);
+Vector3 TransformPoint(const Trs& trs, const Vector3& point) noexcept {
+    return trs.translation + RotateVector(trs.rotation, trs.scale * point);
 }
 
-Vector3UVE TransformDirectionUVE(const TrsUVE& trs, const Vector3UVE& direction) noexcept {
-    return RotateVectorUVE(trs.rotation, trs.scale * direction);
+Vector3 TransformDirection(const Trs& trs, const Vector3& direction) noexcept {
+    return RotateVector(trs.rotation, trs.scale * direction);
 }
 
-bool TryInverseTransformPointUVE(const TrsUVE& trs, const Vector3UVE& point,
-                                 Vector3UVE& outPoint) noexcept {
-    if (!IsFiniteUVE(trs.translation) || !IsFiniteUVE(trs.rotation) || !IsFiniteUVE(trs.scale) ||
-        !IsFiniteUVE(point)) {
+bool TryInverseTransformPoint(const Trs& trs, const Vector3& point,
+                                 Vector3& outPoint) noexcept {
+    if (!IsFinite(trs.translation) || !IsFinite(trs.rotation) || !IsFinite(trs.scale) ||
+        !IsFinite(point)) {
         return false;
     }
-    QuaternionUVE inverseRotation{};
-    if (!TryInverseUVE(trs.rotation, inverseRotation)) {
+    Quaternion inverseRotation{};
+    if (!TryInverse(trs.rotation, inverseRotation)) {
         return false;
     }
-    const Vector3UVE unrotated = RotateVectorUVE(inverseRotation, point - trs.translation);
-    const Vector3UVE result{
+    const Vector3 unrotated = RotateVector(inverseRotation, point - trs.translation);
+    const Vector3 result{
         unrotated.x / trs.scale.x, unrotated.y / trs.scale.y, unrotated.z / trs.scale.z};
-    if (!IsFiniteUVE(result)) {
+    if (!IsFinite(result)) {
         return false;
     }
     outPoint = result;
     return true;
 }
 
-bool TryInverseTransformDirectionUVE(const TrsUVE& trs, const Vector3UVE& direction,
-                                     Vector3UVE& outDirection) noexcept {
-    if (!IsFiniteUVE(trs.rotation) || !IsFiniteUVE(trs.scale) || !IsFiniteUVE(direction)) {
+bool TryInverseTransformDirection(const Trs& trs, const Vector3& direction,
+                                     Vector3& outDirection) noexcept {
+    if (!IsFinite(trs.rotation) || !IsFinite(trs.scale) || !IsFinite(direction)) {
         return false;
     }
-    QuaternionUVE inverseRotation{};
-    if (!TryInverseUVE(trs.rotation, inverseRotation)) {
+    Quaternion inverseRotation{};
+    if (!TryInverse(trs.rotation, inverseRotation)) {
         return false;
     }
-    const Vector3UVE unrotated = RotateVectorUVE(inverseRotation, direction);
-    const Vector3UVE result{
+    const Vector3 unrotated = RotateVector(inverseRotation, direction);
+    const Vector3 result{
         unrotated.x / trs.scale.x, unrotated.y / trs.scale.y, unrotated.z / trs.scale.z};
-    if (!IsFiniteUVE(result)) {
+    if (!IsFinite(result)) {
         return false;
     }
     outDirection = result;
     return true;
 }
 
-bool TryInverseTransformRotationUVE(const TrsUVE& trs, const QuaternionUVE& worldDelta,
-                                    QuaternionUVE& outLocalDelta) noexcept {
-    if (!IsFiniteUVE(trs.rotation) || !IsFiniteUVE(worldDelta)) {
+bool TryInverseTransformRotation(const Trs& trs, const Quaternion& worldDelta,
+                                    Quaternion& outLocalDelta) noexcept {
+    if (!IsFinite(trs.rotation) || !IsFinite(worldDelta)) {
         return false;
     }
     // Byte-identical expressions to the viewport rotate-drag path's long-standing world-to-local
-    // arithmetic (EditorUVE::ComputeLocalRotationForWorldAxisUVE), so adopting this function
+    // arithmetic (Editor::ComputeLocalRotationForWorldAxis), so adopting this function
     // cannot change a single drag: normalize the parent rotation, then conjugate the world delta
     // into the parent frame. Conjugation is scale-free - the translation and scale never enter.
-    QuaternionUVE parentNormalized{};
-    QuaternionUVE parentInverse{};
-    if (!TryNormalizeUVE(trs.rotation, parentNormalized) ||
-        !TryInverseUVE(parentNormalized, parentInverse)) {
+    Quaternion parentNormalized{};
+    Quaternion parentInverse{};
+    if (!TryNormalize(trs.rotation, parentNormalized) ||
+        !TryInverse(parentNormalized, parentInverse)) {
         return false;
     }
-    const QuaternionUVE result =
-        MultiplyUVE(MultiplyUVE(parentInverse, worldDelta), parentNormalized);
-    if (!IsFiniteUVE(result)) {
+    const Quaternion result =
+        Multiply(Multiply(parentInverse, worldDelta), parentNormalized);
+    if (!IsFinite(result)) {
         return false;
     }
     outLocalDelta = result;
     return true;
 }
 
-std::string ToStringUVE(const TrsUVE& trs) {
-    return "Trs(" + ToStringUVE(trs.translation) + ", " + ToStringUVE(trs.rotation) + ", " +
-           ToStringUVE(trs.scale) + ")";
+std::string ToString(const Trs& trs) {
+    return "Trs(" + ToString(trs.translation) + ", " + ToString(trs.rotation) + ", " +
+           ToString(trs.scale) + ")";
 }
 
 } // namespace UVE::Math

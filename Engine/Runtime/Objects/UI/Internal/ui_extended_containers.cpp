@@ -9,41 +9,41 @@
 
 namespace UVE::Scene {
 
-void ApplyUIExtendedContainerObjectDefinitionUVE(
-    IEntityManagerUVE& entityManager, const EntityUVE entity,
-    const UIExtendedContainerObjectDefinitionUVE& value) {
-    UIExtendedContainerComponentUVE out = value.container;
+void ApplyUIExtendedContainerObjectDefinition(
+    IEntityManager& entityManager, const Entity entity,
+    const UIExtendedContainerObjectDefinition& value) {
+    UIExtendedContainerComponent out = value.container;
     out.splitRatio =
         std::isfinite(out.splitRatio) ? std::clamp(out.splitRatio, 0.05F, 0.95F) : 0.5F;
     if (!std::isfinite(out.aspectRatio) || out.aspectRatio <= 0.0F) {
         out.aspectRatio = 16.0F / 9.0F;
     }
-    entityManager.AddComponentUVE<UIExtendedContainerComponentUVE>(entity, out);
+    entityManager.AddComponent<UIExtendedContainerComponent>(entity, out);
 }
 
-Math::RectUVE UIExtendedContainerUVE::ResolveContentRectUVE(
-    const UIExtendedContainerComponentUVE& container,
-    const Math::Vector2UVE& childSize) noexcept {
-    const Math::RectUVE& b = container.bounds;
+Math::Rect UIExtendedContainer::ResolveContentRect(
+    const UIExtendedContainerComponent& container,
+    const Math::Vector2& childSize) noexcept {
+    const Math::Rect& b = container.bounds;
     switch (container.kind) {
-    case UIExtendedContainerKindUVE::Margin: {
+    case UIExtendedContainerKind::Margin: {
         const float w = std::max(0.0F, b.size.x - container.marginLeft - container.marginRight);
         const float h = std::max(0.0F, b.size.y - container.marginTop - container.marginBottom);
-        return Math::RectUVE{
-            Math::Vector2UVE{b.position.x + container.marginLeft,
+        return Math::Rect{
+            Math::Vector2{b.position.x + container.marginLeft,
                              b.position.y + container.marginTop},
-            Math::Vector2UVE{w, h}};
+            Math::Vector2{w, h}};
     }
-    case UIExtendedContainerKindUVE::Center: {
+    case UIExtendedContainerKind::Center: {
         const float cx = b.position.x + 0.5F * (b.size.x - childSize.x);
         const float cy = b.position.y + 0.5F * (b.size.y - childSize.y);
-        return Math::RectUVE{Math::Vector2UVE{cx, cy}, childSize};
+        return Math::Rect{Math::Vector2{cx, cy}, childSize};
     }
-    case UIExtendedContainerKindUVE::Split: {
+    case UIExtendedContainerKind::Split: {
         const float ratio = std::clamp(container.splitRatio, 0.05F, 0.95F);
-        return Math::RectUVE{b.position, Math::Vector2UVE{b.size.x * ratio, b.size.y}};
+        return Math::Rect{b.position, Math::Vector2{b.size.x * ratio, b.size.y}};
     }
-    case UIExtendedContainerKindUVE::AspectRatio: {
+    case UIExtendedContainerKind::AspectRatio: {
         const float ratio = (container.aspectRatio > 0.0F) ? container.aspectRatio : 1.0F;
         float fitW = b.size.x;
         float fitH = fitW / ratio;
@@ -51,30 +51,30 @@ Math::RectUVE UIExtendedContainerUVE::ResolveContentRectUVE(
             fitH = b.size.y;
             fitW = fitH * ratio;
         }
-        return Math::RectUVE{
-            Math::Vector2UVE{b.position.x + 0.5F * (b.size.x - fitW),
+        return Math::Rect{
+            Math::Vector2{b.position.x + 0.5F * (b.size.x - fitW),
                              b.position.y + 0.5F * (b.size.y - fitH)},
-            Math::Vector2UVE{fitW, fitH}};
+            Math::Vector2{fitW, fitH}};
     }
-    case UIExtendedContainerKindUVE::FlowWrap:
-    case UIExtendedContainerKindUVE::Panel:
-    case UIExtendedContainerKindUVE::Tab:
-    case UIExtendedContainerKindUVE::SubViewport:
+    case UIExtendedContainerKind::FlowWrap:
+    case UIExtendedContainerKind::Panel:
+    case UIExtendedContainerKind::Tab:
+    case UIExtendedContainerKind::SubViewport:
         return b;
     }
     return b;
 }
 
-void ApplyUIGraphEditObjectDefinitionUVE(IEntityManagerUVE& entityManager, const EntityUVE entity,
-                                         const UIGraphEditObjectDefinitionUVE& value) {
-    UIGraphEditComponentUVE out = value.graphEdit;
+void ApplyUIGraphEditObjectDefinition(IEntityManager& entityManager, const Entity entity,
+                                         const UIGraphEditObjectDefinition& value) {
+    UIGraphEditComponent out = value.graphEdit;
     if (!std::isfinite(out.zoom) || out.zoom <= 0.05F) {
         out.zoom = 1.0F;
     }
-    entityManager.AddComponentUVE<UIGraphEditComponentUVE>(entity, std::move(out));
+    entityManager.AddComponent<UIGraphEditComponent>(entity, std::move(out));
 }
 
-bool UIGraphEditUVE::TryConnectPortsUVE(UIGraphEditComponentUVE& graph,
+bool UIGraphEdit::TryConnectPorts(UIGraphEditComponent& graph,
                                         const std::uint32_t fromNodeId,
                                         const std::uint32_t fromPort,
                                         const std::uint32_t toNodeId,
@@ -82,9 +82,9 @@ bool UIGraphEditUVE::TryConnectPortsUVE(UIGraphEditComponentUVE& graph,
     if (fromNodeId == toNodeId) {
         return false;
     }
-    const UIGraphNodeSlotUVE* src = nullptr;
-    const UIGraphNodeSlotUVE* dst = nullptr;
-    for (const UIGraphNodeSlotUVE& n : graph.nodes) {
+    const UIGraphNodeSlot* src = nullptr;
+    const UIGraphNodeSlot* dst = nullptr;
+    for (const UIGraphNodeSlot& n : graph.nodes) {
         if (n.nodeId == fromNodeId) {
             src = &n;
         }
@@ -96,7 +96,7 @@ bool UIGraphEditUVE::TryConnectPortsUVE(UIGraphEditComponentUVE& graph,
         toPort >= dst->inputPortCount) {
         return false;
     }
-    const UIGraphConnectionUVE edge{fromNodeId, fromPort, toNodeId, toPort};
+    const UIGraphConnection edge{fromNodeId, fromPort, toNodeId, toPort};
     if (std::find(graph.connections.begin(), graph.connections.end(), edge) !=
         graph.connections.end()) {
         return false;

@@ -17,173 +17,173 @@
 namespace UVE::Physics::Tests {
 namespace {
 
-using Scene::EntityUVE;
-using Scene::RayCast3DComponentUVE;
+using Scene::Entity;
+using Scene::RayCast3DComponent;
 
 constexpr float kEpsilon = 1e-3F;
 
-class RayCast3DStepUVETest : public ::testing::Test {
+class RayCast3DStepTest : public ::testing::Test {
 protected:
-    Memory::MemoryManagerUVE memoryManager;
-    Events::EventSystemUVE eventSystem;
-    Scene::EntityManagerUVE entityManager{memoryManager.GetDefaultAllocatorUVE(), eventSystem};
-    Scene::SceneGraphUVE sceneGraph;
-    RaycastSystemUVE raycastSystem;
+    Memory::MemoryManager memoryManager;
+    Events::EventSystem eventSystem;
+    Scene::EntityManager entityManager{memoryManager.GetDefaultAllocator(), eventSystem};
+    Scene::SceneGraph sceneGraph;
+    RaycastSystem raycastSystem;
 
-    [[nodiscard]] EntityUVE MakeRayUVE(const Math::Vector3UVE& position, const RayCast3DComponentUVE& component) {
-        const EntityUVE entity = entityManager.CreateEntityUVE();
-        Scene::TransformComponentUVE transform{};
+    [[nodiscard]] Entity MakeRay(const Math::Vector3& position, const RayCast3DComponent& component) {
+        const Entity entity = entityManager.CreateEntity();
+        Scene::TransformComponent transform{};
         transform.localPosition = position;
-        sceneGraph.AttachTransformUVE(entityManager, entity, transform);
-        entityManager.AddComponentUVE<RayCast3DComponentUVE>(entity, component);
-        sceneGraph.UpdateUVE(entityManager);
+        sceneGraph.AttachTransform(entityManager, entity, transform);
+        entityManager.AddComponent<RayCast3DComponent>(entity, component);
+        sceneGraph.Update(entityManager);
         return entity;
     }
 
-    [[nodiscard]] EntityUVE MakeColliderUVE(const Math::Vector3UVE& position,
-                                            const Math::Vector3UVE& halfExtents = {0.5F, 0.5F, 0.5F},
+    [[nodiscard]] Entity MakeCollider(const Math::Vector3& position,
+                                            const Math::Vector3& halfExtents = {0.5F, 0.5F, 0.5F},
                                             const std::uint32_t layer = 1U) {
-        const EntityUVE entity = entityManager.CreateEntityUVE();
-        Scene::TransformComponentUVE transform{};
+        const Entity entity = entityManager.CreateEntity();
+        Scene::TransformComponent transform{};
         transform.localPosition = position;
-        sceneGraph.AttachTransformUVE(entityManager, entity, transform);
-        Scene::ColliderComponentUVE collider{halfExtents};
+        sceneGraph.AttachTransform(entityManager, entity, transform);
+        Scene::ColliderComponent collider{halfExtents};
         collider.collisionLayer = layer;
-        entityManager.AddComponentUVE<Scene::ColliderComponentUVE>(entity, collider);
-        sceneGraph.UpdateUVE(entityManager);
+        entityManager.AddComponent<Scene::ColliderComponent>(entity, collider);
+        sceneGraph.Update(entityManager);
         return entity;
     }
 
-    [[nodiscard]] RayCast3DStepResultUVE StepUVE(const EntityUVE entity) {
-        return StepRayCast3DUVE(entityManager, raycastSystem, entity);
+    [[nodiscard]] RayCast3DStepResult Step(const Entity entity) {
+        return StepRayCast3D(entityManager, raycastSystem, entity);
     }
 
-    [[nodiscard]] RayCast3DComponentUVE ComponentUVE(const EntityUVE entity) {
-        return entityManager.GetComponentUVE<RayCast3DComponentUVE>(entity);
+    [[nodiscard]] RayCast3DComponent Component(const Entity entity) {
+        return entityManager.GetComponent<RayCast3DComponent>(entity);
     }
 };
 
-TEST_F(RayCast3DStepUVETest, HitsTheClosestColliderAlongTheLocalAxis) {
-    RayCast3DComponentUVE rayCast;
-    rayCast.direction = Math::Vector3UVE{0.0F, -1.0F, 0.0F};
+TEST_F(RayCast3DStepTest, HitsTheClosestColliderAlongTheLocalAxis) {
+    RayCast3DComponent rayCast;
+    rayCast.direction = Math::Vector3{0.0F, -1.0F, 0.0F};
     rayCast.length = 10.0F;
-    const EntityUVE caster = MakeRayUVE({0.0F, 5.0F, 0.0F}, rayCast);
-    const EntityUVE ground = MakeColliderUVE({0.0F, 0.0F, 0.0F}, {10.0F, 0.5F, 10.0F});
+    const Entity caster = MakeRay({0.0F, 5.0F, 0.0F}, rayCast);
+    const Entity ground = MakeCollider({0.0F, 0.0F, 0.0F}, {10.0F, 0.5F, 10.0F});
 
-    const RayCast3DStepResultUVE result = StepUVE(caster);
+    const RayCast3DStepResult result = Step(caster);
 
-    EXPECT_TRUE(result.HitUVE());
+    EXPECT_TRUE(result.Hit());
     EXPECT_TRUE(result.hasHit);
     EXPECT_EQ(result.hitEntity, ground);
     EXPECT_NEAR(result.hitPosition.y, 0.5F, kEpsilon);
     EXPECT_NEAR(result.hitNormal.y, 1.0F, kEpsilon);
-    EXPECT_TRUE(ComponentUVE(caster).hit);
-    EXPECT_EQ(ComponentUVE(caster).hitEntity, ground);
+    EXPECT_TRUE(Component(caster).hit);
+    EXPECT_EQ(Component(caster).hitEntity, ground);
 }
 
-TEST_F(RayCast3DStepUVETest, MissesWhenTheLengthFallsShortAndClearsAStaleHit) {
-    RayCast3DComponentUVE rayCast;
-    rayCast.direction = Math::Vector3UVE{0.0F, -1.0F, 0.0F};
+TEST_F(RayCast3DStepTest, MissesWhenTheLengthFallsShortAndClearsAStaleHit) {
+    RayCast3DComponent rayCast;
+    rayCast.direction = Math::Vector3{0.0F, -1.0F, 0.0F};
     rayCast.length = 10.0F;
-    const EntityUVE caster = MakeRayUVE({0.0F, 5.0F, 0.0F}, rayCast);
-    static_cast<void>(MakeColliderUVE({0.0F, 0.0F, 0.0F}, {10.0F, 0.5F, 10.0F}));
-    EXPECT_TRUE(StepUVE(caster).HitUVE());
+    const Entity caster = MakeRay({0.0F, 5.0F, 0.0F}, rayCast);
+    static_cast<void>(MakeCollider({0.0F, 0.0F, 0.0F}, {10.0F, 0.5F, 10.0F}));
+    EXPECT_TRUE(Step(caster).Hit());
 
-    entityManager.GetComponentUVE<RayCast3DComponentUVE>(caster).length = 1.0F;
-    const RayCast3DStepResultUVE miss = StepUVE(caster);
-    EXPECT_TRUE(miss.MissedUVE());
+    entityManager.GetComponent<RayCast3DComponent>(caster).length = 1.0F;
+    const RayCast3DStepResult miss = Step(caster);
+    EXPECT_TRUE(miss.Missed());
     EXPECT_FALSE(miss.hasHit);
-    EXPECT_FALSE(ComponentUVE(caster).hit);
-    EXPECT_EQ(ComponentUVE(caster).hitEntity, Scene::kInvalidEntityUVE);
+    EXPECT_FALSE(Component(caster).hit);
+    EXPECT_EQ(Component(caster).hitEntity, Scene::kInvalidEntity);
 }
 
-TEST_F(RayCast3DStepUVETest, NeverHitsTheEntityItIsAttachedTo) {
-    RayCast3DComponentUVE rayCast;
-    rayCast.direction = Math::Vector3UVE{0.0F, -1.0F, 0.0F};
+TEST_F(RayCast3DStepTest, NeverHitsTheEntityItIsAttachedTo) {
+    RayCast3DComponent rayCast;
+    rayCast.direction = Math::Vector3{0.0F, -1.0F, 0.0F};
     rayCast.length = 10.0F;
-    const EntityUVE caster = MakeRayUVE({0.0F, 5.0F, 0.0F}, rayCast);
-    entityManager.AddComponentUVE<Scene::ColliderComponentUVE>(caster, Scene::ColliderComponentUVE{});
-    sceneGraph.UpdateUVE(entityManager);
-    const EntityUVE ground = MakeColliderUVE({0.0F, 0.0F, 0.0F}, {10.0F, 0.5F, 10.0F});
+    const Entity caster = MakeRay({0.0F, 5.0F, 0.0F}, rayCast);
+    entityManager.AddComponent<Scene::ColliderComponent>(caster, Scene::ColliderComponent{});
+    sceneGraph.Update(entityManager);
+    const Entity ground = MakeCollider({0.0F, 0.0F, 0.0F}, {10.0F, 0.5F, 10.0F});
 
-    const RayCast3DStepResultUVE result = StepUVE(caster);
-    EXPECT_TRUE(result.HitUVE());
+    const RayCast3DStepResult result = Step(caster);
+    EXPECT_TRUE(result.Hit());
     EXPECT_EQ(result.hitEntity, ground);
     EXPECT_NE(result.hitEntity, caster);
 }
 
-TEST_F(RayCast3DStepUVETest, ExclusionsSkipNamedColliders) {
-    RayCast3DComponentUVE rayCast;
-    rayCast.direction = Math::Vector3UVE{0.0F, -1.0F, 0.0F};
+TEST_F(RayCast3DStepTest, ExclusionsSkipNamedColliders) {
+    RayCast3DComponent rayCast;
+    rayCast.direction = Math::Vector3{0.0F, -1.0F, 0.0F};
     rayCast.length = 10.0F;
-    const EntityUVE nearer = MakeColliderUVE({0.0F, 4.0F, 0.0F}, {10.0F, 0.5F, 10.0F});
-    const EntityUVE farther = MakeColliderUVE({0.0F, 3.0F, 0.0F}, {10.0F, 0.5F, 10.0F});
-    const EntityUVE caster = MakeRayUVE({0.0F, 5.0F, 0.0F}, rayCast);
+    const Entity nearer = MakeCollider({0.0F, 4.0F, 0.0F}, {10.0F, 0.5F, 10.0F});
+    const Entity farther = MakeCollider({0.0F, 3.0F, 0.0F}, {10.0F, 0.5F, 10.0F});
+    const Entity caster = MakeRay({0.0F, 5.0F, 0.0F}, rayCast);
 
-    EXPECT_EQ(StepUVE(caster).hitEntity, nearer);
+    EXPECT_EQ(Step(caster).hitEntity, nearer);
 
-    entityManager.GetComponentUVE<RayCast3DComponentUVE>(caster).exclusions[0] = nearer;
-    const RayCast3DStepResultUVE skipped = StepUVE(caster);
-    EXPECT_TRUE(skipped.HitUVE());
+    entityManager.GetComponent<RayCast3DComponent>(caster).exclusions[0] = nearer;
+    const RayCast3DStepResult skipped = Step(caster);
+    EXPECT_TRUE(skipped.Hit());
     EXPECT_EQ(skipped.hitEntity, farther);
     EXPECT_NEAR(skipped.hitPosition.y, 3.5F, kEpsilon);
 }
 
-TEST_F(RayCast3DStepUVETest, DisabledAndInvalidListsClearTheWholeResult) {
-    RayCast3DComponentUVE rayCast;
-    rayCast.direction = Math::Vector3UVE{0.0F, -1.0F, 0.0F};
+TEST_F(RayCast3DStepTest, DisabledAndInvalidListsClearTheWholeResult) {
+    RayCast3DComponent rayCast;
+    rayCast.direction = Math::Vector3{0.0F, -1.0F, 0.0F};
     rayCast.length = 10.0F;
-    const EntityUVE caster = MakeRayUVE({0.0F, 5.0F, 0.0F}, rayCast);
-    static_cast<void>(MakeColliderUVE({0.0F, 0.0F, 0.0F}, {10.0F, 0.5F, 10.0F}));
-    EXPECT_TRUE(StepUVE(caster).HitUVE());
+    const Entity caster = MakeRay({0.0F, 5.0F, 0.0F}, rayCast);
+    static_cast<void>(MakeCollider({0.0F, 0.0F, 0.0F}, {10.0F, 0.5F, 10.0F}));
+    EXPECT_TRUE(Step(caster).Hit());
 
-    entityManager.GetComponentUVE<RayCast3DComponentUVE>(caster).enabled = false;
-    const RayCast3DStepResultUVE disabled = StepUVE(caster);
-    EXPECT_TRUE(disabled.IsDisabledUVE());
-    EXPECT_FALSE(ComponentUVE(caster).hit);
-    EXPECT_EQ(ComponentUVE(caster).hitEntity, Scene::kInvalidEntityUVE);
+    entityManager.GetComponent<RayCast3DComponent>(caster).enabled = false;
+    const RayCast3DStepResult disabled = Step(caster);
+    EXPECT_TRUE(disabled.IsDisabled());
+    EXPECT_FALSE(Component(caster).hit);
+    EXPECT_EQ(Component(caster).hitEntity, Scene::kInvalidEntity);
 
-    RayCast3DComponentUVE& live = entityManager.GetComponentUVE<RayCast3DComponentUVE>(caster);
+    RayCast3DComponent& live = entityManager.GetComponent<RayCast3DComponent>(caster);
     live.enabled = true;
-    live.exclusions[1] = EntityUVE{9U, 1U};
-    const RayCast3DStepResultUVE invalid = StepUVE(caster);
-    EXPECT_EQ(invalid.code, RayCast3DStepCodeUVE::InvalidComponent);
-    EXPECT_FALSE(ComponentUVE(caster).hit);
-    EXPECT_EQ(ComponentUVE(caster).hitPosition, Math::Vector3UVE{});
+    live.exclusions[1] = Entity{9U, 1U};
+    const RayCast3DStepResult invalid = Step(caster);
+    EXPECT_EQ(invalid.code, RayCast3DStepCode::InvalidComponent);
+    EXPECT_FALSE(Component(caster).hit);
+    EXPECT_EQ(Component(caster).hitPosition, Math::Vector3{});
 }
 
-TEST_F(RayCast3DStepUVETest, TheCastRunsAlongTheObjectsOwnRotation) {
-    RayCast3DComponentUVE rayCast;
-    rayCast.direction = Math::Vector3UVE{1.0F, 0.0F, 0.0F};
+TEST_F(RayCast3DStepTest, TheCastRunsAlongTheObjectsOwnRotation) {
+    RayCast3DComponent rayCast;
+    rayCast.direction = Math::Vector3{1.0F, 0.0F, 0.0F};
     rayCast.length = 10.0F;
-    const EntityUVE caster = entityManager.CreateEntityUVE();
-    Scene::TransformComponentUVE transform{};
-    transform.localPosition = Math::Vector3UVE{0.0F, 0.0F, 0.0F};
-    transform.localRotation = Math::QuaternionUVE{0.0F, 0.70710678F, 0.0F, 0.70710678F};
-    sceneGraph.AttachTransformUVE(entityManager, caster, transform);
-    entityManager.AddComponentUVE<RayCast3DComponentUVE>(caster, rayCast);
-    sceneGraph.UpdateUVE(entityManager);
-    const EntityUVE wall = MakeColliderUVE({0.0F, 0.0F, -1.0F});
+    const Entity caster = entityManager.CreateEntity();
+    Scene::TransformComponent transform{};
+    transform.localPosition = Math::Vector3{0.0F, 0.0F, 0.0F};
+    transform.localRotation = Math::Quaternion{0.0F, 0.70710678F, 0.0F, 0.70710678F};
+    sceneGraph.AttachTransform(entityManager, caster, transform);
+    entityManager.AddComponent<RayCast3DComponent>(caster, rayCast);
+    sceneGraph.Update(entityManager);
+    const Entity wall = MakeCollider({0.0F, 0.0F, -1.0F});
 
-    const RayCast3DStepResultUVE result = StepUVE(caster);
-    EXPECT_TRUE(result.HitUVE());
+    const RayCast3DStepResult result = Step(caster);
+    EXPECT_TRUE(result.Hit());
     EXPECT_EQ(result.hitEntity, wall);
 }
 
-TEST_F(RayCast3DStepUVETest, RefusesUnknownAndNonRayEntitiesWithoutWriting) {
-    const RayCast3DStepResultUVE unknown = StepUVE(EntityUVE{9999U, 0U});
-    EXPECT_EQ(unknown.code, RayCast3DStepCodeUVE::UnknownEntity);
-    EXPECT_TRUE(unknown.IsRefusedUVE());
+TEST_F(RayCast3DStepTest, RefusesUnknownAndNonRayEntitiesWithoutWriting) {
+    const RayCast3DStepResult unknown = Step(Entity{9999U, 0U});
+    EXPECT_EQ(unknown.code, RayCast3DStepCode::UnknownEntity);
+    EXPECT_TRUE(unknown.IsRefused());
 
-    const EntityUVE plain = entityManager.CreateEntityUVE();
-    sceneGraph.AttachTransformUVE(entityManager, plain, Scene::TransformComponentUVE{});
-    sceneGraph.UpdateUVE(entityManager);
-    EXPECT_EQ(StepUVE(plain).code, RayCast3DStepCodeUVE::NotARayCast);
+    const Entity plain = entityManager.CreateEntity();
+    sceneGraph.AttachTransform(entityManager, plain, Scene::TransformComponent{});
+    sceneGraph.Update(entityManager);
+    EXPECT_EQ(Step(plain).code, RayCast3DStepCode::NotARayCast);
 
-    const EntityUVE untransformed = entityManager.CreateEntityUVE();
-    entityManager.AddComponentUVE<RayCast3DComponentUVE>(untransformed, RayCast3DComponentUVE{});
-    EXPECT_EQ(StepUVE(untransformed).code, RayCast3DStepCodeUVE::MissingTransform);
-    EXPECT_FALSE(ComponentUVE(untransformed).hit);
+    const Entity untransformed = entityManager.CreateEntity();
+    entityManager.AddComponent<RayCast3DComponent>(untransformed, RayCast3DComponent{});
+    EXPECT_EQ(Step(untransformed).code, RayCast3DStepCode::MissingTransform);
+    EXPECT_FALSE(Component(untransformed).hit);
 }
 
 } // namespace

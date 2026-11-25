@@ -7,56 +7,56 @@
 namespace UVE::Editor::Tests {
 namespace {
 
-TEST(EditorShortcutUVETest, FormatsAndParsesBackTheWayItIsWritten) {
+TEST(EditorShortcutTest, FormatsAndParsesBackTheWayItIsWritten) {
     for (const char* text : {"Ctrl+Shift+Z", "F5", "Delete", "Ctrl+Comma", "Alt+Left", "Shift+F5", "Ctrl+S", "0"}) {
-        const std::optional<EditorShortcutUVE> shortcut = ParseEditorShortcutUVE(text);
+        const std::optional<EditorShortcut> shortcut = ParseEditorShortcut(text);
         ASSERT_TRUE(shortcut.has_value()) << text;
-        EXPECT_FALSE(shortcut->IsEmptyUVE()) << text;
-        EXPECT_EQ(FormatEditorShortcutUVE(*shortcut), text);
+        EXPECT_FALSE(shortcut->IsEmpty()) << text;
+        EXPECT_EQ(FormatEditorShortcut(*shortcut), text);
     }
     // Modifiers in another order still parse, and format in the one canonical order.
-    const std::optional<EditorShortcutUVE> reordered = ParseEditorShortcutUVE("Shift+Ctrl+Z");
+    const std::optional<EditorShortcut> reordered = ParseEditorShortcut("Shift+Ctrl+Z");
     ASSERT_TRUE(reordered.has_value());
-    EXPECT_EQ(FormatEditorShortcutUVE(*reordered), "Ctrl+Shift+Z");
+    EXPECT_EQ(FormatEditorShortcut(*reordered), "Ctrl+Shift+Z");
 }
 
-TEST(EditorShortcutUVETest, EmptyIsNoShortcutAndMalformedIsNothing) {
-    const std::optional<EditorShortcutUVE> none = ParseEditorShortcutUVE("");
+TEST(EditorShortcutTest, EmptyIsNoShortcutAndMalformedIsNothing) {
+    const std::optional<EditorShortcut> none = ParseEditorShortcut("");
     ASSERT_TRUE(none.has_value());
-    EXPECT_TRUE(none->IsEmptyUVE());
-    EXPECT_EQ(FormatEditorShortcutUVE(EditorShortcutUVE{}), "");
+    EXPECT_TRUE(none->IsEmpty());
+    EXPECT_EQ(FormatEditorShortcut(EditorShortcut{}), "");
     for (const char* text : {"Ctrl+", "Ctrl+Ctrl+Z", "Shift", "Hyper+Z", "Pause", "ctrl+z", "Ctrl++"}) {
-        EXPECT_FALSE(ParseEditorShortcutUVE(text).has_value()) << text;
+        EXPECT_FALSE(ParseEditorShortcut(text).has_value()) << text;
     }
 }
 
-TEST(EditorShortcutUVETest, PunctuationIsShownAsItselfButStoredByName) {
-    const std::optional<EditorShortcutUVE> comma = ParseEditorShortcutUVE("Ctrl+Comma");
+TEST(EditorShortcutTest, PunctuationIsShownAsItselfButStoredByName) {
+    const std::optional<EditorShortcut> comma = ParseEditorShortcut("Ctrl+Comma");
     ASSERT_TRUE(comma.has_value());
-    EXPECT_EQ(DisplayEditorShortcutUVE(*comma), "Ctrl+,");
-    EXPECT_EQ(FormatEditorShortcutUVE(*comma), "Ctrl+Comma");
-    EXPECT_EQ(DisplayEditorShortcutUVE(*ParseEditorShortcutUVE("RightBracket")), "]");
-    EXPECT_EQ(DisplayEditorShortcutUVE(*ParseEditorShortcutUVE("Shift+F5")), "Shift+F5");
+    EXPECT_EQ(DisplayEditorShortcut(*comma), "Ctrl+,");
+    EXPECT_EQ(FormatEditorShortcut(*comma), "Ctrl+Comma");
+    EXPECT_EQ(DisplayEditorShortcut(*ParseEditorShortcut("RightBracket")), "]");
+    EXPECT_EQ(DisplayEditorShortcut(*ParseEditorShortcut("Shift+F5")), "Shift+F5");
 }
 
-TEST(EditorShortcutUVETest, ModifiersAloneAreNotShortcutKeys) {
-    EXPECT_TRUE(IsShortcutKeyUVE(ParseEditorShortcutUVE("Z")->key));
-    EXPECT_FALSE(IsShortcutKeyUVE(0));
-    EXPECT_FALSE(IsShortcutKeyUVE(1));
+TEST(EditorShortcutTest, ModifiersAloneAreNotShortcutKeys) {
+    EXPECT_TRUE(IsShortcutKey(ParseEditorShortcut("Z")->key));
+    EXPECT_FALSE(IsShortcutKey(0));
+    EXPECT_FALSE(IsShortcutKey(1));
 }
 
-TEST(EditorFuzzyMatchUVETest, PrefixBeatsWordBeatsInsideBeatsScattered) {
-    EXPECT_EQ(ScoreFuzzyMatchUVE("Anything", ""), 0);
-    const int prefix = ScoreFuzzyMatchUVE("Save Scene", "save");
-    const int word = ScoreFuzzyMatchUVE("File: Save Scene", "save");
-    const int inside = ScoreFuzzyMatchUVE("Autosave", "save");
-    const int scattered = ScoreFuzzyMatchUVE("Save Scene", "ssn");
+TEST(EditorFuzzyMatchTest, PrefixBeatsWordBeatsInsideBeatsScattered) {
+    EXPECT_EQ(ScoreFuzzyMatch("Anything", ""), 0);
+    const int prefix = ScoreFuzzyMatch("Save Scene", "save");
+    const int word = ScoreFuzzyMatch("File: Save Scene", "save");
+    const int inside = ScoreFuzzyMatch("Autosave", "save");
+    const int scattered = ScoreFuzzyMatch("Save Scene", "ssn");
     EXPECT_GT(prefix, word);
     EXPECT_GT(word, inside);
     EXPECT_GT(inside, scattered);
     EXPECT_GE(scattered, 0);
-    EXPECT_EQ(ScoreFuzzyMatchUVE("Save Scene", "xyz"), -1);
-    EXPECT_GE(ScoreFuzzyMatchUVE("Editor Preferences", "ED PREF"), 0);
+    EXPECT_EQ(ScoreFuzzyMatch("Save Scene", "xyz"), -1);
+    EXPECT_GE(ScoreFuzzyMatch("Editor Preferences", "ED PREF"), 0);
 }
 
 } // namespace

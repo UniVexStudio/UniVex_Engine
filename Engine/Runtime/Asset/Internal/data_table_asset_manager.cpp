@@ -8,9 +8,9 @@
 
 namespace UVE::Asset {
 
-void RegisterDataTableAssetLoaderUVE(IAssetManagerUVE& assetManager) {
-    assetManager.RegisterLoaderUVE<DataTableUVE>(LoadDataTableAssetUVE,
-        [](const DataTableUVE& table) { return table.GetResidentBytesUVE(); });
+void RegisterDataTableAssetLoader(IAssetManager& assetManager) {
+    assetManager.RegisterLoader<DataTable>(LoadDataTableAsset,
+        [](const DataTable& table) { return table.GetResidentBytes(); });
 }
 
 } // namespace UVE::Asset

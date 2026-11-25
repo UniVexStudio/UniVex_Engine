@@ -11,27 +11,27 @@
 namespace UVE::Localization {
 namespace {
 
-[[nodiscard]] bool IsAsciiAlphaUVE(const char character) noexcept {
+[[nodiscard]] bool IsAsciiAlpha(const char character) noexcept {
     return std::isalpha(static_cast<unsigned char>(character)) != 0;
 }
 
-[[nodiscard]] bool IsAlphaSubtagUVE(const std::string_view subtag) noexcept {
-    return !subtag.empty() && subtag.size() <= kMaximumLocaleSubtagBytesUVE &&
-           std::all_of(subtag.cbegin(), subtag.cend(), IsAsciiAlphaUVE);
+[[nodiscard]] bool IsAlphaSubtag(const std::string_view subtag) noexcept {
+    return !subtag.empty() && subtag.size() <= kMaximumLocaleSubtagBytes &&
+           std::all_of(subtag.cbegin(), subtag.cend(), IsAsciiAlpha);
 }
 
-[[nodiscard]] bool IsNumericRegionSubtagUVE(const std::string_view subtag) noexcept {
+[[nodiscard]] bool IsNumericRegionSubtag(const std::string_view subtag) noexcept {
     return subtag.size() == 3U &&
            std::all_of(subtag.cbegin(), subtag.cend(), [](const char character) noexcept {
                return std::isdigit(static_cast<unsigned char>(character)) != 0;
            });
 }
 
-[[nodiscard]] bool IsRegionOrScriptSubtagUVE(const std::string_view subtag) noexcept {
-    return IsAlphaSubtagUVE(subtag) || IsNumericRegionSubtagUVE(subtag);
+[[nodiscard]] bool IsRegionOrScriptSubtag(const std::string_view subtag) noexcept {
+    return IsAlphaSubtag(subtag) || IsNumericRegionSubtag(subtag);
 }
 
-[[nodiscard]] std::string ToLowerUVE(const std::string_view value) {
+[[nodiscard]] std::string ToLower(const std::string_view value) {
     std::string result{value};
     std::transform(result.begin(), result.end(), result.begin(), [](const char character) {
         return static_cast<char>(std::tolower(static_cast<unsigned char>(character)));
@@ -39,7 +39,7 @@ namespace {
     return result;
 }
 
-[[nodiscard]] std::string ToUpperUVE(const std::string_view value) {
+[[nodiscard]] std::string ToUpper(const std::string_view value) {
     std::string result{value};
     std::transform(result.begin(), result.end(), result.begin(), [](const char character) {
         return static_cast<char>(std::toupper(static_cast<unsigned char>(character)));
@@ -49,12 +49,12 @@ namespace {
 
 } // namespace
 
-std::string LocaleUVE::ToTagUVE() const {
+std::string Locale::ToTag() const {
     return region.empty() ? language : language + "-" + region;
 }
 
-std::optional<LocaleUVE> TryParseLocaleUVE(const std::string_view tag) {
-    if (tag.empty() || tag.size() > (kMaximumLocaleSubtagBytesUVE * 3U) + 2U) {
+std::optional<Locale> TryParseLocale(const std::string_view tag) {
+    if (tag.empty() || tag.size() > (kMaximumLocaleSubtagBytes * 3U) + 2U) {
         return std::nullopt;
     }
     // Both separators are accepted because both are in circulation - BCP 47 writes "en-US" while
@@ -62,11 +62,11 @@ std::optional<LocaleUVE> TryParseLocaleUVE(const std::string_view tag) {
     // locale rather than silently becoming one nothing has translations for.
     const std::size_t firstSeparator = tag.find_first_of("-_");
     const std::string_view language = tag.substr(0U, firstSeparator);
-    if (!IsAlphaSubtagUVE(language)) {
+    if (!IsAlphaSubtag(language)) {
         return std::nullopt;
     }
     if (firstSeparator == std::string_view::npos) {
-        return LocaleUVE{ToLowerUVE(language), ""};
+        return Locale{ToLower(language), ""};
     }
     const std::string_view remainder = tag.substr(firstSeparator + 1U);
     if (remainder.empty()) {
@@ -74,72 +74,72 @@ std::optional<LocaleUVE> TryParseLocaleUVE(const std::string_view tag) {
     }
     const std::size_t secondSeparator = remainder.find_first_of("-_");
     if (secondSeparator == std::string_view::npos) {
-        if (!IsRegionOrScriptSubtagUVE(remainder)) {
+        if (!IsRegionOrScriptSubtag(remainder)) {
             return std::nullopt;
         }
-        return LocaleUVE{ToLowerUVE(language), ToUpperUVE(remainder)};
+        return Locale{ToLower(language), ToUpper(remainder)};
     }
     const std::string_view scriptSubtag = remainder.substr(0U, secondSeparator);
     const std::string_view regionSubtag = remainder.substr(secondSeparator + 1U);
-    if (!IsAlphaSubtagUVE(scriptSubtag) || !IsRegionOrScriptSubtagUVE(regionSubtag) ||
+    if (!IsAlphaSubtag(scriptSubtag) || !IsRegionOrScriptSubtag(regionSubtag) ||
         regionSubtag.find_first_of("-_") != std::string_view::npos) {
         return std::nullopt;
     }
-    return LocaleUVE{ToLowerUVE(language), ToUpperUVE(scriptSubtag) + "-" + ToUpperUVE(regionSubtag)};
+    return Locale{ToLower(language), ToUpper(scriptSubtag) + "-" + ToUpper(regionSubtag)};
 }
 
-bool StringTableUVE::SetTranslationUVE(std::string key, std::string value) {
-    if (key.empty() || key.size() > kMaximumTranslationKeyBytesUVE ||
-        value.size() > kMaximumTranslationValueBytesUVE) {
+bool StringTable::SetTranslation(std::string key, std::string value) {
+    if (key.empty() || key.size() > kMaximumTranslationKeyBytes ||
+        value.size() > kMaximumTranslationValueBytes) {
         return false;
     }
     const auto existing = std::find_if(m_translations.begin(), m_translations.end(),
-                                       [&key](const TranslationUVE& translation) {
+                                       [&key](const Translation& translation) {
                                            return translation.key == key;
                                        });
     if (existing != m_translations.end()) {
         existing->value = std::move(value);
         return true;
     }
-    if (m_translations.size() >= kMaximumTranslationsPerTableUVE) {
+    if (m_translations.size() >= kMaximumTranslationsPerTable) {
         return false;
     }
-    m_translations.push_back(TranslationUVE{std::move(key), std::move(value)});
+    m_translations.push_back(Translation{std::move(key), std::move(value)});
     return true;
 }
 
-const std::string* StringTableUVE::FindTranslationUVE(const std::string_view key) const noexcept {
+const std::string* StringTable::FindTranslation(const std::string_view key) const noexcept {
     const auto iterator = std::find_if(m_translations.cbegin(), m_translations.cend(),
-                                       [key](const TranslationUVE& translation) {
+                                       [key](const Translation& translation) {
                                            return translation.key == key;
                                        });
     return iterator == m_translations.cend() ? nullptr : &iterator->value;
 }
 
-std::optional<StringTableUVE> TryParseStringTableJsonUVE(LocaleUVE locale, const std::string_view json) {
+std::optional<StringTable> TryParseStringTableJson(Locale locale, const std::string_view json) {
     // Parsed without exceptions: a malformed translation file is an expected input, not an
     // exceptional one, and the caller is told through the empty result.
     const nlohmann::json document = nlohmann::json::parse(json, nullptr, /*allow_exceptions=*/false);
     if (document.is_discarded() || !document.is_object() ||
-        document.size() > kMaximumTranslationsPerTableUVE) {
+        document.size() > kMaximumTranslationsPerTable) {
         return std::nullopt;
     }
-    StringTableUVE table{std::move(locale)};
+    StringTable table{std::move(locale)};
     for (const auto& [key, value] : document.items()) {
-        if (!value.is_string() || !table.SetTranslationUVE(key, value.get<std::string>())) {
+        if (!value.is_string() || !table.SetTranslation(key, value.get<std::string>())) {
             return std::nullopt;
         }
     }
     return table;
 }
 
-bool LocalizationServiceUVE::AddStringTableUVE(StringTableUVE table) {
-    if (table.GetLocaleUVE().language.empty()) {
+bool LocalizationService::AddStringTable(StringTable table) {
+    if (table.GetLocale().language.empty()) {
         return false;
     }
     const auto existing = std::find_if(m_tables.begin(), m_tables.end(),
-                                       [&table](const StringTableUVE& candidate) {
-                                           return candidate.GetLocaleUVE() == table.GetLocaleUVE();
+                                       [&table](const StringTable& candidate) {
+                                           return candidate.GetLocale() == table.GetLocale();
                                        });
     if (existing != m_tables.end()) {
         *existing = std::move(table);
@@ -149,41 +149,41 @@ bool LocalizationServiceUVE::AddStringTableUVE(StringTableUVE table) {
     return true;
 }
 
-void LocalizationServiceUVE::SetActiveLocaleUVE(LocaleUVE locale) {
+void LocalizationService::SetActiveLocale(Locale locale) {
     m_activeLocale = std::move(locale);
 }
 
-void LocalizationServiceUVE::SetFallbackLocaleUVE(LocaleUVE locale) {
+void LocalizationService::SetFallbackLocale(Locale locale) {
     m_fallbackLocale = std::move(locale);
 }
 
-const StringTableUVE* LocalizationServiceUVE::FindTableUVE(const LocaleUVE& locale) const noexcept {
+const StringTable* LocalizationService::FindTable(const Locale& locale) const noexcept {
     if (locale.language.empty()) {
         return nullptr;
     }
     const auto iterator = std::find_if(m_tables.cbegin(), m_tables.cend(),
-                                       [&locale](const StringTableUVE& table) {
-                                           return table.GetLocaleUVE() == locale;
+                                       [&locale](const StringTable& table) {
+                                           return table.GetLocale() == locale;
                                        });
     return iterator == m_tables.cend() ? nullptr : &*iterator;
 }
 
-const std::string* LocalizationServiceUVE::ResolveUVE(const std::string_view key) const noexcept {
+const std::string* LocalizationService::Resolve(const std::string_view key) const noexcept {
     if (key.empty()) {
         return nullptr;
     }
     // Most specific first: the region-qualified table, then the language alone, then the fallback
     // locale. A region table holds only what actually differs from its language - "color" versus
     // "colour" - so falling through to the language table is the normal path, not an error path.
-    const LocaleUVE chain[] = {
+    const Locale chain[] = {
         m_activeLocale,
-        LocaleUVE{m_activeLocale.language, ""},
+        Locale{m_activeLocale.language, ""},
         m_fallbackLocale,
-        LocaleUVE{m_fallbackLocale.language, ""},
+        Locale{m_fallbackLocale.language, ""},
     };
-    for (const LocaleUVE& locale : chain) {
-        if (const StringTableUVE* const table = FindTableUVE(locale); table != nullptr) {
-            if (const std::string* const translation = table->FindTranslationUVE(key);
+    for (const Locale& locale : chain) {
+        if (const StringTable* const table = FindTable(locale); table != nullptr) {
+            if (const std::string* const translation = table->FindTranslation(key);
                 translation != nullptr) {
                 return translation;
             }
@@ -192,15 +192,15 @@ const std::string* LocalizationServiceUVE::ResolveUVE(const std::string_view key
     return nullptr;
 }
 
-std::string LocalizationServiceUVE::TranslateUVE(const std::string_view key) const {
-    const std::string* const translation = ResolveUVE(key);
+std::string LocalizationService::Translate(const std::string_view key) const {
+    const std::string* const translation = Resolve(key);
     // The key itself is the last resort. A blank label reads as a broken build; a visible key reads
     // as a missing translation, which is what it is, and tells whoever sees it exactly what to add.
     return translation != nullptr ? *translation : std::string{key};
 }
 
-bool LocalizationServiceUVE::HasTranslationUVE(const std::string_view key) const noexcept {
-    return ResolveUVE(key) != nullptr;
+bool LocalizationService::HasTranslation(const std::string_view key) const noexcept {
+    return Resolve(key) != nullptr;
 }
 
 } // namespace UVE::Localization

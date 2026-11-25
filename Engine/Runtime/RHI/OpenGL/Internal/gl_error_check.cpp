@@ -8,7 +8,7 @@ namespace UVE::Render::Detail {
 namespace {
 
 #if UVE_DEBUG
-[[nodiscard]] const char* GlDebugSourceNameUVE(const GLenum source) noexcept {
+[[nodiscard]] const char* GlDebugSourceName(const GLenum source) noexcept {
     switch (source) {
         case GL_DEBUG_SOURCE_API:
             return "API";
@@ -27,7 +27,7 @@ namespace {
     }
 }
 
-[[nodiscard]] const char* GlDebugTypeNameUVE(const GLenum type) noexcept {
+[[nodiscard]] const char* GlDebugTypeName(const GLenum type) noexcept {
     switch (type) {
         case GL_DEBUG_TYPE_ERROR:
             return "Error";
@@ -52,7 +52,7 @@ namespace {
     }
 }
 
-void APIENTRY GlDebugMessageCallbackUVE(const GLenum source, const GLenum type, const GLuint id,
+void APIENTRY GlDebugMessageCallback(const GLenum source, const GLenum type, const GLuint id,
                                          const GLenum severity, const GLsizei length, const GLchar* const message,
                                          const void* const userParam) noexcept {
     static_cast<void>(length);
@@ -64,17 +64,17 @@ void APIENTRY GlDebugMessageCallbackUVE(const GLenum source, const GLenum type, 
     switch (severity) {
         case GL_DEBUG_SEVERITY_HIGH:
         case GL_DEBUG_SEVERITY_MEDIUM:
-            UVE_ERROR("GlRenderDeviceUVE: [{}/{}] GL debug message {}: {}", GlDebugSourceNameUVE(source),
-                      GlDebugTypeNameUVE(type), id, message);
+            UVE_ERROR("GlRenderDevice: [{}/{}] GL debug message {}: {}", GlDebugSourceName(source),
+                      GlDebugTypeName(type), id, message);
             break;
         case GL_DEBUG_SEVERITY_LOW:
-            UVE_WARNING("GlRenderDeviceUVE: [{}/{}] GL debug message {}: {}", GlDebugSourceNameUVE(source),
-                        GlDebugTypeNameUVE(type), id, message);
+            UVE_WARNING("GlRenderDevice: [{}/{}] GL debug message {}: {}", GlDebugSourceName(source),
+                        GlDebugTypeName(type), id, message);
             break;
         case GL_DEBUG_SEVERITY_NOTIFICATION:
         default:
-            UVE_INFO("GlRenderDeviceUVE: [{}/{}] GL debug message {}: {}", GlDebugSourceNameUVE(source),
-                     GlDebugTypeNameUVE(type), id, message);
+            UVE_INFO("GlRenderDevice: [{}/{}] GL debug message {}: {}", GlDebugSourceName(source),
+                     GlDebugTypeName(type), id, message);
             break;
     }
 }
@@ -82,17 +82,17 @@ void APIENTRY GlDebugMessageCallbackUVE(const GLenum source, const GLenum type, 
 
 } // namespace
 
-void RegisterGlDebugCallbackUVE(const GlFunctionsUVE& functions) noexcept {
+void RegisterGlDebugCallback(const GlFunctions& functions) noexcept {
 #if UVE_DEBUG
     if (functions.glDebugMessageCallback == nullptr) {
-        UVE_INFO("GlRenderDeviceUVE: GL_KHR_debug unavailable on this context; relying on "
+        UVE_INFO("GlRenderDevice: GL_KHR_debug unavailable on this context; relying on "
                  "UVE_GL_CHECK_ERROR_UVE()'s manual glGetError() polling instead");
         return;
     }
     glEnable(GL_DEBUG_OUTPUT);
     glEnable(GL_DEBUG_OUTPUT_SYNCHRONOUS);
-    functions.glDebugMessageCallback(GlDebugMessageCallbackUVE, nullptr);
-    UVE_INFO("GlRenderDeviceUVE: GL_KHR_debug callback registered");
+    functions.glDebugMessageCallback(GlDebugMessageCallback, nullptr);
+    UVE_INFO("GlRenderDevice: GL_KHR_debug callback registered");
 #else
     static_cast<void>(functions);
 #endif

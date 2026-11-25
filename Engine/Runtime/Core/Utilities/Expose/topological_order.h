@@ -8,19 +8,19 @@
 #include <vector>
 
 namespace UVE::Utilities {
-enum class TopologicalOrderCodeUVE : std::uint8_t { Ordered = 0, UnknownDependency, Cycle };
+enum class TopologicalOrderCode : std::uint8_t { Ordered = 0, UnknownDependency, Cycle };
 /// Index-based dependency planning shared by frame scheduling and render graphs. Edges name
 /// prerequisites, not dependents. Earliest inserted ready node wins; duplicate edges are
 /// idempotent. Empty graphs are valid. Invalid input leaves output untouched and invokes no work.
-[[nodiscard]] inline TopologicalOrderCodeUVE
-BuildTopologicalOrderUVE(std::span<const std::vector<std::uint32_t>> dependencies,
+[[nodiscard]] inline TopologicalOrderCode
+BuildTopologicalOrder(std::span<const std::vector<std::uint32_t>> dependencies,
                          std::vector<std::uint32_t> &outOrder) {
     if (dependencies.size() > std::numeric_limits<std::uint32_t>::max())
-        return TopologicalOrderCodeUVE::UnknownDependency;
+        return TopologicalOrderCode::UnknownDependency;
     for (const auto &edges : dependencies)
         for (auto edge : edges)
             if (edge >= dependencies.size())
-                return TopologicalOrderCodeUVE::UnknownDependency;
+                return TopologicalOrderCode::UnknownDependency;
     std::vector<std::uint32_t> order;
     order.reserve(dependencies.size());
     std::vector<bool> completed(dependencies.size(), false);
@@ -38,9 +38,9 @@ BuildTopologicalOrderUVE(std::span<const std::vector<std::uint32_t>> dependencie
             }
         }
         if (!progressed)
-            return TopologicalOrderCodeUVE::Cycle;
+            return TopologicalOrderCode::Cycle;
     }
     outOrder = std::move(order);
-    return TopologicalOrderCodeUVE::Ordered;
+    return TopologicalOrderCode::Ordered;
 }
 } // namespace UVE::Utilities

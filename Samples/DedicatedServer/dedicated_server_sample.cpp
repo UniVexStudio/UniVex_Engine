@@ -38,34 +38,34 @@
 namespace UVE::Samples {
 namespace {
 
-constexpr std::uint64_t kTickMsUVE = 16U;
-constexpr std::uint64_t kBaseMsUVE = 1000U;
+constexpr std::uint64_t kTickMs = 16U;
+constexpr std::uint64_t kBaseMs = 1000U;
 // The sim step IS the tick: 62.5 Hz wall to wall, prediction and the walker alike.
-constexpr float kFixedDtUVE = 0.016F;
-constexpr float kGravityYUVE = -9.81F;
-constexpr Network::NetworkEntityIdUVE kPawnNetIdUVE = 7U;
-constexpr Network::NetworkEntityIdUVE kNpcNetIdUVE = 1U;
+constexpr float kFixedDt = 0.016F;
+constexpr float kGravityY = -9.81F;
+constexpr Network::NetworkEntityId kPawnNetId = 7U;
+constexpr Network::NetworkEntityId kNpcNetId = 1U;
 // Sessions in feature order: lobby, relay, replication, prediction.
-constexpr std::size_t kRelayFeatureUVE = 1U;
-constexpr std::uint64_t kDefaultTimeoutMsUVE = 5000U;
+constexpr std::size_t kRelayFeature = 1U;
+constexpr std::uint64_t kDefaultTimeoutMs = 5000U;
 // Relay rooms can be legitimately one-sided: a bot alone in its room hears nothing by
 // design, so relay sessions outlive the run instead of timing out on the silence. Every
 // other session keeps the 5 s default - the story's traffic must prove their liveness.
-constexpr std::uint64_t kRelayTimeoutMsUVE = 30000U;
+constexpr std::uint64_t kRelayTimeoutMs = 30000U;
 
-const Network::PredictionConfigUVE kSamplePredictionConfigUVE{0.016F, 0.001F, 0.01F};
+const Network::PredictionConfig kSamplePredictionConfig{0.016F, 0.001F, 0.01F};
 
-[[nodiscard]] Network::PredictionStepperUVE MakeClientStepperUVE() {
-    return Scene::MakeCharacterPredictionStepperUVE(Scene::CharacterControllerComponentUVE{},
-                                                    kGravityYUVE);
+[[nodiscard]] Network::PredictionStepper MakeClientStepper() {
+    return Scene::MakeCharacterPredictionStepper(Scene::CharacterControllerComponent{},
+                                                    kGravityY);
 }
 
-[[nodiscard]] Network::PredictionStepperUVE MakeServerStepperUVE() {
-    Network::PredictionStepperUVE base = MakeClientStepperUVE();
+[[nodiscard]] Network::PredictionStepper MakeServerStepper() {
+    Network::PredictionStepper base = MakeClientStepper();
     // The only world the clients cannot see: a floor at y = 0 that lands what falls.
-    return [base = std::move(base)](const Network::PredictedStateUVE& state,
-                                     const Network::PredictedInputUVE& input, const float dt) {
-        Network::PredictedStateUVE next = base(state, input, dt);
+    return [base = std::move(base)](const Network::PredictedState& state,
+                                     const Network::PredictedInput& input, const float dt) {
+        Network::PredictedState next = base(state, input, dt);
         if (next.position.y <= 0.0F) {
             next.position.y = 0.0F;
             if (next.velocity.y < 0.0F) {
@@ -79,116 +79,116 @@ const Network::PredictionConfigUVE kSamplePredictionConfigUVE{0.016F, 0.001F, 0.
     };
 }
 
-[[nodiscard]] Network::PredictedStateUVE SpawnStateUVE(const Math::Vector3UVE spawn) {
-    Network::PredictedStateUVE state;
+[[nodiscard]] Network::PredictedState SpawnState(const Math::Vector3 spawn) {
+    Network::PredictedState state;
     state.position = spawn;
     return state;
 }
 
-[[nodiscard]] std::vector<std::uint8_t> BytesUVE(const std::string& text) {
+[[nodiscard]] std::vector<std::uint8_t> Bytes(const std::string& text) {
     return std::vector<std::uint8_t>(text.begin(), text.end());
 }
 
-[[nodiscard]] std::string VecUVE(const Math::Vector3UVE value) {
+[[nodiscard]] std::string Vec(const Math::Vector3 value) {
     char buffer[64];
     std::snprintf(buffer, sizeof(buffer), "(%.2f, %.2f, %.2f)", static_cast<double>(value.x),
                   static_cast<double>(value.y), static_cast<double>(value.z));
     return std::string{buffer};
 }
 
-struct BotUVE final {
+struct Bot final {
     std::string name;
-    Memory::MemoryManagerUVE memoryManager;
-    Events::EventSystemUVE eventSystem;
-    Scene::EntityManagerUVE entityManager;
-    Scene::SceneGraphUVE sceneGraph;
-    Network::NetworkLobbyClientUVE lobby;
-    Network::NetworkSessionUVE relaySession;
-    Network::NetworkReplicatorUVE replicator;
-    Network::NetworkPredictionUVE predictor;
-    Scene::ReplicatedEntityMapUVE map;
-    Scene::EntityUVE pawn = Scene::kInvalidEntityUVE;
-    Scene::EntityUVE npcDoll = Scene::kInvalidEntityUVE;
-    Math::Vector3UVE push{};
+    Memory::MemoryManager memoryManager;
+    Events::EventSystem eventSystem;
+    Scene::EntityManager entityManager;
+    Scene::SceneGraph sceneGraph;
+    Network::NetworkLobbyClient lobby;
+    Network::NetworkSession relaySession;
+    Network::NetworkReplicator replicator;
+    Network::NetworkPrediction predictor;
+    Scene::ReplicatedEntityMap map;
+    Scene::Entity pawn = Scene::kInvalidEntity;
+    Scene::Entity npcDoll = Scene::kInvalidEntity;
+    Math::Vector3 push{};
     std::uint64_t jumpTick = 0U;
     std::vector<std::string> heard;
     std::vector<std::string> lastRoster;
     std::uint64_t rosterPushes = 0U;
     bool wired = false;
 
-    BotUVE(std::string botName, Network::NetworkSessionUVE lobbySession,
-           Network::NetworkSessionUVE botRelaySession, Network::NetworkSessionUVE replSession,
-           Network::NetworkSessionUVE predSession, const Math::Vector3UVE spawn,
-           const Math::Vector3UVE pushInput, const std::uint64_t jumpAt)
+    Bot(std::string botName, Network::NetworkSession lobbySession,
+           Network::NetworkSession botRelaySession, Network::NetworkSession replSession,
+           Network::NetworkSession predSession, const Math::Vector3 spawn,
+           const Math::Vector3 pushInput, const std::uint64_t jumpAt)
         : name(std::move(botName)),
-          entityManager(memoryManager.GetDefaultAllocatorUVE(), eventSystem),
+          entityManager(memoryManager.GetDefaultAllocator(), eventSystem),
           lobby(std::move(lobbySession)),
           relaySession(std::move(botRelaySession)),
           replicator(std::move(replSession)),
-          predictor(std::move(predSession), Network::SessionRoleUVE::Client,
-                    MakeClientStepperUVE(), SpawnStateUVE(spawn), kSamplePredictionConfigUVE),
+          predictor(std::move(predSession), Network::SessionRole::Client,
+                    MakeClientStepper(), SpawnState(spawn), kSamplePredictionConfig),
           push(pushInput),
           jumpTick(jumpAt) {
         // The pawn: attached, defined, possessed, driven, tagged - the production shape.
-        pawn = entityManager.CreateEntityUVE();
-        Scene::TransformComponentUVE transform;
+        pawn = entityManager.CreateEntity();
+        Scene::TransformComponent transform;
         transform.localPosition = spawn;
-        sceneGraph.AttachTransformUVE(entityManager, pawn, transform);
-        Scene::ApplyCharacter3DObjectDefinitionUVE(entityManager, pawn,
-                                                   Scene::Character3DObjectDefinitionUVE::WithDefaultColliderUVE());
-        sceneGraph.UpdateUVE(entityManager);
-        const Scene::EntityUVE driver = entityManager.CreateEntityUVE();
-        Scene::ControllerComponentUVE controller;
-        controller.kind = Scene::ControllerKindUVE::Player;
-        entityManager.AddComponentUVE<Scene::ControllerComponentUVE>(driver, controller);
-        const bool possessed = Scene::PossessControllerUVE(entityManager, driver, pawn);
-        Gameplay::GameplayInputUVE input;
+        sceneGraph.AttachTransform(entityManager, pawn, transform);
+        Scene::ApplyCharacter3DObjectDefinition(entityManager, pawn,
+                                                   Scene::Character3DObjectDefinition::WithDefaultCollider());
+        sceneGraph.Update(entityManager);
+        const Scene::Entity driver = entityManager.CreateEntity();
+        Scene::ControllerComponent controller;
+        controller.kind = Scene::ControllerKind::Player;
+        entityManager.AddComponent<Scene::ControllerComponent>(driver, controller);
+        const bool possessed = Scene::PossessController(entityManager, driver, pawn);
+        Gameplay::GameplayInput input;
         input.move = push;
-        entityManager.GetComponentUVE<Scene::PawnComponentUVE>(pawn).input = input;
-        entityManager.AddComponentUVE<Scene::PredictedCharacterComponentUVE>(
-            pawn, Scene::PredictedCharacterComponentUVE{});
+        entityManager.GetComponent<Scene::PawnComponent>(pawn).input = input;
+        entityManager.AddComponent<Scene::PredictedCharacterComponent>(
+            pawn, Scene::PredictedCharacterComponent{});
 
         // The NPC doll: a transform triple, nothing simulated.
-        npcDoll = entityManager.CreateEntityUVE();
-        Scene::TransformComponentUVE dollTransform;
-        dollTransform.localPosition = Math::Vector3UVE{0.0F, 1.0F, 0.0F};
-        sceneGraph.AttachTransformUVE(entityManager, npcDoll, dollTransform);
-        sceneGraph.UpdateUVE(entityManager);
+        npcDoll = entityManager.CreateEntity();
+        Scene::TransformComponent dollTransform;
+        dollTransform.localPosition = Math::Vector3{0.0F, 1.0F, 0.0F};
+        sceneGraph.AttachTransform(entityManager, npcDoll, dollTransform);
+        sceneGraph.Update(entityManager);
 
-        const bool pawnRegistered = Scene::RegisterReplicatedEntityUVE(
-            entityManager, sceneGraph, replicator, map, pawn, kPawnNetIdUVE,
-            Network::ReplicationAuthorityUVE::Owner);
-        const bool npcRegistered = Scene::RegisterReplicatedEntityUVE(
-            entityManager, sceneGraph, replicator, map, npcDoll, kNpcNetIdUVE,
-            Network::ReplicationAuthorityUVE::Proxy);
+        const bool pawnRegistered = Scene::RegisterReplicatedEntity(
+            entityManager, sceneGraph, replicator, map, pawn, kPawnNetId,
+            Network::ReplicationAuthority::Owner);
+        const bool npcRegistered = Scene::RegisterReplicatedEntity(
+            entityManager, sceneGraph, replicator, map, npcDoll, kNpcNetId,
+            Network::ReplicationAuthority::Proxy);
         wired = possessed && pawnRegistered && npcRegistered;
 
-        lobby.SetRosterHandlerUVE([this](const Network::LobbyRoomIdUVE,
+        lobby.SetRosterHandler([this](const Network::LobbyRoomId,
                                          const std::vector<std::string>&) { ++rosterPushes; });
     }
 
-    void DriveTickUVE(const std::uint64_t tick) {
-        Gameplay::GameplayInputUVE input =
-            entityManager.GetComponentUVE<Scene::PawnComponentUVE>(pawn).input;
+    void DriveTick(const std::uint64_t tick) {
+        Gameplay::GameplayInput input =
+            entityManager.GetComponent<Scene::PawnComponent>(pawn).input;
         input.move = push;
         input.jumpPressed = (tick == jumpTick);
-        entityManager.GetComponentUVE<Scene::PawnComponentUVE>(pawn).input = input;
+        entityManager.GetComponent<Scene::PawnComponent>(pawn).input = input;
     }
 
-    [[nodiscard]] bool ShoutUVE(const std::uint64_t tick) {
+    [[nodiscard]] bool Shout(const std::uint64_t tick) {
         // The relay is opaque: no sender metadata crosses, so the name rides in the bytes.
-        return relaySession.SendDataUVE(BytesUVE(name + "@" + std::to_string(tick)));
+        return relaySession.SendData(Bytes(name + "@" + std::to_string(tick)));
     }
 
-    void DrainShoutsUVE() {
+    void DrainShouts() {
         while (const std::optional<std::vector<std::uint8_t>> datagram =
-                   relaySession.TryReceiveDataUVE()) {
+                   relaySession.TryReceiveData()) {
             heard.emplace_back(datagram->begin(), datagram->end());
         }
     }
 
-    void RefreshRosterUVE() {
-        lobby.QueryRosterUVE(lobby.CurrentRoomUVE(),
+    void RefreshRoster() {
+        lobby.QueryRoster(lobby.CurrentRoom(),
                              [this](std::vector<std::string> roster, const std::string& error) {
                                  if (error.empty()) {
                                      lastRoster = std::move(roster);
@@ -196,33 +196,33 @@ struct BotUVE final {
                              });
     }
 
-    [[nodiscard]] Math::Vector3UVE PawnPoseUVE() {
-        return entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(pawn)
+    [[nodiscard]] Math::Vector3 PawnPose() {
+        return entityManager.GetComponent<Scene::WorldTransformComponent>(pawn)
             .worldPosition;
     }
 };
 
-struct ServerUVE final {
-    Memory::MemoryManagerUVE memoryManager;
-    Events::EventSystemUVE eventSystem;
-    Scene::EntityManagerUVE entityManager;
-    Scene::SceneGraphUVE sceneGraph;
-    Physics::CollisionSystemUVE collision;
-    Network::NetworkLobbyUVE lobby;
-    Network::NetworkRelayUVE relay;
-    std::vector<Network::NetworkReplicatorUVE> replicators;
-    std::vector<Network::NetworkPredictionUVE> predictors;
-    std::vector<Scene::ReplicatedEntityMapUVE> maps;
-    std::vector<Network::LobbyClientIdUVE> lobbyIds;
-    std::vector<Network::RelayPeerIdUVE> peerIds;
-    std::vector<Scene::EntityUVE> dolls;
-    Scene::EntityUVE npc = Scene::kInvalidEntityUVE;
-    Scene::EntityUVE walker = Scene::kInvalidEntityUVE;
+struct Server final {
+    Memory::MemoryManager memoryManager;
+    Events::EventSystem eventSystem;
+    Scene::EntityManager entityManager;
+    Scene::SceneGraph sceneGraph;
+    Physics::CollisionSystem collision;
+    Network::NetworkLobby lobby;
+    Network::NetworkRelay relay;
+    std::vector<Network::NetworkReplicator> replicators;
+    std::vector<Network::NetworkPrediction> predictors;
+    std::vector<Scene::ReplicatedEntityMap> maps;
+    std::vector<Network::LobbyClientId> lobbyIds;
+    std::vector<Network::RelayPeerId> peerIds;
+    std::vector<Scene::Entity> dolls;
+    Scene::Entity npc = Scene::kInvalidEntity;
+    Scene::Entity walker = Scene::kInvalidEntity;
     float npcX = 0.0F;
     float npcDir = 1.0F;
     bool wired = true;
 
-    ServerUVE() : entityManager(memoryManager.GetDefaultAllocatorUVE(), eventSystem) {
+    Server() : entityManager(memoryManager.GetDefaultAllocator(), eventSystem) {
         replicators.reserve(3U);
         predictors.reserve(3U);
         maps.reserve(3U);
@@ -231,59 +231,59 @@ struct ServerUVE final {
         dolls.reserve(3U);
     }
 
-    void AddBotUVE(Network::NetworkSessionUVE lobbySession,
-                   Network::NetworkSessionUVE peerSession, Network::NetworkSessionUVE replSession,
-                   Network::NetworkSessionUVE predSession, const Math::Vector3UVE spawn) {
-        lobbyIds.push_back(lobby.AddClientUVE(std::move(lobbySession)));
-        peerIds.push_back(relay.AddPeerUVE(std::move(peerSession)));
+    void AddBot(Network::NetworkSession lobbySession,
+                   Network::NetworkSession peerSession, Network::NetworkSession replSession,
+                   Network::NetworkSession predSession, const Math::Vector3 spawn) {
+        lobbyIds.push_back(lobby.AddClient(std::move(lobbySession)));
+        peerIds.push_back(relay.AddPeer(std::move(peerSession)));
         replicators.emplace_back(std::move(replSession));
-        predictors.emplace_back(std::move(predSession), Network::SessionRoleUVE::Server,
-                                MakeServerStepperUVE(), SpawnStateUVE(spawn),
-                                kSamplePredictionConfigUVE);
-        const Scene::EntityUVE doll = entityManager.CreateEntityUVE();
-        Scene::TransformComponentUVE transform;
+        predictors.emplace_back(std::move(predSession), Network::SessionRole::Server,
+                                MakeServerStepper(), SpawnState(spawn),
+                                kSamplePredictionConfig);
+        const Scene::Entity doll = entityManager.CreateEntity();
+        Scene::TransformComponent transform;
         transform.localPosition = spawn;
-        sceneGraph.AttachTransformUVE(entityManager, doll, transform);
-        sceneGraph.UpdateUVE(entityManager);
+        sceneGraph.AttachTransform(entityManager, doll, transform);
+        sceneGraph.Update(entityManager);
         dolls.push_back(doll);
         maps.emplace_back();
-        wired = wired && Scene::RegisterReplicatedEntityUVE(
+        wired = wired && Scene::RegisterReplicatedEntity(
                              entityManager, sceneGraph, replicators.back(), maps.back(), doll,
-                             kPawnNetIdUVE, Network::ReplicationAuthorityUVE::Proxy);
+                             kPawnNetId, Network::ReplicationAuthority::Proxy);
     }
 
-    void BuildWorldUVE() {
+    void BuildWorld() {
         // The patrol NPC, owned here and dollied on every bot.
-        npc = entityManager.CreateEntityUVE();
-        Scene::TransformComponentUVE npcTransform;
-        npcTransform.localPosition = Math::Vector3UVE{0.0F, 1.0F, 0.0F};
-        sceneGraph.AttachTransformUVE(entityManager, npc, npcTransform);
-        sceneGraph.UpdateUVE(entityManager);
+        npc = entityManager.CreateEntity();
+        Scene::TransformComponent npcTransform;
+        npcTransform.localPosition = Math::Vector3{0.0F, 1.0F, 0.0F};
+        sceneGraph.AttachTransform(entityManager, npc, npcTransform);
+        sceneGraph.Update(entityManager);
         for (std::size_t i = 0U; i < replicators.size(); ++i) {
-            wired = wired && Scene::RegisterReplicatedEntityUVE(
+            wired = wired && Scene::RegisterReplicatedEntity(
                                  entityManager, sceneGraph, replicators[i], maps[i], npc,
-                                 kNpcNetIdUVE, Network::ReplicationAuthorityUVE::Owner);
+                                 kNpcNetId, Network::ReplicationAuthority::Owner);
         }
 
         // A floor and an untagged walker: the real mover steps what prediction owns not.
-        const Scene::EntityUVE floor = entityManager.CreateEntityUVE();
-        Scene::TransformComponentUVE floorTransform;
-        floorTransform.localPosition = Math::Vector3UVE{0.0F, -0.5F, 0.0F};
-        sceneGraph.AttachTransformUVE(entityManager, floor, floorTransform);
-        Scene::ColliderComponentUVE slab{Math::Vector3UVE{100.0F, 0.5F, 100.0F}};
-        entityManager.AddComponentUVE<Scene::ColliderComponentUVE>(floor, slab);
-        sceneGraph.UpdateUVE(entityManager);
+        const Scene::Entity floor = entityManager.CreateEntity();
+        Scene::TransformComponent floorTransform;
+        floorTransform.localPosition = Math::Vector3{0.0F, -0.5F, 0.0F};
+        sceneGraph.AttachTransform(entityManager, floor, floorTransform);
+        Scene::ColliderComponent slab{Math::Vector3{100.0F, 0.5F, 100.0F}};
+        entityManager.AddComponent<Scene::ColliderComponent>(floor, slab);
+        sceneGraph.Update(entityManager);
 
-        walker = entityManager.CreateEntityUVE();
-        Scene::TransformComponentUVE walkTransform;
-        walkTransform.localPosition = Math::Vector3UVE{10.0F, 3.0F, 10.0F};
-        sceneGraph.AttachTransformUVE(entityManager, walker, walkTransform);
-        Scene::ApplyCharacter3DObjectDefinitionUVE(entityManager, walker,
-                                                   Scene::Character3DObjectDefinitionUVE::WithDefaultColliderUVE());
-        sceneGraph.UpdateUVE(entityManager);
+        walker = entityManager.CreateEntity();
+        Scene::TransformComponent walkTransform;
+        walkTransform.localPosition = Math::Vector3{10.0F, 3.0F, 10.0F};
+        sceneGraph.AttachTransform(entityManager, walker, walkTransform);
+        Scene::ApplyCharacter3DObjectDefinition(entityManager, walker,
+                                                   Scene::Character3DObjectDefinition::WithDefaultCollider());
+        sceneGraph.Update(entityManager);
     }
 
-    void MoveNpcUVE() {
+    void MoveNpc() {
         // A deterministic patrol: ping-pong between the walls at +-5, no sim needed.
         npcX += npcDir * 0.05F;
         if (npcX > 5.0F) {
@@ -293,316 +293,316 @@ struct ServerUVE final {
             npcX = -5.0F;
             npcDir = 1.0F;
         }
-        Scene::TransformComponentUVE transform =
-            entityManager.GetComponentUVE<Scene::TransformComponentUVE>(npc);
-        transform.localPosition = Math::Vector3UVE{npcX, 1.0F, 0.0F};
-        sceneGraph.SetLocalTransformUVE(entityManager, npc, transform);
-        sceneGraph.UpdateUVE(entityManager);
+        Scene::TransformComponent transform =
+            entityManager.GetComponent<Scene::TransformComponent>(npc);
+        transform.localPosition = Math::Vector3{npcX, 1.0F, 0.0F};
+        sceneGraph.SetLocalTransform(entityManager, npc, transform);
+        sceneGraph.Update(entityManager);
     }
 
-    [[nodiscard]] Physics::Character3DStepResultUVE StepWalkerUVE() {
-        Physics::CharacterMotionInputUVE input;
-        input.move = Math::Vector3UVE{1.0F, 0.0F, 0.0F};
-        return Physics::StepCharacter3DUVE(entityManager, sceneGraph, collision, walker, input,
-                                           kGravityYUVE, kFixedDtUVE);
+    [[nodiscard]] Physics::Character3DStepResult StepWalker() {
+        Physics::CharacterMotionInput input;
+        input.move = Math::Vector3{1.0F, 0.0F, 0.0F};
+        return Physics::StepCharacter3D(entityManager, sceneGraph, collision, walker, input,
+                                           kGravityY, kFixedDt);
     }
 
-    void BindRelayUVE() {
+    void BindRelay() {
         // The documented relay-rooms loop: lobby rooms bind onto relay rooms verbatim, so a
         // shout only ever reaches roommates.
         for (std::size_t i = 0U; i < lobbyIds.size(); ++i) {
             static_cast<void>(
-                relay.SetPeerRoomUVE(peerIds[i], lobby.ClientRoomUVE(lobbyIds[i])));
+                relay.SetPeerRoom(peerIds[i], lobby.ClientRoom(lobbyIds[i])));
         }
     }
 };
 
-struct StoryUVE final {
-    DedicatedServerSampleConfigUVE config;
+struct Story final {
+    DedicatedServerSampleConfig config;
     std::vector<std::string> failures;
-    std::vector<Network::LoopbackTransportPairUVE> links;
-    ServerUVE server;
-    std::vector<std::unique_ptr<BotUVE>> bots;
-    std::uint64_t nowMs = kBaseMsUVE;
+    std::vector<Network::LoopbackTransportPair> links;
+    Server server;
+    std::vector<std::unique_ptr<Bot>> bots;
+    std::uint64_t nowMs = kBaseMs;
 
-    void SayUVE(const std::string& line) {
+    void Say(const std::string& line) {
         if (config.log) {
             config.log(line);
         }
     }
 
-    void CheckUVE(const bool condition, const std::string& message) {
+    void Check(const bool condition, const std::string& message) {
         if (!condition) {
             failures.push_back(message);
-            SayUVE("CHECK FAIL: " + message);
+            Say("CHECK FAIL: " + message);
         }
     }
 
-    void PumpLobbyUVE(const int rounds) {
+    void PumpLobby(const int rounds) {
         for (int i = 0; i < rounds; ++i) {
-            server.lobby.UpdateUVE(nowMs);
+            server.lobby.Update(nowMs);
             for (auto& botPtr : bots) {
-                BotUVE& bot = *botPtr;
-                bot.lobby.UpdateUVE(nowMs);
+                Bot& bot = *botPtr;
+                bot.lobby.Update(nowMs);
             }
         }
     }
 
-    void PumpPredictionUVE() {
+    void PumpPrediction() {
         for (std::size_t i = 0U; i < bots.size(); ++i) {
-            bots[i]->predictor.UpdateUVE(nowMs);
-            server.predictors[i].UpdateUVE(nowMs);
+            bots[i]->predictor.Update(nowMs);
+            server.predictors[i].Update(nowMs);
         }
     }
 
-    void PumpReplicationUVE() {
+    void PumpReplication() {
         for (std::size_t i = 0U; i < bots.size(); ++i) {
-            bots[i]->replicator.UpdateUVE(nowMs);
-            server.replicators[i].UpdateUVE(nowMs);
+            bots[i]->replicator.Update(nowMs);
+            server.replicators[i].Update(nowMs);
         }
     }
 
-    void PumpRelayUVE() {
+    void PumpRelay() {
         // Flush, forward, receive: the client sessions push to the wire, the relay fans out
         // to roommates, and the second client pump pulls the arrivals in.
         for (auto& botPtr : bots) {
-            BotUVE& bot = *botPtr;
-            bot.relaySession.UpdateUVE(nowMs);
+            Bot& bot = *botPtr;
+            bot.relaySession.Update(nowMs);
         }
-        server.relay.UpdateUVE(nowMs);
+        server.relay.Update(nowMs);
         for (auto& botPtr : bots) {
-            BotUVE& bot = *botPtr;
-            bot.relaySession.UpdateUVE(nowMs);
-            bot.DrainShoutsUVE();
+            Bot& bot = *botPtr;
+            bot.relaySession.Update(nowMs);
+            bot.DrainShouts();
         }
     }
 
-    void BuildUVE() {
+    void Build() {
         links.reserve(12U);
         // Heap-owned: the bots' callbacks capture their own `this`, and neither the event
         // system nor the entity manager can move - so the bots never move either.
         bots.reserve(3U);
         const char* names[3] = {"amy", "bob", "cat"};
-        const Math::Vector3UVE spawns[3] = {Math::Vector3UVE{0.0F, 3.0F, 0.0F},
-                                            Math::Vector3UVE{-4.0F, 3.0F, 2.0F},
-                                            Math::Vector3UVE{4.0F, 3.0F, -2.0F}};
-        const Math::Vector3UVE pushes[3] = {Math::Vector3UVE{1.0F, 0.0F, 0.0F},
-                                            Math::Vector3UVE{-1.0F, 0.0F, 0.0F},
-                                            Math::Vector3UVE{0.0F, 0.0F, 1.0F}};
+        const Math::Vector3 spawns[3] = {Math::Vector3{0.0F, 3.0F, 0.0F},
+                                            Math::Vector3{-4.0F, 3.0F, 2.0F},
+                                            Math::Vector3{4.0F, 3.0F, -2.0F}};
+        const Math::Vector3 pushes[3] = {Math::Vector3{1.0F, 0.0F, 0.0F},
+                                            Math::Vector3{-1.0F, 0.0F, 0.0F},
+                                            Math::Vector3{0.0F, 0.0F, 1.0F}};
         const std::uint64_t jumps[3] = {
             100U, std::numeric_limits<std::uint64_t>::max(), 300U};
         for (std::size_t i = 0U; i < 3U; ++i) {
             // One loopback pair per feature per bot: lobby, relay, replication, prediction.
             // Endpoints share the pair's queues, so the pair is stored only after both ends
             // are built from it - exactly like every test harness.
-            std::vector<Network::NetworkSessionUVE> clientSessions;
-            std::vector<Network::NetworkSessionUVE> serverSessions;
+            std::vector<Network::NetworkSession> clientSessions;
+            std::vector<Network::NetworkSession> serverSessions;
             clientSessions.reserve(4U);
             serverSessions.reserve(4U);
             for (std::size_t f = 0U; f < 4U; ++f) {
-                Network::LoopbackTransportPairUVE pair =
-                    Network::CreateLoopbackTransportPairUVE(256U);
+                Network::LoopbackTransportPair pair =
+                    Network::CreateLoopbackTransportPair(256U);
                 const std::uint64_t timeout =
-                    (f == kRelayFeatureUVE) ? kRelayTimeoutMsUVE : kDefaultTimeoutMsUVE;
+                    (f == kRelayFeature) ? kRelayTimeoutMs : kDefaultTimeoutMs;
                 clientSessions.emplace_back(
-                    Network::SessionRoleUVE::Client,
-                    std::make_unique<Network::LoopbackEndpointUVE>(pair.a), timeout);
+                    Network::SessionRole::Client,
+                    std::make_unique<Network::LoopbackEndpoint>(pair.a), timeout);
                 serverSessions.emplace_back(
-                    Network::SessionRoleUVE::Server,
-                    std::make_unique<Network::LoopbackEndpointUVE>(pair.b), timeout);
+                    Network::SessionRole::Server,
+                    std::make_unique<Network::LoopbackEndpoint>(pair.b), timeout);
                 links.push_back(std::move(pair));
             }
-            bots.emplace_back(std::make_unique<BotUVE>(names[i], std::move(clientSessions[0]), std::move(clientSessions[1]),
+            bots.emplace_back(std::make_unique<Bot>(names[i], std::move(clientSessions[0]), std::move(clientSessions[1]),
                               std::move(clientSessions[2]), std::move(clientSessions[3]),
                               spawns[i], pushes[i], jumps[i]));
-            server.AddBotUVE(std::move(serverSessions[0]), std::move(serverSessions[1]),
+            server.AddBot(std::move(serverSessions[0]), std::move(serverSessions[1]),
                              std::move(serverSessions[2]), std::move(serverSessions[3]),
                              spawns[i]);
         }
-        server.BuildWorldUVE();
+        server.BuildWorld();
         for (const auto& botPtr : bots) {
-            const BotUVE& bot = *botPtr;
-            CheckUVE(bot.wired, bot.name + " wired its entities");
+            const Bot& bot = *botPtr;
+            Check(bot.wired, bot.name + " wired its entities");
         }
-        CheckUVE(server.wired, "server wired its entities");
+        Check(server.wired, "server wired its entities");
     }
 
-    void EstablishUVE() {
+    void Establish() {
         for (auto& botPtr : bots) {
-            BotUVE& bot = *botPtr;
-            CheckUVE(bot.lobby.SessionUVE().ConnectUVE(nowMs), bot.name + " dials lobby");
-            CheckUVE(bot.relaySession.ConnectUVE(nowMs), bot.name + " dials relay");
-            CheckUVE(bot.replicator.SessionUVE().ConnectUVE(nowMs),
+            Bot& bot = *botPtr;
+            Check(bot.lobby.Session().Connect(nowMs), bot.name + " dials lobby");
+            Check(bot.relaySession.Connect(nowMs), bot.name + " dials relay");
+            Check(bot.replicator.Session().Connect(nowMs),
                      bot.name + " dials replication");
-            CheckUVE(bot.predictor.SessionUVE().ConnectUVE(nowMs),
+            Check(bot.predictor.Session().Connect(nowMs),
                      bot.name + " dials prediction");
         }
         for (int i = 0; i < 4; ++i) {
-            server.lobby.UpdateUVE(nowMs);
-            server.relay.UpdateUVE(nowMs);
+            server.lobby.Update(nowMs);
+            server.relay.Update(nowMs);
             for (auto& botPtr : bots) {
-                BotUVE& bot = *botPtr;
-                bot.lobby.UpdateUVE(nowMs);
-                bot.relaySession.UpdateUVE(nowMs);
-                bot.replicator.UpdateUVE(nowMs);
-                bot.predictor.UpdateUVE(nowMs);
+                Bot& bot = *botPtr;
+                bot.lobby.Update(nowMs);
+                bot.relaySession.Update(nowMs);
+                bot.replicator.Update(nowMs);
+                bot.predictor.Update(nowMs);
             }
-            PumpPredictionUVE();
-            PumpReplicationUVE();
+            PumpPrediction();
+            PumpReplication();
         }
         for (std::size_t i = 0U; i < bots.size(); ++i) {
-            BotUVE& bot = *bots[i];
-            CheckUVE(bot.lobby.SessionUVE().StateUVE() ==
-                         Network::SessionStateUVE::Established,
+            Bot& bot = *bots[i];
+            Check(bot.lobby.Session().State() ==
+                         Network::SessionState::Established,
                      bot.name + " lobby established");
-            CheckUVE(bot.relaySession.StateUVE() == Network::SessionStateUVE::Established,
+            Check(bot.relaySession.State() == Network::SessionState::Established,
                      bot.name + " relay established");
-            CheckUVE(bot.replicator.SessionUVE().StateUVE() ==
-                         Network::SessionStateUVE::Established,
+            Check(bot.replicator.Session().State() ==
+                         Network::SessionState::Established,
                      bot.name + " replication established");
-            CheckUVE(bot.predictor.SessionUVE().StateUVE() ==
-                         Network::SessionStateUVE::Established,
+            Check(bot.predictor.Session().State() ==
+                         Network::SessionState::Established,
                      bot.name + " prediction established");
-            const Network::NetworkRpcUVE* rpc = server.lobby.ClientRpcUVE(server.lobbyIds[i]);
-            CheckUVE(rpc != nullptr && rpc->SessionUVE().StateUVE() ==
-                                          Network::SessionStateUVE::Established,
+            const Network::NetworkRpc* rpc = server.lobby.ClientRpc(server.lobbyIds[i]);
+            Check(rpc != nullptr && rpc->Session().State() ==
+                                          Network::SessionState::Established,
                      "server lobby peer " + std::to_string(i) + " established");
-            const Network::NetworkSessionUVE* peer =
-                server.relay.PeerSessionUVE(server.peerIds[i]);
-            CheckUVE(peer != nullptr &&
-                         peer->StateUVE() == Network::SessionStateUVE::Established,
+            const Network::NetworkSession* peer =
+                server.relay.PeerSession(server.peerIds[i]);
+            Check(peer != nullptr &&
+                         peer->State() == Network::SessionState::Established,
                      "server relay peer " + std::to_string(i) + " established");
-            CheckUVE(server.replicators[i].SessionUVE().StateUVE() ==
-                         Network::SessionStateUVE::Established,
+            Check(server.replicators[i].Session().State() ==
+                         Network::SessionState::Established,
                      "server replicator " + std::to_string(i) + " established");
-            CheckUVE(server.predictors[i].SessionUVE().StateUVE() ==
-                         Network::SessionStateUVE::Established,
+            Check(server.predictors[i].Session().State() ==
+                         Network::SessionState::Established,
                      "server predictor " + std::to_string(i) + " established");
         }
     }
 
-    void LobbyPhaseUVE() {
+    void LobbyPhase() {
         // Amy opens the arena; Bob finds it on the list and joins; Cat opens the void.
-        Network::LobbyRoomIdUVE roomA = 0U;
+        Network::LobbyRoomId roomA = 0U;
         bool doneA = false;
         std::string errorA = "pending";
-        bots[0]->lobby.CreateRoomUVE(
+        bots[0]->lobby.CreateRoom(
             "arena", "amy", 4U,
-            [&](const Network::LobbyRoomIdUVE room, const std::string& error) {
+            [&](const Network::LobbyRoomId room, const std::string& error) {
                 roomA = room;
                 errorA = error;
                 doneA = true;
             });
-        PumpLobbyUVE(6);
-        CheckUVE(doneA && errorA.empty() && roomA == 1U, "amy creates arena as room 1");
-        CheckUVE(bots[0]->lobby.CurrentRoomUVE() == 1U, "amy sits in room 1");
+        PumpLobby(6);
+        Check(doneA && errorA.empty() && roomA == 1U, "amy creates arena as room 1");
+        Check(bots[0]->lobby.CurrentRoom() == 1U, "amy sits in room 1");
 
-        std::vector<Network::LobbyRoomInfoUVE> rooms;
+        std::vector<Network::LobbyRoomInfo> rooms;
         bool listed = false;
-        bots[1]->lobby.ListRoomsUVE(
-            [&](std::vector<Network::LobbyRoomInfoUVE> found, const std::string& error) {
+        bots[1]->lobby.ListRooms(
+            [&](std::vector<Network::LobbyRoomInfo> found, const std::string& error) {
                 rooms = std::move(found);
                 listed = error.empty();
             });
-        PumpLobbyUVE(6);
-        Network::LobbyRoomIdUVE arena = 0U;
-        CheckUVE(listed, "bob's room list arrives");
+        PumpLobby(6);
+        Network::LobbyRoomId arena = 0U;
+        Check(listed, "bob's room list arrives");
         if (listed) {
-            for (const Network::LobbyRoomInfoUVE& room : rooms) {
+            for (const Network::LobbyRoomInfo& room : rooms) {
                 if (room.name == "arena") {
                     arena = room.id;
                 }
             }
         }
-        CheckUVE(arena == 1U, "bob lists the arena as room 1");
+        Check(arena == 1U, "bob lists the arena as room 1");
         std::vector<std::string> joinRoster;
         bool joined = false;
-        bots[1]->lobby.JoinRoomUVE(
+        bots[1]->lobby.JoinRoom(
             arena, "bob",
             [&](std::vector<std::string> roster, const std::string& error) {
                 joinRoster = std::move(roster);
                 joined = error.empty();
             });
-        PumpLobbyUVE(6);
-        CheckUVE(joined && bots[1]->lobby.CurrentRoomUVE() == 1U, "bob joins room 1");
-        CheckUVE(joinRoster == std::vector<std::string>{"amy", "bob"},
+        PumpLobby(6);
+        Check(joined && bots[1]->lobby.CurrentRoom() == 1U, "bob joins room 1");
+        Check(joinRoster == std::vector<std::string>{"amy", "bob"},
                  "bob's join roster reads amy, bob in member order");
 
-        Network::LobbyRoomIdUVE roomC = 0U;
+        Network::LobbyRoomId roomC = 0U;
         bool doneC = false;
-        bots[2]->lobby.CreateRoomUVE(
+        bots[2]->lobby.CreateRoom(
             "void", "cat", 4U,
-            [&](const Network::LobbyRoomIdUVE room, const std::string& error) {
+            [&](const Network::LobbyRoomId room, const std::string& error) {
                 roomC = room;
                 doneC = error.empty();
             });
-        PumpLobbyUVE(6);
-        CheckUVE(doneC && roomC == 2U, "cat creates the void as room 2");
+        PumpLobby(6);
+        Check(doneC && roomC == 2U, "cat creates the void as room 2");
 
-        server.BindRelayUVE();
-        const Network::RelayRoomIdUVE expected[3] = {1U, 1U, 2U};
+        server.BindRelay();
+        const Network::RelayRoomId expected[3] = {1U, 1U, 2U};
         for (std::size_t i = 0U; i < 3U; ++i) {
-            CheckUVE(server.relay.PeerRoomUVE(server.peerIds[i]) == expected[i],
+            Check(server.relay.PeerRoom(server.peerIds[i]) == expected[i],
                      "relay peer " + std::to_string(i) + " bound to its lobby room");
         }
         // Bob's join pushed to the one survivor: Amy heard it, no one else heard anything.
-        CheckUVE(bots[0]->rosterPushes == 1U, "amy heard bob's join push");
-        CheckUVE(bots[1]->rosterPushes == 0U, "bob heard no pushes");
-        CheckUVE(bots[2]->rosterPushes == 0U, "cat heard no pushes");
+        Check(bots[0]->rosterPushes == 1U, "amy heard bob's join push");
+        Check(bots[1]->rosterPushes == 0U, "bob heard no pushes");
+        Check(bots[2]->rosterPushes == 0U, "cat heard no pushes");
     }
 
-    void TickUVE(const std::uint64_t tick) {
-        nowMs = kBaseMsUVE + (tick + 1U) * kTickMsUVE;
+    void Tick(const std::uint64_t tick) {
+        nowMs = kBaseMs + (tick + 1U) * kTickMs;
         for (auto& botPtr : bots) {
-            BotUVE& bot = *botPtr;
-            bot.DriveTickUVE(tick);
-            const Network::PredictionTickUVE tickNumber = Scene::TickPredictedPawnUVE(
+            Bot& bot = *botPtr;
+            bot.DriveTick(tick);
+            const Network::PredictionTick tickNumber = Scene::TickPredictedPawn(
                 bot.entityManager, bot.sceneGraph, bot.pawn, bot.predictor);
-            CheckUVE(tickNumber == tick + 1U,
+            Check(tickNumber == tick + 1U,
                      bot.name + " ticks in order at " + std::to_string(tick));
         }
-        PumpPredictionUVE();
-        PumpPredictionUVE();
+        PumpPrediction();
+        PumpPrediction();
         for (auto& botPtr : bots) {
-            BotUVE& bot = *botPtr;
-            CheckUVE(Scene::SyncPredictedPawnUVE(bot.entityManager, bot.sceneGraph, bot.pawn,
+            Bot& bot = *botPtr;
+            Check(Scene::SyncPredictedPawn(bot.entityManager, bot.sceneGraph, bot.pawn,
                                                  bot.predictor),
                      bot.name + " syncs its pawn at tick " + std::to_string(tick));
         }
 
-        server.MoveNpcUVE();
-        const Physics::Character3DStepResultUVE walked = server.StepWalkerUVE();
+        server.MoveNpc();
+        const Physics::Character3DStepResult walked = server.StepWalker();
         if (tick % 100U == 0U) {
-            CheckUVE(walked.stepped, "walker steps at tick " + std::to_string(tick));
+            Check(walked.stepped, "walker steps at tick " + std::to_string(tick));
         }
 
-        PumpReplicationUVE();
-        PumpReplicationUVE();
+        PumpReplication();
+        PumpReplication();
 
         if (tick % 30U == 0U) {
             for (auto& botPtr : bots) {
-                BotUVE& bot = *botPtr;
-                CheckUVE(bot.ShoutUVE(tick),
+                Bot& bot = *botPtr;
+                Check(bot.Shout(tick),
                          bot.name + " shouts at tick " + std::to_string(tick));
             }
         }
-        PumpRelayUVE();
-        server.BindRelayUVE();
-        PumpLobbyUVE(1);
+        PumpRelay();
+        server.BindRelay();
+        PumpLobby(1);
 
         if (tick % 60U == 0U) {
             for (auto& botPtr : bots) {
-                BotUVE& bot = *botPtr;
-                bot.RefreshRosterUVE();
+                Bot& bot = *botPtr;
+                bot.RefreshRoster();
             }
         }
         if (tick == 300U) {
             // Mid-run health: nothing dead, nothing stripped, nothing to prune anywhere.
             for (std::size_t i = 0U; i < bots.size(); ++i) {
-                CheckUVE(Scene::PruneReplicatedEntitiesUVE(bots[i]->entityManager,
+                Check(Scene::PruneReplicatedEntities(bots[i]->entityManager,
                                                            bots[i]->replicator, bots[i]->map) == 0U,
                          bots[i]->name + " prunes nothing mid-run");
-                CheckUVE(Scene::PruneReplicatedEntitiesUVE(server.entityManager,
+                Check(Scene::PruneReplicatedEntities(server.entityManager,
                                                            server.replicators[i],
                                                            server.maps[i]) == 0U,
                          "server prunes nothing mid-run");
@@ -610,170 +610,170 @@ struct StoryUVE final {
         }
         if (tick % 100U == 0U) {
             for (auto& botPtr : bots) {
-                BotUVE& bot = *botPtr;
-                RefusalProbeUVE(bot, tick);
+                Bot& bot = *botPtr;
+                RefusalProbe(bot, tick);
             }
-            SayUVE("tick " + std::to_string(tick) + ": amy " + VecUVE(bots[0]->PawnPoseUVE()) +
-                   " r=" + std::to_string(bots[0]->predictor.StatsUVE().reconciles) + ", bob " +
-                   VecUVE(bots[1]->PawnPoseUVE()) + " r=" +
-                   std::to_string(bots[1]->predictor.StatsUVE().reconciles) + ", cat " +
-                   VecUVE(bots[2]->PawnPoseUVE()) + " r=" +
-                   std::to_string(bots[2]->predictor.StatsUVE().reconciles) + ", npc x=" +
+            Say("tick " + std::to_string(tick) + ": amy " + Vec(bots[0]->PawnPose()) +
+                   " r=" + std::to_string(bots[0]->predictor.Stats().reconciles) + ", bob " +
+                   Vec(bots[1]->PawnPose()) + " r=" +
+                   std::to_string(bots[1]->predictor.Stats().reconciles) + ", cat " +
+                   Vec(bots[2]->PawnPose()) + " r=" +
+                   std::to_string(bots[2]->predictor.Stats().reconciles) + ", npc x=" +
                    std::to_string(server.npcX));
         }
     }
 
-    void RefusalProbeUVE(BotUVE& bot, const std::uint64_t tick) {
+    void RefusalProbe(Bot& bot, const std::uint64_t tick) {
         // The live no-double-step proof: the real mover refuses the tagged pawn and leaves
         // its pose exactly where prediction put it.
-        const float xBefore = bot.PawnPoseUVE().x;
-        Physics::CharacterMotionInputUVE input;
-        input.move = Math::Vector3UVE{1.0F, 0.0F, 0.0F};
-        const Physics::Character3DStepResultUVE report = Physics::StepCharacter3DUVE(
-            bot.entityManager, bot.sceneGraph, server.collision, bot.pawn, input, kGravityYUVE,
-            kFixedDtUVE);
-        CheckUVE(report.code == Physics::Character3DStepCodeUVE::PredictedElsewhere &&
+        const float xBefore = bot.PawnPose().x;
+        Physics::CharacterMotionInput input;
+        input.move = Math::Vector3{1.0F, 0.0F, 0.0F};
+        const Physics::Character3DStepResult report = Physics::StepCharacter3D(
+            bot.entityManager, bot.sceneGraph, server.collision, bot.pawn, input, kGravityY,
+            kFixedDt);
+        Check(report.code == Physics::Character3DStepCode::PredictedElsewhere &&
                      !report.stepped,
                  bot.name + " still refuses the mover at tick " + std::to_string(tick));
-        CheckUVE(bot.PawnPoseUVE().x == xBefore,
+        Check(bot.PawnPose().x == xBefore,
                  bot.name + " unmoved by the refusal at tick " + std::to_string(tick));
     }
 
-    void SettleUVE() {
+    void Settle() {
         // Flush the cadenced tails (replication sends every 100 ms of sim): a few long
         // rounds so the last poses land exactly.
         for (int i = 0; i < 4; ++i) {
             nowMs += 100U;
-            PumpReplicationUVE();
-            PumpReplicationUVE();
-            PumpPredictionUVE();
-            PumpRelayUVE();
-            PumpLobbyUVE(1);
+            PumpReplication();
+            PumpReplication();
+            PumpPrediction();
+            PumpRelay();
+            PumpLobby(1);
         }
     }
 
-    void VerifyUVE(DedicatedServerSampleStatsUVE& stats) {
+    void Verify(DedicatedServerSampleStats& stats) {
         for (std::size_t i = 0U; i < bots.size(); ++i) {
-            BotUVE& bot = *bots[i];
-            CheckUVE(bot.lobby.SessionUVE().StateUVE() ==
-                         Network::SessionStateUVE::Established,
+            Bot& bot = *bots[i];
+            Check(bot.lobby.Session().State() ==
+                         Network::SessionState::Established,
                      bot.name + " lobby survives the run");
-            CheckUVE(bot.relaySession.StateUVE() == Network::SessionStateUVE::Established,
+            Check(bot.relaySession.State() == Network::SessionState::Established,
                      bot.name + " relay survives the run");
-            CheckUVE(bot.replicator.SessionUVE().StateUVE() ==
-                         Network::SessionStateUVE::Established,
+            Check(bot.replicator.Session().State() ==
+                         Network::SessionState::Established,
                      bot.name + " replication survives the run");
-            CheckUVE(bot.predictor.SessionUVE().StateUVE() ==
-                         Network::SessionStateUVE::Established,
+            Check(bot.predictor.Session().State() ==
+                         Network::SessionState::Established,
                      bot.name + " prediction survives the run");
         }
 
-        CheckUVE(bots[0]->lobby.CurrentRoomUVE() == 1U, "amy ends in room 1");
-        CheckUVE(bots[1]->lobby.CurrentRoomUVE() == 1U, "bob ends in room 1");
-        CheckUVE(bots[2]->lobby.CurrentRoomUVE() == 2U, "cat ends in room 2");
-        CheckUVE(bots[0]->lastRoster == std::vector<std::string>{"amy", "bob"},
+        Check(bots[0]->lobby.CurrentRoom() == 1U, "amy ends in room 1");
+        Check(bots[1]->lobby.CurrentRoom() == 1U, "bob ends in room 1");
+        Check(bots[2]->lobby.CurrentRoom() == 2U, "cat ends in room 2");
+        Check(bots[0]->lastRoster == std::vector<std::string>{"amy", "bob"},
                  "arena roster refreshes to amy, bob");
-        CheckUVE(bots[1]->lastRoster == std::vector<std::string>{"amy", "bob"},
+        Check(bots[1]->lastRoster == std::vector<std::string>{"amy", "bob"},
                  "bob's arena roster refreshes too");
-        CheckUVE(bots[2]->lastRoster == std::vector<std::string>{"cat"},
+        Check(bots[2]->lastRoster == std::vector<std::string>{"cat"},
                  "void roster refreshes to cat");
 
-        const Network::RelayRoomIdUVE expected[3] = {1U, 1U, 2U};
+        const Network::RelayRoomId expected[3] = {1U, 1U, 2U};
         for (std::size_t i = 0U; i < 3U; ++i) {
-            CheckUVE(server.relay.PeerRoomUVE(server.peerIds[i]) == expected[i],
+            Check(server.relay.PeerRoom(server.peerIds[i]) == expected[i],
                      "relay peer " + std::to_string(i) + " stays bound");
         }
 
         const std::size_t expectedShouts = (config.ticks + 29U) / 30U;
-        CheckShoutsUVE(*bots[0], "bob@", expectedShouts);
-        CheckShoutsUVE(*bots[1], "amy@", expectedShouts);
-        CheckUVE(bots[2]->heard.empty(), "cat hears nothing in the void");
+        CheckShouts(*bots[0], "bob@", expectedShouts);
+        CheckShouts(*bots[1], "amy@", expectedShouts);
+        Check(bots[2]->heard.empty(), "cat hears nothing in the void");
 
         for (std::size_t i = 0U; i < bots.size(); ++i) {
-            const Math::Vector3UVE pawn =
+            const Math::Vector3 pawn =
                 bots[i]->entityManager
-                    .GetComponentUVE<Scene::WorldTransformComponentUVE>(bots[i]->pawn)
+                    .GetComponent<Scene::WorldTransformComponent>(bots[i]->pawn)
                     .worldPosition;
-            const Math::Vector3UVE doll =
+            const Math::Vector3 doll =
                 server.entityManager
-                    .GetComponentUVE<Scene::WorldTransformComponentUVE>(server.dolls[i])
+                    .GetComponent<Scene::WorldTransformComponent>(server.dolls[i])
                     .worldPosition;
-            CheckUVE(doll == pawn, bots[i]->name + "'s server doll tracks exactly");
-            const Math::Vector3UVE npcBot =
+            Check(doll == pawn, bots[i]->name + "'s server doll tracks exactly");
+            const Math::Vector3 npcBot =
                 bots[i]->entityManager
-                    .GetComponentUVE<Scene::WorldTransformComponentUVE>(bots[i]->npcDoll)
+                    .GetComponent<Scene::WorldTransformComponent>(bots[i]->npcDoll)
                     .worldPosition;
-            const Math::Vector3UVE npcServer =
+            const Math::Vector3 npcServer =
                 server.entityManager
-                    .GetComponentUVE<Scene::WorldTransformComponentUVE>(server.npc)
+                    .GetComponent<Scene::WorldTransformComponent>(server.npc)
                     .worldPosition;
-            CheckUVE(npcBot == npcServer, bots[i]->name + "'s npc doll tracks exactly");
+            Check(npcBot == npcServer, bots[i]->name + "'s npc doll tracks exactly");
 
-            const Network::PredictionStatsUVE prediction = bots[i]->predictor.StatsUVE();
-            CheckUVE(prediction.reconciles > 0U,
+            const Network::PredictionStats prediction = bots[i]->predictor.Stats();
+            Check(prediction.reconciles > 0U,
                      bots[i]->name + " reconciled its landings");
-            CheckUVE(bots[i]->predictor.LastAckedTickUVE() == config.ticks,
+            Check(bots[i]->predictor.LastAckedTick() == config.ticks,
                      bots[i]->name + " acked every tick");
-            const Scene::CharacterControllerComponentUVE& controller =
+            const Scene::CharacterControllerComponent& controller =
                 bots[i]->entityManager
-                    .GetComponentUVE<Scene::CharacterControllerComponentUVE>(bots[i]->pawn);
-            CheckUVE(pawn.y == 0.0F && controller.grounded,
+                    .GetComponent<Scene::CharacterControllerComponent>(bots[i]->pawn);
+            Check(pawn.y == 0.0F && controller.grounded,
                      bots[i]->name + " rests on the server floor");
         }
 
-        const Math::Vector3UVE walker =
+        const Math::Vector3 walker =
             server.entityManager
-                .GetComponentUVE<Scene::WorldTransformComponentUVE>(server.walker)
+                .GetComponent<Scene::WorldTransformComponent>(server.walker)
                 .worldPosition;
-        const Scene::CharacterControllerComponentUVE& walkerController =
-            server.entityManager.GetComponentUVE<Scene::CharacterControllerComponentUVE>(
+        const Scene::CharacterControllerComponent& walkerController =
+            server.entityManager.GetComponent<Scene::CharacterControllerComponent>(
                 server.walker);
-        CheckUVE(walker.x > 12.0F && walkerController.grounded,
+        Check(walker.x > 12.0F && walkerController.grounded,
                  "walker crossed the floor and stays grounded");
 
         stats.ticks = config.ticks;
-        stats.reconcilesAmy = bots[0]->predictor.StatsUVE().reconciles;
-        stats.reconcilesBob = bots[1]->predictor.StatsUVE().reconciles;
-        stats.reconcilesCat = bots[2]->predictor.StatsUVE().reconciles;
+        stats.reconcilesAmy = bots[0]->predictor.Stats().reconciles;
+        stats.reconcilesBob = bots[1]->predictor.Stats().reconciles;
+        stats.reconcilesCat = bots[2]->predictor.Stats().reconciles;
         stats.shoutsHeardAmy = bots[0]->heard.size();
         stats.shoutsHeardBob = bots[1]->heard.size();
         stats.shoutsHeardCat = bots[2]->heard.size();
         stats.snapshotsReceived = 0U;
-        for (const Network::NetworkReplicatorUVE& replicator : server.replicators) {
-            stats.snapshotsReceived += replicator.StatsUVE().snapshotsReceived;
+        for (const Network::NetworkReplicator& replicator : server.replicators) {
+            stats.snapshotsReceived += replicator.Stats().snapshotsReceived;
         }
-        CheckUVE(stats.snapshotsReceived > 0U, "the server received snapshots");
-        stats.restY = bots[0]->PawnPoseUVE().y;
+        Check(stats.snapshotsReceived > 0U, "the server received snapshots");
+        stats.restY = bots[0]->PawnPose().y;
         stats.walkerX = walker.x;
     }
 
-    void CheckShoutsUVE(const BotUVE& bot, const std::string& prefix,
+    void CheckShouts(const Bot& bot, const std::string& prefix,
                         const std::size_t expected) {
-        CheckUVE(bot.heard.size() == expected,
+        Check(bot.heard.size() == expected,
                  bot.name + " heard " + std::to_string(bot.heard.size()) + " shouts");
         for (const std::string& shout : bot.heard) {
-            CheckUVE(shout.rfind(prefix, 0U) == 0U,
+            Check(shout.rfind(prefix, 0U) == 0U,
                      bot.name + " heard only roommates (" + shout + ")");
         }
     }
 
-    [[nodiscard]] DedicatedServerSampleResultUVE RunUVE() {
-        SayUVE("dedicated server sample: 1 server, 3 bots (amy+bob in arena, cat in void)");
-        BuildUVE();
-        SayUVE("built: 12 loopback pairs (lobby, relay, replication, prediction per bot)");
-        EstablishUVE();
-        SayUVE("established: every session up on both ends");
-        LobbyPhaseUVE();
-        SayUVE("lobby: arena {amy, bob}, void {cat}; relay bound to match");
+    [[nodiscard]] DedicatedServerSampleResult Run() {
+        Say("dedicated server sample: 1 server, 3 bots (amy+bob in arena, cat in void)");
+        Build();
+        Say("built: 12 loopback pairs (lobby, relay, replication, prediction per bot)");
+        Establish();
+        Say("established: every session up on both ends");
+        LobbyPhase();
+        Say("lobby: arena {amy, bob}, void {cat}; relay bound to match");
         for (std::uint64_t tick = 0U; tick < config.ticks; ++tick) {
-            TickUVE(tick);
+            Tick(tick);
         }
-        SayUVE("ran " + std::to_string(config.ticks) + " fixed steps");
-        SettleUVE();
-        DedicatedServerSampleStatsUVE stats;
-        VerifyUVE(stats);
-        SayUVE("verified: " + std::to_string(failures.size()) + " violation(s)");
-        DedicatedServerSampleResultUVE result;
+        Say("ran " + std::to_string(config.ticks) + " fixed steps");
+        Settle();
+        DedicatedServerSampleStats stats;
+        Verify(stats);
+        Say("verified: " + std::to_string(failures.size()) + " violation(s)");
+        DedicatedServerSampleResult result;
         result.success = failures.empty();
         result.failures = failures;
         result.stats = stats;
@@ -783,11 +783,11 @@ struct StoryUVE final {
 
 } // namespace
 
-DedicatedServerSampleResultUVE RunDedicatedServerSampleUVE(
-    const DedicatedServerSampleConfigUVE& config) {
-    StoryUVE story;
+DedicatedServerSampleResult RunDedicatedServerSample(
+    const DedicatedServerSampleConfig& config) {
+    Story story;
     story.config = config;
-    return story.RunUVE();
+    return story.Run();
 }
 
 } // namespace UVE::Samples

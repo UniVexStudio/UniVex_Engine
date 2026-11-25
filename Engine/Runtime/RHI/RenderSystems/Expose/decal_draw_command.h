@@ -17,13 +17,13 @@ namespace UVE::Render {
 /// The most decals one frame submits. A projection pass is bounded by the receivers it walks, not
 /// by a scene's lifetime, so a pathological frame (hundreds of overlapping decals on a dense mesh)
 /// has to stop somewhere rather than allocate a draw per decal until memory runs out. Reaching it
-/// is reported (`DecalDrawPlanUVE::drawsTruncated`), never silent.
-inline constexpr std::size_t kMaximumDecalDrawCommandsUVE = 4096U;
+/// is reported (`DecalDrawPlan::drawsTruncated`), never silent.
+inline constexpr std::size_t kMaximumDecalDrawCommands = 4096U;
 
 /// The most vertices one frame's decal geometry may hold, across every decal in it. A patch is at
 /// most eight vertices, and a decal that lands on a dense mesh can hold one patch per receiving
 /// face, so this is the second half of the same bound as the command cap.
-inline constexpr std::size_t kMaximumDecalVerticesUVE = 262144U;
+inline constexpr std::size_t kMaximumDecalVertices = 262144U;
 
 /// One decal's GPU work: the slice of the plan's vertex/index streams that belongs to it, and the
 /// uniform values that slice is drawn with.
@@ -35,10 +35,10 @@ inline constexpr std::size_t kMaximumDecalVerticesUVE = 262144U;
 /// large enough that the fade across it is the difference between a decal that blends into the
 /// surface and one with a hard rectangular edge. So the draw carries the volume and the authored
 /// fades, and the fragment program evaluates the same rule per pixel.
-struct DecalDrawCommandUVE final {
-    Scene::EntityUVE decal = Scene::kInvalidEntityUVE;
+struct DecalDrawCommand final {
+    Scene::Entity decal = Scene::kInvalidEntity;
 
-    /// This decal's window in DecalDrawPlanUVE::vertices / ::indices. Indices are already absolute
+    /// This decal's window in DecalDrawPlan::vertices / ::indices. Indices are already absolute
     /// into the plan's vertex stream, so a command is drawn by binding the slice's own buffers.
     std::uint32_t firstVertex = 0U;
     std::uint32_t vertexCount = 0U;
@@ -46,25 +46,25 @@ struct DecalDrawCommandUVE final {
     std::uint32_t indexCount = 0U;
 
     /// World space to the volume's unit space: the inverse of
-    /// `ComposeTrsUVE(projection.worldPosition, projection.worldRotation, projection.halfExtents)`,
-    /// which is exactly what `Scene::Decal3DUnitToWorldUVE()` maps with. Handing the shader this
+    /// `ComposeTrs(projection.worldPosition, projection.worldRotation, projection.halfExtents)`,
+    /// which is exactly what `Scene::Decal3DUnitToWorld()` maps with. Handing the shader this
     /// one matrix is what keeps the unit coordinates the fragment program works in identical to the
     /// ones the CPU clipped in - a second, hand-written reconstruction of the same transform in
-    /// GLSL is a second thing that can disagree with `Scene::Decal3DWorldToUnitUVE()`.
-    Math::Matrix4x4UVE worldToUnit{};
+    /// GLSL is a second thing that can disagree with `Scene::Decal3DWorldToUnit()`.
+    Math::Matrix4x4 worldToUnit{};
     /// Unit direction the decal projects along, for the per-pixel normal fade.
-    Math::Vector3UVE projectionDirection{};
+    Math::Vector3 projectionDirection{};
 
-    /// The material's albedo texture, or `kInvalidAssetGuidUVE` for a flat-coloured decal. The
+    /// The material's albedo texture, or `kInvalidAssetGuid` for a flat-coloured decal. The
     /// renderer resolves it to a GPU handle the same way the mesh path does, with the same fallback
     /// texture when it is unset or still loading - and the patch's unit coordinates are already the
     /// [0, 1] UVs that texture is sampled with, so a decal material's texture lands on the volume
     /// exactly as the artist authored it.
-    Asset::AssetGuidUVE albedoTextureGuid;
+    Asset::AssetGuid albedoTextureGuid;
     /// The material's albedo, tinted by the decal's `modulate`.
-    Math::Vector3UVE baseColor{1.0F, 1.0F, 1.0F};
+    Math::Vector3 baseColor{1.0F, 1.0F, 1.0F};
     /// The material's emissive, scaled by the decal's `emissionEnergy`.
-    Math::Vector3UVE emissionColor{0.0F, 0.0F, 0.0F};
+    Math::Vector3 emissionColor{0.0F, 0.0F, 0.0F};
     /// How much of the receiving surface's own colour the decal replaces - the decal's `albedoMix`,
     /// carried as the blend's alpha scale.
     float alphaScale = 1.0F;
@@ -85,10 +85,10 @@ struct DecalDrawCommandUVE final {
 /// renderer uploads each window into that decal's own GPU buffers because this engine's command
 /// buffer has no first-index offset on a draw - the same reason a skinned mesh owns its vertex
 /// buffer - so the split belongs here, where the geometry is already grouped.
-struct DecalDrawPlanUVE final {
-    std::vector<Asset::MeshVertexUVE> vertices;
+struct DecalDrawPlan final {
+    std::vector<Asset::MeshVertex> vertices;
     std::vector<std::uint32_t> indices;
-    std::vector<DecalDrawCommandUVE> commands;
+    std::vector<DecalDrawCommand> commands;
 
     /// Draws the caps refused, and why a draw that reached this point produced no command. Kept
     /// apart for the reason the extractor's own counters are: "nothing was drawn" and "the frame
@@ -103,7 +103,7 @@ struct DecalDrawPlanUVE final {
     /// same thing as painting nothing.
     std::size_t drawsWithoutPaint = 0U;
 
-    void ClearUVE() noexcept;
+    void Clear() noexcept;
 };
 
 /// Fills `outPlan` from this frame's draw list, clearing it first. `maximumCommands` and
@@ -114,8 +114,8 @@ struct DecalDrawPlanUVE final {
 /// can be collected between the two: a handle that resolved when the pass ran can be gone by the
 /// time the plan is built, and a draw whose material is gone is skipped and counted instead of
 /// being drawn with whatever the last material happened to leave behind.
-void BuildDecalDrawPlanUVE(const DecalDrawListUVE& drawList, DecalDrawPlanUVE& outPlan,
-                           std::size_t maximumCommands = kMaximumDecalDrawCommandsUVE,
-                           std::size_t maximumVertices = kMaximumDecalVerticesUVE);
+void BuildDecalDrawPlan(const DecalDrawList& drawList, DecalDrawPlan& outPlan,
+                           std::size_t maximumCommands = kMaximumDecalDrawCommands,
+                           std::size_t maximumVertices = kMaximumDecalVertices);
 
 } // namespace UVE::Render

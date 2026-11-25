@@ -22,7 +22,7 @@
 /// can be swapped in without editing every declaration.
 #define UVE_INLINE inline
 
-/// Pulls in Build::kProfileUVE and the static assertions that reject a self-contradictory profile.
+/// Pulls in Build::kProfile and the static assertions that reject a self-contradictory profile.
 /// Included here so every translation unit that can assert or log also validates the variant it was
 /// actually compiled under - a check that only ran in the file that asked for it would be one
 /// forgotten include away from useless.

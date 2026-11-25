@@ -17,39 +17,39 @@
 namespace UVE::Asset {
 namespace {
 
-constexpr const char* kMtlImporterNameUVE = "MtlImporterUVE";
-constexpr std::string_view kMtlTemporarySuffixUVE = ".uve_mtl_tmp";
+constexpr const char* kMtlImporterName = "MtlImporter";
+constexpr std::string_view kMtlTemporarySuffix = ".uve_mtl_tmp";
 
-[[nodiscard]] bool ImportMtlSourceUVE(const std::filesystem::path& sourcePath,
+[[nodiscard]] bool ImportMtlSource(const std::filesystem::path& sourcePath,
                                       const std::filesystem::path& destinationPath,
-                                      const AssetImportSettingsUVE& /*settings*/) {
+                                      const AssetImportSettings& /*settings*/) {
     if (destinationPath.extension() != ".uvmat") {
-        UVE_ERROR("MtlImporterUVE: destination \"{}\" must use the .uvmat extension",
+        UVE_ERROR("MtlImporter: destination \"{}\" must use the .uvmat extension",
                   destinationPath.string());
         return false;
     }
 
     std::vector<std::byte> sourceBytes;
-    if (!Detail::ReadBoundedSourceBytesUVE(sourcePath, kMtlImporterNameUVE, kMaximumMtlMaterialSourceBytesUVE,
+    if (!Detail::ReadBoundedSourceBytes(sourcePath, kMtlImporterName, kMaximumMtlMaterialSourceBytes,
                                            sourceBytes)) {
         return false;
     }
 
     const std::string_view source(reinterpret_cast<const char*>(sourceBytes.data()), sourceBytes.size());
-    MaterialAssetUVE material;
-    if (!ConvertMtlMaterialUVE(source, material)) {
-        UVE_ERROR("MtlImporterUVE: source \"{}\" failed bounded MTL material conversion", sourcePath.string());
+    MaterialAsset material;
+    if (!ConvertMtlMaterial(source, material)) {
+        UVE_ERROR("MtlImporter: source \"{}\" failed bounded MTL material conversion", sourcePath.string());
         return false;
     }
-    return Detail::PublishAssetAtomicallyUVE(
-        destinationPath, kMtlImporterNameUVE, kMtlTemporarySuffixUVE,
-        [&material](const std::filesystem::path& temporaryPath) { return SaveMaterialAssetUVE(material, temporaryPath); });
+    return Detail::PublishAssetAtomically(
+        destinationPath, kMtlImporterName, kMtlTemporarySuffix,
+        [&material](const std::filesystem::path& temporaryPath) { return SaveMaterialAsset(material, temporaryPath); });
 }
 
 } // namespace
 
-void RegisterMtlImporterUVE(IAssetImporterUVE& importer) {
-    importer.RegisterImporterUVE("mtl", &ImportMtlSourceUVE);
+void RegisterMtlImporter(IAssetImporter& importer) {
+    importer.RegisterImporter("mtl", &ImportMtlSource);
 }
 
 } // namespace UVE::Asset

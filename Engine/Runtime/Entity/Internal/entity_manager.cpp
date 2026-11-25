@@ -18,45 +18,45 @@ namespace UVE::Scene {
 namespace {
 
 /// Where one alive entity currently lives: which archetype, which of its chunks, which row.
-struct EntityRecordUVE {
+struct EntityRecord {
     std::uint32_t generation = 0;
     bool alive = false;
-    Detail::ArchetypeUVE* archetype = nullptr;
+    Detail::Archetype* archetype = nullptr;
     std::size_t chunkIndex = 0;
     std::size_t row = 0;
 };
 
 } // namespace
 
-struct EntityManagerUVE::ImplUVE {
-    ImplUVE(Memory::IAllocatorUVE& allocatorIn, Events::IEventSystemUVE& eventSystemIn)
+struct EntityManager::Impl {
+    Impl(Memory::IAllocator& allocatorIn, Events::IEventSystem& eventSystemIn)
         : allocator(allocatorIn), eventSystem(eventSystemIn) {}
 
-    Memory::IAllocatorUVE& allocator;
-    Events::IEventSystemUVE& eventSystem;
-    std::unordered_map<std::type_index, ComponentTypeInfoUVE> typeInfos;
-    std::vector<EntityRecordUVE> records;
+    Memory::IAllocator& allocator;
+    Events::IEventSystem& eventSystem;
+    std::unordered_map<std::type_index, ComponentTypeInfo> typeInfos;
+    std::vector<EntityRecord> records;
     std::vector<std::uint32_t> freeIndices;
-    std::unordered_map<Detail::ArchetypeSignatureUVE, std::unique_ptr<Detail::ArchetypeUVE>> archetypes;
+    std::unordered_map<Detail::ArchetypeSignature, std::unique_ptr<Detail::Archetype>> archetypes;
 
-    [[nodiscard]] Detail::ArchetypeUVE& FindOrCreateArchetypeUVE(const Detail::ArchetypeSignatureUVE& signature) {
+    [[nodiscard]] Detail::Archetype& FindOrCreateArchetype(const Detail::ArchetypeSignature& signature) {
         const auto archetypeIt = archetypes.find(signature);
         if (archetypeIt != archetypes.end()) {
             return *archetypeIt->second;
         }
-        auto archetype = std::make_unique<Detail::ArchetypeUVE>(signature, allocator, typeInfos);
-        Detail::ArchetypeUVE& archetypeRef = *archetype;
+        auto archetype = std::make_unique<Detail::Archetype>(signature, allocator, typeInfos);
+        Detail::Archetype& archetypeRef = *archetype;
         archetypes.emplace(signature, std::move(archetype));
         return archetypeRef;
     }
 };
 
-EntityManagerUVE::EntityManagerUVE(Memory::IAllocatorUVE& allocator, Events::IEventSystemUVE& eventSystem)
-    : m_impl(std::make_unique<ImplUVE>(allocator, eventSystem)) {}
+EntityManager::EntityManager(Memory::IAllocator& allocator, Events::IEventSystem& eventSystem)
+    : m_impl(std::make_unique<Impl>(allocator, eventSystem)) {}
 
-EntityManagerUVE::~EntityManagerUVE() = default;
+EntityManager::~EntityManager() = default;
 
-EntityUVE EntityManagerUVE::CreateEntityUVE() {
+Entity EntityManager::CreateEntity() {
     std::uint32_t index;
     if (!m_impl->freeIndices.empty()) {
         index = m_impl->freeIndices.back();
@@ -66,32 +66,32 @@ EntityUVE EntityManagerUVE::CreateEntityUVE() {
         m_impl->records.emplace_back();
     }
 
-    EntityRecordUVE& record = m_impl->records[index];
+    EntityRecord& record = m_impl->records[index];
     record.alive = true;
-    const EntityUVE entity{index, record.generation};
+    const Entity entity{index, record.generation};
 
-    Detail::ArchetypeUVE& emptyArchetype = m_impl->FindOrCreateArchetypeUVE(Detail::ArchetypeSignatureUVE{});
-    const Detail::ArchetypeUVE::LocationUVE location = emptyArchetype.ReserveEntityUVE(entity);
+    Detail::Archetype& emptyArchetype = m_impl->FindOrCreateArchetype(Detail::ArchetypeSignature{});
+    const Detail::Archetype::Location location = emptyArchetype.ReserveEntity(entity);
     record.archetype = &emptyArchetype;
     record.chunkIndex = location.chunkIndex;
     record.row = location.row;
 
-    m_impl->eventSystem.Publish(EntityCreatedEventUVE{entity});
+    m_impl->eventSystem.Publish(EntityCreatedEvent{entity});
     return entity;
 }
 
-void EntityManagerUVE::DestroyEntityUVE(EntityUVE entity) {
-    if (!IsAliveUVE(entity)) {
-        UVE_ASSERT(IsAliveUVE(entity));
+void EntityManager::DestroyEntity(Entity entity) {
+    if (!IsAlive(entity)) {
+        UVE_ASSERT(IsAlive(entity));
         return;
     }
-    EntityRecordUVE& record = m_impl->records[entity.index];
+    EntityRecord& record = m_impl->records[entity.index];
 
-    m_impl->eventSystem.Publish(EntityDestroyedEventUVE{entity});
+    m_impl->eventSystem.Publish(EntityDestroyedEvent{entity});
 
-    const Detail::ArchetypeUVE::LocationUVE location{record.chunkIndex, record.row};
-    const EntityUVE movedEntity = record.archetype->DestroyEntityAtUVE(location);
-    if (movedEntity != kInvalidEntityUVE) {
+    const Detail::Archetype::Location location{record.chunkIndex, record.row};
+    const Entity movedEntity = record.archetype->DestroyEntityAt(location);
+    if (movedEntity != kInvalidEntity) {
         m_impl->records[movedEntity.index].row = record.row;
     }
 
@@ -101,17 +101,17 @@ void EntityManagerUVE::DestroyEntityUVE(EntityUVE entity) {
     m_impl->freeIndices.push_back(entity.index);
 }
 
-bool EntityManagerUVE::IsAliveUVE(EntityUVE entity) const noexcept {
+bool EntityManager::IsAlive(Entity entity) const noexcept {
     if (entity.index >= m_impl->records.size()) {
         return false;
     }
-    const EntityRecordUVE& record = m_impl->records[entity.index];
+    const EntityRecord& record = m_impl->records[entity.index];
     return record.alive && record.generation == entity.generation;
 }
 
-std::size_t EntityManagerUVE::GetEntityCountUVE() const noexcept {
+std::size_t EntityManager::GetEntityCount() const noexcept {
     std::size_t count = 0;
-    for (const EntityRecordUVE& record : m_impl->records) {
+    for (const EntityRecord& record : m_impl->records) {
         if (record.alive) {
             ++count;
         }
@@ -119,37 +119,37 @@ std::size_t EntityManagerUVE::GetEntityCountUVE() const noexcept {
     return count;
 }
 
-std::vector<std::type_index> EntityManagerUVE::GetComponentTypesUVE(EntityUVE entity) const {
-    if (!IsAliveUVE(entity)) {
-        UVE_ASSERT(IsAliveUVE(entity));
+std::vector<std::type_index> EntityManager::GetComponentTypes(Entity entity) const {
+    if (!IsAlive(entity)) {
+        UVE_ASSERT(IsAlive(entity));
         return {};
     }
-    return m_impl->records[entity.index].archetype->GetSignatureUVE().GetTypesUVE();
+    return m_impl->records[entity.index].archetype->GetSignature().GetTypes();
 }
 
-void* EntityManagerUVE::AddComponentErased(EntityUVE entity, std::type_index componentType,
-                                            const ComponentTypeInfoUVE& typeInfo) {
-    UVE_ASSERT(IsAliveUVE(entity));
-    EntityRecordUVE& record = m_impl->records[entity.index];
-    Detail::ArchetypeUVE& oldArchetype = *record.archetype;
-    UVE_ASSERT(!oldArchetype.GetSignatureUVE().ContainsUVE(componentType));
+void* EntityManager::AddComponentErased(Entity entity, std::type_index componentType,
+                                            const ComponentTypeInfo& typeInfo) {
+    UVE_ASSERT(IsAlive(entity));
+    EntityRecord& record = m_impl->records[entity.index];
+    Detail::Archetype& oldArchetype = *record.archetype;
+    UVE_ASSERT(!oldArchetype.GetSignature().Contains(componentType));
 
     m_impl->typeInfos.emplace(componentType, typeInfo);
 
-    const Detail::ArchetypeSignatureUVE newSignature = oldArchetype.GetSignatureUVE().WithUVE(componentType);
-    Detail::ArchetypeUVE& newArchetype = m_impl->FindOrCreateArchetypeUVE(newSignature);
+    const Detail::ArchetypeSignature newSignature = oldArchetype.GetSignature().With(componentType);
+    Detail::Archetype& newArchetype = m_impl->FindOrCreateArchetype(newSignature);
 
-    const Detail::ArchetypeUVE::LocationUVE oldLocation{record.chunkIndex, record.row};
-    const Detail::ArchetypeUVE::LocationUVE newLocation = newArchetype.ReserveEntityUVE(entity);
-    Detail::ArchetypeChunkUVE& oldChunk = oldArchetype.GetChunkUVE(oldLocation.chunkIndex);
-    Detail::ArchetypeChunkUVE& newChunk = newArchetype.GetChunkUVE(newLocation.chunkIndex);
+    const Detail::Archetype::Location oldLocation{record.chunkIndex, record.row};
+    const Detail::Archetype::Location newLocation = newArchetype.ReserveEntity(entity);
+    Detail::ArchetypeChunk& oldChunk = oldArchetype.GetChunk(oldLocation.chunkIndex);
+    Detail::ArchetypeChunk& newChunk = newArchetype.GetChunk(newLocation.chunkIndex);
 
-    for (const std::type_index& type : oldArchetype.GetSignatureUVE().GetTypesUVE()) {
-        oldChunk.MoveComponentIntoUVE(type, oldLocation.row, newChunk, newLocation.row);
+    for (const std::type_index& type : oldArchetype.GetSignature().GetTypes()) {
+        oldChunk.MoveComponentInto(type, oldLocation.row, newChunk, newLocation.row);
     }
 
-    const EntityUVE movedEntity = oldArchetype.VacateWithoutDestroyUVE(oldLocation);
-    if (movedEntity != kInvalidEntityUVE) {
+    const Entity movedEntity = oldArchetype.VacateWithoutDestroy(oldLocation);
+    if (movedEntity != kInvalidEntity) {
         m_impl->records[movedEntity.index].row = oldLocation.row;
     }
 
@@ -157,36 +157,36 @@ void* EntityManagerUVE::AddComponentErased(EntityUVE entity, std::type_index com
     record.chunkIndex = newLocation.chunkIndex;
     record.row = newLocation.row;
 
-    return newChunk.GetComponentPointerUVE(componentType, newLocation.row);
+    return newChunk.GetComponentPointer(componentType, newLocation.row);
 }
 
-void EntityManagerUVE::RemoveComponentErased(EntityUVE entity, std::type_index componentType) {
-    if (!IsAliveUVE(entity)) {
-        UVE_ASSERT(IsAliveUVE(entity));
+void EntityManager::RemoveComponentErased(Entity entity, std::type_index componentType) {
+    if (!IsAlive(entity)) {
+        UVE_ASSERT(IsAlive(entity));
         return;
     }
-    EntityRecordUVE& record = m_impl->records[entity.index];
-    Detail::ArchetypeUVE& oldArchetype = *record.archetype;
-    if (!oldArchetype.GetSignatureUVE().ContainsUVE(componentType)) {
-        UVE_ASSERT(oldArchetype.GetSignatureUVE().ContainsUVE(componentType));
+    EntityRecord& record = m_impl->records[entity.index];
+    Detail::Archetype& oldArchetype = *record.archetype;
+    if (!oldArchetype.GetSignature().Contains(componentType)) {
+        UVE_ASSERT(oldArchetype.GetSignature().Contains(componentType));
         return;
     }
 
-    const Detail::ArchetypeSignatureUVE newSignature = oldArchetype.GetSignatureUVE().WithoutUVE(componentType);
-    Detail::ArchetypeUVE& newArchetype = m_impl->FindOrCreateArchetypeUVE(newSignature);
+    const Detail::ArchetypeSignature newSignature = oldArchetype.GetSignature().Without(componentType);
+    Detail::Archetype& newArchetype = m_impl->FindOrCreateArchetype(newSignature);
 
-    const Detail::ArchetypeUVE::LocationUVE oldLocation{record.chunkIndex, record.row};
-    const Detail::ArchetypeUVE::LocationUVE newLocation = newArchetype.ReserveEntityUVE(entity);
-    Detail::ArchetypeChunkUVE& oldChunk = oldArchetype.GetChunkUVE(oldLocation.chunkIndex);
-    Detail::ArchetypeChunkUVE& newChunk = newArchetype.GetChunkUVE(newLocation.chunkIndex);
+    const Detail::Archetype::Location oldLocation{record.chunkIndex, record.row};
+    const Detail::Archetype::Location newLocation = newArchetype.ReserveEntity(entity);
+    Detail::ArchetypeChunk& oldChunk = oldArchetype.GetChunk(oldLocation.chunkIndex);
+    Detail::ArchetypeChunk& newChunk = newArchetype.GetChunk(newLocation.chunkIndex);
 
-    for (const std::type_index& type : newSignature.GetTypesUVE()) {
-        oldChunk.MoveComponentIntoUVE(type, oldLocation.row, newChunk, newLocation.row);
+    for (const std::type_index& type : newSignature.GetTypes()) {
+        oldChunk.MoveComponentInto(type, oldLocation.row, newChunk, newLocation.row);
     }
-    oldChunk.DestroyComponentUVE(componentType, oldLocation.row);
+    oldChunk.DestroyComponent(componentType, oldLocation.row);
 
-    const EntityUVE movedEntity = oldArchetype.VacateWithoutDestroyUVE(oldLocation);
-    if (movedEntity != kInvalidEntityUVE) {
+    const Entity movedEntity = oldArchetype.VacateWithoutDestroy(oldLocation);
+    if (movedEntity != kInvalidEntity) {
         m_impl->records[movedEntity.index].row = oldLocation.row;
     }
 
@@ -195,25 +195,25 @@ void EntityManagerUVE::RemoveComponentErased(EntityUVE entity, std::type_index c
     record.row = newLocation.row;
 }
 
-bool EntityManagerUVE::HasComponentErased(EntityUVE entity, std::type_index componentType) const {
-    if (!IsAliveUVE(entity)) {
-        UVE_ASSERT(IsAliveUVE(entity));
+bool EntityManager::HasComponentErased(Entity entity, std::type_index componentType) const {
+    if (!IsAlive(entity)) {
+        UVE_ASSERT(IsAlive(entity));
         return false;
     }
-    return m_impl->records[entity.index].archetype->GetSignatureUVE().ContainsUVE(componentType);
+    return m_impl->records[entity.index].archetype->GetSignature().Contains(componentType);
 }
 
-void* EntityManagerUVE::GetComponentErased(EntityUVE entity, std::type_index componentType) {
-    UVE_ASSERT(IsAliveUVE(entity));
-    const EntityRecordUVE& record = m_impl->records[entity.index];
-    UVE_ASSERT(record.archetype->GetSignatureUVE().ContainsUVE(componentType));
-    return record.archetype->GetChunkUVE(record.chunkIndex).GetComponentPointerUVE(componentType, record.row);
+void* EntityManager::GetComponentErased(Entity entity, std::type_index componentType) {
+    UVE_ASSERT(IsAlive(entity));
+    const EntityRecord& record = m_impl->records[entity.index];
+    UVE_ASSERT(record.archetype->GetSignature().Contains(componentType));
+    return record.archetype->GetChunk(record.chunkIndex).GetComponentPointer(componentType, record.row);
 }
 
-void EntityManagerUVE::ForEachErased(
+void EntityManager::ForEachErased(
     const std::vector<std::type_index>& componentTypes,
-    const std::function<void(EntityUVE, const std::vector<void*>&)>& callback) {
-    const Detail::ArchetypeSignatureUVE requested(componentTypes);
+    const std::function<void(Entity, const std::vector<void*>&)>& callback) {
+    const Detail::ArchetypeSignature requested(componentTypes);
 
     // Two buffers reused across every chunk of every archetype, rather than one heap allocation
     // per entity. The previous shape allocated a std::vector<void*> and did one hash lookup per
@@ -224,30 +224,30 @@ void EntityManagerUVE::ForEachErased(
     //
     // Declared outside the archetype loop so their capacity survives from one chunk to the next;
     // the callback only ever sees `pointers`, whose size and order are unchanged.
-    std::vector<Detail::ArchetypeChunkUVE::ColumnViewUVE> columnViews;
+    std::vector<Detail::ArchetypeChunk::ColumnView> columnViews;
     std::vector<void*> pointers;
     columnViews.reserve(componentTypes.size());
     pointers.resize(componentTypes.size());
 
     for (auto& [signature, archetype] : m_impl->archetypes) {
-        if (!archetype->GetSignatureUVE().IsSupersetOfUVE(requested)) {
+        if (!archetype->GetSignature().IsSupersetOf(requested)) {
             continue;
         }
-        archetype->ForEachChunkUVE([&componentTypes, &callback, &columnViews, &pointers](
-                                       Detail::ArchetypeChunkUVE& chunk, std::size_t count) {
+        archetype->ForEachChunk([&componentTypes, &callback, &columnViews, &pointers](
+                                       Detail::ArchetypeChunk& chunk, std::size_t count) {
             // Resolved ONCE per chunk. This is the whole optimization: the hash lookups move from
-            // per-row to per-chunk, and with kChunkCapacityUVE at 512 that is up to 512 rows
+            // per-row to per-chunk, and with kChunkCapacity at 512 that is up to 512 rows
             // sharing one resolution.
             columnViews.clear();
             for (const std::type_index& type : componentTypes) {
-                columnViews.push_back(chunk.GetColumnViewUVE(type));
+                columnViews.push_back(chunk.GetColumnView(type));
             }
 
             for (std::size_t row = 0; row < count; ++row) {
                 for (std::size_t index = 0U; index < columnViews.size(); ++index) {
-                    pointers[index] = columnViews[index].AtUVE(row);
+                    pointers[index] = columnViews[index].At(row);
                 }
-                callback(chunk.GetEntityAtRowUVE(row), pointers);
+                callback(chunk.GetEntityAtRow(row), pointers);
             }
         });
     }

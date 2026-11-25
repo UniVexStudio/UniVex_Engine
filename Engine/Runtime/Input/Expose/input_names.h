@@ -14,22 +14,22 @@ namespace UVE::Input {
 // stores and what a person reads, so a file says "Space" rather than 36. Each Get returns an empty
 // view for a sentinel or out-of-range value; each Parse returns nothing for a name it does not know.
 
-[[nodiscard]] std::string_view GetKeyNameUVE(KeyCodeUVE key) noexcept;
-[[nodiscard]] std::optional<KeyCodeUVE> ParseKeyNameUVE(std::string_view name) noexcept;
-[[nodiscard]] std::string_view GetMouseButtonNameUVE(MouseButtonUVE button) noexcept;
-[[nodiscard]] std::optional<MouseButtonUVE> ParseMouseButtonNameUVE(std::string_view name) noexcept;
-[[nodiscard]] std::string_view GetGamepadButtonNameUVE(GamepadButtonUVE button) noexcept;
-[[nodiscard]] std::optional<GamepadButtonUVE> ParseGamepadButtonNameUVE(std::string_view name) noexcept;
-[[nodiscard]] std::string_view GetGamepadAxisNameUVE(GamepadAxisUVE axis) noexcept;
-[[nodiscard]] std::optional<GamepadAxisUVE> ParseGamepadAxisNameUVE(std::string_view name) noexcept;
-[[nodiscard]] std::string_view GetInputBindingSourceNameUVE(InputBindingSourceUVE source) noexcept;
-[[nodiscard]] std::optional<InputBindingSourceUVE> ParseInputBindingSourceNameUVE(std::string_view name) noexcept;
+[[nodiscard]] std::string_view GetKeyName(KeyCode key) noexcept;
+[[nodiscard]] std::optional<KeyCode> ParseKeyName(std::string_view name) noexcept;
+[[nodiscard]] std::string_view GetMouseButtonName(MouseButton button) noexcept;
+[[nodiscard]] std::optional<MouseButton> ParseMouseButtonName(std::string_view name) noexcept;
+[[nodiscard]] std::string_view GetGamepadButtonName(GamepadButton button) noexcept;
+[[nodiscard]] std::optional<GamepadButton> ParseGamepadButtonName(std::string_view name) noexcept;
+[[nodiscard]] std::string_view GetGamepadAxisName(GamepadAxis axis) noexcept;
+[[nodiscard]] std::optional<GamepadAxis> ParseGamepadAxisName(std::string_view name) noexcept;
+[[nodiscard]] std::string_view GetInputBindingSourceName(InputBindingSource source) noexcept;
+[[nodiscard]] std::optional<InputBindingSource> ParseInputBindingSourceName(std::string_view name) noexcept;
 
 /// A binding as a person reads it: "Space", "Mouse Left", "Pad 1 South", "Pad 2 LeftX -".
-[[nodiscard]] std::string DescribeInputBindingUVE(const InputBindingUVE& binding);
+[[nodiscard]] std::string DescribeInputBinding(const InputBinding& binding);
 
 /// Whether two bindings name the same physical input, whatever their scale - the test for two
 /// actions fighting over one key.
-[[nodiscard]] bool IsSameInputUVE(const InputBindingUVE& lhs, const InputBindingUVE& rhs) noexcept;
+[[nodiscard]] bool IsSameInput(const InputBinding& lhs, const InputBinding& rhs) noexcept;
 
 } // namespace UVE::Input

@@ -20,29 +20,29 @@ namespace {
 
 // Everything here binds ephemeral ports (the listener reports its own, clients learn it):
 // no fixed-port squatting, no chicken-and-egg, nothing to clash with in parallel.
-inline constexpr std::uint32_t kLoopbackHostUVE = 0x7F000001U;
+inline constexpr std::uint32_t kLoopbackHost = 0x7F000001U;
 
-[[nodiscard]] std::vector<std::uint8_t> BytesUVE(const std::string& text) {
+[[nodiscard]] std::vector<std::uint8_t> Bytes(const std::string& text) {
     return std::vector<std::uint8_t>(text.begin(), text.end());
 }
 
-[[nodiscard]] std::optional<UdpTransportEndpointUVE> MakeClientUVE(
+[[nodiscard]] std::optional<UdpTransportEndpoint> MakeClient(
     const std::uint16_t listenerPort) {
-    UdpTransportConfigUVE config;
+    UdpTransportConfig config;
     config.localPort = 0U;
     config.remoteHost = "127.0.0.1";
     config.remotePort = listenerPort;
-    return CreateUdpTransportEndpointUVE(config);
+    return CreateUdpTransportEndpoint(config);
 }
 
-[[nodiscard]] UdpEndpointAddressUVE AddressOfUVE(const UdpTransportEndpointUVE& client) {
-    return UdpEndpointAddressUVE{kLoopbackHostUVE, client.LocalPortUVE()};
+[[nodiscard]] UdpEndpointAddress AddressOf(const UdpTransportEndpoint& client) {
+    return UdpEndpointAddress{kLoopbackHost, client.LocalPort()};
 }
 
 // Spins until the predicate holds or the budget (in 1ms naps) runs out. Localhost delivery
 // is near-instant, but the kernel is not the test's to command - poll, don't assume.
-template <typename PredicateUVE>
-[[nodiscard]] bool PollUntilUVE(PredicateUVE&& predicate, const int budgetMs = 2000) {
+template <typename Predicate>
+[[nodiscard]] bool PollUntil(Predicate&& predicate, const int budgetMs = 2000) {
     for (int i = 0; i < budgetMs; ++i) {
         if (predicate()) {
             return true;
@@ -52,356 +52,356 @@ template <typename PredicateUVE>
     return predicate();
 }
 
-TEST(UdpListenerUVE, ListenerSeesStrangersAndLearnsTheirAddresses) {
-    std::optional<UdpListenerUVE> listener = CreateUdpListenerUVE(UdpListenerConfigUVE{});
+TEST(UdpListener, ListenerSeesStrangersAndLearnsTheirAddresses) {
+    std::optional<UdpListener> listener = CreateUdpListener(UdpListenerConfig{});
     ASSERT_TRUE(listener.has_value());
-    EXPECT_NE(listener->LocalPortUVE(), 0U);
-    EXPECT_FALSE(listener->HasStrangersUVE());
-    EXPECT_EQ(listener->StrangerCountUVE(), 0U);
-    EXPECT_FALSE(listener->NextStrangerUVE().has_value());
-    EXPECT_EQ(listener->PeerCountUVE(), 0U);
+    EXPECT_NE(listener->LocalPort(), 0U);
+    EXPECT_FALSE(listener->HasStrangers());
+    EXPECT_EQ(listener->StrangerCount(), 0U);
+    EXPECT_FALSE(listener->NextStranger().has_value());
+    EXPECT_EQ(listener->PeerCount(), 0U);
 
-    std::optional<UdpTransportEndpointUVE> client = MakeClientUVE(listener->LocalPortUVE());
+    std::optional<UdpTransportEndpoint> client = MakeClient(listener->LocalPort());
     ASSERT_TRUE(client.has_value());
-    ASSERT_TRUE(client->SendUVE(BytesUVE("hi")));
-    ASSERT_TRUE(PollUntilUVE([&] {
-        listener->UpdateUVE();
-        return listener->HasStrangersUVE();
+    ASSERT_TRUE(client->Send(Bytes("hi")));
+    ASSERT_TRUE(PollUntil([&] {
+        listener->Update();
+        return listener->HasStrangers();
     }));
 
-    const UdpEndpointAddressUVE expected = AddressOfUVE(*client);
-    EXPECT_EQ(listener->StrangerCountUVE(), 1U);
-    ASSERT_TRUE(listener->NextStrangerUVE().has_value());
-    EXPECT_EQ(*listener->NextStrangerUVE(), expected);
-    EXPECT_EQ(listener->NextStrangerUVE()->ToStringUVE(),
-              "127.0.0.1:" + std::to_string(client->LocalPortUVE()));
+    const UdpEndpointAddress expected = AddressOf(*client);
+    EXPECT_EQ(listener->StrangerCount(), 1U);
+    ASSERT_TRUE(listener->NextStranger().has_value());
+    EXPECT_EQ(*listener->NextStranger(), expected);
+    EXPECT_EQ(listener->NextStranger()->ToString(),
+              "127.0.0.1:" + std::to_string(client->LocalPort()));
 
-    std::optional<UdpListenerPeerUVE> peer = listener->AcceptPeerUVE();
+    std::optional<UdpListenerPeer> peer = listener->AcceptPeer();
     ASSERT_TRUE(peer.has_value());
-    EXPECT_EQ(peer->RemoteUVE(), expected);
-    EXPECT_EQ(listener->PeerCountUVE(), 1U);
-    EXPECT_TRUE(listener->HasPeerUVE(expected));
-    EXPECT_FALSE(listener->HasPeerUVE(UdpEndpointAddressUVE{kLoopbackHostUVE, 1U}));
-    EXPECT_FALSE(listener->HasStrangersUVE());
-    EXPECT_FALSE(listener->AcceptPeerUVE().has_value());
+    EXPECT_EQ(peer->Remote(), expected);
+    EXPECT_EQ(listener->PeerCount(), 1U);
+    EXPECT_TRUE(listener->HasPeer(expected));
+    EXPECT_FALSE(listener->HasPeer(UdpEndpointAddress{kLoopbackHost, 1U}));
+    EXPECT_FALSE(listener->HasStrangers());
+    EXPECT_FALSE(listener->AcceptPeer().has_value());
 }
 
-TEST(UdpListenerUVE, AcceptReplaysHeldDatagramsInOrder) {
-    std::optional<UdpListenerUVE> listener = CreateUdpListenerUVE(UdpListenerConfigUVE{});
+TEST(UdpListener, AcceptReplaysHeldDatagramsInOrder) {
+    std::optional<UdpListener> listener = CreateUdpListener(UdpListenerConfig{});
     ASSERT_TRUE(listener.has_value());
-    std::optional<UdpTransportEndpointUVE> client = MakeClientUVE(listener->LocalPortUVE());
+    std::optional<UdpTransportEndpoint> client = MakeClient(listener->LocalPort());
     ASSERT_TRUE(client.has_value());
 
-    ASSERT_TRUE(client->SendUVE(BytesUVE("first")));
-    ASSERT_TRUE(client->SendUVE(BytesUVE("second")));
-    ASSERT_TRUE(PollUntilUVE([&] {
-        listener->UpdateUVE();
-        return listener->StatsUVE().datagramsHeldForStrangers == 2U;
+    ASSERT_TRUE(client->Send(Bytes("first")));
+    ASSERT_TRUE(client->Send(Bytes("second")));
+    ASSERT_TRUE(PollUntil([&] {
+        listener->Update();
+        return listener->Stats().datagramsHeldForStrangers == 2U;
     }));
 
-    std::optional<UdpListenerPeerUVE> peer = listener->AcceptPeerUVE();
+    std::optional<UdpListenerPeer> peer = listener->AcceptPeer();
     ASSERT_TRUE(peer.has_value());
     // Synchronous replay, arrival order, no pump in between.
-    EXPECT_EQ(peer->TryReceiveUVE(), BytesUVE("first"));
-    EXPECT_EQ(peer->TryReceiveUVE(), BytesUVE("second"));
-    EXPECT_FALSE(peer->TryReceiveUVE().has_value());
-    EXPECT_EQ(peer->StatsUVE().datagramsReceived, 2U);
+    EXPECT_EQ(peer->TryReceive(), Bytes("first"));
+    EXPECT_EQ(peer->TryReceive(), Bytes("second"));
+    EXPECT_FALSE(peer->TryReceive().has_value());
+    EXPECT_EQ(peer->Stats().datagramsReceived, 2U);
 }
 
-TEST(UdpListenerUVE, PeersIsolateTrafficBothDirections) {
-    std::optional<UdpListenerUVE> listener = CreateUdpListenerUVE(UdpListenerConfigUVE{});
+TEST(UdpListener, PeersIsolateTrafficBothDirections) {
+    std::optional<UdpListener> listener = CreateUdpListener(UdpListenerConfig{});
     ASSERT_TRUE(listener.has_value());
-    std::optional<UdpTransportEndpointUVE> clientA = MakeClientUVE(listener->LocalPortUVE());
-    std::optional<UdpTransportEndpointUVE> clientB = MakeClientUVE(listener->LocalPortUVE());
+    std::optional<UdpTransportEndpoint> clientA = MakeClient(listener->LocalPort());
+    std::optional<UdpTransportEndpoint> clientB = MakeClient(listener->LocalPort());
     ASSERT_TRUE(clientA.has_value());
     ASSERT_TRUE(clientB.has_value());
 
-    ASSERT_TRUE(clientA->SendUVE(BytesUVE("knock-a")));
-    ASSERT_TRUE(PollUntilUVE([&] {
-        listener->UpdateUVE();
-        return listener->StrangerCountUVE() == 1U;
+    ASSERT_TRUE(clientA->Send(Bytes("knock-a")));
+    ASSERT_TRUE(PollUntil([&] {
+        listener->Update();
+        return listener->StrangerCount() == 1U;
     }));
-    std::optional<UdpListenerPeerUVE> peerA = listener->AcceptPeerUVE();
+    std::optional<UdpListenerPeer> peerA = listener->AcceptPeer();
     ASSERT_TRUE(peerA.has_value());
-    EXPECT_EQ(peerA->TryReceiveUVE(), BytesUVE("knock-a"));
-    ASSERT_TRUE(clientB->SendUVE(BytesUVE("knock-b")));
-    ASSERT_TRUE(PollUntilUVE([&] {
-        listener->UpdateUVE();
-        return listener->StrangerCountUVE() == 1U;
+    EXPECT_EQ(peerA->TryReceive(), Bytes("knock-a"));
+    ASSERT_TRUE(clientB->Send(Bytes("knock-b")));
+    ASSERT_TRUE(PollUntil([&] {
+        listener->Update();
+        return listener->StrangerCount() == 1U;
     }));
-    std::optional<UdpListenerPeerUVE> peerB = listener->AcceptPeerUVE();
+    std::optional<UdpListenerPeer> peerB = listener->AcceptPeer();
     ASSERT_TRUE(peerB.has_value());
-    EXPECT_EQ(peerB->TryReceiveUVE(), BytesUVE("knock-b"));
+    EXPECT_EQ(peerB->TryReceive(), Bytes("knock-b"));
 
-    ASSERT_TRUE(clientA->SendUVE(BytesUVE("up-a")));
-    ASSERT_TRUE(clientB->SendUVE(BytesUVE("up-b")));
-    ASSERT_TRUE(PollUntilUVE([&] {
-        listener->UpdateUVE();
-        return peerA->HasPendingUVE() && peerB->HasPendingUVE();
+    ASSERT_TRUE(clientA->Send(Bytes("up-a")));
+    ASSERT_TRUE(clientB->Send(Bytes("up-b")));
+    ASSERT_TRUE(PollUntil([&] {
+        listener->Update();
+        return peerA->HasPending() && peerB->HasPending();
     }));
-    EXPECT_EQ(peerA->TryReceiveUVE(), BytesUVE("up-a"));
-    EXPECT_EQ(peerB->TryReceiveUVE(), BytesUVE("up-b"));
+    EXPECT_EQ(peerA->TryReceive(), Bytes("up-a"));
+    EXPECT_EQ(peerB->TryReceive(), Bytes("up-b"));
 
-    ASSERT_TRUE(peerA->SendUVE(BytesUVE("down-a")));
-    ASSERT_TRUE(peerB->SendUVE(BytesUVE("down-b")));
-    ASSERT_TRUE(PollUntilUVE([&] { return clientA->HasPendingUVE(); }));
-    ASSERT_TRUE(PollUntilUVE([&] { return clientB->HasPendingUVE(); }));
-    EXPECT_EQ(clientA->TryReceiveUVE(), BytesUVE("down-a"));
-    EXPECT_EQ(clientB->TryReceiveUVE(), BytesUVE("down-b"));
-    EXPECT_FALSE(clientA->TryReceiveUVE().has_value());
-    EXPECT_FALSE(clientB->TryReceiveUVE().has_value());
+    ASSERT_TRUE(peerA->Send(Bytes("down-a")));
+    ASSERT_TRUE(peerB->Send(Bytes("down-b")));
+    ASSERT_TRUE(PollUntil([&] { return clientA->HasPending(); }));
+    ASSERT_TRUE(PollUntil([&] { return clientB->HasPending(); }));
+    EXPECT_EQ(clientA->TryReceive(), Bytes("down-a"));
+    EXPECT_EQ(clientB->TryReceive(), Bytes("down-b"));
+    EXPECT_FALSE(clientA->TryReceive().has_value());
+    EXPECT_FALSE(clientB->TryReceive().has_value());
 
     // Copies share the socket, the queue, and the ledger; moved-from is inert.
-    UdpListenerPeerUVE copy = *peerA;
-    EXPECT_TRUE(copy.SendUVE(BytesUVE("via-copy")));
-    EXPECT_EQ(peerA->StatsUVE().datagramsSent, copy.StatsUVE().datagramsSent);
-    ASSERT_TRUE(PollUntilUVE([&] { return clientA->HasPendingUVE(); }));
-    EXPECT_EQ(clientA->TryReceiveUVE(), BytesUVE("via-copy"));
-    UdpListenerPeerUVE moved = std::move(copy);
-    EXPECT_FALSE(copy.SendUVE(BytesUVE("nope")));
-    EXPECT_FALSE(copy.TryReceiveUVE().has_value());
-    EXPECT_FALSE(copy.HasPendingUVE());
-    EXPECT_EQ(copy.PendingCountUVE(), 0U);
-    EXPECT_EQ(copy.StatsUVE(), UdpTransportStatsUVE{});
-    EXPECT_EQ(moved.RemoteUVE(), peerA->RemoteUVE());
+    UdpListenerPeer copy = *peerA;
+    EXPECT_TRUE(copy.Send(Bytes("via-copy")));
+    EXPECT_EQ(peerA->Stats().datagramsSent, copy.Stats().datagramsSent);
+    ASSERT_TRUE(PollUntil([&] { return clientA->HasPending(); }));
+    EXPECT_EQ(clientA->TryReceive(), Bytes("via-copy"));
+    UdpListenerPeer moved = std::move(copy);
+    EXPECT_FALSE(copy.Send(Bytes("nope")));
+    EXPECT_FALSE(copy.TryReceive().has_value());
+    EXPECT_FALSE(copy.HasPending());
+    EXPECT_EQ(copy.PendingCount(), 0U);
+    EXPECT_EQ(copy.Stats(), UdpTransportStats{});
+    EXPECT_EQ(moved.Remote(), peerA->Remote());
 }
 
-TEST(UdpListenerUVE, TwoSessionsShareOneSocket) {
-    std::optional<UdpListenerUVE> listener = CreateUdpListenerUVE(UdpListenerConfigUVE{});
+TEST(UdpListener, TwoSessionsShareOneSocket) {
+    std::optional<UdpListener> listener = CreateUdpListener(UdpListenerConfig{});
     ASSERT_TRUE(listener.has_value());
-    std::optional<UdpTransportEndpointUVE> endpointA = MakeClientUVE(listener->LocalPortUVE());
-    std::optional<UdpTransportEndpointUVE> endpointB = MakeClientUVE(listener->LocalPortUVE());
+    std::optional<UdpTransportEndpoint> endpointA = MakeClient(listener->LocalPort());
+    std::optional<UdpTransportEndpoint> endpointB = MakeClient(listener->LocalPort());
     ASSERT_TRUE(endpointA.has_value());
     ASSERT_TRUE(endpointB.has_value());
-    NetworkSessionUVE clientA(SessionRoleUVE::Client,
-                              std::make_unique<UdpTransportEndpointUVE>(std::move(*endpointA)));
-    NetworkSessionUVE clientB(SessionRoleUVE::Client,
-                              std::make_unique<UdpTransportEndpointUVE>(std::move(*endpointB)));
-    ASSERT_TRUE(clientA.ConnectUVE(0U));
-    ASSERT_TRUE(clientB.ConnectUVE(0U));
+    NetworkSession clientA(SessionRole::Client,
+                              std::make_unique<UdpTransportEndpoint>(std::move(*endpointA)));
+    NetworkSession clientB(SessionRole::Client,
+                              std::make_unique<UdpTransportEndpoint>(std::move(*endpointB)));
+    ASSERT_TRUE(clientA.Connect(0U));
+    ASSERT_TRUE(clientB.Connect(0U));
 
     // A real server's accept loop in miniature: pump, adopt every stranger into a session,
     // pump the sessions - the replayed Hellos establish with no redial.
-    std::vector<NetworkSessionUVE> servers;
+    std::vector<NetworkSession> servers;
     servers.reserve(2U);
     std::uint64_t nowMs = 0U;
-    const bool established = PollUntilUVE([&] {
-        clientA.UpdateUVE(nowMs);
-        clientB.UpdateUVE(nowMs);
-        listener->UpdateUVE();
+    const bool established = PollUntil([&] {
+        clientA.Update(nowMs);
+        clientB.Update(nowMs);
+        listener->Update();
         while (servers.size() < 2U) {
-            std::optional<UdpListenerPeerUVE> peer = listener->AcceptPeerUVE();
+            std::optional<UdpListenerPeer> peer = listener->AcceptPeer();
             if (!peer.has_value()) {
                 break;
             }
-            servers.push_back(NetworkSessionUVE(
-                SessionRoleUVE::Server, std::make_unique<UdpListenerPeerUVE>(std::move(*peer))));
+            servers.push_back(NetworkSession(
+                SessionRole::Server, std::make_unique<UdpListenerPeer>(std::move(*peer))));
         }
         for (auto& server : servers) {
-            server.UpdateUVE(nowMs);
+            server.Update(nowMs);
         }
         ++nowMs;
         return servers.size() == 2U &&
-               clientA.StateUVE() == SessionStateUVE::Established &&
-               clientB.StateUVE() == SessionStateUVE::Established &&
-               servers[0].StateUVE() == SessionStateUVE::Established &&
-               servers[1].StateUVE() == SessionStateUVE::Established;
+               clientA.State() == SessionState::Established &&
+               clientB.State() == SessionState::Established &&
+               servers[0].State() == SessionState::Established &&
+               servers[1].State() == SessionState::Established;
     });
     ASSERT_TRUE(established);
 
-    ASSERT_TRUE(clientA.SendDataUVE(BytesUVE("a1")));
-    ASSERT_TRUE(servers[0].SendDataUVE(BytesUVE("a2")));
-    ASSERT_TRUE(clientB.SendDataUVE(BytesUVE("b1")));
-    ASSERT_TRUE(servers[1].SendDataUVE(BytesUVE("b2")));
+    ASSERT_TRUE(clientA.SendData(Bytes("a1")));
+    ASSERT_TRUE(servers[0].SendData(Bytes("a2")));
+    ASSERT_TRUE(clientB.SendData(Bytes("b1")));
+    ASSERT_TRUE(servers[1].SendData(Bytes("b2")));
     std::optional<std::vector<std::uint8_t>> toServerA;
     std::optional<std::vector<std::uint8_t>> toClientA;
     std::optional<std::vector<std::uint8_t>> toServerB;
     std::optional<std::vector<std::uint8_t>> toClientB;
-    const bool exchanged = PollUntilUVE([&] {
-        clientA.UpdateUVE(nowMs);
-        clientB.UpdateUVE(nowMs);
-        listener->UpdateUVE();
+    const bool exchanged = PollUntil([&] {
+        clientA.Update(nowMs);
+        clientB.Update(nowMs);
+        listener->Update();
         for (auto& server : servers) {
-            server.UpdateUVE(nowMs);
+            server.Update(nowMs);
         }
         ++nowMs;
         if (!toServerA.has_value()) {
-            toServerA = servers[0].TryReceiveDataUVE();
+            toServerA = servers[0].TryReceiveData();
         }
         if (!toClientA.has_value()) {
-            toClientA = clientA.TryReceiveDataUVE();
+            toClientA = clientA.TryReceiveData();
         }
         if (!toServerB.has_value()) {
-            toServerB = servers[1].TryReceiveDataUVE();
+            toServerB = servers[1].TryReceiveData();
         }
         if (!toClientB.has_value()) {
-            toClientB = clientB.TryReceiveDataUVE();
+            toClientB = clientB.TryReceiveData();
         }
         return toServerA.has_value() && toClientA.has_value() && toServerB.has_value() &&
                toClientB.has_value();
     });
     ASSERT_TRUE(exchanged);
-    EXPECT_EQ(toServerA, BytesUVE("a1"));
-    EXPECT_EQ(toClientA, BytesUVE("a2"));
-    EXPECT_EQ(toServerB, BytesUVE("b1"));
-    EXPECT_EQ(toClientB, BytesUVE("b2"));
+    EXPECT_EQ(toServerA, Bytes("a1"));
+    EXPECT_EQ(toClientA, Bytes("a2"));
+    EXPECT_EQ(toServerB, Bytes("b1"));
+    EXPECT_EQ(toClientB, Bytes("b2"));
 }
 
-TEST(UdpListenerUVE, StrangerBacklogBoundsAndRefusalsForget) {
-    UdpListenerConfigUVE config;
+TEST(UdpListener, StrangerBacklogBoundsAndRefusalsForget) {
+    UdpListenerConfig config;
     config.maxStrangers = 1U;
     config.maxStrangerDatagrams = 1U;
-    std::optional<UdpListenerUVE> listener = CreateUdpListenerUVE(config);
+    std::optional<UdpListener> listener = CreateUdpListener(config);
     ASSERT_TRUE(listener.has_value());
-    std::optional<UdpTransportEndpointUVE> clientA = MakeClientUVE(listener->LocalPortUVE());
-    std::optional<UdpTransportEndpointUVE> clientB = MakeClientUVE(listener->LocalPortUVE());
+    std::optional<UdpTransportEndpoint> clientA = MakeClient(listener->LocalPort());
+    std::optional<UdpTransportEndpoint> clientB = MakeClient(listener->LocalPort());
     ASSERT_TRUE(clientA.has_value());
     ASSERT_TRUE(clientB.has_value());
 
     // Staged so A lands first: loopback preserves per-sender order, not cross-sender order.
-    ASSERT_TRUE(clientA->SendUVE(BytesUVE("a1")));
-    ASSERT_TRUE(PollUntilUVE([&] {
-        listener->UpdateUVE();
-        return listener->StrangerCountUVE() == 1U;
+    ASSERT_TRUE(clientA->Send(Bytes("a1")));
+    ASSERT_TRUE(PollUntil([&] {
+        listener->Update();
+        return listener->StrangerCount() == 1U;
     }));
-    ASSERT_TRUE(clientA->SendUVE(BytesUVE("a2")));
-    ASSERT_TRUE(clientB->SendUVE(BytesUVE("b1")));
-    ASSERT_TRUE(PollUntilUVE([&] {
-        listener->UpdateUVE();
-        return listener->StatsUVE().datagramsReceived == 3U;
+    ASSERT_TRUE(clientA->Send(Bytes("a2")));
+    ASSERT_TRUE(clientB->Send(Bytes("b1")));
+    ASSERT_TRUE(PollUntil([&] {
+        listener->Update();
+        return listener->Stats().datagramsReceived == 3U;
     }));
 
-    EXPECT_EQ(listener->StatsUVE().datagramsHeldForStrangers, 1U);
-    EXPECT_EQ(listener->StatsUVE().strangersDroppedFull, 2U);
-    EXPECT_EQ(listener->NextStrangerUVE(), AddressOfUVE(*clientA));
+    EXPECT_EQ(listener->Stats().datagramsHeldForStrangers, 1U);
+    EXPECT_EQ(listener->Stats().strangersDroppedFull, 2U);
+    EXPECT_EQ(listener->NextStranger(), AddressOf(*clientA));
 
-    EXPECT_TRUE(listener->RefuseStrangerUVE(AddressOfUVE(*clientA)));
-    EXPECT_FALSE(listener->RefuseStrangerUVE(AddressOfUVE(*clientA)));
-    EXPECT_FALSE(listener->HasStrangersUVE());
+    EXPECT_TRUE(listener->RefuseStranger(AddressOf(*clientA)));
+    EXPECT_FALSE(listener->RefuseStranger(AddressOf(*clientA)));
+    EXPECT_FALSE(listener->HasStrangers());
 
     // Refusal is forgetting, not banning: the next datagram strangers it again.
-    ASSERT_TRUE(clientA->SendUVE(BytesUVE("a3")));
-    ASSERT_TRUE(PollUntilUVE([&] {
-        listener->UpdateUVE();
-        return listener->HasStrangersUVE();
+    ASSERT_TRUE(clientA->Send(Bytes("a3")));
+    ASSERT_TRUE(PollUntil([&] {
+        listener->Update();
+        return listener->HasStrangers();
     }));
-    EXPECT_EQ(listener->NextStrangerUVE(), AddressOfUVE(*clientA));
+    EXPECT_EQ(listener->NextStranger(), AddressOf(*clientA));
 }
 
-TEST(UdpListenerUVE, RemovePeerOrphansItsEndpoint) {
-    std::optional<UdpListenerUVE> listener = CreateUdpListenerUVE(UdpListenerConfigUVE{});
+TEST(UdpListener, RemovePeerOrphansItsEndpoint) {
+    std::optional<UdpListener> listener = CreateUdpListener(UdpListenerConfig{});
     ASSERT_TRUE(listener.has_value());
-    std::optional<UdpTransportEndpointUVE> client = MakeClientUVE(listener->LocalPortUVE());
+    std::optional<UdpTransportEndpoint> client = MakeClient(listener->LocalPort());
     ASSERT_TRUE(client.has_value());
-    ASSERT_TRUE(client->SendUVE(BytesUVE("knock")));
-    ASSERT_TRUE(PollUntilUVE([&] {
-        listener->UpdateUVE();
-        return listener->HasStrangersUVE();
+    ASSERT_TRUE(client->Send(Bytes("knock")));
+    ASSERT_TRUE(PollUntil([&] {
+        listener->Update();
+        return listener->HasStrangers();
     }));
-    const UdpEndpointAddressUVE address = AddressOfUVE(*client);
-    std::optional<UdpListenerPeerUVE> peer = listener->AcceptPeerUVE();
+    const UdpEndpointAddress address = AddressOf(*client);
+    std::optional<UdpListenerPeer> peer = listener->AcceptPeer();
     ASSERT_TRUE(peer.has_value());
-    EXPECT_EQ(peer->TryReceiveUVE(), BytesUVE("knock"));
+    EXPECT_EQ(peer->TryReceive(), Bytes("knock"));
 
-    EXPECT_TRUE(listener->RemovePeerUVE(address));
-    EXPECT_FALSE(listener->RemovePeerUVE(address));
-    EXPECT_EQ(listener->PeerCountUVE(), 0U);
-    EXPECT_FALSE(peer->SendUVE(BytesUVE("nope")));
-    EXPECT_FALSE(peer->TryReceiveUVE().has_value());
-    EXPECT_EQ(peer->StatsUVE(), UdpTransportStatsUVE{});
+    EXPECT_TRUE(listener->RemovePeer(address));
+    EXPECT_FALSE(listener->RemovePeer(address));
+    EXPECT_EQ(listener->PeerCount(), 0U);
+    EXPECT_FALSE(peer->Send(Bytes("nope")));
+    EXPECT_FALSE(peer->TryReceive().has_value());
+    EXPECT_EQ(peer->Stats(), UdpTransportStats{});
 
     // Its next datagram strangers it again, and the named accept re-adopts it.
-    ASSERT_TRUE(client->SendUVE(BytesUVE("again")));
-    ASSERT_TRUE(PollUntilUVE([&] {
-        listener->UpdateUVE();
-        return listener->HasStrangersUVE();
+    ASSERT_TRUE(client->Send(Bytes("again")));
+    ASSERT_TRUE(PollUntil([&] {
+        listener->Update();
+        return listener->HasStrangers();
     }));
-    EXPECT_FALSE(listener->AcceptPeerUVE(UdpEndpointAddressUVE{kLoopbackHostUVE, 1U}, 256U)
+    EXPECT_FALSE(listener->AcceptPeer(UdpEndpointAddress{kLoopbackHost, 1U}, 256U)
                      .has_value());
-    std::optional<UdpListenerPeerUVE> readopted = listener->AcceptPeerUVE(address, 256U);
+    std::optional<UdpListenerPeer> readopted = listener->AcceptPeer(address, 256U);
     ASSERT_TRUE(readopted.has_value());
-    EXPECT_EQ(readopted->TryReceiveUVE(), BytesUVE("again"));
-    EXPECT_EQ(listener->PeerCountUVE(), 1U);
+    EXPECT_EQ(readopted->TryReceive(), Bytes("again"));
+    EXPECT_EQ(listener->PeerCount(), 1U);
 }
 
-TEST(UdpListenerUVE, AcceptSpecificStrangerLeavesTheRest) {
-    std::optional<UdpListenerUVE> listener = CreateUdpListenerUVE(UdpListenerConfigUVE{});
+TEST(UdpListener, AcceptSpecificStrangerLeavesTheRest) {
+    std::optional<UdpListener> listener = CreateUdpListener(UdpListenerConfig{});
     ASSERT_TRUE(listener.has_value());
-    std::optional<UdpTransportEndpointUVE> clientA = MakeClientUVE(listener->LocalPortUVE());
-    std::optional<UdpTransportEndpointUVE> clientB = MakeClientUVE(listener->LocalPortUVE());
+    std::optional<UdpTransportEndpoint> clientA = MakeClient(listener->LocalPort());
+    std::optional<UdpTransportEndpoint> clientB = MakeClient(listener->LocalPort());
     ASSERT_TRUE(clientA.has_value());
     ASSERT_TRUE(clientB.has_value());
 
-    ASSERT_TRUE(clientA->SendUVE(BytesUVE("a")));
-    ASSERT_TRUE(PollUntilUVE([&] {
-        listener->UpdateUVE();
-        return listener->StrangerCountUVE() == 1U;
+    ASSERT_TRUE(clientA->Send(Bytes("a")));
+    ASSERT_TRUE(PollUntil([&] {
+        listener->Update();
+        return listener->StrangerCount() == 1U;
     }));
-    ASSERT_TRUE(clientB->SendUVE(BytesUVE("b")));
-    ASSERT_TRUE(PollUntilUVE([&] {
-        listener->UpdateUVE();
-        return listener->StrangerCountUVE() == 2U;
+    ASSERT_TRUE(clientB->Send(Bytes("b")));
+    ASSERT_TRUE(PollUntil([&] {
+        listener->Update();
+        return listener->StrangerCount() == 2U;
     }));
 
-    std::optional<UdpListenerPeerUVE> peerB =
-        listener->AcceptPeerUVE(AddressOfUVE(*clientB), 256U);
+    std::optional<UdpListenerPeer> peerB =
+        listener->AcceptPeer(AddressOf(*clientB), 256U);
     ASSERT_TRUE(peerB.has_value());
-    EXPECT_EQ(peerB->TryReceiveUVE(), BytesUVE("b"));
-    EXPECT_EQ(listener->StrangerCountUVE(), 1U);
-    EXPECT_EQ(listener->NextStrangerUVE(), AddressOfUVE(*clientA));
-    std::optional<UdpListenerPeerUVE> peerA = listener->AcceptPeerUVE();
+    EXPECT_EQ(peerB->TryReceive(), Bytes("b"));
+    EXPECT_EQ(listener->StrangerCount(), 1U);
+    EXPECT_EQ(listener->NextStranger(), AddressOf(*clientA));
+    std::optional<UdpListenerPeer> peerA = listener->AcceptPeer();
     ASSERT_TRUE(peerA.has_value());
-    EXPECT_EQ(peerA->RemoteUVE(), AddressOfUVE(*clientA));
+    EXPECT_EQ(peerA->Remote(), AddressOf(*clientA));
 }
 
-TEST(UdpListenerUVE, PeerSendOversizeFailsAndCounts) {
-    std::optional<UdpListenerUVE> listener = CreateUdpListenerUVE(UdpListenerConfigUVE{});
+TEST(UdpListener, PeerSendOversizeFailsAndCounts) {
+    std::optional<UdpListener> listener = CreateUdpListener(UdpListenerConfig{});
     ASSERT_TRUE(listener.has_value());
-    std::optional<UdpTransportEndpointUVE> client = MakeClientUVE(listener->LocalPortUVE());
+    std::optional<UdpTransportEndpoint> client = MakeClient(listener->LocalPort());
     ASSERT_TRUE(client.has_value());
-    ASSERT_TRUE(client->SendUVE(BytesUVE("knock")));
-    ASSERT_TRUE(PollUntilUVE([&] {
-        listener->UpdateUVE();
-        return listener->HasStrangersUVE();
+    ASSERT_TRUE(client->Send(Bytes("knock")));
+    ASSERT_TRUE(PollUntil([&] {
+        listener->Update();
+        return listener->HasStrangers();
     }));
-    std::optional<UdpListenerPeerUVE> peer = listener->AcceptPeerUVE();
+    std::optional<UdpListenerPeer> peer = listener->AcceptPeer();
     ASSERT_TRUE(peer.has_value());
 
-    const std::vector<std::uint8_t> over(kTransportMaximumDatagramBytesUVE + 1U, 0xAB);
-    EXPECT_FALSE(peer->SendUVE(over));
-    EXPECT_EQ(peer->StatsUVE().datagramsDroppedOversize, 1U);
-    EXPECT_EQ(peer->StatsUVE().datagramsSent, 0U);
+    const std::vector<std::uint8_t> over(kTransportMaximumDatagramBytes + 1U, 0xAB);
+    EXPECT_FALSE(peer->Send(over));
+    EXPECT_EQ(peer->Stats().datagramsDroppedOversize, 1U);
+    EXPECT_EQ(peer->Stats().datagramsSent, 0U);
 }
 
-TEST(UdpListenerUVE, ListenerStatsPartitionExactly) {
-    std::optional<UdpListenerUVE> listener = CreateUdpListenerUVE(UdpListenerConfigUVE{});
+TEST(UdpListener, ListenerStatsPartitionExactly) {
+    std::optional<UdpListener> listener = CreateUdpListener(UdpListenerConfig{});
     ASSERT_TRUE(listener.has_value());
-    std::optional<UdpTransportEndpointUVE> clientA = MakeClientUVE(listener->LocalPortUVE());
-    std::optional<UdpTransportEndpointUVE> clientB = MakeClientUVE(listener->LocalPortUVE());
+    std::optional<UdpTransportEndpoint> clientA = MakeClient(listener->LocalPort());
+    std::optional<UdpTransportEndpoint> clientB = MakeClient(listener->LocalPort());
     ASSERT_TRUE(clientA.has_value());
     ASSERT_TRUE(clientB.has_value());
 
-    ASSERT_TRUE(clientA->SendUVE(BytesUVE("knock")));
-    ASSERT_TRUE(PollUntilUVE([&] {
-        listener->UpdateUVE();
-        return listener->HasStrangersUVE();
+    ASSERT_TRUE(clientA->Send(Bytes("knock")));
+    ASSERT_TRUE(PollUntil([&] {
+        listener->Update();
+        return listener->HasStrangers();
     }));
-    std::optional<UdpListenerPeerUVE> peer =
-        listener->AcceptPeerUVE(AddressOfUVE(*clientA), 1U);
+    std::optional<UdpListenerPeer> peer =
+        listener->AcceptPeer(AddressOf(*clientA), 1U);
     ASSERT_TRUE(peer.has_value());
-    EXPECT_EQ(peer->TryReceiveUVE(), BytesUVE("knock"));
+    EXPECT_EQ(peer->TryReceive(), Bytes("knock"));
 
-    ASSERT_TRUE(clientA->SendUVE(BytesUVE("a1")));
-    ASSERT_TRUE(clientA->SendUVE(BytesUVE("a2")));
-    ASSERT_TRUE(clientB->SendUVE(BytesUVE("b1")));
-    ASSERT_TRUE(PollUntilUVE([&] {
-        listener->UpdateUVE();
-        return listener->StatsUVE().datagramsReceived == 4U;
+    ASSERT_TRUE(clientA->Send(Bytes("a1")));
+    ASSERT_TRUE(clientA->Send(Bytes("a2")));
+    ASSERT_TRUE(clientB->Send(Bytes("b1")));
+    ASSERT_TRUE(PollUntil([&] {
+        listener->Update();
+        return listener->Stats().datagramsReceived == 4U;
     }));
 
     // knock held, a1 routed, a2 over the bound-1 queue, b1 held: every arrival in exactly
     // one bucket, summing to received.
-    const UdpListenerStatsUVE stats = listener->StatsUVE();
+    const UdpListenerStats stats = listener->Stats();
     EXPECT_EQ(stats.datagramsReceived, 4U);
     EXPECT_EQ(stats.datagramsRouted, 1U);
     EXPECT_EQ(stats.datagramsHeldForStrangers, 2U);
@@ -413,50 +413,50 @@ TEST(UdpListenerUVE, ListenerStatsPartitionExactly) {
                                            stats.datagramsDroppedFull +
                                            stats.datagramsDroppedOversize +
                                            stats.strangersDroppedFull);
-    EXPECT_EQ(peer->TryReceiveUVE(), BytesUVE("a1"));
-    EXPECT_FALSE(peer->TryReceiveUVE().has_value());
+    EXPECT_EQ(peer->TryReceive(), Bytes("a1"));
+    EXPECT_FALSE(peer->TryReceive().has_value());
 }
 
-TEST(UdpListenerUVE, PeerPendingCountsAreExact) {
-    std::optional<UdpListenerUVE> listener = CreateUdpListenerUVE(UdpListenerConfigUVE{});
+TEST(UdpListener, PeerPendingCountsAreExact) {
+    std::optional<UdpListener> listener = CreateUdpListener(UdpListenerConfig{});
     ASSERT_TRUE(listener.has_value());
-    std::optional<UdpTransportEndpointUVE> client = MakeClientUVE(listener->LocalPortUVE());
+    std::optional<UdpTransportEndpoint> client = MakeClient(listener->LocalPort());
     ASSERT_TRUE(client.has_value());
-    ASSERT_TRUE(client->SendUVE(BytesUVE("knock")));
-    ASSERT_TRUE(PollUntilUVE([&] {
-        listener->UpdateUVE();
-        return listener->HasStrangersUVE();
+    ASSERT_TRUE(client->Send(Bytes("knock")));
+    ASSERT_TRUE(PollUntil([&] {
+        listener->Update();
+        return listener->HasStrangers();
     }));
-    std::optional<UdpListenerPeerUVE> peer = listener->AcceptPeerUVE();
+    std::optional<UdpListenerPeer> peer = listener->AcceptPeer();
     ASSERT_TRUE(peer.has_value());
-    EXPECT_EQ(peer->TryReceiveUVE(), BytesUVE("knock"));
-    EXPECT_FALSE(peer->HasPendingUVE());
-    EXPECT_EQ(peer->PendingCountUVE(), 0U);
+    EXPECT_EQ(peer->TryReceive(), Bytes("knock"));
+    EXPECT_FALSE(peer->HasPending());
+    EXPECT_EQ(peer->PendingCount(), 0U);
 
-    ASSERT_TRUE(client->SendUVE(BytesUVE("one")));
-    ASSERT_TRUE(client->SendUVE(BytesUVE("two")));
-    ASSERT_TRUE(PollUntilUVE([&] {
-        listener->UpdateUVE();
-        return peer->PendingCountUVE() == 2U;
+    ASSERT_TRUE(client->Send(Bytes("one")));
+    ASSERT_TRUE(client->Send(Bytes("two")));
+    ASSERT_TRUE(PollUntil([&] {
+        listener->Update();
+        return peer->PendingCount() == 2U;
     }));
     // Exact, where a connected endpoint would read the lower bound 1: peers hold no socket
     // backlog of their own, so the queue is all there is.
-    EXPECT_TRUE(peer->HasPendingUVE());
-    EXPECT_EQ(peer->PendingCountUVE(), 2U);
-    EXPECT_EQ(peer->TryReceiveUVE(), BytesUVE("one"));
-    EXPECT_EQ(peer->PendingCountUVE(), 1U);
-    EXPECT_EQ(peer->TryReceiveUVE(), BytesUVE("two"));
-    EXPECT_FALSE(peer->HasPendingUVE());
-    EXPECT_EQ(peer->PendingCountUVE(), 0U);
+    EXPECT_TRUE(peer->HasPending());
+    EXPECT_EQ(peer->PendingCount(), 2U);
+    EXPECT_EQ(peer->TryReceive(), Bytes("one"));
+    EXPECT_EQ(peer->PendingCount(), 1U);
+    EXPECT_EQ(peer->TryReceive(), Bytes("two"));
+    EXPECT_FALSE(peer->HasPending());
+    EXPECT_EQ(peer->PendingCount(), 0U);
 }
 
-TEST(UdpListenerUVE, FactoryRefusesTakenPort) {
-    std::optional<UdpListenerUVE> first = CreateUdpListenerUVE(UdpListenerConfigUVE{});
+TEST(UdpListener, FactoryRefusesTakenPort) {
+    std::optional<UdpListener> first = CreateUdpListener(UdpListenerConfig{});
     ASSERT_TRUE(first.has_value());
-    EXPECT_NE(first->LocalPortUVE(), 0U);
-    UdpListenerConfigUVE taken;
-    taken.localPort = first->LocalPortUVE();
-    EXPECT_FALSE(CreateUdpListenerUVE(taken).has_value());
+    EXPECT_NE(first->LocalPort(), 0U);
+    UdpListenerConfig taken;
+    taken.localPort = first->LocalPort();
+    EXPECT_FALSE(CreateUdpListener(taken).has_value());
 }
 
 } // namespace

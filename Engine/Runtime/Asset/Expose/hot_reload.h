@@ -5,8 +5,8 @@
 #include "i_hot_reload.h"
 #include "i_event_system.h"
 namespace UVE::Asset {
-enum class HotReloadPreferenceUVE : std::uint8_t { Automatic = 0, Polling };
-enum class HotReloadBackendUVE : std::uint8_t { Polling = 0, Inotify };
+enum class HotReloadPreference : std::uint8_t { Automatic = 0, Polling };
+enum class HotReloadBackend : std::uint8_t { Polling = 0, Inotify };
 /// Explicitly tracked GUIDs only, not a second project scanner/importer. Automatic supplements
 /// portable path/existence/mtime/size snapshots with Linux inotify; other platforms, failed native
 /// initialization and unwatchable directories keep polling. Both modes retain the existing
@@ -18,25 +18,25 @@ enum class HotReloadBackendUVE : std::uint8_t { Polling = 0, Inotify };
 /// AssetReloadedEvent still means triggered, not succeeded. Track/Untrack/queries are synchronized;
 /// Poll and lifetime belong to the engine thread. Manager/event callbacks occur outside the lock.
 /// Untrack does not cancel an already-dispatched load; AssetManager may Track again on completion.
-class HotReloadUVE final : public IHotReloadUVE {
+class HotReload final : public IHotReload {
   public:
-    explicit HotReloadUVE(Events::IEventSystemUVE &eventSystem, double pollIntervalSeconds = 1.0);
-    HotReloadUVE(Events::IEventSystemUVE &eventSystem, double pollIntervalSeconds,
-                 HotReloadPreferenceUVE preference);
-    ~HotReloadUVE() override;
-    HotReloadUVE(const HotReloadUVE &) = delete;
-    HotReloadUVE &operator=(const HotReloadUVE &) = delete;
+    explicit HotReload(Events::IEventSystem &eventSystem, double pollIntervalSeconds = 1.0);
+    HotReload(Events::IEventSystem &eventSystem, double pollIntervalSeconds,
+                 HotReloadPreference preference);
+    ~HotReload() override;
+    HotReload(const HotReload &) = delete;
+    HotReload &operator=(const HotReload &) = delete;
     /// Actual notification backend initialization, not an all-directory watch guarantee.
-    [[nodiscard]] HotReloadBackendUVE GetBackendUVE() const;
-    [[nodiscard]] std::uint64_t GetNativeOverflowCountUVE() const;
-    void TrackUVE(AssetGuidUVE guid) override;
-    void UntrackUVE(AssetGuidUVE guid) override;
+    [[nodiscard]] HotReloadBackend GetBackend() const;
+    [[nodiscard]] std::uint64_t GetNativeOverflowCount() const;
+    void Track(AssetGuid guid) override;
+    void Untrack(AssetGuid guid) override;
     /// Negative/nonfinite deltas do not mutate timing or snapshots.
-    void PollUVE(IAssetManagerUVE &assetManager, IAssetDatabaseUVE &assetDatabase,
+    void Poll(IAssetManager &assetManager, IAssetDatabase &assetDatabase,
                  double deltaTimeSeconds) override;
 
   private:
-    struct ImplUVE;
-    std::unique_ptr<ImplUVE> m_impl;
+    struct Impl;
+    std::unique_ptr<Impl> m_impl;
 };
 } // namespace UVE::Asset

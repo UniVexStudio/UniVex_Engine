@@ -19,38 +19,38 @@ namespace UVE::Asset {
 /// (Khronos Group, "glTF 2.0 Specification", https://registry.khronos.org/glTF/specs/2.0/) and the
 /// one a DCC tool exports lip-sync through. The specification text is not reproduced here; the
 /// reader is implemented against it.
-enum class GltfAnimationPathUVE : std::uint8_t { Translation, Rotation, Scale, Weights };
+enum class GltfAnimationPath : std::uint8_t { Translation, Rotation, Scale, Weights };
 
 /// The interpolations the converter bakes. CUBICSPLINE is rejected at parse: baking tangents to
 /// dense keys would silently balloon small files past the per-track sample cap.
-enum class GltfAnimationInterpolationUVE : std::uint8_t { Step, Linear };
+enum class GltfAnimationInterpolation : std::uint8_t { Step, Linear };
 
 /// One glTF channel with its target already resolved to a name: key times plus one value per key.
 /// A transform channel fills `bone` and one VEC3 (translation/scale) or VEC4 unit-ish quaternion
 /// (rotation) per key; a weights channel fills `node` and `morphTargetCount` SCALARs per key, laid
 /// end to end in `values` exactly as the specification stores them.
-struct GltfAnimationChannelSourceUVE final {
+struct GltfAnimationChannelSource final {
     /// The skeleton bone this channel drives. Non-empty for the TRS paths, empty for Weights.
     std::string bone;
     /// The node whose mesh this channel drives. Non-empty for Weights, empty for the TRS paths.
     /// glTF animates the mesh INSTANCE, so this is the node and not the mesh: two nodes may share
     /// one mesh, and each of them needs its own track.
     std::string node;
-    GltfAnimationPathUVE path = GltfAnimationPathUVE::Translation;
-    GltfAnimationInterpolationUVE interpolation = GltfAnimationInterpolationUVE::Linear;
+    GltfAnimationPath path = GltfAnimationPath::Translation;
+    GltfAnimationInterpolation interpolation = GltfAnimationInterpolation::Linear;
     /// Weights only: how many morph targets one key carries. Zero for the TRS paths.
     std::size_t morphTargetCount = 0U;
     /// Float SCALAR key times in seconds: finite, >= 0, strictly increasing.
-    GltfAccessorViewUVE times;
+    GltfAccessorView times;
     /// Float values, one per key time: VEC3 for translation/scale, VEC4 for rotation, and
     /// `morphTargetCount` SCALARs per key for weights.
-    GltfAccessorViewUVE values;
+    GltfAccessorView values;
 };
 
 /// Caller-owned inputs for converting one glTF animation: the clip id plus its channels.
-struct GltfAnimationSourceUVE final {
+struct GltfAnimationSource final {
     std::string clipId;
-    std::vector<GltfAnimationChannelSourceUVE> channels;
+    std::vector<GltfAnimationChannelSource> channels;
 };
 
 /// Converts one glTF animation to a clip against `skeleton`. Each bone's channels merge onto the
@@ -76,8 +76,8 @@ struct GltfAnimationSourceUVE final {
 /// channel (the clip's morph tracks have no step mode, so representing one would mean inventing
 /// keys), a target name that is empty or unbounded, a union wider than the per-track sample cap,
 /// or a zero duration.
-[[nodiscard]] bool ConvertGltfAnimationUVE(const GltfAnimationSourceUVE& source,
-                                           const SkeletonAssetUVE& skeleton, AnimationClipAssetUVE& outClip);
+[[nodiscard]] bool ConvertGltfAnimation(const GltfAnimationSource& source,
+                                           const SkeletonAsset& skeleton, AnimationClipAsset& outClip);
 
 /// Parses the first animation of a glTF document (JSON text plus its single binary buffer):
 /// channels targeting the document's skin joints resolve through the skeleton's bone names,
@@ -99,7 +99,7 @@ struct GltfAnimationSourceUVE final {
 /// they have, a value stream that is not exactly `keys * targets` long, a non-SCALAR weights
 /// output, a node name above the identifier cap, a node array above the naming cap, or anything
 /// above the bone cap.
-[[nodiscard]] std::optional<GltfAnimationSourceUVE> ParseGltfAnimationSourceUVE(
+[[nodiscard]] std::optional<GltfAnimationSource> ParseGltfAnimationSource(
     std::string_view json, const std::vector<std::byte>& buffer);
 
 } // namespace UVE::Asset

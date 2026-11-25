@@ -37,64 +37,64 @@
 
 namespace UVE::Editor {
 
-Scene::EntityUVE EditorUVE::AddPreviewSunToSceneUVE() {
+Scene::Entity Editor::AddPreviewSunToScene() {
     // The scene's sun, made from (or updated to) the preview sun: direction, colour, energy, and
     // real-time shadows on.
-    if (!IsAuthoringCommandAllowedUVE()) {
-        return Scene::kInvalidEntityUVE;
+    if (!IsAuthoringCommandAllowed()) {
+        return Scene::kInvalidEntity;
     }
-    Scene::EntityUVE sunEntity = FindTopLevelObjectUVE(Scene::Objects::SceneObjectKindUVE::DirectionalLight3D);
-    if (sunEntity == Scene::kInvalidEntityUVE) {
-        sunEntity = CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::DirectionalLight3D);
+    Scene::Entity sunEntity = FindTopLevelObject(Scene::Objects::SceneObjectKind::DirectionalLight3D);
+    if (sunEntity == Scene::kInvalidEntity) {
+        sunEntity = CreateDocumentSceneObject(Scene::Objects::SceneObjectKind::DirectionalLight3D);
     }
-    if (sunEntity == Scene::kInvalidEntityUVE) {
+    if (sunEntity == Scene::kInvalidEntity) {
         return sunEntity;
     }
-    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
-    const std::optional<Math::QuaternionUVE> rotation = Scene::TryMakePreviewSunRotationUVE(
+    Scene::IEntityManager& entityManager = m_services->GetEntityManager();
+    const std::optional<Math::Quaternion> rotation = Scene::TryMakePreviewSunRotation(
         m_viewportOverlayState.previewSunAzimuth, m_viewportOverlayState.previewSunAltitude);
-    if (rotation.has_value() && entityManager.HasComponentUVE<Scene::TransformComponentUVE>(sunEntity)) {
-        auto transform = entityManager.GetComponentUVE<Scene::TransformComponentUVE>(sunEntity);
+    if (rotation.has_value() && entityManager.HasComponent<Scene::TransformComponent>(sunEntity)) {
+        auto transform = entityManager.GetComponent<Scene::TransformComponent>(sunEntity);
         transform.localRotation = *rotation;
-        m_services->GetSceneGraphUVE().SetLocalTransformUVE(entityManager, sunEntity, transform);
+        m_services->GetSceneGraph().SetLocalTransform(entityManager, sunEntity, transform);
     }
-    if (entityManager.HasComponentUVE<Scene::LightEmitterComponentUVE>(sunEntity)) {
-        auto& emitter = entityManager.GetComponentUVE<Scene::LightEmitterComponentUVE>(sunEntity);
-        emitter.color = Math::ColorFromDisplayUVE(Math::Vector3UVE{m_viewportOverlayState.previewSunColor[0],
+    if (entityManager.HasComponent<Scene::LightEmitterComponent>(sunEntity)) {
+        auto& emitter = entityManager.GetComponent<Scene::LightEmitterComponent>(sunEntity);
+        emitter.color = Math::ColorFromDisplay(Math::Vector3{m_viewportOverlayState.previewSunColor[0],
                                                                     m_viewportOverlayState.previewSunColor[1],
                                                                     m_viewportOverlayState.previewSunColor[2]});
         emitter.energy = m_viewportOverlayState.previewSunEnergy;
         emitter.shadowEnabled = true;
     }
     m_sceneDirty = true;
-    SelectEntityUVE(sunEntity);
+    SelectEntity(sunEntity);
     m_contentStatusMessage = "Added DirectionalLight3D from Preview Sun (with real-time shadows).";
     return sunEntity;
 }
 
-Scene::EntityUVE EditorUVE::AddPreviewEnvironmentToSceneUVE() {
+Scene::Entity Editor::AddPreviewEnvironmentToScene() {
     // The scene's WorldEnvironment3D, made from (or updated to) the preview sky and ambient.
-    if (!IsAuthoringCommandAllowedUVE()) {
-        return Scene::kInvalidEntityUVE;
+    if (!IsAuthoringCommandAllowed()) {
+        return Scene::kInvalidEntity;
     }
-    Scene::EntityUVE envEntity = FindTopLevelObjectUVE(Scene::Objects::SceneObjectKindUVE::WorldEnvironment3D);
-    if (envEntity == Scene::kInvalidEntityUVE) {
-        envEntity = CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::WorldEnvironment3D);
+    Scene::Entity envEntity = FindTopLevelObject(Scene::Objects::SceneObjectKind::WorldEnvironment3D);
+    if (envEntity == Scene::kInvalidEntity) {
+        envEntity = CreateDocumentSceneObject(Scene::Objects::SceneObjectKind::WorldEnvironment3D);
     }
-    if (envEntity == Scene::kInvalidEntityUVE) {
+    if (envEntity == Scene::kInvalidEntity) {
         return envEntity;
     }
-    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
-    if (entityManager.HasComponentUVE<Scene::WorldEnvironment3DComponentUVE>(envEntity)) {
-        auto& env = entityManager.GetComponentUVE<Scene::WorldEnvironment3DComponentUVE>(envEntity);
-        env.ambientSource = Scene::WorldEnvironmentAmbientSourceUVE::Sky;
-        env.ambientColor = Math::Vector3UVE{1.0F, 1.0F, 1.0F};
-        env.skyColor = Math::Vector3UVE{m_viewportOverlayState.previewSkyColor[0], m_viewportOverlayState.previewSkyColor[1],
+    Scene::IEntityManager& entityManager = m_services->GetEntityManager();
+    if (entityManager.HasComponent<Scene::WorldEnvironment3DComponent>(envEntity)) {
+        auto& env = entityManager.GetComponent<Scene::WorldEnvironment3DComponent>(envEntity);
+        env.ambientSource = Scene::WorldEnvironmentAmbientSource::Sky;
+        env.ambientColor = Math::Vector3{1.0F, 1.0F, 1.0F};
+        env.skyColor = Math::Vector3{m_viewportOverlayState.previewSkyColor[0], m_viewportOverlayState.previewSkyColor[1],
                                         m_viewportOverlayState.previewSkyColor[2]};
-        env.horizonColor = Math::Vector3UVE{m_viewportOverlayState.previewHorizonColor[0],
+        env.horizonColor = Math::Vector3{m_viewportOverlayState.previewHorizonColor[0],
                                             m_viewportOverlayState.previewHorizonColor[1],
                                             m_viewportOverlayState.previewHorizonColor[2]};
-        env.groundColor = Math::Vector3UVE{m_viewportOverlayState.previewGroundColor[0],
+        env.groundColor = Math::Vector3{m_viewportOverlayState.previewGroundColor[0],
                                            m_viewportOverlayState.previewGroundColor[1],
                                            m_viewportOverlayState.previewGroundColor[2]};
         env.ambientEnergy = m_viewportOverlayState.previewAmbientEnergy;
@@ -110,57 +110,57 @@ Scene::EntityUVE EditorUVE::AddPreviewEnvironmentToSceneUVE() {
         env.fogEnabled = false;
     }
     m_sceneDirty = true;
-    SelectEntityUVE(envEntity);
+    SelectEntity(envEntity);
     m_contentStatusMessage = "Added WorldEnvironment3D from Preview Environment.";
     return envEntity;
 }
 
-void EditorUVE::CapturePacketUVE(const std::vector<std::uint8_t>& datagram,
-                                 const Network::PacketDirectionUVE direction,
+void Editor::CapturePacket(const std::vector<std::uint8_t>& datagram,
+                                 const Network::PacketDirection direction,
                                  const std::uint64_t timestampMs,
-                                 const Network::InspectedChannelUVE channel) {
-    m_packetCapture.PushUVE(datagram, direction, timestampMs, channel);
+                                 const Network::InspectedChannel channel) {
+    m_packetCapture.Push(datagram, direction, timestampMs, channel);
 }
 
-void EditorUVE::ClearCapturedPacketsUVE() {
-    m_packetCapture.ClearUVE();
+void Editor::ClearCapturedPackets() {
+    m_packetCapture.Clear();
 }
 
-const Network::PacketCaptureUVE& EditorUVE::CapturedPacketsUVE() const noexcept {
+const Network::PacketCapture& Editor::CapturedPackets() const noexcept {
     return m_packetCapture;
 }
 
-Core::ProfilerCaptureUVE& EditorUVE::ProfilerUVE() noexcept {
+Core::ProfilerCapture& Editor::Profiler() noexcept {
     return m_profilerCapture;
 }
 
-const Core::DiagnosticCaptureBundleUVE& EditorUVE::ProfilerBundleUVE() const noexcept {
+const Core::DiagnosticCaptureBundle& Editor::ProfilerBundle() const noexcept {
     return m_profilerBundle;
 }
 
-static std::uint64_t ProfilerNowNsUVE() {
+static std::uint64_t ProfilerNowNs() {
     const std::chrono::nanoseconds now =
         std::chrono::duration_cast<std::chrono::nanoseconds>(
             std::chrono::steady_clock::now().time_since_epoch());
     return static_cast<std::uint64_t>(now.count());
 }
 
-void EditorUVE::BeginProfilerCaptureUVE() {
-    if (m_profilerCapture.IsActiveUVE()) {
+void Editor::BeginProfilerCapture() {
+    if (m_profilerCapture.IsActive()) {
         return;
     }
     ++m_profilerSession;
     const std::string session = "editor-" + std::to_string(m_profilerSession);
-    const Core::DiagnosticCaptureResultUVE begun = m_profilerCapture.BeginUVE(session, ProfilerNowNsUVE());
-    m_profilerStatus = begun.IsAcceptedUVE() ? "Capturing " + session + "." : begun.message;
+    const Core::DiagnosticCaptureResult begun = m_profilerCapture.Begin(session, ProfilerNowNs());
+    m_profilerStatus = begun.IsAccepted() ? "Capturing " + session + "." : begun.message;
 }
 
-void EditorUVE::EndProfilerCaptureUVE() {
-    if (!m_profilerCapture.IsActiveUVE()) {
+void Editor::EndProfilerCapture() {
+    if (!m_profilerCapture.IsActive()) {
         return;
     }
-    Core::DiagnosticCaptureStopResultUVE ended = m_profilerCapture.EndUVE(ProfilerNowNsUVE());
-    if (ended.IsAcceptedUVE()) {
+    Core::DiagnosticCaptureStopResult ended = m_profilerCapture.End(ProfilerNowNs());
+    if (ended.IsAccepted()) {
         m_profilerBundle = std::move(ended.bundle);
         m_profilerHasBundle = true;
         m_profilerStatus = "Ended " + m_profilerBundle.sessionId + ".";

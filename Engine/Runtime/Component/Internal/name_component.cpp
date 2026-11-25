@@ -9,49 +9,49 @@
 
 namespace UVE::Scene {
 
-[[nodiscard]] bool IsEntityNameStringValidUVE(const std::string_view name) noexcept {
-    return name.size() <= kMaximumEntityNameBytesUVE &&
+[[nodiscard]] bool IsEntityNameStringValid(const std::string_view name) noexcept {
+    return name.size() <= kMaximumEntityNameBytes &&
            name.find('\0') == std::string_view::npos;
 }
 
-[[nodiscard]] bool IsNameComponentValidUVE(const NameComponentUVE& component) noexcept {
-    return IsEntityNameStringValidUVE(component.name);
+[[nodiscard]] bool IsNameComponentValid(const NameComponent& component) noexcept {
+    return IsEntityNameStringValid(component.name);
 }
 
-[[nodiscard]] bool HasNonEmptyEntityNameUVE(const NameComponentUVE* const component) noexcept {
+[[nodiscard]] bool HasNonEmptyEntityName(const NameComponent* const component) noexcept {
     return component != nullptr && !component->name.empty() &&
-           IsEntityNameStringValidUVE(component->name);
+           IsEntityNameStringValid(component->name);
 }
 
-[[nodiscard]] std::string SanitizeEntityNameStringUVE(const std::string_view rawName,
+[[nodiscard]] std::string SanitizeEntityNameString(const std::string_view rawName,
                                                       const std::string_view fallbackName) {
     std::string cleaned;
-    cleaned.reserve(std::min(rawName.size(), kMaximumEntityNameBytesUVE));
+    cleaned.reserve(std::min(rawName.size(), kMaximumEntityNameBytes));
     for (const char ch : rawName) {
         if (ch == '\0') {
             continue;
         }
         cleaned.push_back(ch);
-        if (cleaned.size() >= kMaximumEntityNameBytesUVE) {
+        if (cleaned.size() >= kMaximumEntityNameBytes) {
             break;
         }
     }
     if (!cleaned.empty() || fallbackName.empty()) {
         return cleaned;
     }
-    return SanitizeEntityNameStringUVE(fallbackName, {});
+    return SanitizeEntityNameString(fallbackName, {});
 }
 
-[[nodiscard]] NameComponentUVE SanitizeNameComponentUVE(const NameComponentUVE& component,
+[[nodiscard]] NameComponent SanitizeNameComponent(const NameComponent& component,
                                                         const std::string_view fallbackName) {
-    return NameComponentUVE{
-        .name = SanitizeEntityNameStringUVE(component.name, fallbackName),
+    return NameComponent{
+        .name = SanitizeEntityNameString(component.name, fallbackName),
     };
 }
 
-[[nodiscard]] std::string_view ResolveEntityDisplayNameOrFallbackUVE(
-    const NameComponentUVE* const component, const std::string_view fallbackName) noexcept {
-    if (HasNonEmptyEntityNameUVE(component)) {
+[[nodiscard]] std::string_view ResolveEntityDisplayNameOrFallback(
+    const NameComponent* const component, const std::string_view fallbackName) noexcept {
+    if (HasNonEmptyEntityName(component)) {
         return component->name;
     }
     return fallbackName;

@@ -15,14 +15,14 @@
 
 namespace UVE::Scene {
 
-bool IsPathFollow3DComponentValidUVE(const PathFollow3DComponentUVE& value) noexcept {
+bool IsPathFollow3DComponentValid(const PathFollow3DComponent& value) noexcept {
     return std::isfinite(value.progressMetres) && std::isfinite(value.speedMetresPerSecond) &&
            std::isfinite(value.hOffset) && std::isfinite(value.vOffset);
 }
 
-PathFollow3DComponentUVE SanitizePathFollow3DComponentUVE(
-    const PathFollow3DComponentUVE& value) noexcept {
-    PathFollow3DComponentUVE out = value;
+PathFollow3DComponent SanitizePathFollow3DComponent(
+    const PathFollow3DComponent& value) noexcept {
+    PathFollow3DComponent out = value;
     if (!std::isfinite(out.progressMetres)) {
         out.progressMetres = 0.0F;
     }
@@ -41,10 +41,10 @@ PathFollow3DComponentUVE SanitizePathFollow3DComponentUVE(
     return out;
 }
 
-void StepPathFollow3DProgressUVE(PathFollow3DComponentUVE& value, const float pathTotalLength,
+void StepPathFollow3DProgress(PathFollow3DComponent& value, const float pathTotalLength,
                                  const float deltaTimeSeconds) noexcept {
-    if (!IsPathFollow3DComponentValidUVE(value)) {
-        value = SanitizePathFollow3DComponentUVE(value);
+    if (!IsPathFollow3DComponentValid(value)) {
+        value = SanitizePathFollow3DComponent(value);
     }
     if (std::isfinite(deltaTimeSeconds) && deltaTimeSeconds > 0.0F) {
         value.progressMetres += value.speedMetresPerSecond * deltaTimeSeconds;
@@ -65,26 +65,26 @@ void StepPathFollow3DProgressUVE(PathFollow3DComponentUVE& value, const float pa
     value.progressRatio = std::clamp(value.progressMetres / pathTotalLength, 0.0F, 1.0F);
 }
 
-bool IsPathFollow3DObjectDefinitionValidUVE(
-    const PathFollow3DObjectDefinitionUVE& value) noexcept {
-    return IsPathFollow3DComponentValidUVE(value.follower);
+bool IsPathFollow3DObjectDefinitionValid(
+    const PathFollow3DObjectDefinition& value) noexcept {
+    return IsPathFollow3DComponentValid(value.follower);
 }
 
-void ApplyPathFollow3DObjectDefinitionUVE(IEntityManagerUVE& entityManager, const EntityUVE entity,
-                                          const PathFollow3DObjectDefinitionUVE& value) {
-    EnsureObject3DBaselineUVE(entityManager, entity, PathFollow3DObjectDefinitionUVE::defaultName);
-    entityManager.AddComponentUVE<PathFollow3DComponentUVE>(
-        entity, SanitizePathFollow3DComponentUVE(value.follower));
+void ApplyPathFollow3DObjectDefinition(IEntityManager& entityManager, const Entity entity,
+                                          const PathFollow3DObjectDefinition& value) {
+    EnsureObject3DBaseline(entityManager, entity, PathFollow3DObjectDefinition::defaultName);
+    entityManager.AddComponent<PathFollow3DComponent>(
+        entity, SanitizePathFollow3DComponent(value.follower));
 }
 
-std::size_t UpdatePathFollow3DObjectsUVE(IEntityManagerUVE& entityManager,
+std::size_t UpdatePathFollow3DObjects(IEntityManager& entityManager,
                                          const float deltaTimeSeconds) {
-    std::vector<EntityUVE> followers;
-    entityManager.ForEachUVE<PathFollow3DComponentUVE>(
-        [&](const EntityUVE entity, const PathFollow3DComponentUVE&) {
+    std::vector<Entity> followers;
+    entityManager.ForEach<PathFollow3DComponent>(
+        [&](const Entity entity, const PathFollow3DComponent&) {
             followers.push_back(entity);
         });
-    std::sort(followers.begin(), followers.end(), [](const EntityUVE lhs, const EntityUVE rhs) {
+    std::sort(followers.begin(), followers.end(), [](const Entity lhs, const Entity rhs) {
         if (lhs.index != rhs.index) {
             return lhs.index < rhs.index;
         }
@@ -92,48 +92,48 @@ std::size_t UpdatePathFollow3DObjectsUVE(IEntityManagerUVE& entityManager,
     });
 
     std::size_t updatedCount = 0U;
-    for (const EntityUVE entity : followers) {
-        if (!entityManager.IsAliveUVE(entity) ||
-            entityManager.HasComponentUVE<DisabledComponentUVE>(entity) ||
-            !entityManager.HasComponentUVE<PathFollow3DComponentUVE>(entity) ||
-            !entityManager.HasComponentUVE<TransformComponentUVE>(entity)) {
+    for (const Entity entity : followers) {
+        if (!entityManager.IsAlive(entity) ||
+            entityManager.HasComponent<DisabledComponent>(entity) ||
+            !entityManager.HasComponent<PathFollow3DComponent>(entity) ||
+            !entityManager.HasComponent<TransformComponent>(entity)) {
             continue;
         }
-        PathFollow3DComponentUVE& follower =
-            entityManager.GetComponentUVE<PathFollow3DComponentUVE>(entity);
-        if (!follower.enabled || !IsPathFollow3DComponentValidUVE(follower) ||
-            follower.pathEntity == kInvalidEntityUVE ||
-            !entityManager.IsAliveUVE(follower.pathEntity) ||
-            !entityManager.HasComponentUVE<Path3DComponentUVE>(follower.pathEntity)) {
+        PathFollow3DComponent& follower =
+            entityManager.GetComponent<PathFollow3DComponent>(entity);
+        if (!follower.enabled || !IsPathFollow3DComponentValid(follower) ||
+            follower.pathEntity == kInvalidEntity ||
+            !entityManager.IsAlive(follower.pathEntity) ||
+            !entityManager.HasComponent<Path3DComponent>(follower.pathEntity)) {
             continue;
         }
-        const Path3DComponentUVE& path =
-            entityManager.GetComponentUVE<Path3DComponentUVE>(follower.pathEntity);
-        const float totalLen = Path3DUVE::ComputeTotalLengthUVE(path);
+        const Path3DComponent& path =
+            entityManager.GetComponent<Path3DComponent>(follower.pathEntity);
+        const float totalLen = Path3D::ComputeTotalLength(path);
         if (totalLen <= 1.0e-6F) {
             continue;
         }
-        StepPathFollow3DProgressUVE(follower, totalLen, deltaTimeSeconds);
-        const WorldTransformComponentUVE pathWorld =
-            entityManager.HasComponentUVE<WorldTransformComponentUVE>(follower.pathEntity)
-                ? entityManager.GetComponentUVE<WorldTransformComponentUVE>(follower.pathEntity)
-                : WorldTransformComponentUVE{};
-        const Path3DSampledPoseUVE sample = Path3DUVE::SampleWorldPoseAtDistanceUVE(
+        StepPathFollow3DProgress(follower, totalLen, deltaTimeSeconds);
+        const WorldTransformComponent pathWorld =
+            entityManager.HasComponent<WorldTransformComponent>(follower.pathEntity)
+                ? entityManager.GetComponent<WorldTransformComponent>(follower.pathEntity)
+                : WorldTransformComponent{};
+        const Path3DSampledPose sample = Path3D::SampleWorldPoseAtDistance(
             path, pathWorld, follower.progressMetres, follower.loop);
 
-        TransformComponentUVE updatedLocal =
-            entityManager.GetComponentUVE<TransformComponentUVE>(entity);
+        TransformComponent updatedLocal =
+            entityManager.GetComponent<TransformComponent>(entity);
         updatedLocal.localPosition =
             sample.position + sample.right * follower.hOffset + sample.up * follower.vOffset;
         if (follower.rotateToTangent) {
             updatedLocal.localRotation = sample.rotation;
         }
-        if (!IsTransformComponentValidUVE(updatedLocal)) {
+        if (!IsTransformComponentValid(updatedLocal)) {
             continue;
         }
-        entityManager.GetComponentUVE<TransformComponentUVE>(entity) = updatedLocal;
-        if (entityManager.HasComponentUVE<WorldTransformComponentUVE>(entity)) {
-            entityManager.GetComponentUVE<WorldTransformComponentUVE>(entity).dirty = true;
+        entityManager.GetComponent<TransformComponent>(entity) = updatedLocal;
+        if (entityManager.HasComponent<WorldTransformComponent>(entity)) {
+            entityManager.GetComponent<WorldTransformComponent>(entity).dirty = true;
         }
         ++updatedCount;
     }

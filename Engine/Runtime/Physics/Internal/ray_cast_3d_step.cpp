@@ -10,60 +10,60 @@
 namespace UVE::Physics {
 namespace {
 
-[[nodiscard]] RayCast3DStepResultUVE ClearedUVE(Scene::RayCast3DComponentUVE& rayCast,
-                                                const RayCast3DStepCodeUVE code) {
-    Scene::RayCast3DUVE::ClearResultUVE(rayCast);
-    RayCast3DStepResultUVE result;
+[[nodiscard]] RayCast3DStepResult Cleared(Scene::RayCast3DComponent& rayCast,
+                                                const RayCast3DStepCode code) {
+    Scene::RayCast3D::ClearResult(rayCast);
+    RayCast3DStepResult result;
     result.code = code;
     return result;
 }
 
 } // namespace
 
-RayCast3DStepResultUVE StepRayCast3DUVE(Scene::IEntityManagerUVE& entityManager,
-                                         const IRaycastSystemUVE& raycastSystem,
-                                         const Scene::EntityUVE entity) {
-    if (!entityManager.IsAliveUVE(entity)) {
-        RayCast3DStepResultUVE result;
-        result.code = RayCast3DStepCodeUVE::UnknownEntity;
+RayCast3DStepResult StepRayCast3D(Scene::IEntityManager& entityManager,
+                                         const IRaycastSystem& raycastSystem,
+                                         const Scene::Entity entity) {
+    if (!entityManager.IsAlive(entity)) {
+        RayCast3DStepResult result;
+        result.code = RayCast3DStepCode::UnknownEntity;
         return result;
     }
-    if (!entityManager.HasComponentUVE<Scene::RayCast3DComponentUVE>(entity)) {
-        RayCast3DStepResultUVE result;
-        result.code = RayCast3DStepCodeUVE::NotARayCast;
+    if (!entityManager.HasComponent<Scene::RayCast3DComponent>(entity)) {
+        RayCast3DStepResult result;
+        result.code = RayCast3DStepCode::NotARayCast;
         return result;
     }
 
-    Scene::RayCast3DComponentUVE& rayCast = entityManager.GetComponentUVE<Scene::RayCast3DComponentUVE>(entity);
-    if (!Scene::IsRayCast3DObjectComponentValidUVE(rayCast)) {
-        return ClearedUVE(rayCast, RayCast3DStepCodeUVE::InvalidComponent);
+    Scene::RayCast3DComponent& rayCast = entityManager.GetComponent<Scene::RayCast3DComponent>(entity);
+    if (!Scene::IsRayCast3DObjectComponentValid(rayCast)) {
+        return Cleared(rayCast, RayCast3DStepCode::InvalidComponent);
     }
-    if (!Scene::RayCast3DUVE::IsCastingUVE(rayCast)) {
-        return ClearedUVE(rayCast, RayCast3DStepCodeUVE::Disabled);
+    if (!Scene::RayCast3D::IsCasting(rayCast)) {
+        return Cleared(rayCast, RayCast3DStepCode::Disabled);
     }
-    if (!entityManager.HasComponentUVE<Scene::WorldTransformComponentUVE>(entity)) {
-        return ClearedUVE(rayCast, RayCast3DStepCodeUVE::MissingTransform);
+    if (!entityManager.HasComponent<Scene::WorldTransformComponent>(entity)) {
+        return Cleared(rayCast, RayCast3DStepCode::MissingTransform);
     }
 
-    const Scene::WorldTransformComponentUVE& worldTransform =
-        entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(entity);
-    RaycastQueryUVE query{};
+    const Scene::WorldTransformComponent& worldTransform =
+        entityManager.GetComponent<Scene::WorldTransformComponent>(entity);
+    RaycastQuery query{};
     query.ray.origin = worldTransform.worldPosition;
     query.ray.direction =
-        Scene::RayCast3DUVE::ResolveWorldDirectionUVE(rayCast.direction, worldTransform.worldRotation);
+        Scene::RayCast3D::ResolveWorldDirection(rayCast.direction, worldTransform.worldRotation);
     query.maxDistance = rayCast.length;
     query.layerMask = rayCast.collisionMask;
     query.ignoreEntity = entity;
-    query.excludedEntities = Scene::RayCast3DUVE::ExclusionSpanUVE(rayCast);
+    query.excludedEntities = Scene::RayCast3D::ExclusionSpan(rayCast);
 
-    const std::optional<RaycastHitUVE> hit = raycastSystem.RaycastUVE(entityManager, query);
+    const std::optional<RaycastHit> hit = raycastSystem.Raycast(entityManager, query);
     if (!hit.has_value()) {
-        return ClearedUVE(rayCast, RayCast3DStepCodeUVE::Miss);
+        return Cleared(rayCast, RayCast3DStepCode::Miss);
     }
 
-    Scene::RayCast3DUVE::RecordHitUVE(rayCast, hit->entity, hit->point, hit->normal);
-    RayCast3DStepResultUVE result;
-    result.code = RayCast3DStepCodeUVE::Hit;
+    Scene::RayCast3D::RecordHit(rayCast, hit->entity, hit->point, hit->normal);
+    RayCast3DStepResult result;
+    result.code = RayCast3DStepCode::Hit;
     result.hasHit = true;
     result.hitEntity = hit->entity;
     result.hitPosition = hit->point;

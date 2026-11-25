@@ -16,21 +16,21 @@
 namespace UVE::Platform {
 namespace {
 
-using JsonUVE = nlohmann::json;
+using Json = nlohmann::json;
 
-[[nodiscard]] EditorProjectPackageResultUVE MakeResultUVE(
-    const EditorProjectPackageCodeUVE code, std::string message) {
+[[nodiscard]] EditorProjectPackageResult MakeResult(
+    const EditorProjectPackageCode code, std::string message) {
     return {code, std::move(message)};
 }
 
-[[nodiscard]] bool IsBoundedTextUVE(const std::string& value, const std::size_t maximumBytes,
+[[nodiscard]] bool IsBoundedText(const std::string& value, const std::size_t maximumBytes,
                                     const bool requireNonEmpty) noexcept {
     return (!requireNonEmpty || !value.empty()) && value.size() <= maximumBytes &&
            value.find('\0') == std::string::npos;
 }
 
-[[nodiscard]] bool IsProjectIdUVE(const std::string& value) noexcept {
-    if (!IsBoundedTextUVE(value, kMaximumEditorProjectIdBytesUVE, true)) {
+[[nodiscard]] bool IsProjectId(const std::string& value) noexcept {
+    if (!IsBoundedText(value, kMaximumEditorProjectIdBytes, true)) {
         return false;
     }
     for (const char rawCharacter : value) {
@@ -42,9 +42,9 @@ using JsonUVE = nlohmann::json;
     return true;
 }
 
-[[nodiscard]] bool IsRelativePathUVE(const std::filesystem::path& path) noexcept {
+[[nodiscard]] bool IsRelativePath(const std::filesystem::path& path) noexcept {
     const std::string value = path.generic_string();
-    if (value.empty() || value.size() > kMaximumEditorProjectPathBytesUVE ||
+    if (value.empty() || value.size() > kMaximumEditorProjectPathBytes ||
         value.contains('\0') || value.contains('\\') ||
         path.is_absolute() || path.has_root_name() || path.has_root_directory()) {
         return false;
@@ -57,13 +57,13 @@ using JsonUVE = nlohmann::json;
     return true;
 }
 
-[[nodiscard]] bool IsSupportedApplicationTargetUVE(const std::string_view target) noexcept {
+[[nodiscard]] bool IsSupportedApplicationTarget(const std::string_view target) noexcept {
     constexpr std::array<std::string_view, 6U> kTargets{"windows", "linux", "macos", "ios", "android", "web"};
     return std::find(kTargets.begin(), kTargets.end(), target) != kTargets.end();
 }
 
-[[nodiscard]] bool IsReverseDomainIdentifierUVE(const std::string& value) noexcept {
-    if (!IsBoundedTextUVE(value, kMaximumEditorApplicationIdentifierBytesUVE, true)) {
+[[nodiscard]] bool IsReverseDomainIdentifier(const std::string& value) noexcept {
+    if (!IsBoundedText(value, kMaximumEditorApplicationIdentifierBytes, true)) {
         return false;
     }
     std::size_t labelCount = 0U;
@@ -97,8 +97,8 @@ using JsonUVE = nlohmann::json;
     return labelCount >= 2U;
 }
 
-[[nodiscard]] bool IsUserDataDirectoryNameUVE(const std::string& value) noexcept {
-    if (!IsBoundedTextUVE(value, 64U, false)) {
+[[nodiscard]] bool IsUserDataDirectoryName(const std::string& value) noexcept {
+    if (!IsBoundedText(value, 64U, false)) {
         return false;
     }
     for (const char rawCharacter : value) {
@@ -110,8 +110,8 @@ using JsonUVE = nlohmann::json;
     return true;
 }
 
-[[nodiscard]] bool IsHttpsEndpointUVE(const std::string& value) noexcept {
-    if (!IsBoundedTextUVE(value, kMaximumEditorSymbolUploadEndpointBytesUVE, false)) {
+[[nodiscard]] bool IsHttpsEndpoint(const std::string& value) noexcept {
+    if (!IsBoundedText(value, kMaximumEditorSymbolUploadEndpointBytes, false)) {
         return false;
     }
     if (value.empty()) {
@@ -127,33 +127,33 @@ using JsonUVE = nlohmann::json;
            (authorityEnd == std::string_view::npos || authorityEnd != 0U);
 }
 
-[[nodiscard]] std::string LowercaseExtensionUVE(const std::filesystem::path& path) {
+[[nodiscard]] std::string LowercaseExtension(const std::filesystem::path& path) {
     std::string extension = path.extension().string();
     std::transform(extension.begin(), extension.end(), extension.begin(),
                    [](const unsigned char character) { return static_cast<char>(std::tolower(character)); });
     return extension;
 }
 
-[[nodiscard]] bool IsSupportedIconExtensionUVE(const std::filesystem::path& path) {
-    const std::string extension = LowercaseExtensionUVE(path);
+[[nodiscard]] bool IsSupportedIconExtension(const std::filesystem::path& path) {
+    const std::string extension = LowercaseExtension(path);
     return extension == ".png" || extension == ".ico" || extension == ".icns";
 }
 
-[[nodiscard]] bool IsPackagePathUVE(const std::filesystem::path& path) noexcept {
-    return path.extension() == kEditorProjectFileExtensionUVE && !path.filename().empty();
+[[nodiscard]] bool IsPackagePath(const std::filesystem::path& path) noexcept {
+    return path.extension() == kEditorProjectFileExtension && !path.filename().empty();
 }
 
-[[nodiscard]] std::optional<EditorProjectPackageUVE> DecodePackageUVE(const JsonUVE& json) {
+[[nodiscard]] std::optional<EditorProjectPackage> DecodePackage(const Json& json) {
     if (!json.is_object() || json.value("format", "") != "uvproject") {
         return std::nullopt;
     }
 
-    EditorProjectPackageUVE package;
+    EditorProjectPackage package;
     package.schemaVersion = json.at("schemaVersion").get<std::uint32_t>();
     package.revision = json.at("revision").get<std::uint64_t>();
     package.projectId = json.at("projectId").get<std::string>();
     package.displayName = json.at("displayName").get<std::string>();
-    const JsonUVE& engineVersion = json.at("engineVersion");
+    const Json& engineVersion = json.at("engineVersion");
     package.engineVersion.major = engineVersion.at("major").get<std::uint32_t>();
     package.engineVersion.minor = engineVersion.at("minor").get<std::uint32_t>();
     package.engineVersion.patch = engineVersion.at("patch").get<std::uint32_t>();
@@ -164,7 +164,7 @@ using JsonUVE = nlohmann::json;
     // Product metadata was added after the original project package schema. Keep the default
     // product version and empty optional name/description fields for older files.
     if (json.contains("productMetadata")) {
-        const JsonUVE& product = json.at("productMetadata");
+        const Json& product = json.at("productMetadata");
         if (!product.is_object()) {
             return std::nullopt;
         }
@@ -175,7 +175,7 @@ using JsonUVE = nlohmann::json;
         package.productMetadata.buildNumber = product.value("buildNumber", package.productMetadata.buildNumber);
     }
     if (json.contains("applicationSettings")) {
-        const JsonUVE& application = json.at("applicationSettings");
+        const Json& application = json.at("applicationSettings");
         if (!application.is_object()) {
             return std::nullopt;
         }
@@ -199,16 +199,16 @@ using JsonUVE = nlohmann::json;
                                              const auto parse) {
             return parse(application.value(key, std::string{defaultName}));
         };
-        const auto windowMode = readEnum("windowMode", GetWindowModeNameUVE(package.applicationSettings.windowMode),
-                                         ParseWindowModeUVE);
-        const auto stretchMode = readEnum("stretchMode", GetStretchModeNameUVE(package.applicationSettings.stretchMode),
-                                          ParseStretchModeUVE);
-        const auto aspectPolicy = readEnum("aspectPolicy", GetAspectPolicyNameUVE(package.applicationSettings.aspectPolicy),
-                                           ParseAspectPolicyUVE);
-        const auto orientation = readEnum("orientation", GetDisplayOrientationNameUVE(package.applicationSettings.orientation),
-                                          ParseDisplayOrientationUVE);
-        const auto vsyncMode = readEnum("vsyncMode", GetVSyncModeNameUVE(package.applicationSettings.vsyncMode),
-                                        ParseVSyncModeUVE);
+        const auto windowMode = readEnum("windowMode", GetWindowModeName(package.applicationSettings.windowMode),
+                                         ParseWindowMode);
+        const auto stretchMode = readEnum("stretchMode", GetStretchModeName(package.applicationSettings.stretchMode),
+                                          ParseStretchMode);
+        const auto aspectPolicy = readEnum("aspectPolicy", GetAspectPolicyName(package.applicationSettings.aspectPolicy),
+                                           ParseAspectPolicy);
+        const auto orientation = readEnum("orientation", GetDisplayOrientationName(package.applicationSettings.orientation),
+                                          ParseDisplayOrientation);
+        const auto vsyncMode = readEnum("vsyncMode", GetVSyncModeName(package.applicationSettings.vsyncMode),
+                                        ParseVSyncMode);
         if (!windowMode || !stretchMode || !aspectPolicy || !orientation || !vsyncMode) {
             return std::nullopt;
         }
@@ -246,17 +246,17 @@ using JsonUVE = nlohmann::json;
         package.applicationSettings.windowTitleFormat = application.value("windowTitleFormat", package.applicationSettings.windowTitleFormat);
         package.applicationSettings.appendSceneNameInEditorPlayMode = application.value("appendSceneNameInEditorPlayMode", package.applicationSettings.appendSceneNameInEditorPlayMode);
         if (application.contains("allowedOrientations")) {
-            const JsonUVE& allowed = application.at("allowedOrientations");
+            const Json& allowed = application.at("allowedOrientations");
             if (!allowed.is_array() || allowed.empty() || allowed.size() > 6U) {
                 return std::nullopt;
             }
             package.applicationSettings.allowedOrientations.clear();
-            for (const JsonUVE& orientationName : allowed) {
+            for (const Json& orientationName : allowed) {
                 if (!orientationName.is_string()) {
                     return std::nullopt;
                 }
-                const auto parsed = ParseDisplayOrientationUVE(orientationName.get<std::string>());
-                if (!parsed || *parsed == DisplayOrientationUVE::Auto) {
+                const auto parsed = ParseDisplayOrientation(orientationName.get<std::string>());
+                if (!parsed || *parsed == DisplayOrientation::Auto) {
                     return std::nullopt;
                 }
                 package.applicationSettings.allowedOrientations.push_back(*parsed);
@@ -274,7 +274,7 @@ using JsonUVE = nlohmann::json;
             application.value("symbolUploadEndpoint", package.applicationSettings.symbolUploadEndpoint);
 
         if (application.contains("splashBackgroundColor")) {
-            const JsonUVE& color = application.at("splashBackgroundColor");
+            const Json& color = application.at("splashBackgroundColor");
             if (!color.is_array() || color.size() != package.applicationSettings.splashBackgroundColor.size()) {
                 return std::nullopt;
             }
@@ -283,7 +283,7 @@ using JsonUVE = nlohmann::json;
             }
         }
         if (application.contains("applicationIdentifiersByTarget")) {
-            const JsonUVE& identifiers = application.at("applicationIdentifiersByTarget");
+            const Json& identifiers = application.at("applicationIdentifiersByTarget");
             if (!identifiers.is_object()) {
                 return std::nullopt;
             }
@@ -292,7 +292,7 @@ using JsonUVE = nlohmann::json;
             }
         }
         if (application.contains("iconPathsByTarget")) {
-            const JsonUVE& iconTargets = application.at("iconPathsByTarget");
+            const Json& iconTargets = application.at("iconPathsByTarget");
             if (!iconTargets.is_object()) {
                 return std::nullopt;
             }
@@ -320,7 +320,7 @@ using JsonUVE = nlohmann::json;
         if (!json.at("rendererProfile").is_string()) {
             return std::nullopt;
         }
-        const auto parsedProfile = ParseRendererProfileUVE(json.at("rendererProfile").get<std::string>());
+        const auto parsedProfile = ParseRendererProfile(json.at("rendererProfile").get<std::string>());
         if (!parsedProfile.has_value()) {
             return std::nullopt;
         }
@@ -329,8 +329,8 @@ using JsonUVE = nlohmann::json;
     return package;
 }
 
-[[nodiscard]] JsonUVE EncodePackageUVE(const EditorProjectPackageUVE& package) {
-    JsonUVE applicationSettings{{"publisherName", package.applicationSettings.publisherName},
+[[nodiscard]] Json EncodePackage(const EditorProjectPackage& package) {
+    Json applicationSettings{{"publisherName", package.applicationSettings.publisherName},
                                 {"copyrightLine", package.applicationSettings.copyrightLine},
                                 {"splashImagePath", package.applicationSettings.splashImagePath.generic_string()},
                                 {"splashBackgroundColor", package.applicationSettings.splashBackgroundColor},
@@ -347,7 +347,7 @@ using JsonUVE = nlohmann::json;
                                 {"symbolUploadEndpoint", package.applicationSettings.symbolUploadEndpoint},
                                 {"windowWidth", package.applicationSettings.windowWidth},
                                 {"windowHeight", package.applicationSettings.windowHeight},
-                                {"windowMode", std::string{GetWindowModeNameUVE(package.applicationSettings.windowMode)}},
+                                {"windowMode", std::string{GetWindowModeName(package.applicationSettings.windowMode)}},
                                 {"windowResizable", package.applicationSettings.windowResizable},
                                 {"windowBorderless", package.applicationSettings.windowBorderless},
                                 {"windowAlwaysOnTop", package.applicationSettings.windowAlwaysOnTop},
@@ -363,11 +363,11 @@ using JsonUVE = nlohmann::json;
                                 {"highDpiAware", package.applicationSettings.highDpiAware},
                                 {"perMonitorScaling", package.applicationSettings.perMonitorScaling},
                                 {"contentScaleOverride", package.applicationSettings.contentScaleOverride},
-                                {"stretchMode", std::string{GetStretchModeNameUVE(package.applicationSettings.stretchMode)}},
-                                {"aspectPolicy", std::string{GetAspectPolicyNameUVE(package.applicationSettings.aspectPolicy)}},
+                                {"stretchMode", std::string{GetStretchModeName(package.applicationSettings.stretchMode)}},
+                                {"aspectPolicy", std::string{GetAspectPolicyName(package.applicationSettings.aspectPolicy)}},
                                 {"integerOnlyScaling", package.applicationSettings.integerOnlyScaling},
-                                {"orientation", std::string{GetDisplayOrientationNameUVE(package.applicationSettings.orientation)}},
-                                {"vsyncMode", std::string{GetVSyncModeNameUVE(package.applicationSettings.vsyncMode)}},
+                                {"orientation", std::string{GetDisplayOrientationName(package.applicationSettings.orientation)}},
+                                {"vsyncMode", std::string{GetVSyncModeName(package.applicationSettings.vsyncMode)}},
                                 {"focusedFrameRateCap", package.applicationSettings.focusedFrameRateCap},
                                 {"unfocusedFrameRateCap", package.applicationSettings.unfocusedFrameRateCap},
                                 {"allowDisplaySleep", package.applicationSettings.allowDisplaySleep},
@@ -378,18 +378,18 @@ using JsonUVE = nlohmann::json;
                                 {"cursorConfinedToWindow", package.applicationSettings.cursorConfinedToWindow},
                                 {"windowTitleFormat", package.applicationSettings.windowTitleFormat},
                                 {"appendSceneNameInEditorPlayMode", package.applicationSettings.appendSceneNameInEditorPlayMode}};
-    JsonUVE allowedOrientations = JsonUVE::array();
-    for (const DisplayOrientationUVE orientation : package.applicationSettings.allowedOrientations) {
-        allowedOrientations.push_back(std::string{GetDisplayOrientationNameUVE(orientation)});
+    Json allowedOrientations = Json::array();
+    for (const DisplayOrientation orientation : package.applicationSettings.allowedOrientations) {
+        allowedOrientations.push_back(std::string{GetDisplayOrientationName(orientation)});
     }
     applicationSettings["allowedOrientations"] = std::move(allowedOrientations);
-    JsonUVE identifiers = JsonUVE::object();
+    Json identifiers = Json::object();
     for (const auto& [target, identifier] : package.applicationSettings.applicationIdentifiersByTarget) {
         identifiers[target] = identifier;
     }
-    JsonUVE iconTargets = JsonUVE::object();
+    Json iconTargets = Json::object();
     for (const auto& [target, icons] : package.applicationSettings.iconPathsByTarget) {
-        JsonUVE iconSizes = JsonUVE::object();
+        Json iconSizes = Json::object();
         for (const auto& [pixelSize, iconPath] : icons) {
             iconSizes[std::to_string(pixelSize)] = iconPath.generic_string();
         }
@@ -398,7 +398,7 @@ using JsonUVE = nlohmann::json;
     applicationSettings["applicationIdentifiersByTarget"] = std::move(identifiers);
     applicationSettings["iconPathsByTarget"] = std::move(iconTargets);
 
-    return JsonUVE{{"format", "uvproject"},
+    return Json{{"format", "uvproject"},
                    {"schemaVersion", package.schemaVersion},
                    {"revision", package.revision},
                    {"projectId", package.projectId},
@@ -417,17 +417,17 @@ using JsonUVE = nlohmann::json;
                    {"assetDatabasePath", package.assetDatabasePath.generic_string()},
                    {"settingsPath", package.settingsPath.generic_string()},
                    {"startupScenePath", package.startupScenePath.generic_string()},
-                   {"rendererProfile", std::string{GetRendererProfileNameUVE(package.rendererProfile)}}};
+                   {"rendererProfile", std::string{GetRendererProfileName(package.rendererProfile)}}};
 }
 
-[[nodiscard]] EditorProjectPackageResultUVE WriteJsonAtomicallyUVE(
-    const std::filesystem::path& packagePath, const JsonUVE& json) {
+[[nodiscard]] EditorProjectPackageResult WriteJsonAtomically(
+    const std::filesystem::path& packagePath, const Json& json) {
     std::error_code error;
     const std::filesystem::path parent = packagePath.parent_path();
     if (!parent.empty()) {
         std::filesystem::create_directories(parent, error);
         if (error) {
-            return MakeResultUVE(EditorProjectPackageCodeUVE::WriteFailed,
+            return MakeResult(EditorProjectPackageCode::WriteFailed,
                                  "Unable to create the .uvproject parent directory.");
         }
     }
@@ -436,7 +436,7 @@ using JsonUVE = nlohmann::json;
     {
         std::ofstream output(temporaryPath, std::ios::binary | std::ios::trunc);
         if (!output.is_open()) {
-            return MakeResultUVE(EditorProjectPackageCodeUVE::WriteFailed,
+            return MakeResult(EditorProjectPackageCode::WriteFailed,
                                  "Unable to open the temporary .uvproject file.");
         }
         output << json.dump(2) << '\n';
@@ -444,7 +444,7 @@ using JsonUVE = nlohmann::json;
         if (!output.good()) {
             output.close();
             std::filesystem::remove(temporaryPath, error);
-            return MakeResultUVE(EditorProjectPackageCodeUVE::WriteFailed,
+            return MakeResult(EditorProjectPackageCode::WriteFailed,
                                  "Unable to write the complete temporary .uvproject file.");
         }
     }
@@ -453,50 +453,50 @@ using JsonUVE = nlohmann::json;
     std::filesystem::rename(temporaryPath, packagePath, error);
     if (error) {
         std::filesystem::remove(temporaryPath, error);
-        return MakeResultUVE(EditorProjectPackageCodeUVE::WriteFailed,
+        return MakeResult(EditorProjectPackageCode::WriteFailed,
                              "Unable to atomically publish the .uvproject file.");
     }
-    return MakeResultUVE(EditorProjectPackageCodeUVE::Applied, "The .uvproject package was published.");
+    return MakeResult(EditorProjectPackageCode::Applied, "The .uvproject package was published.");
 }
 
 } // namespace
 
-EditorProjectPackageResultUVE EditorProjectPackageCodecUVE::ValidateUVE(
-    const EditorProjectPackageUVE& package) noexcept {
-    if (package.schemaVersion != kCurrentEditorProjectSchemaVersionUVE) {
-        return MakeResultUVE(EditorProjectPackageCodeUVE::UnsupportedSchema,
+EditorProjectPackageResult EditorProjectPackageCodec::Validate(
+    const EditorProjectPackage& package) noexcept {
+    if (package.schemaVersion != kCurrentEditorProjectSchemaVersion) {
+        return MakeResult(EditorProjectPackageCode::UnsupportedSchema,
                              "The .uvproject schema version is unsupported.");
     }
     if (package.revision == 0U) {
-        return MakeResultUVE(EditorProjectPackageCodeUVE::InvalidPackage,
+        return MakeResult(EditorProjectPackageCode::InvalidPackage,
                              "The .uvproject revision must be nonzero.");
     }
-    if (!IsProjectIdUVE(package.projectId)) {
-        return MakeResultUVE(EditorProjectPackageCodeUVE::InvalidPackage,
+    if (!IsProjectId(package.projectId)) {
+        return MakeResult(EditorProjectPackageCode::InvalidPackage,
                              "The .uvproject project ID is empty or contains unsupported characters.");
     }
-    if (!IsBoundedTextUVE(package.displayName, kMaximumEditorProjectNameBytesUVE, true)) {
-        return MakeResultUVE(EditorProjectPackageCodeUVE::InvalidPackage,
+    if (!IsBoundedText(package.displayName, kMaximumEditorProjectNameBytes, true)) {
+        return MakeResult(EditorProjectPackageCode::InvalidPackage,
                              "The .uvproject display name is empty or exceeds its bound.");
     }
-    if (!IsBoundedTextUVE(package.productMetadata.name, kMaximumEditorProductNameBytesUVE, false) ||
-        !IsBoundedTextUVE(package.productMetadata.shortName, kMaximumEditorProductShortNameBytesUVE, false) ||
-        !IsBoundedTextUVE(package.productMetadata.description, kMaximumEditorProductDescriptionBytesUVE, false) ||
-        !IsBoundedTextUVE(package.productMetadata.version, kMaximumEditorProductVersionBytesUVE, true)) {
-        return MakeResultUVE(EditorProjectPackageCodeUVE::InvalidPackage,
+    if (!IsBoundedText(package.productMetadata.name, kMaximumEditorProductNameBytes, false) ||
+        !IsBoundedText(package.productMetadata.shortName, kMaximumEditorProductShortNameBytes, false) ||
+        !IsBoundedText(package.productMetadata.description, kMaximumEditorProductDescriptionBytes, false) ||
+        !IsBoundedText(package.productMetadata.version, kMaximumEditorProductVersionBytes, true)) {
+        return MakeResult(EditorProjectPackageCode::InvalidPackage,
                              "The .uvproject product metadata exceeds its bounds, contains a null byte, or "
                              "has an empty version.");
     }
-    if (!IsRelativePathUVE(package.contentRoot) || !IsRelativePathUVE(package.assetDatabasePath) ||
-        !IsRelativePathUVE(package.settingsPath)) {
-        return MakeResultUVE(EditorProjectPackageCodeUVE::InvalidPath,
+    if (!IsRelativePath(package.contentRoot) || !IsRelativePath(package.assetDatabasePath) ||
+        !IsRelativePath(package.settingsPath)) {
+        return MakeResult(EditorProjectPackageCode::InvalidPath,
                              "The .uvproject paths must be bounded, relative, normalized, and traversal-free.");
     }
-    const EditorProjectApplicationSettingsUVE& application = package.applicationSettings;
-    if (!IsBoundedTextUVE(application.publisherName, kMaximumEditorPublisherNameBytesUVE, false) ||
-        !IsBoundedTextUVE(application.copyrightLine, kMaximumEditorCopyrightLineBytesUVE, false) ||
-        !IsUserDataDirectoryNameUVE(application.userDataDirectoryName) ||
-        !IsHttpsEndpointUVE(application.symbolUploadEndpoint) ||
+    const EditorProjectApplicationSettings& application = package.applicationSettings;
+    if (!IsBoundedText(application.publisherName, kMaximumEditorPublisherNameBytes, false) ||
+        !IsBoundedText(application.copyrightLine, kMaximumEditorCopyrightLineBytes, false) ||
+        !IsUserDataDirectoryName(application.userDataDirectoryName) ||
+        !IsHttpsEndpoint(application.symbolUploadEndpoint) ||
         !std::isfinite(application.splashFadeSeconds) || application.splashFadeSeconds < 0.0 ||
         application.splashFadeSeconds > 60.0 || !std::isfinite(application.splashMinimumDisplaySeconds) ||
         application.splashMinimumDisplaySeconds < 0.0 || application.splashMinimumDisplaySeconds > 600.0 ||
@@ -510,99 +510,99 @@ EditorProjectPackageResultUVE EditorProjectPackageCodecUVE::ValidateUVE(
          application.minimumWindowHeight > application.maximumWindowHeight) ||
         application.initialWindowPositionX < -131072 || application.initialWindowPositionX > 131072 ||
         application.initialWindowPositionY < -131072 || application.initialWindowPositionY > 131072 ||
-        !IsBoundedTextUVE(application.initialMonitorName, 256U, false) ||
+        !IsBoundedText(application.initialMonitorName, 256U, false) ||
         !std::isfinite(application.contentScaleOverride) || application.contentScaleOverride < 0.0 ||
-        application.contentScaleOverride > kMaximumContentScaleOverrideUVE || application.focusedFrameRateCap > 1000U ||
+        application.contentScaleOverride > kMaximumContentScaleOverride || application.focusedFrameRateCap > 1000U ||
         application.unfocusedFrameRateCap > 1000U || application.cursorHotspotX > 8192U ||
-        application.cursorHotspotY > 8192U || !IsBoundedTextUVE(application.windowTitleFormat, 256U, true) ||
-        GetWindowModeNameUVE(application.windowMode).empty() || GetVSyncModeNameUVE(application.vsyncMode).empty() ||
-        GetStretchModeNameUVE(application.stretchMode).empty() ||
-        GetAspectPolicyNameUVE(application.aspectPolicy).empty() ||
-        GetDisplayOrientationNameUVE(application.orientation).empty() || application.allowedOrientations.empty() ||
+        application.cursorHotspotY > 8192U || !IsBoundedText(application.windowTitleFormat, 256U, true) ||
+        GetWindowModeName(application.windowMode).empty() || GetVSyncModeName(application.vsyncMode).empty() ||
+        GetStretchModeName(application.stretchMode).empty() ||
+        GetAspectPolicyName(application.aspectPolicy).empty() ||
+        GetDisplayOrientationName(application.orientation).empty() || application.allowedOrientations.empty() ||
         application.allowedOrientations.size() > 6U) {
-        return MakeResultUVE(EditorProjectPackageCodeUVE::InvalidPackage,
+        return MakeResult(EditorProjectPackageCode::InvalidPackage,
                              "The .uvproject application metadata exceeds its bounds or contains an invalid value.");
     }
     std::array<bool, 6U> orientationSeen{};
-    bool requestedOrientationAllowed = application.orientation == DisplayOrientationUVE::Auto;
-    for (const DisplayOrientationUVE orientation : application.allowedOrientations) {
-        const std::string_view orientationName = GetDisplayOrientationNameUVE(orientation);
-        const auto parsedOrientation = ParseDisplayOrientationUVE(orientationName);
-        if (!parsedOrientation || *parsedOrientation == DisplayOrientationUVE::Auto) {
-            return MakeResultUVE(EditorProjectPackageCodeUVE::InvalidPackage,
+    bool requestedOrientationAllowed = application.orientation == DisplayOrientation::Auto;
+    for (const DisplayOrientation orientation : application.allowedOrientations) {
+        const std::string_view orientationName = GetDisplayOrientationName(orientation);
+        const auto parsedOrientation = ParseDisplayOrientation(orientationName);
+        if (!parsedOrientation || *parsedOrientation == DisplayOrientation::Auto) {
+            return MakeResult(EditorProjectPackageCode::InvalidPackage,
                                  "The allowed orientation list contains an unsupported value.");
         }
         const std::size_t orientationIndex = static_cast<std::size_t>(*parsedOrientation);
         if (orientationIndex >= orientationSeen.size() || orientationSeen[orientationIndex]) {
-            return MakeResultUVE(EditorProjectPackageCodeUVE::InvalidPackage,
+            return MakeResult(EditorProjectPackageCode::InvalidPackage,
                                  "The allowed orientation list must contain unique concrete orientations.");
         }
         orientationSeen[orientationIndex] = true;
         requestedOrientationAllowed = requestedOrientationAllowed || *parsedOrientation == application.orientation;
     }
     if (!requestedOrientationAllowed) {
-        return MakeResultUVE(EditorProjectPackageCodeUVE::InvalidPackage,
+        return MakeResult(EditorProjectPackageCode::InvalidPackage,
                              "The requested orientation must be included in the allowed orientation list.");
     }
     for (const float channel : application.splashBackgroundColor) {
         if (!std::isfinite(channel) || channel < 0.0F || channel > 1.0F) {
-            return MakeResultUVE(EditorProjectPackageCodeUVE::InvalidPackage,
+            return MakeResult(EditorProjectPackageCode::InvalidPackage,
                                  "The .uvproject splash background color must contain finite channels in [0, 1].");
         }
     }
-    if (!application.splashImagePath.empty() && !IsRelativePathUVE(application.splashImagePath)) {
-        return MakeResultUVE(EditorProjectPackageCodeUVE::InvalidPath,
+    if (!application.splashImagePath.empty() && !IsRelativePath(application.splashImagePath)) {
+        return MakeResult(EditorProjectPackageCode::InvalidPath,
                              "The .uvproject splash image path must be relative, normalized, and traversal-free.");
     }
     if (!application.cursorImagePath.empty() &&
-        (!IsRelativePathUVE(application.cursorImagePath) ||
-         LowercaseExtensionUVE(application.cursorImagePath) != ".png")) {
-        return MakeResultUVE(EditorProjectPackageCodeUVE::InvalidPath,
+        (!IsRelativePath(application.cursorImagePath) ||
+         LowercaseExtension(application.cursorImagePath) != ".png")) {
+        return MakeResult(EditorProjectPackageCode::InvalidPath,
                              "The .uvproject cursor image must be a supported PNG under Content.");
     }
-    if (!IsRelativePathUVE(application.crashDumpDirectory)) {
-        return MakeResultUVE(EditorProjectPackageCodeUVE::InvalidPath,
+    if (!IsRelativePath(application.crashDumpDirectory)) {
+        return MakeResult(EditorProjectPackageCode::InvalidPath,
                              "The .uvproject crash dump directory must be relative, normalized, and traversal-free.");
     }
     for (const auto& [target, identifier] : application.applicationIdentifiersByTarget) {
-        if (!IsSupportedApplicationTargetUVE(target) || !IsReverseDomainIdentifierUVE(identifier)) {
-            return MakeResultUVE(EditorProjectPackageCodeUVE::InvalidPackage,
+        if (!IsSupportedApplicationTarget(target) || !IsReverseDomainIdentifier(identifier)) {
+            return MakeResult(EditorProjectPackageCode::InvalidPackage,
                                  "The .uvproject application identifiers must use supported targets and "
                                  "reverse-domain names.");
         }
     }
     for (const auto& [target, icons] : application.iconPathsByTarget) {
-        if (!IsSupportedApplicationTargetUVE(target) || icons.empty() ||
-            icons.size() > kMaximumEditorIconSizesPerTargetUVE) {
-            return MakeResultUVE(EditorProjectPackageCodeUVE::InvalidPackage,
+        if (!IsSupportedApplicationTarget(target) || icons.empty() ||
+            icons.size() > kMaximumEditorIconSizesPerTarget) {
+            return MakeResult(EditorProjectPackageCode::InvalidPackage,
                                  "The .uvproject icon set has an unsupported target or size count.");
         }
         for (const auto& [pixelSize, iconPath] : icons) {
-            if (pixelSize == 0U || pixelSize > 8192U || !IsRelativePathUVE(iconPath) ||
-                !IsSupportedIconExtensionUVE(iconPath)) {
-                return MakeResultUVE(EditorProjectPackageCodeUVE::InvalidPath,
+            if (pixelSize == 0U || pixelSize > 8192U || !IsRelativePath(iconPath) ||
+                !IsSupportedIconExtension(iconPath)) {
+                return MakeResult(EditorProjectPackageCode::InvalidPath,
                                      "The .uvproject icon paths must be bounded supported image files under Content.");
             }
         }
     }
     // startupScenePath is allowed to be empty (no startup scene configured yet), unlike the three
     // paths above which every project always has - but once set, it must be just as safe.
-    if (!package.startupScenePath.empty() && !IsRelativePathUVE(package.startupScenePath)) {
-        return MakeResultUVE(EditorProjectPackageCodeUVE::InvalidPath,
+    if (!package.startupScenePath.empty() && !IsRelativePath(package.startupScenePath)) {
+        return MakeResult(EditorProjectPackageCode::InvalidPath,
                              "The .uvproject startup scene path must be bounded, relative, normalized, and "
                              "traversal-free.");
     }
-    if (GetRendererProfileNameUVE(package.rendererProfile).empty()) {
-        return MakeResultUVE(EditorProjectPackageCodeUVE::InvalidPackage,
+    if (GetRendererProfileName(package.rendererProfile).empty()) {
+        return MakeResult(EditorProjectPackageCode::InvalidPackage,
                              "The .uvproject rendererProfile contains an unsupported value.");
     }
-    return MakeResultUVE(EditorProjectPackageCodeUVE::Applied, "The .uvproject package is valid.");
+    return MakeResult(EditorProjectPackageCode::Applied, "The .uvproject package is valid.");
 }
 
-EditorProjectPackageLoadResultUVE EditorProjectPackageCodecUVE::LoadUVE(
+EditorProjectPackageLoadResult EditorProjectPackageCodec::Load(
     const std::filesystem::path& packagePath) {
-    if (!IsPackagePathUVE(packagePath)) {
-        return {MakeResultUVE(EditorProjectPackageCodeUVE::InvalidPath,
+    if (!IsPackagePath(packagePath)) {
+        return {MakeResult(EditorProjectPackageCode::InvalidPath,
                               "The project package path must use the .uvproject extension."), std::nullopt};
     }
 
@@ -618,65 +618,65 @@ EditorProjectPackageLoadResultUVE EditorProjectPackageCodecUVE::LoadUVE(
 
     std::ifstream input(packagePath, std::ios::binary);
     if (!input.is_open()) {
-        return {MakeResultUVE(EditorProjectPackageCodeUVE::ReadFailed,
+        return {MakeResult(EditorProjectPackageCode::ReadFailed,
                               "Unable to open the .uvproject package."), std::nullopt};
     }
 
     try {
-        const JsonUVE json = JsonUVE::parse(input);
-        const std::optional<EditorProjectPackageUVE> package = DecodePackageUVE(json);
+        const Json json = Json::parse(input);
+        const std::optional<EditorProjectPackage> package = DecodePackage(json);
         if (!package.has_value()) {
-            return {MakeResultUVE(EditorProjectPackageCodeUVE::ParseFailed,
+            return {MakeResult(EditorProjectPackageCode::ParseFailed,
                                   "The .uvproject package has an invalid format marker."), std::nullopt};
         }
-        const EditorProjectPackageResultUVE validation = ValidateUVE(*package);
-        if (!validation.IsAcceptedUVE()) {
+        const EditorProjectPackageResult validation = Validate(*package);
+        if (!validation.IsAccepted()) {
             return {validation, std::nullopt};
         }
         return {validation, package};
     } catch (const std::exception&) {
-        return {MakeResultUVE(EditorProjectPackageCodeUVE::ParseFailed,
+        return {MakeResult(EditorProjectPackageCode::ParseFailed,
                               "The .uvproject package is malformed or missing required fields."), std::nullopt};
     }
 }
 
-EditorProjectPackageResultUVE EditorProjectPackageCodecUVE::SaveUVE(
-    const std::filesystem::path& packagePath, const EditorProjectPackageUVE& package) {
-    if (!IsPackagePathUVE(packagePath)) {
-        return MakeResultUVE(EditorProjectPackageCodeUVE::InvalidPath,
+EditorProjectPackageResult EditorProjectPackageCodec::Save(
+    const std::filesystem::path& packagePath, const EditorProjectPackage& package) {
+    if (!IsPackagePath(packagePath)) {
+        return MakeResult(EditorProjectPackageCode::InvalidPath,
                              "The project package path must use the .uvproject extension.");
     }
-    const EditorProjectPackageResultUVE validation = ValidateUVE(package);
-    if (!validation.IsAcceptedUVE()) {
+    const EditorProjectPackageResult validation = Validate(package);
+    if (!validation.IsAccepted()) {
         return validation;
     }
-    return WriteJsonAtomicallyUVE(packagePath, EncodePackageUVE(package));
+    return WriteJsonAtomically(packagePath, EncodePackage(package));
 }
 
-EditorProjectPackageResultUVE EditorProjectPackageCodecUVE::ApplyUpdateUVE(
+EditorProjectPackageResult EditorProjectPackageCodec::ApplyUpdate(
     const std::filesystem::path& packagePath, const std::uint64_t expectedRevision,
-    const EditorProjectPackageUVE& replacement) {
-    const EditorProjectPackageLoadResultUVE current = LoadUVE(packagePath);
-    if (!current.IsAcceptedUVE()) {
+    const EditorProjectPackage& replacement) {
+    const EditorProjectPackageLoadResult current = Load(packagePath);
+    if (!current.IsAccepted()) {
         return current.result;
     }
     if (current.package->revision != expectedRevision) {
-        return MakeResultUVE(EditorProjectPackageCodeUVE::RevisionConflict,
+        return MakeResult(EditorProjectPackageCode::RevisionConflict,
                              "The .uvproject update expected a different current revision.");
     }
     if (current.package->projectId != replacement.projectId) {
-        return MakeResultUVE(EditorProjectPackageCodeUVE::ProjectIdentityConflict,
+        return MakeResult(EditorProjectPackageCode::ProjectIdentityConflict,
                              "The .uvproject update belongs to a different project.");
     }
     if (replacement.revision <= current.package->revision) {
-        return MakeResultUVE(EditorProjectPackageCodeUVE::RevisionConflict,
+        return MakeResult(EditorProjectPackageCode::RevisionConflict,
                              "The .uvproject replacement revision must be strictly newer.");
     }
-    const EditorProjectPackageResultUVE validation = ValidateUVE(replacement);
-    if (!validation.IsAcceptedUVE()) {
+    const EditorProjectPackageResult validation = Validate(replacement);
+    if (!validation.IsAccepted()) {
         return validation;
     }
-    return WriteJsonAtomicallyUVE(packagePath, EncodePackageUVE(replacement));
+    return WriteJsonAtomically(packagePath, EncodePackage(replacement));
 }
 
 } // namespace UVE::Platform

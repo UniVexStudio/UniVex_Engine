@@ -3,21 +3,21 @@
 
 namespace UVE::Input {
 
-MobileGestureSystemUVE::MobileGestureSystemUVE(IMobileInputSystemUVE& mobileInput,
-                                               const MobileGestureRecognizerConfigUVE config) noexcept
+MobileGestureSystem::MobileGestureSystem(IMobileInputSystem& mobileInput,
+                                               const MobileGestureRecognizerConfig config) noexcept
     : m_mobileInput(mobileInput), m_recognizer(config) {}
 
-void MobileGestureSystemUVE::UpdateUVE(const float frameDeltaSeconds) {
-    m_lastReport = m_recognizer.ConsumeSnapshotUVE(m_mobileInput.GetSnapshotUVE(), frameDeltaSeconds);
+void MobileGestureSystem::Update(const float frameDeltaSeconds) {
+    m_lastReport = m_recognizer.ConsumeSnapshot(m_mobileInput.GetSnapshot(), frameDeltaSeconds);
 }
 
-MobileGestureReportUVE MobileGestureSystemUVE::GetLastReportUVE() const noexcept {
+MobileGestureReport MobileGestureSystem::GetLastReport() const noexcept {
     return m_lastReport;
 }
 
-void MobileGestureSystemUVE::ResetUVE() noexcept {
-    m_recognizer.ResetUVE();
-    m_lastReport = MobileGestureReportUVE{};
+void MobileGestureSystem::Reset() noexcept {
+    m_recognizer.Reset();
+    m_lastReport = MobileGestureReport{};
 }
 
 } // namespace UVE::Input

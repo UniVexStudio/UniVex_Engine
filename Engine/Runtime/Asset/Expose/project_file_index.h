@@ -10,25 +10,25 @@
 namespace UVE::Asset {
 
 /// Engine-standard cached, read-only project-content index. The configured
-/// root is normalized once at construction; each successful RefreshUVE() builds
+/// root is normalized once at construction; each successful Refresh() builds
 /// a complete replacement snapshot before publishing it to readers.
-class ProjectFileIndexUVE final : public IProjectFileIndexUVE {
+class ProjectFileIndex final : public IProjectFileIndex {
 public:
-    explicit ProjectFileIndexUVE(std::filesystem::path contentRoot);
-    ~ProjectFileIndexUVE() override;
+    explicit ProjectFileIndex(std::filesystem::path contentRoot);
+    ~ProjectFileIndex() override;
 
-    ProjectFileIndexUVE(const ProjectFileIndexUVE&) = delete;
-    ProjectFileIndexUVE& operator=(const ProjectFileIndexUVE&) = delete;
-    ProjectFileIndexUVE(ProjectFileIndexUVE&&) = delete;
-    ProjectFileIndexUVE& operator=(ProjectFileIndexUVE&&) = delete;
+    ProjectFileIndex(const ProjectFileIndex&) = delete;
+    ProjectFileIndex& operator=(const ProjectFileIndex&) = delete;
+    ProjectFileIndex(ProjectFileIndex&&) = delete;
+    ProjectFileIndex& operator=(ProjectFileIndex&&) = delete;
 
-    bool RefreshUVE(const IAssetDatabaseUVE& assetDatabase) override;
-    [[nodiscard]] ProjectFileSnapshotUVE GetSnapshotUVE() const override;
-    [[nodiscard]] std::uint64_t GetRefreshGenerationUVE() const override;
+    bool Refresh(const IAssetDatabase& assetDatabase) override;
+    [[nodiscard]] ProjectFileSnapshot GetSnapshot() const override;
+    [[nodiscard]] std::uint64_t GetRefreshGeneration() const override;
 
 private:
-    struct ImplUVE;
-    std::unique_ptr<ImplUVE> m_impl;
+    struct Impl;
+    std::unique_ptr<Impl> m_impl;
 };
 
 } // namespace UVE::Asset

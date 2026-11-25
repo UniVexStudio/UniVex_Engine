@@ -51,7 +51,7 @@ EXECUTABLE_SUFFIX = {
     "android-x86_64": "",
 }
 # Android: an app runs no second program, so the package carries the editor as a shared library
-# loaded via dlopen (engine_install.h, kEditorAndroidEntryPointUVE), plus the runtime library when
+# loaded via dlopen (engine_install.h, kEditorAndroidEntryPoint), plus the runtime library when
 # built alongside it. UVBT names it lib<name>.so; the package keeps the editor's own name so
 # installs resolve the same way on every platform.
 ANDROID_TARGET = "android"

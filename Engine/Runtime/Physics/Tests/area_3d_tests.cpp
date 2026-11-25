@@ -27,37 +27,37 @@
 namespace UVE::Physics::Tests {
 namespace {
 
-using Scene::Area3DFieldUVE;
-using Scene::Area3DOverlapUVE;
-using Scene::Area3DSpaceResultUVE;
-using Scene::Area3DUVE;
-using Scene::AreaComponentUVE;
-using Scene::AreaSpaceOverrideModeUVE;
-using Scene::EntityUVE;
-using Scene::kInvalidEntityUVE;
-using Scene::kMaximumArea3DOverlapsUVE;
+using Scene::Area3DField;
+using Scene::Area3DOverlap;
+using Scene::Area3DSpaceResult;
+using Scene::Area3D;
+using Scene::AreaComponent;
+using Scene::AreaSpaceOverrideMode;
+using Scene::Entity;
+using Scene::kInvalidEntity;
+using Scene::kMaximumArea3DOverlaps;
 
-constexpr float kToleranceUVE = 1.0e-4F;
+constexpr float kTolerance = 1.0e-4F;
 
-[[nodiscard]] EntityUVE MakeEntityUVE(const std::uint32_t index,
+[[nodiscard]] Entity MakeEntity(const std::uint32_t index,
                                       const std::uint32_t generation = 1U) noexcept {
-    EntityUVE entity;
+    Entity entity;
     entity.index = index;
     entity.generation = generation;
     return entity;
 }
 
-[[nodiscard]] Area3DFieldUVE MakeDirectionalFieldUVE(const EntityUVE areaEntity,
+[[nodiscard]] Area3DField MakeDirectionalField(const Entity areaEntity,
                                                      const std::int32_t priority,
-                                                     const AreaSpaceOverrideModeUVE gravityMode,
-                                                     const Math::Vector3UVE& gravity,
-                                                     const AreaSpaceOverrideModeUVE linearMode =
-                                                         AreaSpaceOverrideModeUVE::Disabled,
+                                                     const AreaSpaceOverrideMode gravityMode,
+                                                     const Math::Vector3& gravity,
+                                                     const AreaSpaceOverrideMode linearMode =
+                                                         AreaSpaceOverrideMode::Disabled,
                                                      const float linearDamp = 0.0F,
-                                                     const AreaSpaceOverrideModeUVE angularMode =
-                                                         AreaSpaceOverrideModeUVE::Disabled,
+                                                     const AreaSpaceOverrideMode angularMode =
+                                                         AreaSpaceOverrideMode::Disabled,
                                                      const float angularDamp = 0.0F) {
-    Area3DFieldUVE field;
+    Area3DField field;
     field.areaEntity = areaEntity;
     field.priority = priority;
     field.gravityOverride = gravityMode;
@@ -67,11 +67,11 @@ constexpr float kToleranceUVE = 1.0e-4F;
     field.linearDamp = linearDamp;
     field.angularDampOverride = angularMode;
     field.angularDamp = angularDamp;
-    const float lengthSquared = Math::LengthSquaredUVE(gravity);
+    const float lengthSquared = Math::LengthSquared(gravity);
     if (lengthSquared > 0.0F) {
         field.gravityDirection = gravity;
         field.gravityMagnitude = std::sqrt(lengthSquared);
-        field.gravityDirection = Math::NormalizeUVE(gravity);
+        field.gravityDirection = Math::Normalize(gravity);
     } else {
         field.gravityDirection = {};
         field.gravityMagnitude = 0.0F;
@@ -79,451 +79,451 @@ constexpr float kToleranceUVE = 1.0e-4F;
     return field;
 }
 
-class Area3DRuntimeUVETest : public ::testing::Test {
+class Area3DRuntimeTest : public ::testing::Test {
 protected:
-    Memory::MemoryManagerUVE memoryManager;
-    Events::EventSystemUVE eventSystem;
-    Scene::EntityManagerUVE entityManager{memoryManager.GetDefaultAllocatorUVE(), eventSystem};
-    Scene::SceneGraphUVE sceneGraph;
-    CollisionSystemUVE collisionSystem;
+    Memory::MemoryManager memoryManager;
+    Events::EventSystem eventSystem;
+    Scene::EntityManager entityManager{memoryManager.GetDefaultAllocator(), eventSystem};
+    Scene::SceneGraph sceneGraph;
+    CollisionSystem collisionSystem;
 
-    Scene::EntityUVE MakeAreaUVE(const Math::Vector3UVE& position, const Math::Vector3UVE& halfExtents,
-                                 AreaComponentUVE area = {}) {
+    Scene::Entity MakeArea(const Math::Vector3& position, const Math::Vector3& halfExtents,
+                                 AreaComponent area = {}) {
         area.halfExtents = halfExtents;
-        const Scene::EntityUVE entity = entityManager.CreateEntityUVE();
-        Scene::TransformComponentUVE transform;
+        const Scene::Entity entity = entityManager.CreateEntity();
+        Scene::TransformComponent transform;
         transform.localPosition = position;
-        sceneGraph.AttachTransformUVE(entityManager, entity, transform);
-        entityManager.AddComponentUVE<AreaComponentUVE>(entity, area);
-        sceneGraph.UpdateUVE(entityManager);
+        sceneGraph.AttachTransform(entityManager, entity, transform);
+        entityManager.AddComponent<AreaComponent>(entity, area);
+        sceneGraph.Update(entityManager);
         return entity;
     }
 
-    Scene::EntityUVE MakeBodyUVE(const Math::Vector3UVE& position,
-                                 Scene::Rigid3DComponentUVE rigidBody = {},
-                                 const Math::Vector3UVE& halfExtents = {0.5F, 0.5F, 0.5F}) {
-        const Scene::EntityUVE entity = entityManager.CreateEntityUVE();
-        Scene::TransformComponentUVE transform;
+    Scene::Entity MakeBody(const Math::Vector3& position,
+                                 Scene::Rigid3DComponent rigidBody = {},
+                                 const Math::Vector3& halfExtents = {0.5F, 0.5F, 0.5F}) {
+        const Scene::Entity entity = entityManager.CreateEntity();
+        Scene::TransformComponent transform;
         transform.localPosition = position;
-        sceneGraph.AttachTransformUVE(entityManager, entity, transform);
-        entityManager.AddComponentUVE<Scene::Rigid3DComponentUVE>(entity, rigidBody);
-        entityManager.AddComponentUVE<Scene::ColliderComponentUVE>(
-            entity, Scene::ColliderComponentUVE{halfExtents});
-        sceneGraph.UpdateUVE(entityManager);
+        sceneGraph.AttachTransform(entityManager, entity, transform);
+        entityManager.AddComponent<Scene::Rigid3DComponent>(entity, rigidBody);
+        entityManager.AddComponent<Scene::ColliderComponent>(
+            entity, Scene::ColliderComponent{halfExtents});
+        sceneGraph.Update(entityManager);
         return entity;
     }
 
-    Scene::EntityUVE MakeColliderUVE(const Math::Vector3UVE& position,
-                                     const Math::Vector3UVE& halfExtents = {0.5F, 0.5F, 0.5F}) {
-        const Scene::EntityUVE entity = entityManager.CreateEntityUVE();
-        Scene::TransformComponentUVE transform;
+    Scene::Entity MakeCollider(const Math::Vector3& position,
+                                     const Math::Vector3& halfExtents = {0.5F, 0.5F, 0.5F}) {
+        const Scene::Entity entity = entityManager.CreateEntity();
+        Scene::TransformComponent transform;
         transform.localPosition = position;
-        sceneGraph.AttachTransformUVE(entityManager, entity, transform);
-        entityManager.AddComponentUVE<Scene::ColliderComponentUVE>(
-            entity, Scene::ColliderComponentUVE{halfExtents});
-        sceneGraph.UpdateUVE(entityManager);
+        sceneGraph.AttachTransform(entityManager, entity, transform);
+        entityManager.AddComponent<Scene::ColliderComponent>(
+            entity, Scene::ColliderComponent{halfExtents});
+        sceneGraph.Update(entityManager);
         return entity;
     }
 };
 
-TEST(AreaComponentUVETest, IsAreaComponentValidUVE_RejectsUnsafeSpaceOverride) {
-    EXPECT_TRUE(Scene::IsAreaComponentValidUVE(AreaComponentUVE{}));
-    EXPECT_TRUE(Scene::HasAreaSpaceOverrideUVE(AreaComponentUVE{}) == false);
+TEST(AreaComponentTest, IsAreaComponentValid_RejectsUnsafeSpaceOverride) {
+    EXPECT_TRUE(Scene::IsAreaComponentValid(AreaComponent{}));
+    EXPECT_TRUE(Scene::HasAreaSpaceOverride(AreaComponent{}) == false);
 
-    AreaComponentUVE invalid = {};
+    AreaComponent invalid = {};
     invalid.linearDamp = -0.1F;
-    EXPECT_FALSE(Scene::IsAreaComponentValidUVE(invalid));
+    EXPECT_FALSE(Scene::IsAreaComponentValid(invalid));
     invalid = {};
     invalid.angularDamp = -0.1F;
-    EXPECT_FALSE(Scene::IsAreaComponentValidUVE(invalid));
+    EXPECT_FALSE(Scene::IsAreaComponentValid(invalid));
     invalid = {};
     invalid.gravityPointUnitDistance = -1.0F;
-    EXPECT_FALSE(Scene::IsAreaComponentValidUVE(invalid));
+    EXPECT_FALSE(Scene::IsAreaComponentValid(invalid));
     invalid = {};
     invalid.gravityMagnitude = std::numeric_limits<float>::infinity();
-    EXPECT_FALSE(Scene::IsAreaComponentValidUVE(invalid));
+    EXPECT_FALSE(Scene::IsAreaComponentValid(invalid));
     invalid = {};
-    invalid.gravityOverride = static_cast<AreaSpaceOverrideModeUVE>(9U);
-    EXPECT_FALSE(Scene::IsAreaComponentValidUVE(invalid));
+    invalid.gravityOverride = static_cast<AreaSpaceOverrideMode>(9U);
+    EXPECT_FALSE(Scene::IsAreaComponentValid(invalid));
     invalid = {};
     invalid.gravityDirection.x = std::numeric_limits<float>::quiet_NaN();
-    EXPECT_FALSE(Scene::IsAreaComponentValidUVE(invalid));
+    EXPECT_FALSE(Scene::IsAreaComponentValid(invalid));
 }
 
-TEST(Area3DUVETest, RefreshOccupancyUVE_SplitsBodiesAndAreasCapsAndClearsWhenNotMonitoring) {
-    AreaComponentUVE area{};
-    const EntityUVE bodyA = MakeEntityUVE(1U);
-    const EntityUVE bodyB = MakeEntityUVE(2U);
-    const EntityUVE otherArea = MakeEntityUVE(3U);
-    const std::vector<Area3DOverlapUVE> overlaps{
-        Area3DOverlapUVE{bodyA, 0.2F, false},
-        Area3DOverlapUVE{otherArea, 0.1F, true},
-        Area3DOverlapUVE{bodyB, 0.3F, false},
-        Area3DOverlapUVE{bodyA, 0.4F, false},
+TEST(Area3DTest, RefreshOccupancy_SplitsBodiesAndAreasCapsAndClearsWhenNotMonitoring) {
+    AreaComponent area{};
+    const Entity bodyA = MakeEntity(1U);
+    const Entity bodyB = MakeEntity(2U);
+    const Entity otherArea = MakeEntity(3U);
+    const std::vector<Area3DOverlap> overlaps{
+        Area3DOverlap{bodyA, 0.2F, false},
+        Area3DOverlap{otherArea, 0.1F, true},
+        Area3DOverlap{bodyB, 0.3F, false},
+        Area3DOverlap{bodyA, 0.4F, false},
     };
-    Area3DUVE::RefreshOccupancyUVE(area, overlaps);
+    Area3D::RefreshOccupancy(area, overlaps);
     ASSERT_EQ(area.overlappingBodyCount, 2U);
-    EXPECT_EQ(*Area3DUVE::GetOverlappingBodyUVE(area, 0U), bodyA);
-    EXPECT_EQ(*Area3DUVE::GetOverlappingBodyUVE(area, 1U), bodyB);
-    EXPECT_EQ(Area3DUVE::GetOverlappingBodyUVE(area, 2U), nullptr);
+    EXPECT_EQ(*Area3D::GetOverlappingBody(area, 0U), bodyA);
+    EXPECT_EQ(*Area3D::GetOverlappingBody(area, 1U), bodyB);
+    EXPECT_EQ(Area3D::GetOverlappingBody(area, 2U), nullptr);
     ASSERT_EQ(area.overlappingAreaCount, 1U);
-    EXPECT_EQ(*Area3DUVE::GetOverlappingAreaUVE(area, 0U), otherArea);
-    EXPECT_TRUE(Area3DUVE::HasOverlappingBodyUVE(area, bodyA));
-    EXPECT_FALSE(Area3DUVE::HasOverlappingAreaUVE(area, bodyA));
+    EXPECT_EQ(*Area3D::GetOverlappingArea(area, 0U), otherArea);
+    EXPECT_TRUE(Area3D::HasOverlappingBody(area, bodyA));
+    EXPECT_FALSE(Area3D::HasOverlappingArea(area, bodyA));
     EXPECT_FALSE(area.overlappingBodiesTruncated);
 
     area.monitoring = false;
-    Area3DUVE::RefreshOccupancyUVE(area, overlaps);
+    Area3D::RefreshOccupancy(area, overlaps);
     EXPECT_EQ(area.overlappingBodyCount, 0U);
     EXPECT_EQ(area.overlappingAreaCount, 0U);
-    EXPECT_FALSE(Area3DUVE::HasOverlappingBodyUVE(area, bodyA));
+    EXPECT_FALSE(Area3D::HasOverlappingBody(area, bodyA));
 }
 
-TEST(Area3DUVETest, RefreshOccupancyUVE_ReportsTruncationPastTheBound) {
-    AreaComponentUVE area{};
-    std::vector<Area3DOverlapUVE> overlaps;
-    overlaps.reserve(kMaximumArea3DOverlapsUVE + 1U);
-    for (std::uint32_t index = 1U; index <= static_cast<std::uint32_t>(kMaximumArea3DOverlapsUVE) + 1U;
+TEST(Area3DTest, RefreshOccupancy_ReportsTruncationPastTheBound) {
+    AreaComponent area{};
+    std::vector<Area3DOverlap> overlaps;
+    overlaps.reserve(kMaximumArea3DOverlaps + 1U);
+    for (std::uint32_t index = 1U; index <= static_cast<std::uint32_t>(kMaximumArea3DOverlaps) + 1U;
          ++index) {
-        overlaps.push_back(Area3DOverlapUVE{MakeEntityUVE(index), 0.1F, false});
+        overlaps.push_back(Area3DOverlap{MakeEntity(index), 0.1F, false});
     }
-    Area3DUVE::RefreshOccupancyUVE(area, overlaps);
-    EXPECT_EQ(area.overlappingBodyCount, static_cast<std::uint8_t>(kMaximumArea3DOverlapsUVE));
+    Area3D::RefreshOccupancy(area, overlaps);
+    EXPECT_EQ(area.overlappingBodyCount, static_cast<std::uint8_t>(kMaximumArea3DOverlaps));
     EXPECT_TRUE(area.overlappingBodiesTruncated);
-    EXPECT_EQ(*Area3DUVE::GetOverlappingBodyUVE(area, 0U), MakeEntityUVE(1U));
+    EXPECT_EQ(*Area3D::GetOverlappingBody(area, 0U), MakeEntity(1U));
 }
 
-TEST(Area3DUVETest, EvaluateGravityAtUVE_DirectionalNormalizesAndPointUsesInverseSquare) {
-    Area3DFieldUVE directional;
+TEST(Area3DTest, EvaluateGravityAt_DirectionalNormalizesAndPointUsesInverseSquare) {
+    Area3DField directional;
     directional.gravityDirection = {0.0F, -2.0F, 0.0F};
     directional.gravityMagnitude = 10.0F;
-    const Math::Vector3UVE down =
-        Area3DUVE::EvaluateGravityAtUVE(directional, Math::Vector3UVE{1.0F, 2.0F, 3.0F});
-    EXPECT_NEAR(down.x, 0.0F, kToleranceUVE);
-    EXPECT_NEAR(down.y, -10.0F, kToleranceUVE);
-    EXPECT_NEAR(down.z, 0.0F, kToleranceUVE);
+    const Math::Vector3 down =
+        Area3D::EvaluateGravityAt(directional, Math::Vector3{1.0F, 2.0F, 3.0F});
+    EXPECT_NEAR(down.x, 0.0F, kTolerance);
+    EXPECT_NEAR(down.y, -10.0F, kTolerance);
+    EXPECT_NEAR(down.z, 0.0F, kTolerance);
 
-    Area3DFieldUVE zeroDirection;
+    Area3DField zeroDirection;
     zeroDirection.gravityDirection = {};
     zeroDirection.gravityMagnitude = 10.0F;
-    EXPECT_EQ(Area3DUVE::EvaluateGravityAtUVE(zeroDirection, {}), Math::Vector3UVE{});
+    EXPECT_EQ(Area3D::EvaluateGravityAt(zeroDirection, {}), Math::Vector3{});
 
-    Area3DFieldUVE point;
+    Area3DField point;
     point.gravityPoint = true;
     point.gravityPointWorldCenter = {};
     point.gravityMagnitude = 10.0F;
     point.gravityPointUnitDistance = 2.0F;
-    const Math::Vector3UVE atUnit =
-        Area3DUVE::EvaluateGravityAtUVE(point, Math::Vector3UVE{2.0F, 0.0F, 0.0F});
-    EXPECT_NEAR(atUnit.x, -10.0F, kToleranceUVE);
-    EXPECT_NEAR(atUnit.y, 0.0F, kToleranceUVE);
-    const Math::Vector3UVE farther =
-        Area3DUVE::EvaluateGravityAtUVE(point, Math::Vector3UVE{4.0F, 0.0F, 0.0F});
-    EXPECT_NEAR(farther.x, -2.5F, kToleranceUVE);
+    const Math::Vector3 atUnit =
+        Area3D::EvaluateGravityAt(point, Math::Vector3{2.0F, 0.0F, 0.0F});
+    EXPECT_NEAR(atUnit.x, -10.0F, kTolerance);
+    EXPECT_NEAR(atUnit.y, 0.0F, kTolerance);
+    const Math::Vector3 farther =
+        Area3D::EvaluateGravityAt(point, Math::Vector3{4.0F, 0.0F, 0.0F});
+    EXPECT_NEAR(farther.x, -2.5F, kTolerance);
 
     point.gravityPointUnitDistance = 0.0F;
-    const Math::Vector3UVE constant =
-        Area3DUVE::EvaluateGravityAtUVE(point, Math::Vector3UVE{4.0F, 0.0F, 0.0F});
-    EXPECT_NEAR(constant.x, -10.0F, kToleranceUVE);
+    const Math::Vector3 constant =
+        Area3D::EvaluateGravityAt(point, Math::Vector3{4.0F, 0.0F, 0.0F});
+    EXPECT_NEAR(constant.x, -10.0F, kTolerance);
 
-    EXPECT_EQ(Area3DUVE::EvaluateGravityAtUVE(point, {}), Math::Vector3UVE{});
+    EXPECT_EQ(Area3D::EvaluateGravityAt(point, {}), Math::Vector3{});
 }
 
-TEST(Area3DUVETest, ResolveSpaceUVE_DisabledLeavesWorldAndBodyDamping) {
-    const Math::Vector3UVE world{0.0F, -10.0F, 0.0F};
-    Area3DFieldUVE field = MakeDirectionalFieldUVE(MakeEntityUVE(1U), 0, AreaSpaceOverrideModeUVE::Disabled,
-                                                  Math::Vector3UVE{0.0F, -4.0F, 0.0F});
-    const Area3DSpaceResultUVE result =
-        Area3DUVE::ResolveSpaceUVE(world, 0.2F, 0.0F, {}, std::span<const Area3DFieldUVE>(&field, 1U));
+TEST(Area3DTest, ResolveSpace_DisabledLeavesWorldAndBodyDamping) {
+    const Math::Vector3 world{0.0F, -10.0F, 0.0F};
+    Area3DField field = MakeDirectionalField(MakeEntity(1U), 0, AreaSpaceOverrideMode::Disabled,
+                                                  Math::Vector3{0.0F, -4.0F, 0.0F});
+    const Area3DSpaceResult result =
+        Area3D::ResolveSpace(world, 0.2F, 0.0F, {}, std::span<const Area3DField>(&field, 1U));
     EXPECT_EQ(result.gravity, world);
     EXPECT_FLOAT_EQ(result.linearDamp, 0.2F);
     EXPECT_FALSE(result.gravityFromArea);
 }
 
-TEST(Area3DUVETest, ResolveSpaceUVE_CombineAddsAndReplaceStops) {
-    const Math::Vector3UVE world{0.0F, -10.0F, 0.0F};
-    const Area3DFieldUVE combine = MakeDirectionalFieldUVE(
-        MakeEntityUVE(1U), 0, AreaSpaceOverrideModeUVE::Combine, Math::Vector3UVE{0.0F, -5.0F, 0.0F});
-    const Area3DSpaceResultUVE combined =
-        Area3DUVE::ResolveSpaceUVE(world, 0.0F, 0.0F, {}, std::span<const Area3DFieldUVE>(&combine, 1U));
-    EXPECT_NEAR(combined.gravity.y, -15.0F, kToleranceUVE);
+TEST(Area3DTest, ResolveSpace_CombineAddsAndReplaceStops) {
+    const Math::Vector3 world{0.0F, -10.0F, 0.0F};
+    const Area3DField combine = MakeDirectionalField(
+        MakeEntity(1U), 0, AreaSpaceOverrideMode::Combine, Math::Vector3{0.0F, -5.0F, 0.0F});
+    const Area3DSpaceResult combined =
+        Area3D::ResolveSpace(world, 0.0F, 0.0F, {}, std::span<const Area3DField>(&combine, 1U));
+    EXPECT_NEAR(combined.gravity.y, -15.0F, kTolerance);
     EXPECT_TRUE(combined.gravityFromArea);
 
-    const Area3DFieldUVE replace = MakeDirectionalFieldUVE(
-        MakeEntityUVE(1U), 0, AreaSpaceOverrideModeUVE::Replace, Math::Vector3UVE{0.0F, 0.0F, 0.0F});
-    const Area3DSpaceResultUVE replaced =
-        Area3DUVE::ResolveSpaceUVE(world, 0.4F, 0.0F, {}, std::span<const Area3DFieldUVE>(&replace, 1U));
-    EXPECT_NEAR(replaced.gravity.y, 0.0F, kToleranceUVE);
+    const Area3DField replace = MakeDirectionalField(
+        MakeEntity(1U), 0, AreaSpaceOverrideMode::Replace, Math::Vector3{0.0F, 0.0F, 0.0F});
+    const Area3DSpaceResult replaced =
+        Area3D::ResolveSpace(world, 0.4F, 0.0F, {}, std::span<const Area3DField>(&replace, 1U));
+    EXPECT_NEAR(replaced.gravity.y, 0.0F, kTolerance);
     EXPECT_FLOAT_EQ(replaced.linearDamp, 0.4F);
 }
 
-TEST(Area3DUVETest, ResolveSpaceUVE_PriorityAndTheFiveModes) {
-    const Math::Vector3UVE world{0.0F, -10.0F, 0.0F};
-    const Area3DFieldUVE highReplace = MakeDirectionalFieldUVE(
-        MakeEntityUVE(2U), 10, AreaSpaceOverrideModeUVE::Replace, Math::Vector3UVE{0.0F, 0.0F, 0.0F});
-    const Area3DFieldUVE lowCombine = MakeDirectionalFieldUVE(
-        MakeEntityUVE(1U), 0, AreaSpaceOverrideModeUVE::Combine, Math::Vector3UVE{0.0F, -8.0F, 0.0F});
-    const std::vector<Area3DFieldUVE> replaceWins{lowCombine, highReplace};
-    const Area3DSpaceResultUVE replaced =
-        Area3DUVE::ResolveSpaceUVE(world, 0.0F, 0.0F, {}, replaceWins);
-    EXPECT_NEAR(replaced.gravity.y, 0.0F, kToleranceUVE);
+TEST(Area3DTest, ResolveSpace_PriorityAndTheFiveModes) {
+    const Math::Vector3 world{0.0F, -10.0F, 0.0F};
+    const Area3DField highReplace = MakeDirectionalField(
+        MakeEntity(2U), 10, AreaSpaceOverrideMode::Replace, Math::Vector3{0.0F, 0.0F, 0.0F});
+    const Area3DField lowCombine = MakeDirectionalField(
+        MakeEntity(1U), 0, AreaSpaceOverrideMode::Combine, Math::Vector3{0.0F, -8.0F, 0.0F});
+    const std::vector<Area3DField> replaceWins{lowCombine, highReplace};
+    const Area3DSpaceResult replaced =
+        Area3D::ResolveSpace(world, 0.0F, 0.0F, {}, replaceWins);
+    EXPECT_NEAR(replaced.gravity.y, 0.0F, kTolerance);
 
-    const Area3DFieldUVE highReplaceCombine = MakeDirectionalFieldUVE(
-        MakeEntityUVE(2U), 10, AreaSpaceOverrideModeUVE::ReplaceCombine,
-        Math::Vector3UVE{0.0F, -5.0F, 0.0F});
-    const std::vector<Area3DFieldUVE> replaceThenCombine{lowCombine, highReplaceCombine};
-    const Area3DSpaceResultUVE mixed =
-        Area3DUVE::ResolveSpaceUVE(world, 0.0F, 0.0F, {}, replaceThenCombine);
-    EXPECT_NEAR(mixed.gravity.y, -13.0F, kToleranceUVE);
+    const Area3DField highReplaceCombine = MakeDirectionalField(
+        MakeEntity(2U), 10, AreaSpaceOverrideMode::ReplaceCombine,
+        Math::Vector3{0.0F, -5.0F, 0.0F});
+    const std::vector<Area3DField> replaceThenCombine{lowCombine, highReplaceCombine};
+    const Area3DSpaceResult mixed =
+        Area3D::ResolveSpace(world, 0.0F, 0.0F, {}, replaceThenCombine);
+    EXPECT_NEAR(mixed.gravity.y, -13.0F, kTolerance);
 
-    const Area3DFieldUVE highCombineReplace = MakeDirectionalFieldUVE(
-        MakeEntityUVE(2U), 10, AreaSpaceOverrideModeUVE::CombineReplace,
-        Math::Vector3UVE{0.0F, -1.0F, 0.0F});
-    const std::vector<Area3DFieldUVE> combineThenStop{lowCombine, highCombineReplace};
-    const Area3DSpaceResultUVE stopped =
-        Area3DUVE::ResolveSpaceUVE(world, 0.0F, 0.0F, {}, combineThenStop);
-    EXPECT_NEAR(stopped.gravity.y, -11.0F, kToleranceUVE);
+    const Area3DField highCombineReplace = MakeDirectionalField(
+        MakeEntity(2U), 10, AreaSpaceOverrideMode::CombineReplace,
+        Math::Vector3{0.0F, -1.0F, 0.0F});
+    const std::vector<Area3DField> combineThenStop{lowCombine, highCombineReplace};
+    const Area3DSpaceResult stopped =
+        Area3D::ResolveSpace(world, 0.0F, 0.0F, {}, combineThenStop);
+    EXPECT_NEAR(stopped.gravity.y, -11.0F, kTolerance);
 }
 
-TEST(Area3DUVETest, ResolveSpaceUVE_EqualPriorityBreaksTiesByEntityId) {
-    const Math::Vector3UVE world{0.0F, -10.0F, 0.0F};
-    const Area3DFieldUVE later = MakeDirectionalFieldUVE(
-        MakeEntityUVE(8U), 1, AreaSpaceOverrideModeUVE::Replace, Math::Vector3UVE{0.0F, -1.0F, 0.0F});
-    const Area3DFieldUVE earlier = MakeDirectionalFieldUVE(
-        MakeEntityUVE(3U), 1, AreaSpaceOverrideModeUVE::Replace, Math::Vector3UVE{0.0F, -3.0F, 0.0F});
-    const std::vector<Area3DFieldUVE> fields{later, earlier};
-    const Area3DSpaceResultUVE result = Area3DUVE::ResolveSpaceUVE(world, 0.0F, 0.0F, {}, fields);
-    EXPECT_NEAR(result.gravity.y, -3.0F, kToleranceUVE);
+TEST(Area3DTest, ResolveSpace_EqualPriorityBreaksTiesByEntityId) {
+    const Math::Vector3 world{0.0F, -10.0F, 0.0F};
+    const Area3DField later = MakeDirectionalField(
+        MakeEntity(8U), 1, AreaSpaceOverrideMode::Replace, Math::Vector3{0.0F, -1.0F, 0.0F});
+    const Area3DField earlier = MakeDirectionalField(
+        MakeEntity(3U), 1, AreaSpaceOverrideMode::Replace, Math::Vector3{0.0F, -3.0F, 0.0F});
+    const std::vector<Area3DField> fields{later, earlier};
+    const Area3DSpaceResult result = Area3D::ResolveSpace(world, 0.0F, 0.0F, {}, fields);
+    EXPECT_NEAR(result.gravity.y, -3.0F, kTolerance);
 }
 
-TEST(Area3DUVETest, ResolveSpaceUVE_LinearDampReplaceCancelsBodyDrag) {
-    Area3DFieldUVE field = MakeDirectionalFieldUVE(MakeEntityUVE(1U), 0,
-                                                   AreaSpaceOverrideModeUVE::Disabled, {});
-    field.linearDampOverride = AreaSpaceOverrideModeUVE::Replace;
+TEST(Area3DTest, ResolveSpace_LinearDampReplaceCancelsBodyDrag) {
+    Area3DField field = MakeDirectionalField(MakeEntity(1U), 0,
+                                                   AreaSpaceOverrideMode::Disabled, {});
+    field.linearDampOverride = AreaSpaceOverrideMode::Replace;
     field.linearDamp = 0.0F;
-    const Area3DSpaceResultUVE result =
-        Area3DUVE::ResolveSpaceUVE({0.0F, -10.0F, 0.0F}, 0.9F, 0.0F, {},
-                                   std::span<const Area3DFieldUVE>(&field, 1U));
+    const Area3DSpaceResult result =
+        Area3D::ResolveSpace({0.0F, -10.0F, 0.0F}, 0.9F, 0.0F, {},
+                                   std::span<const Area3DField>(&field, 1U));
     EXPECT_FLOAT_EQ(result.linearDamp, 0.0F);
     EXPECT_TRUE(result.linearDampFromArea);
 }
 
-TEST(Area3DUVETest, MakeFieldUVE_PosesPointGravityInWorld) {
-    AreaComponentUVE area{};
+TEST(Area3DTest, MakeField_PosesPointGravityInWorld) {
+    AreaComponent area{};
     area.gravityPoint = true;
     area.gravityPointOffset = {1.0F, 2.0F, 3.0F};
     area.priority = 4;
-    const Area3DFieldUVE field =
-        Area3DUVE::MakeFieldUVE(MakeEntityUVE(9U), area, Math::Vector3UVE{10.0F, 0.0F, 0.0F});
-    EXPECT_EQ(field.areaEntity, MakeEntityUVE(9U));
+    const Area3DField field =
+        Area3D::MakeField(MakeEntity(9U), area, Math::Vector3{10.0F, 0.0F, 0.0F});
+    EXPECT_EQ(field.areaEntity, MakeEntity(9U));
     EXPECT_EQ(field.priority, 4);
-    EXPECT_EQ(field.gravityPointWorldCenter, Math::Vector3UVE(11.0F, 2.0F, 3.0F));
+    EXPECT_EQ(field.gravityPointWorldCenter, Math::Vector3(11.0F, 2.0F, 3.0F));
 }
 
-TEST_F(Area3DRuntimeUVETest, SyncOccupancy_ListsOverlappingColliderAndOtherArea) {
-    const Scene::EntityUVE area = MakeAreaUVE({0.0F, 0.0F, 0.0F}, {1.0F, 1.0F, 1.0F});
-    const Scene::EntityUVE otherArea = MakeAreaUVE({0.5F, 0.0F, 0.0F}, {1.0F, 1.0F, 1.0F});
-    const Scene::EntityUVE body = MakeColliderUVE({0.25F, 0.0F, 0.0F});
-    const Scene::EntityUVE outside = MakeColliderUVE({8.0F, 0.0F, 0.0F});
+TEST_F(Area3DRuntimeTest, SyncOccupancy_ListsOverlappingColliderAndOtherArea) {
+    const Scene::Entity area = MakeArea({0.0F, 0.0F, 0.0F}, {1.0F, 1.0F, 1.0F});
+    const Scene::Entity otherArea = MakeArea({0.5F, 0.0F, 0.0F}, {1.0F, 1.0F, 1.0F});
+    const Scene::Entity body = MakeCollider({0.25F, 0.0F, 0.0F});
+    const Scene::Entity outside = MakeCollider({8.0F, 0.0F, 0.0F});
 
-    const Area3DOccupancySyncResultUVE report = SyncArea3DOccupancyUVE(entityManager);
+    const Area3DOccupancySyncResult report = SyncArea3DOccupancy(entityManager);
     EXPECT_EQ(report.areaCount, 2U);
     EXPECT_EQ(report.refreshedAreaCount, 2U);
 
-    const AreaComponentUVE& first = entityManager.GetComponentUVE<AreaComponentUVE>(area);
-    EXPECT_TRUE(Area3DUVE::HasOverlappingBodyUVE(first, body));
-    EXPECT_FALSE(Area3DUVE::HasOverlappingBodyUVE(first, outside));
-    EXPECT_TRUE(Area3DUVE::HasOverlappingAreaUVE(first, otherArea));
+    const AreaComponent& first = entityManager.GetComponent<AreaComponent>(area);
+    EXPECT_TRUE(Area3D::HasOverlappingBody(first, body));
+    EXPECT_FALSE(Area3D::HasOverlappingBody(first, outside));
+    EXPECT_TRUE(Area3D::HasOverlappingArea(first, otherArea));
 }
 
-TEST_F(Area3DRuntimeUVETest, SyncOccupancy_NotMonitoringReportsNobody) {
-    AreaComponentUVE authored{};
+TEST_F(Area3DRuntimeTest, SyncOccupancy_NotMonitoringReportsNobody) {
+    AreaComponent authored{};
     authored.monitoring = false;
-    const Scene::EntityUVE area = MakeAreaUVE({0.0F, 0.0F, 0.0F}, {1.0F, 1.0F, 1.0F}, authored);
-    MakeColliderUVE({0.0F, 0.0F, 0.0F});
-    static_cast<void>(SyncArea3DOccupancyUVE(entityManager));
-    const AreaComponentUVE& stored = entityManager.GetComponentUVE<AreaComponentUVE>(area);
+    const Scene::Entity area = MakeArea({0.0F, 0.0F, 0.0F}, {1.0F, 1.0F, 1.0F}, authored);
+    MakeCollider({0.0F, 0.0F, 0.0F});
+    static_cast<void>(SyncArea3DOccupancy(entityManager));
+    const AreaComponent& stored = entityManager.GetComponent<AreaComponent>(area);
     EXPECT_EQ(stored.overlappingBodyCount, 0U);
 }
 
-TEST_F(Area3DRuntimeUVETest, QueryUVE_AllValidAreasIncludesNonMonitoringGravityVolume) {
-    AreaComponentUVE authored{};
+TEST_F(Area3DRuntimeTest, Query_AllValidAreasIncludesNonMonitoringGravityVolume) {
+    AreaComponent authored{};
     authored.monitoring = false;
-    authored.gravityOverride = AreaSpaceOverrideModeUVE::Replace;
-    const Scene::EntityUVE area = MakeAreaUVE({0.0F, 0.0F, 0.0F}, {1.0F, 1.0F, 1.0F}, authored);
-    const Scene::EntityUVE body = MakeColliderUVE({0.0F, 0.0F, 0.0F});
+    authored.gravityOverride = AreaSpaceOverrideMode::Replace;
+    const Scene::Entity area = MakeArea({0.0F, 0.0F, 0.0F}, {1.0F, 1.0F, 1.0F}, authored);
+    const Scene::Entity body = MakeCollider({0.0F, 0.0F, 0.0F});
 
-    EXPECT_TRUE(AreaOverlapSystemUVE::QueryUVE(entityManager).overlaps.empty());
+    EXPECT_TRUE(AreaOverlapSystem::Query(entityManager).overlaps.empty());
 
-    const AreaOverlapQueryResultUVE all = AreaOverlapSystemUVE::QueryUVE(
-        entityManager, kMaximumAreaOverlapResultsUVE, AreaOverlapParticipationUVE::AllValidAreas);
+    const AreaOverlapQueryResult all = AreaOverlapSystem::Query(
+        entityManager, kMaximumAreaOverlapResults, AreaOverlapParticipation::AllValidAreas);
     ASSERT_EQ(all.overlaps.size(), 1U);
     EXPECT_EQ(all.overlaps.front().area, area);
     EXPECT_EQ(all.overlaps.front().other, body);
 }
 
-TEST_F(Area3DRuntimeUVETest, PhysicsSystem_ReplaceZeroGravityHoldsTheBodyUp) {
-    AreaComponentUVE authored{};
-    authored.gravityOverride = AreaSpaceOverrideModeUVE::Replace;
+TEST_F(Area3DRuntimeTest, PhysicsSystem_ReplaceZeroGravityHoldsTheBodyUp) {
+    AreaComponent authored{};
+    authored.gravityOverride = AreaSpaceOverrideMode::Replace;
     authored.gravityMagnitude = 0.0F;
-    MakeAreaUVE({0.0F, 0.0F, 0.0F}, {2.0F, 2.0F, 2.0F}, authored);
-    const Scene::EntityUVE body = MakeBodyUVE({0.0F, 0.0F, 0.0F});
+    MakeArea({0.0F, 0.0F, 0.0F}, {2.0F, 2.0F, 2.0F}, authored);
+    const Scene::Entity body = MakeBody({0.0F, 0.0F, 0.0F});
 
-    PhysicsSystemUVE physicsSystem(collisionSystem, Math::Vector3UVE{0.0F, -10.0F, 0.0F});
-    physicsSystem.StepUVE(entityManager, sceneGraph, 0.1F);
+    PhysicsSystem physicsSystem(collisionSystem, Math::Vector3{0.0F, -10.0F, 0.0F});
+    physicsSystem.Step(entityManager, sceneGraph, 0.1F);
 
-    EXPECT_NEAR(entityManager.GetComponentUVE<Scene::Rigid3DComponentUVE>(body).velocity.y, 0.0F,
-                kToleranceUVE);
-    EXPECT_NEAR(entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(body).worldPosition.y,
-                0.0F, kToleranceUVE);
+    EXPECT_NEAR(entityManager.GetComponent<Scene::Rigid3DComponent>(body).velocity.y, 0.0F,
+                kTolerance);
+    EXPECT_NEAR(entityManager.GetComponent<Scene::WorldTransformComponent>(body).worldPosition.y,
+                0.0F, kTolerance);
 }
 
-TEST_F(Area3DRuntimeUVETest, PhysicsSystem_CombineDoublesWorldGravity) {
-    AreaComponentUVE authored{};
-    authored.gravityOverride = AreaSpaceOverrideModeUVE::Combine;
+TEST_F(Area3DRuntimeTest, PhysicsSystem_CombineDoublesWorldGravity) {
+    AreaComponent authored{};
+    authored.gravityOverride = AreaSpaceOverrideMode::Combine;
     authored.gravityDirection = {0.0F, -1.0F, 0.0F};
     authored.gravityMagnitude = 10.0F;
-    MakeAreaUVE({0.0F, 0.0F, 0.0F}, {2.0F, 2.0F, 2.0F}, authored);
-    const Scene::EntityUVE body = MakeBodyUVE({0.0F, 0.0F, 0.0F});
+    MakeArea({0.0F, 0.0F, 0.0F}, {2.0F, 2.0F, 2.0F}, authored);
+    const Scene::Entity body = MakeBody({0.0F, 0.0F, 0.0F});
 
-    PhysicsSystemUVE physicsSystem(collisionSystem, Math::Vector3UVE{0.0F, -10.0F, 0.0F});
-    physicsSystem.StepUVE(entityManager, sceneGraph, 0.1F);
+    PhysicsSystem physicsSystem(collisionSystem, Math::Vector3{0.0F, -10.0F, 0.0F});
+    physicsSystem.Step(entityManager, sceneGraph, 0.1F);
 
-    EXPECT_NEAR(entityManager.GetComponentUVE<Scene::Rigid3DComponentUVE>(body).velocity.y, -2.0F,
-                kToleranceUVE);
+    EXPECT_NEAR(entityManager.GetComponent<Scene::Rigid3DComponent>(body).velocity.y, -2.0F,
+                kTolerance);
 }
 
-TEST_F(Area3DRuntimeUVETest, PhysicsSystem_HigherPriorityReplaceWinsOverCombine) {
-    AreaComponentUVE low{};
-    low.gravityOverride = AreaSpaceOverrideModeUVE::Combine;
+TEST_F(Area3DRuntimeTest, PhysicsSystem_HigherPriorityReplaceWinsOverCombine) {
+    AreaComponent low{};
+    low.gravityOverride = AreaSpaceOverrideMode::Combine;
     low.gravityDirection = {0.0F, -1.0F, 0.0F};
     low.gravityMagnitude = 10.0F;
     low.priority = 0;
-    MakeAreaUVE({0.0F, 0.0F, 0.0F}, {2.0F, 2.0F, 2.0F}, low);
-    AreaComponentUVE high{};
-    high.gravityOverride = AreaSpaceOverrideModeUVE::Replace;
+    MakeArea({0.0F, 0.0F, 0.0F}, {2.0F, 2.0F, 2.0F}, low);
+    AreaComponent high{};
+    high.gravityOverride = AreaSpaceOverrideMode::Replace;
     high.gravityMagnitude = 0.0F;
     high.priority = 5;
-    MakeAreaUVE({0.25F, 0.0F, 0.0F}, {2.0F, 2.0F, 2.0F}, high);
-    const Scene::EntityUVE body = MakeBodyUVE({0.0F, 0.0F, 0.0F});
+    MakeArea({0.25F, 0.0F, 0.0F}, {2.0F, 2.0F, 2.0F}, high);
+    const Scene::Entity body = MakeBody({0.0F, 0.0F, 0.0F});
 
-    PhysicsSystemUVE physicsSystem(collisionSystem, Math::Vector3UVE{0.0F, -10.0F, 0.0F});
-    physicsSystem.StepUVE(entityManager, sceneGraph, 0.1F);
-    EXPECT_NEAR(entityManager.GetComponentUVE<Scene::Rigid3DComponentUVE>(body).velocity.y, 0.0F,
-                kToleranceUVE);
+    PhysicsSystem physicsSystem(collisionSystem, Math::Vector3{0.0F, -10.0F, 0.0F});
+    physicsSystem.Step(entityManager, sceneGraph, 0.1F);
+    EXPECT_NEAR(entityManager.GetComponent<Scene::Rigid3DComponent>(body).velocity.y, 0.0F,
+                kTolerance);
 }
 
-TEST_F(Area3DRuntimeUVETest, PhysicsSystem_NonMonitoringGravityAreaStillInfluencesBodies) {
-    AreaComponentUVE authored{};
+TEST_F(Area3DRuntimeTest, PhysicsSystem_NonMonitoringGravityAreaStillInfluencesBodies) {
+    AreaComponent authored{};
     authored.monitoring = false;
-    authored.gravityOverride = AreaSpaceOverrideModeUVE::Replace;
+    authored.gravityOverride = AreaSpaceOverrideMode::Replace;
     authored.gravityMagnitude = 0.0F;
-    MakeAreaUVE({0.0F, 0.0F, 0.0F}, {2.0F, 2.0F, 2.0F}, authored);
-    const Scene::EntityUVE body = MakeBodyUVE({0.0F, 0.0F, 0.0F});
+    MakeArea({0.0F, 0.0F, 0.0F}, {2.0F, 2.0F, 2.0F}, authored);
+    const Scene::Entity body = MakeBody({0.0F, 0.0F, 0.0F});
 
-    PhysicsSystemUVE physicsSystem(collisionSystem, Math::Vector3UVE{0.0F, -10.0F, 0.0F});
-    physicsSystem.StepUVE(entityManager, sceneGraph, 0.1F);
-    EXPECT_NEAR(entityManager.GetComponentUVE<Scene::Rigid3DComponentUVE>(body).velocity.y, 0.0F,
-                kToleranceUVE);
+    PhysicsSystem physicsSystem(collisionSystem, Math::Vector3{0.0F, -10.0F, 0.0F});
+    physicsSystem.Step(entityManager, sceneGraph, 0.1F);
+    EXPECT_NEAR(entityManager.GetComponent<Scene::Rigid3DComponent>(body).velocity.y, 0.0F,
+                kTolerance);
 }
 
-TEST_F(Area3DRuntimeUVETest, PhysicsSystem_KinematicBodyIgnoresAreaGravity) {
-    AreaComponentUVE authored{};
-    authored.gravityOverride = AreaSpaceOverrideModeUVE::Replace;
+TEST_F(Area3DRuntimeTest, PhysicsSystem_KinematicBodyIgnoresAreaGravity) {
+    AreaComponent authored{};
+    authored.gravityOverride = AreaSpaceOverrideMode::Replace;
     authored.gravityDirection = {0.0F, 1.0F, 0.0F};
     authored.gravityMagnitude = 50.0F;
-    MakeAreaUVE({0.0F, 0.0F, 0.0F}, {2.0F, 2.0F, 2.0F}, authored);
-    Scene::Rigid3DComponentUVE kinematic;
+    MakeArea({0.0F, 0.0F, 0.0F}, {2.0F, 2.0F, 2.0F}, authored);
+    Scene::Rigid3DComponent kinematic;
     kinematic.isKinematic = true;
     kinematic.velocity = {0.0F, 3.0F, 0.0F};
-    const Scene::EntityUVE body = MakeBodyUVE({0.0F, 0.0F, 0.0F}, kinematic);
+    const Scene::Entity body = MakeBody({0.0F, 0.0F, 0.0F}, kinematic);
 
-    PhysicsSystemUVE physicsSystem(collisionSystem, Math::Vector3UVE{0.0F, -10.0F, 0.0F});
-    physicsSystem.StepUVE(entityManager, sceneGraph, 0.1F);
-    EXPECT_NEAR(entityManager.GetComponentUVE<Scene::Rigid3DComponentUVE>(body).velocity.y, 3.0F,
-                kToleranceUVE);
+    PhysicsSystem physicsSystem(collisionSystem, Math::Vector3{0.0F, -10.0F, 0.0F});
+    physicsSystem.Step(entityManager, sceneGraph, 0.1F);
+    EXPECT_NEAR(entityManager.GetComponent<Scene::Rigid3DComponent>(body).velocity.y, 3.0F,
+                kTolerance);
 }
 
-TEST_F(Area3DRuntimeUVETest, PhysicsSystem_LayerMismatchDoesNotOverrideGravity) {
-    AreaComponentUVE authored{};
-    authored.gravityOverride = AreaSpaceOverrideModeUVE::Replace;
+TEST_F(Area3DRuntimeTest, PhysicsSystem_LayerMismatchDoesNotOverrideGravity) {
+    AreaComponent authored{};
+    authored.gravityOverride = AreaSpaceOverrideMode::Replace;
     authored.gravityMagnitude = 0.0F;
     authored.collisionMask = 2U;
-    MakeAreaUVE({0.0F, 0.0F, 0.0F}, {2.0F, 2.0F, 2.0F}, authored);
-    const Scene::EntityUVE body = MakeBodyUVE({0.0F, 0.0F, 0.0F});
+    MakeArea({0.0F, 0.0F, 0.0F}, {2.0F, 2.0F, 2.0F}, authored);
+    const Scene::Entity body = MakeBody({0.0F, 0.0F, 0.0F});
 
-    PhysicsSystemUVE physicsSystem(collisionSystem, Math::Vector3UVE{0.0F, -10.0F, 0.0F});
-    physicsSystem.StepUVE(entityManager, sceneGraph, 0.1F);
-    EXPECT_NEAR(entityManager.GetComponentUVE<Scene::Rigid3DComponentUVE>(body).velocity.y, -1.0F,
-                kToleranceUVE);
+    PhysicsSystem physicsSystem(collisionSystem, Math::Vector3{0.0F, -10.0F, 0.0F});
+    physicsSystem.Step(entityManager, sceneGraph, 0.1F);
+    EXPECT_NEAR(entityManager.GetComponent<Scene::Rigid3DComponent>(body).velocity.y, -1.0F,
+                kTolerance);
 }
 
-TEST_F(Area3DRuntimeUVETest, PhysicsSystem_PointGravityPullsTowardTheArea) {
-    AreaComponentUVE authored{};
-    authored.gravityOverride = AreaSpaceOverrideModeUVE::Replace;
+TEST_F(Area3DRuntimeTest, PhysicsSystem_PointGravityPullsTowardTheArea) {
+    AreaComponent authored{};
+    authored.gravityOverride = AreaSpaceOverrideMode::Replace;
     authored.gravityPoint = true;
     authored.gravityMagnitude = 10.0F;
     authored.gravityPointUnitDistance = 0.0F;
-    MakeAreaUVE({0.0F, 0.0F, 0.0F}, {4.0F, 4.0F, 4.0F}, authored);
-    const Scene::EntityUVE body = MakeBodyUVE({2.0F, 0.0F, 0.0F});
+    MakeArea({0.0F, 0.0F, 0.0F}, {4.0F, 4.0F, 4.0F}, authored);
+    const Scene::Entity body = MakeBody({2.0F, 0.0F, 0.0F});
 
-    PhysicsSystemUVE physicsSystem(collisionSystem, Math::Vector3UVE{0.0F, -10.0F, 0.0F});
-    physicsSystem.StepUVE(entityManager, sceneGraph, 0.1F);
-    EXPECT_NEAR(entityManager.GetComponentUVE<Scene::Rigid3DComponentUVE>(body).velocity.x, -1.0F,
-                kToleranceUVE);
-    EXPECT_NEAR(entityManager.GetComponentUVE<Scene::Rigid3DComponentUVE>(body).velocity.y, 0.0F,
-                kToleranceUVE);
+    PhysicsSystem physicsSystem(collisionSystem, Math::Vector3{0.0F, -10.0F, 0.0F});
+    physicsSystem.Step(entityManager, sceneGraph, 0.1F);
+    EXPECT_NEAR(entityManager.GetComponent<Scene::Rigid3DComponent>(body).velocity.x, -1.0F,
+                kTolerance);
+    EXPECT_NEAR(entityManager.GetComponent<Scene::Rigid3DComponent>(body).velocity.y, 0.0F,
+                kTolerance);
 }
 
-TEST_F(Area3DRuntimeUVETest, PhysicsSystem_AreaLinearDampScalesVelocity) {
-    AreaComponentUVE authored{};
-    authored.linearDampOverride = AreaSpaceOverrideModeUVE::Replace;
+TEST_F(Area3DRuntimeTest, PhysicsSystem_AreaLinearDampScalesVelocity) {
+    AreaComponent authored{};
+    authored.linearDampOverride = AreaSpaceOverrideMode::Replace;
     authored.linearDamp = 1.0F;
-    MakeAreaUVE({0.0F, 0.0F, 0.0F}, {2.0F, 2.0F, 2.0F}, authored);
-    Scene::Rigid3DComponentUVE rigidBody;
+    MakeArea({0.0F, 0.0F, 0.0F}, {2.0F, 2.0F, 2.0F}, authored);
+    Scene::Rigid3DComponent rigidBody;
     rigidBody.velocity = {10.0F, 0.0F, 0.0F};
     rigidBody.drag = 0.0F;
-    const Scene::EntityUVE body = MakeBodyUVE({0.0F, 0.0F, 0.0F}, rigidBody);
+    const Scene::Entity body = MakeBody({0.0F, 0.0F, 0.0F}, rigidBody);
 
-    PhysicsSystemUVE physicsSystem(collisionSystem, Math::Vector3UVE{});
-    physicsSystem.StepUVE(entityManager, sceneGraph, 0.5F);
-    EXPECT_NEAR(entityManager.GetComponentUVE<Scene::Rigid3DComponentUVE>(body).velocity.x, 5.0F,
-                kToleranceUVE);
+    PhysicsSystem physicsSystem(collisionSystem, Math::Vector3{});
+    physicsSystem.Step(entityManager, sceneGraph, 0.5F);
+    EXPECT_NEAR(entityManager.GetComponent<Scene::Rigid3DComponent>(body).velocity.x, 5.0F,
+                kTolerance);
 }
 
-TEST_F(Area3DRuntimeUVETest, PhysicsSystem_AreaAngularDampScalesAngularVelocity) {
-    AreaComponentUVE authored{};
-    authored.angularDampOverride = AreaSpaceOverrideModeUVE::Replace;
+TEST_F(Area3DRuntimeTest, PhysicsSystem_AreaAngularDampScalesAngularVelocity) {
+    AreaComponent authored{};
+    authored.angularDampOverride = AreaSpaceOverrideMode::Replace;
     authored.angularDamp = 1.0F;
-    MakeAreaUVE({0.0F, 0.0F, 0.0F}, {2.0F, 2.0F, 2.0F}, authored);
-    Scene::Rigid3DComponentUVE rigidBody;
+    MakeArea({0.0F, 0.0F, 0.0F}, {2.0F, 2.0F, 2.0F}, authored);
+    Scene::Rigid3DComponent rigidBody;
     rigidBody.angularVelocity = {0.0F, 4.0F, 0.0F};
     rigidBody.inverseInertia = {0.0F, 1.0F, 0.0F};
-    const Scene::EntityUVE body = MakeBodyUVE({0.0F, 0.0F, 0.0F}, rigidBody);
+    const Scene::Entity body = MakeBody({0.0F, 0.0F, 0.0F}, rigidBody);
 
-    PhysicsSystemUVE physicsSystem(collisionSystem, Math::Vector3UVE{});
-    physicsSystem.StepUVE(entityManager, sceneGraph, 0.5F);
-    EXPECT_NEAR(entityManager.GetComponentUVE<Scene::Rigid3DComponentUVE>(body).velocity.y, 0.0F,
-                kToleranceUVE);
-    EXPECT_NEAR(entityManager.GetComponentUVE<Scene::Rigid3DComponentUVE>(body).angularVelocity.y, 2.0F,
-                kToleranceUVE);
+    PhysicsSystem physicsSystem(collisionSystem, Math::Vector3{});
+    physicsSystem.Step(entityManager, sceneGraph, 0.5F);
+    EXPECT_NEAR(entityManager.GetComponent<Scene::Rigid3DComponent>(body).velocity.y, 0.0F,
+                kTolerance);
+    EXPECT_NEAR(entityManager.GetComponent<Scene::Rigid3DComponent>(body).angularVelocity.y, 2.0F,
+                kTolerance);
 }
 
-TEST_F(Area3DRuntimeUVETest, CollectArea3DBodySpacesUVE_SortedAndFindable) {
-    AreaComponentUVE authored{};
-    authored.gravityOverride = AreaSpaceOverrideModeUVE::Replace;
+TEST_F(Area3DRuntimeTest, CollectArea3DBodySpaces_SortedAndFindable) {
+    AreaComponent authored{};
+    authored.gravityOverride = AreaSpaceOverrideMode::Replace;
     authored.gravityMagnitude = 0.0F;
-    MakeAreaUVE({0.0F, 0.0F, 0.0F}, {3.0F, 3.0F, 3.0F}, authored);
-    const Scene::EntityUVE first = MakeBodyUVE({0.5F, 0.0F, 0.0F});
-    const Scene::EntityUVE second = MakeBodyUVE({-0.5F, 0.0F, 0.0F});
+    MakeArea({0.0F, 0.0F, 0.0F}, {3.0F, 3.0F, 3.0F}, authored);
+    const Scene::Entity first = MakeBody({0.5F, 0.0F, 0.0F});
+    const Scene::Entity second = MakeBody({-0.5F, 0.0F, 0.0F});
 
-    const std::vector<Area3DBodySpaceUVE> spaces =
-        CollectArea3DBodySpacesUVE(entityManager, Math::Vector3UVE{0.0F, -10.0F, 0.0F});
+    const std::vector<Area3DBodySpace> spaces =
+        CollectArea3DBodySpaces(entityManager, Math::Vector3{0.0F, -10.0F, 0.0F});
     ASSERT_EQ(spaces.size(), 2U);
     EXPECT_LE(spaces[0].body.index, spaces[1].body.index);
-    ASSERT_NE(FindArea3DBodySpaceUVE(spaces, first), nullptr);
-    ASSERT_NE(FindArea3DBodySpaceUVE(spaces, second), nullptr);
-    EXPECT_EQ(FindArea3DBodySpaceUVE(spaces, kInvalidEntityUVE), nullptr);
+    ASSERT_NE(FindArea3DBodySpace(spaces, first), nullptr);
+    ASSERT_NE(FindArea3DBodySpace(spaces, second), nullptr);
+    EXPECT_EQ(FindArea3DBodySpace(spaces, kInvalidEntity), nullptr);
 }
 
 } // namespace

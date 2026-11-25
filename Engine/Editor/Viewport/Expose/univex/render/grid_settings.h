@@ -69,12 +69,12 @@ struct GridSettings {
     // Darker variants of univex/viewport/AxisPalette.h's shared axis hues: the grid's lines run
     // through the same origin the transform gizmo sits on, so they must read as the backdrop
     // rather than compete with the handle drawn over them.
-    GridColor axisColorX{univex::viewport::kGridAxisColorXUVE.r, univex::viewport::kGridAxisColorXUVE.g,
-                         univex::viewport::kGridAxisColorXUVE.b};
-    GridColor axisColorY{univex::viewport::kGridAxisColorYUVE.r, univex::viewport::kGridAxisColorYUVE.g,
-                         univex::viewport::kGridAxisColorYUVE.b};
-    GridColor axisColorZ{univex::viewport::kGridAxisColorZUVE.r, univex::viewport::kGridAxisColorZUVE.g,
-                         univex::viewport::kGridAxisColorZUVE.b};
+    GridColor axisColorX{univex::viewport::kGridAxisColorX.r, univex::viewport::kGridAxisColorX.g,
+                         univex::viewport::kGridAxisColorX.b};
+    GridColor axisColorY{univex::viewport::kGridAxisColorY.r, univex::viewport::kGridAxisColorY.g,
+                         univex::viewport::kGridAxisColorY.b};
+    GridColor axisColorZ{univex::viewport::kGridAxisColorZ.r, univex::viewport::kGridAxisColorZ.g,
+                         univex::viewport::kGridAxisColorZ.b};
 
     // Horizon fade, as multiples of the camera's orbit distance. Keeping
     // these relative to distance means the fade sits at the same place on

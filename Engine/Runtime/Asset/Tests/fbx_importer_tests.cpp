@@ -23,9 +23,9 @@
 namespace UVE::Asset::Tests {
 namespace {
 
-constexpr std::string_view kScratchDirectoryUVE = "uve_fbx_importer_tests";
+constexpr std::string_view kScratchDirectory = "uve_fbx_importer_tests";
 
-[[nodiscard]] std::string MakeFbxUVE(const std::string_view objects, const std::string_view connections) {
+[[nodiscard]] std::string MakeFbx(const std::string_view objects, const std::string_view connections) {
     std::string text = R"(; FBX 7.4.0 project file
 FBXHeaderExtension:  {
 	FBXHeaderVersion: 1003
@@ -52,7 +52,7 @@ Objects:  {
     return text;
 }
 
-constexpr std::string_view kFloorGeometryUVE = R"(	Geometry: 1000, "Geometry::Floor", "Mesh" {
+constexpr std::string_view kFloorGeometry = R"(	Geometry: 1000, "Geometry::Floor", "Mesh" {
 		Vertices: *12 {
 			a: 0,0,0,100,0,0,100,100,0,0,100,0
 		}
@@ -65,9 +65,9 @@ constexpr std::string_view kFloorGeometryUVE = R"(	Geometry: 1000, "Geometry::Fl
 		Version: 232
 	}
 )";
-constexpr std::string_view kFloorConnectionsUVE = "\tC: \"OO\",1000,2000\n\tC: \"OO\",2000,0\n";
+constexpr std::string_view kFloorConnections = "\tC: \"OO\",1000,2000\n\tC: \"OO\",2000,0\n";
 
-constexpr std::string_view kTwoMaterialsUVE = R"(	Material: 3500, "Material::Red Paint", "" {
+constexpr std::string_view kTwoMaterials = R"(	Material: 3500, "Material::Red Paint", "" {
 		Version: 102
 		ShadingModel: "lambert"
 		Properties70:  {
@@ -87,7 +87,7 @@ constexpr std::string_view kTwoMaterialsUVE = R"(	Material: 3500, "Material::Red
 // Two triangles that do not share a corner, with one material each - and the polygons written in
 // the order Blue, Red, Blue, so the published table's order comes from first use rather than from
 // the file's material list.
-constexpr std::string_view kTwoMaterialFacesUVE = R"(	Geometry: 1000, "Geometry::TwoFaces", "Mesh" {
+constexpr std::string_view kTwoMaterialFaces = R"(	Geometry: 1000, "Geometry::TwoFaces", "Mesh" {
 		Vertices: *27 {
 			a: 0,0,0,100,0,0,100,100,0,200,0,0,300,0,0,300,100,0,400,0,0,500,0,0,500,100,0
 		}
@@ -109,10 +109,10 @@ constexpr std::string_view kTwoMaterialFacesUVE = R"(	Geometry: 1000, "Geometry:
 		Version: 232
 	}
 )";
-constexpr std::string_view kTwoMaterialFacesConnectionsUVE =
+constexpr std::string_view kTwoMaterialFacesConnections =
     "\tC: \"OO\",1000,2000\n\tC: \"OO\",2000,0\n\tC: \"OO\",3500,1000\n\tC: \"OO\",3501,1000\n";
 
-constexpr std::string_view kTexturedMaterialUVE = R"(	Material: 3100, "Material::BrushedSteel", "" {
+constexpr std::string_view kTexturedMaterial = R"(	Material: 3100, "Material::BrushedSteel", "" {
 		Version: 102
 		ShadingModel: "phong"
 		MultiLayer: 0
@@ -126,12 +126,12 @@ constexpr std::string_view kTexturedMaterialUVE = R"(	Material: 3100, "Material:
 		RelativeFilename: "textures/steel_diffuse.png"
 	}
 )";
-constexpr std::string_view kTexturedConnectionsUVE = "\tC: \"OP\",3200,3100,\"DiffuseColor\"\n";
+constexpr std::string_view kTexturedConnections = "\tC: \"OP\",3200,3100,\"DiffuseColor\"\n";
 
 /// A floor skinned to one bone: the shape a rigged character imports as. The bone sits two metres up
 /// the file's own up axis, which is +Z here, so a skeleton read from the published asset can be told
 /// apart from one guessed at - and the axis conversion is exercised rather than assumed.
-constexpr std::string_view kSkinnedFloorUVE = R"(	Model: 3000, "Model::Hips", "LimbNode" {
+constexpr std::string_view kSkinnedFloor = R"(	Model: 3000, "Model::Hips", "LimbNode" {
 		Version: 232
 		Properties70:  {
 			P: "Lcl Translation", "Lcl Translation", "", "A",0,0,200
@@ -159,32 +159,32 @@ constexpr std::string_view kSkinnedFloorUVE = R"(	Model: 3000, "Model::Hips", "L
 		}
 	}
 )";
-constexpr std::string_view kSkinnedFloorConnectionsUVE =
+constexpr std::string_view kSkinnedFloorConnections =
     "\tC: \"OO\",1000,2000\n\tC: \"OO\",2000,0\n\tC: \"OO\",4000,1000\n\tC: \"OO\",4100,4000\n"
     "\tC: \"OO\",3000,4100\n\tC: \"OO\",3100,3000\n\tC: \"OO\",3000,0\n";
 
-class FbxImporterUVETest : public ::testing::Test {
+class FbxImporterTest : public ::testing::Test {
 protected:
     void SetUp() override {
-        std::filesystem::remove_all(kScratchDirectoryUVE);
-        ASSERT_TRUE(std::filesystem::create_directories(kScratchDirectoryUVE));
+        std::filesystem::remove_all(kScratchDirectory);
+        ASSERT_TRUE(std::filesystem::create_directories(kScratchDirectory));
     }
-    void TearDown() override { std::filesystem::remove_all(kScratchDirectoryUVE); }
+    void TearDown() override { std::filesystem::remove_all(kScratchDirectory); }
 
-    [[nodiscard]] static std::filesystem::path ScratchUVE(const std::string_view name) {
-        return std::filesystem::path(kScratchDirectoryUVE) / name;
+    [[nodiscard]] static std::filesystem::path Scratch(const std::string_view name) {
+        return std::filesystem::path(kScratchDirectory) / name;
     }
 
-    static void WriteFixtureUVE(const std::filesystem::path& path, const std::string& text) {
+    static void WriteFixture(const std::filesystem::path& path, const std::string& text) {
         std::ofstream output(path, std::ios::binary | std::ios::trunc);
         ASSERT_TRUE(output.is_open());
         output.write(text.data(), static_cast<std::streamsize>(text.size()));
         ASSERT_TRUE(output.good());
     }
 
-    [[nodiscard]] static std::vector<std::filesystem::path> PublishedMaterialsUVE() {
+    [[nodiscard]] static std::vector<std::filesystem::path> PublishedMaterials() {
         std::vector<std::filesystem::path> materials;
-        for (const auto& entry : std::filesystem::directory_iterator(kScratchDirectoryUVE)) {
+        for (const auto& entry : std::filesystem::directory_iterator(kScratchDirectory)) {
             if (entry.path().extension() == ".uvmat") {
                 materials.push_back(entry.path());
             }
@@ -192,199 +192,199 @@ protected:
         return materials;
     }
 
-    AssetImporterUVE importer;
-    AssetDatabaseUVE database;
+    AssetImporter importer;
+    AssetDatabase database;
 };
 
-TEST_F(FbxImporterUVETest, FbxImportPublishesOneUvmatPerMaterial) {
-    const std::filesystem::path source = ScratchUVE("crate.fbx");
-    const std::filesystem::path destination = ScratchUVE("crate.uvmodel");
-    WriteFixtureUVE(source, MakeFbxUVE(std::string(kFloorGeometryUVE) + std::string(kTwoMaterialsUVE),
-                                       kFloorConnectionsUVE));
+TEST_F(FbxImporterTest, FbxImportPublishesOneUvmatPerMaterial) {
+    const std::filesystem::path source = Scratch("crate.fbx");
+    const std::filesystem::path destination = Scratch("crate.uvmodel");
+    WriteFixture(source, MakeFbx(std::string(kFloorGeometry) + std::string(kTwoMaterials),
+                                       kFloorConnections));
 
-    const AssetGuidUVE modelGuid = importer.ImportUVE(source, destination, database);
-    ASSERT_NE(modelGuid, kInvalidAssetGuidUVE);
-    EXPECT_EQ(database.ResolveUVE(modelGuid), destination);
+    const AssetGuid modelGuid = importer.Import(source, destination, database);
+    ASSERT_NE(modelGuid, kInvalidAssetGuid);
+    EXPECT_EQ(database.Resolve(modelGuid), destination);
 
-    MeshAssetUVE mesh;
-    ASSERT_TRUE(LoadMeshAssetUVE(destination, mesh));
+    MeshAsset mesh;
+    ASSERT_TRUE(LoadMeshAsset(destination, mesh));
     ASSERT_EQ(mesh.materialGuids.size(), 2U) << "one GUID per FBX material, in file order";
-    EXPECT_NE(mesh.materialGuids[0], kInvalidAssetGuidUVE);
-    EXPECT_NE(mesh.materialGuids[1], kInvalidAssetGuidUVE);
+    EXPECT_NE(mesh.materialGuids[0], kInvalidAssetGuid);
+    EXPECT_NE(mesh.materialGuids[1], kInvalidAssetGuid);
     EXPECT_NE(mesh.materialGuids[0], mesh.materialGuids[1]);
 
-    const std::filesystem::path redPath = database.ResolveUVE(mesh.materialGuids[0]);
-    const std::filesystem::path bluePath = database.ResolveUVE(mesh.materialGuids[1]);
+    const std::filesystem::path redPath = database.Resolve(mesh.materialGuids[0]);
+    const std::filesystem::path bluePath = database.Resolve(mesh.materialGuids[1]);
     EXPECT_EQ(redPath.filename(), "crate.Red_Paint.uvmat") << "<model-stem>.<sanitised-name>.uvmat";
     EXPECT_EQ(bluePath.filename(), "crate.Blue.uvmat");
-    EXPECT_EQ(PublishedMaterialsUVE().size(), 2U);
+    EXPECT_EQ(PublishedMaterials().size(), 2U);
 
-    MaterialAssetUVE red;
-    ASSERT_TRUE(LoadMaterialAssetUVE(redPath, red));
+    MaterialAsset red;
+    ASSERT_TRUE(LoadMaterialAsset(redPath, red));
     EXPECT_FLOAT_EQ(red.albedoColor.r, 1.0F);
     EXPECT_FALSE(red.isTransparent);
-    EXPECT_EQ(red.albedoTexture, kInvalidAssetGuidUVE);
-    MaterialAssetUVE blue;
-    ASSERT_TRUE(LoadMaterialAssetUVE(bluePath, blue));
+    EXPECT_EQ(red.albedoTexture, kInvalidAssetGuid);
+    MaterialAsset blue;
+    ASSERT_TRUE(LoadMaterialAsset(bluePath, blue));
     EXPECT_FLOAT_EQ(blue.albedoColor.b, 1.0F);
     EXPECT_TRUE(blue.isTransparent);
 }
 
-TEST_F(FbxImporterUVETest, FbxFacesGroupedByMaterialPublishSlotsTheModelCanDraw) {
+TEST_F(FbxImporterTest, FbxFacesGroupedByMaterialPublishSlotsTheModelCanDraw) {
     // The converter reports file material positions; the importer is the only place that knows
     // which of those became a slot, because it is the one publishing them. Blue is file material 1
     // and Red is 0, so a table that skipped that remap would shade the model the wrong way round.
-    const std::filesystem::path source = ScratchUVE("two_faces.fbx");
-    const std::filesystem::path destination = ScratchUVE("two_faces.uvmodel");
-    WriteFixtureUVE(source, MakeFbxUVE(std::string(kTwoMaterialFacesUVE) + std::string(kTwoMaterialsUVE),
-                                       kTwoMaterialFacesConnectionsUVE));
+    const std::filesystem::path source = Scratch("two_faces.fbx");
+    const std::filesystem::path destination = Scratch("two_faces.uvmodel");
+    WriteFixture(source, MakeFbx(std::string(kTwoMaterialFaces) + std::string(kTwoMaterials),
+                                       kTwoMaterialFacesConnections));
 
-    ASSERT_NE(importer.ImportUVE(source, destination, database), kInvalidAssetGuidUVE);
-    MeshAssetUVE mesh;
-    ASSERT_TRUE(LoadMeshAssetUVE(destination, mesh));
+    ASSERT_NE(importer.Import(source, destination, database), kInvalidAssetGuid);
+    MeshAsset mesh;
+    ASSERT_TRUE(LoadMeshAsset(destination, mesh));
     ASSERT_EQ(mesh.materialGuids.size(), 2U);
-    EXPECT_EQ(database.ResolveUVE(mesh.materialGuids[0]).filename(), "two_faces.Red_Paint.uvmat");
-    EXPECT_EQ(database.ResolveUVE(mesh.materialGuids[1]).filename(), "two_faces.Blue.uvmat");
+    EXPECT_EQ(database.Resolve(mesh.materialGuids[0]).filename(), "two_faces.Red_Paint.uvmat");
+    EXPECT_EQ(database.Resolve(mesh.materialGuids[1]).filename(), "two_faces.Blue.uvmat");
 
     ASSERT_EQ(mesh.surfaces.size(), 2U);
-    EXPECT_EQ(mesh.surfaces[0], (MeshSurfaceUVE{0U, 6U, 1U}));
-    EXPECT_EQ(mesh.surfaces[1], (MeshSurfaceUVE{6U, 3U, 0U}));
+    EXPECT_EQ(mesh.surfaces[0], (MeshSurface{0U, 6U, 1U}));
+    EXPECT_EQ(mesh.surfaces[1], (MeshSurface{6U, 3U, 0U}));
 }
 
-TEST_F(FbxImporterUVETest, FbxImportWithoutMaterialsPublishesOnlyTheModel) {
-    const std::filesystem::path source = ScratchUVE("plain.fbx");
-    const std::filesystem::path destination = ScratchUVE("plain.uvmodel");
-    WriteFixtureUVE(source, MakeFbxUVE(kFloorGeometryUVE, kFloorConnectionsUVE));
-    ASSERT_NE(importer.ImportUVE(source, destination, database), kInvalidAssetGuidUVE);
-    MeshAssetUVE mesh;
-    ASSERT_TRUE(LoadMeshAssetUVE(destination, mesh));
+TEST_F(FbxImporterTest, FbxImportWithoutMaterialsPublishesOnlyTheModel) {
+    const std::filesystem::path source = Scratch("plain.fbx");
+    const std::filesystem::path destination = Scratch("plain.uvmodel");
+    WriteFixture(source, MakeFbx(kFloorGeometry, kFloorConnections));
+    ASSERT_NE(importer.Import(source, destination, database), kInvalidAssetGuid);
+    MeshAsset mesh;
+    ASSERT_TRUE(LoadMeshAsset(destination, mesh));
     EXPECT_TRUE(mesh.materialGuids.empty());
-    EXPECT_TRUE(PublishedMaterialsUVE().empty());
+    EXPECT_TRUE(PublishedMaterials().empty());
 }
 
-TEST_F(FbxImporterUVETest, FbxImportResolvesSiblingTextureGuid) {
-    const std::filesystem::path source = ScratchUVE("steel.fbx");
-    const std::filesystem::path destination = ScratchUVE("steel.uvmodel");
-    WriteFixtureUVE(source, MakeFbxUVE(std::string(kFloorGeometryUVE) + std::string(kTexturedMaterialUVE),
-                                       std::string(kFloorConnectionsUVE) + std::string(kTexturedConnectionsUVE)));
+TEST_F(FbxImporterTest, FbxImportResolvesSiblingTextureGuid) {
+    const std::filesystem::path source = Scratch("steel.fbx");
+    const std::filesystem::path destination = Scratch("steel.uvmodel");
+    WriteFixture(source, MakeFbx(std::string(kFloorGeometry) + std::string(kTexturedMaterial),
+                                       std::string(kFloorConnections) + std::string(kTexturedConnections)));
     // The texture was imported earlier (its published .uvtex sits beside the model and is
     // registered); a same-stem texture elsewhere must not be confused with it.
-    const AssetGuidUVE elsewhere = database.RegisterUVE("some_other_folder/steel_diffuse.uvtex");
-    const AssetGuidUVE sibling = database.RegisterUVE(ScratchUVE("steel_diffuse.uvtex"));
-    ASSERT_NE(sibling, kInvalidAssetGuidUVE);
+    const AssetGuid elsewhere = database.Register("some_other_folder/steel_diffuse.uvtex");
+    const AssetGuid sibling = database.Register(Scratch("steel_diffuse.uvtex"));
+    ASSERT_NE(sibling, kInvalidAssetGuid);
     ASSERT_NE(sibling, elsewhere);
 
-    ASSERT_NE(importer.ImportUVE(source, destination, database), kInvalidAssetGuidUVE);
-    MeshAssetUVE mesh;
-    ASSERT_TRUE(LoadMeshAssetUVE(destination, mesh));
+    ASSERT_NE(importer.Import(source, destination, database), kInvalidAssetGuid);
+    MeshAsset mesh;
+    ASSERT_TRUE(LoadMeshAsset(destination, mesh));
     ASSERT_EQ(mesh.materialGuids.size(), 1U);
-    MaterialAssetUVE material;
-    ASSERT_TRUE(LoadMaterialAssetUVE(database.ResolveUVE(mesh.materialGuids[0]), material));
+    MaterialAsset material;
+    ASSERT_TRUE(LoadMaterialAsset(database.Resolve(mesh.materialGuids[0]), material));
     EXPECT_EQ(material.albedoTexture, sibling) << "the authored relative filename resolves to the imported sibling";
-    EXPECT_EQ(material.normalTexture, kInvalidAssetGuidUVE);
+    EXPECT_EQ(material.normalTexture, kInvalidAssetGuid);
 }
 
-TEST_F(FbxImporterUVETest, FbxImportLeavesUnresolvedTextureEmptyWithDiagnostic) {
-    const std::filesystem::path source = ScratchUVE("steel.fbx");
-    const std::filesystem::path destination = ScratchUVE("steel.uvmodel");
-    WriteFixtureUVE(source, MakeFbxUVE(std::string(kFloorGeometryUVE) + std::string(kTexturedMaterialUVE),
-                                       std::string(kFloorConnectionsUVE) + std::string(kTexturedConnectionsUVE)));
-    const std::size_t registeredBefore = database.GetRegisteredAssetsUVE().size();
-    ASSERT_NE(importer.ImportUVE(source, destination, database), kInvalidAssetGuidUVE)
+TEST_F(FbxImporterTest, FbxImportLeavesUnresolvedTextureEmptyWithDiagnostic) {
+    const std::filesystem::path source = Scratch("steel.fbx");
+    const std::filesystem::path destination = Scratch("steel.uvmodel");
+    WriteFixture(source, MakeFbx(std::string(kFloorGeometry) + std::string(kTexturedMaterial),
+                                       std::string(kFloorConnections) + std::string(kTexturedConnections)));
+    const std::size_t registeredBefore = database.GetRegisteredAssets().size();
+    ASSERT_NE(importer.Import(source, destination, database), kInvalidAssetGuid)
         << "an unresolved texture is a diagnostic, not an import failure";
-    MeshAssetUVE mesh;
-    ASSERT_TRUE(LoadMeshAssetUVE(destination, mesh));
+    MeshAsset mesh;
+    ASSERT_TRUE(LoadMeshAsset(destination, mesh));
     ASSERT_EQ(mesh.materialGuids.size(), 1U);
-    MaterialAssetUVE material;
-    ASSERT_TRUE(LoadMaterialAssetUVE(database.ResolveUVE(mesh.materialGuids[0]), material));
-    EXPECT_EQ(material.albedoTexture, kInvalidAssetGuidUVE) << "never a fabricated GUID";
-    EXPECT_EQ(database.GetRegisteredAssetsUVE().size(), registeredBefore + 2U)
+    MaterialAsset material;
+    ASSERT_TRUE(LoadMaterialAsset(database.Resolve(mesh.materialGuids[0]), material));
+    EXPECT_EQ(material.albedoTexture, kInvalidAssetGuid) << "never a fabricated GUID";
+    EXPECT_EQ(database.GetRegisteredAssets().size(), registeredBefore + 2U)
         << "exactly the model and its material were registered - no texture record was invented";
-    for (const AssetRecordUVE& record : database.GetRegisteredAssetsUVE()) {
+    for (const AssetRecord& record : database.GetRegisteredAssets()) {
         EXPECT_NE(record.path.extension(), ".uvtex");
     }
 }
 
-TEST_F(FbxImporterUVETest, FbxImportIsIdempotentAcrossReimport) {
-    const std::filesystem::path source = ScratchUVE("crate.fbx");
-    const std::filesystem::path destination = ScratchUVE("crate.uvmodel");
-    WriteFixtureUVE(source, MakeFbxUVE(std::string(kFloorGeometryUVE) + std::string(kTwoMaterialsUVE),
-                                       kFloorConnectionsUVE));
-    const AssetGuidUVE firstModel = importer.ImportUVE(source, destination, database);
-    ASSERT_NE(firstModel, kInvalidAssetGuidUVE);
-    MeshAssetUVE firstMesh;
-    ASSERT_TRUE(LoadMeshAssetUVE(destination, firstMesh));
-    const std::size_t registeredAfterFirst = database.GetRegisteredAssetsUVE().size();
+TEST_F(FbxImporterTest, FbxImportIsIdempotentAcrossReimport) {
+    const std::filesystem::path source = Scratch("crate.fbx");
+    const std::filesystem::path destination = Scratch("crate.uvmodel");
+    WriteFixture(source, MakeFbx(std::string(kFloorGeometry) + std::string(kTwoMaterials),
+                                       kFloorConnections));
+    const AssetGuid firstModel = importer.Import(source, destination, database);
+    ASSERT_NE(firstModel, kInvalidAssetGuid);
+    MeshAsset firstMesh;
+    ASSERT_TRUE(LoadMeshAsset(destination, firstMesh));
+    const std::size_t registeredAfterFirst = database.GetRegisteredAssets().size();
 
-    const AssetGuidUVE secondModel = importer.ImportUVE(source, destination, database);
+    const AssetGuid secondModel = importer.Import(source, destination, database);
     EXPECT_EQ(secondModel, firstModel);
-    MeshAssetUVE secondMesh;
-    ASSERT_TRUE(LoadMeshAssetUVE(destination, secondMesh));
+    MeshAsset secondMesh;
+    ASSERT_TRUE(LoadMeshAsset(destination, secondMesh));
     EXPECT_EQ(secondMesh.materialGuids, firstMesh.materialGuids) << "same paths, same GUIDs";
-    EXPECT_EQ(database.GetRegisteredAssetsUVE().size(), registeredAfterFirst) << "no duplicate records";
-    EXPECT_EQ(PublishedMaterialsUVE().size(), 2U) << "no duplicate files";
+    EXPECT_EQ(database.GetRegisteredAssets().size(), registeredAfterFirst) << "no duplicate records";
+    EXPECT_EQ(PublishedMaterials().size(), 2U) << "no duplicate files";
 }
 
 } // namespace
-TEST_F(FbxImporterUVETest, ARiggedModelPublishesItsRigBesideIt) {
+TEST_F(FbxImporterTest, ARiggedModelPublishesItsRigBesideIt) {
     // Engines split a Skeletal Mesh from its Skeleton for a reason: one rig, shared. The published
     // `.uvskel` has to name the same joints, in the same order, with the same rest pose the model
     // carries - otherwise a clip made for one and played on the other finds nothing.
-    const std::filesystem::path source = ScratchUVE("hero.fbx");
-    const std::filesystem::path destination = ScratchUVE("hero.uvmodel");
-    WriteFixtureUVE(source, MakeFbxUVE(std::string(kFloorGeometryUVE) + std::string(kSkinnedFloorUVE),
-                                       std::string(kFloorConnectionsUVE) + std::string(kSkinnedFloorConnectionsUVE)));
+    const std::filesystem::path source = Scratch("hero.fbx");
+    const std::filesystem::path destination = Scratch("hero.uvmodel");
+    WriteFixture(source, MakeFbx(std::string(kFloorGeometry) + std::string(kSkinnedFloor),
+                                       std::string(kFloorConnections) + std::string(kSkinnedFloorConnections)));
 
-    ASSERT_NE(importer.ImportUVE(source, destination, database), kInvalidAssetGuidUVE);
+    ASSERT_NE(importer.Import(source, destination, database), kInvalidAssetGuid);
 
-    const std::filesystem::path skeletonPath = ScratchUVE("hero.uvskel");
+    const std::filesystem::path skeletonPath = Scratch("hero.uvskel");
     ASSERT_TRUE(std::filesystem::is_regular_file(skeletonPath)) << "a rigged model publishes its rig";
 
-    SkeletonAssetUVE skeleton;
-    ASSERT_TRUE(LoadSkeletonAssetUVE(skeletonPath, skeleton));
+    SkeletonAsset skeleton;
+    ASSERT_TRUE(LoadSkeletonAsset(skeletonPath, skeleton));
     EXPECT_EQ(skeleton.skeletonId, "hero");
     ASSERT_EQ(skeleton.joints.size(), 1U);
 
-    MeshAssetUVE mesh;
-    ASSERT_TRUE(LoadMeshAssetUVE(destination, mesh));
+    MeshAsset mesh;
+    ASSERT_TRUE(LoadMeshAsset(destination, mesh));
     ASSERT_EQ(mesh.joints.size(), skeleton.joints.size()) << "the rig and the model cannot disagree on bones";
     EXPECT_EQ(mesh.joints[0].name, skeleton.joints[0].name);
     EXPECT_EQ(skeleton.joints[0].parent, -1);
     EXPECT_NEAR(skeleton.joints[0].position.y, 2.0F, 1.0e-3F) << "the bone's own rest position, in metres";
 
     // Registered, so a clip or another mesh can point at it by GUID without a path.
-    const AssetGuidUVE skeletonGuid = database.RegisterUVE(skeletonPath);
-    ASSERT_NE(skeletonGuid, kInvalidAssetGuidUVE);
-    EXPECT_EQ(database.ResolveUVE(skeletonGuid), skeletonPath);
+    const AssetGuid skeletonGuid = database.Register(skeletonPath);
+    ASSERT_NE(skeletonGuid, kInvalidAssetGuid);
+    EXPECT_EQ(database.Resolve(skeletonGuid), skeletonPath);
 }
 
-TEST_F(FbxImporterUVETest, AStaticModelPublishesNoRig) {
+TEST_F(FbxImporterTest, AStaticModelPublishesNoRig) {
     // Nothing to share: a static mesh has no bones, and writing an empty skeleton asset would only
     // teach the asset table to offer a rig with nothing in it.
-    const std::filesystem::path source = ScratchUVE("crate.fbx");
-    const std::filesystem::path destination = ScratchUVE("crate.uvmodel");
-    WriteFixtureUVE(source, MakeFbxUVE(kFloorGeometryUVE, kFloorConnectionsUVE));
+    const std::filesystem::path source = Scratch("crate.fbx");
+    const std::filesystem::path destination = Scratch("crate.uvmodel");
+    WriteFixture(source, MakeFbx(kFloorGeometry, kFloorConnections));
 
-    ASSERT_NE(importer.ImportUVE(source, destination, database), kInvalidAssetGuidUVE);
-    EXPECT_FALSE(std::filesystem::exists(ScratchUVE("crate.uvskel")));
+    ASSERT_NE(importer.Import(source, destination, database), kInvalidAssetGuid);
+    EXPECT_FALSE(std::filesystem::exists(Scratch("crate.uvskel")));
 }
 
-TEST_F(FbxImporterUVETest, ARigsReimportKeepsTheSameSkeletonFile) {
+TEST_F(FbxImporterTest, ARigsReimportKeepsTheSameSkeletonFile) {
     // The rig is rewritten in place, not duplicated, so its GUID survives - the property every clip
     // that points at it depends on.
-    const std::filesystem::path source = ScratchUVE("hero.fbx");
-    const std::filesystem::path destination = ScratchUVE("hero.uvmodel");
-    WriteFixtureUVE(source, MakeFbxUVE(std::string(kFloorGeometryUVE) + std::string(kSkinnedFloorUVE),
-                                       std::string(kFloorConnectionsUVE) + std::string(kSkinnedFloorConnectionsUVE)));
+    const std::filesystem::path source = Scratch("hero.fbx");
+    const std::filesystem::path destination = Scratch("hero.uvmodel");
+    WriteFixture(source, MakeFbx(std::string(kFloorGeometry) + std::string(kSkinnedFloor),
+                                       std::string(kFloorConnections) + std::string(kSkinnedFloorConnections)));
 
-    ASSERT_NE(importer.ImportUVE(source, destination, database), kInvalidAssetGuidUVE);
-    const AssetGuidUVE first = database.RegisterUVE(ScratchUVE("hero.uvskel"));
-    ASSERT_NE(importer.ImportUVE(source, destination, database), kInvalidAssetGuidUVE);
-    const AssetGuidUVE second = database.RegisterUVE(ScratchUVE("hero.uvskel"));
+    ASSERT_NE(importer.Import(source, destination, database), kInvalidAssetGuid);
+    const AssetGuid first = database.Register(Scratch("hero.uvskel"));
+    ASSERT_NE(importer.Import(source, destination, database), kInvalidAssetGuid);
+    const AssetGuid second = database.Register(Scratch("hero.uvskel"));
     EXPECT_EQ(first, second);
 
     std::size_t skeletonCount = 0U;
-    for (const auto& entry : std::filesystem::directory_iterator(kScratchDirectoryUVE)) {
+    for (const auto& entry : std::filesystem::directory_iterator(kScratchDirectory)) {
         if (entry.path().extension() == ".uvskel") {
             ++skeletonCount;
         }

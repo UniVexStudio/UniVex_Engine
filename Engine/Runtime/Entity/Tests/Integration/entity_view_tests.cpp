@@ -12,69 +12,69 @@
 namespace UVE::Scene::Tests {
 namespace {
 
-struct PositionUVE final {
+struct Position final {
     float x = 0.0F;
 };
 
-struct VelocityUVE final {
+struct Velocity final {
     float dx = 0.0F;
 };
 
-class EntityViewUVETest : public ::testing::Test {
+class EntityViewTest : public ::testing::Test {
 protected:
-    Memory::MemoryManagerUVE memoryManager;
-    Events::EventSystemUVE eventSystem;
-    EntityManagerUVE entityManager{memoryManager.GetDefaultAllocatorUVE(), eventSystem};
+    Memory::MemoryManager memoryManager;
+    Events::EventSystem eventSystem;
+    EntityManager entityManager{memoryManager.GetDefaultAllocator(), eventSystem};
 };
 
-TEST_F(EntityViewUVETest, View_MatchesEveryEntityCarryingAllTypes) {
-    const EntityUVE both = entityManager.CreateEntityUVE();
-    entityManager.AddComponentUVE<PositionUVE>(both, 1.0F);
-    entityManager.AddComponentUVE<VelocityUVE>(both, 2.0F);
-    const EntityUVE positionOnly = entityManager.CreateEntityUVE();
-    entityManager.AddComponentUVE<PositionUVE>(positionOnly, 3.0F);
-    const EntityUVE bare = entityManager.CreateEntityUVE(); // Component-less: matches nothing.
+TEST_F(EntityViewTest, View_MatchesEveryEntityCarryingAllTypes) {
+    const Entity both = entityManager.CreateEntity();
+    entityManager.AddComponent<Position>(both, 1.0F);
+    entityManager.AddComponent<Velocity>(both, 2.0F);
+    const Entity positionOnly = entityManager.CreateEntity();
+    entityManager.AddComponent<Position>(positionOnly, 3.0F);
+    const Entity bare = entityManager.CreateEntity(); // Component-less: matches nothing.
     static_cast<void>(bare);
 
-    const EntityViewUVE<PositionUVE, VelocityUVE> bothView = entityManager.ViewUVE<PositionUVE, VelocityUVE>();
-    EXPECT_EQ(bothView.SizeUVE(), 1U);
-    EXPECT_FALSE(bothView.IsEmptyUVE());
+    const EntityView<Position, Velocity> bothView = entityManager.View<Position, Velocity>();
+    EXPECT_EQ(bothView.Size(), 1U);
+    EXPECT_FALSE(bothView.IsEmpty());
     for (auto entry : bothView) {
         EXPECT_EQ(entry.entity, both);
-        EXPECT_FLOAT_EQ(entry.GetUVE<PositionUVE>().x, 1.0F);
-        EXPECT_FLOAT_EQ(entry.GetUVE<VelocityUVE>().dx, 2.0F);
+        EXPECT_FLOAT_EQ(entry.Get<Position>().x, 1.0F);
+        EXPECT_FLOAT_EQ(entry.Get<Velocity>().dx, 2.0F);
     }
 
-    const EntityViewUVE<PositionUVE> positionView = entityManager.ViewUVE<PositionUVE>();
-    EXPECT_EQ(positionView.SizeUVE(), 2U);
-    std::vector<EntityUVE> seen;
+    const EntityView<Position> positionView = entityManager.View<Position>();
+    EXPECT_EQ(positionView.Size(), 2U);
+    std::vector<Entity> seen;
     for (auto entry : positionView) {
         seen.push_back(entry.entity);
     }
     std::sort(seen.begin(), seen.end(),
-              [](const EntityUVE a, const EntityUVE b) { return a.index < b.index; });
-    EXPECT_EQ(seen, (std::vector<EntityUVE>{both, positionOnly}));
+              [](const Entity a, const Entity b) { return a.index < b.index; });
+    EXPECT_EQ(seen, (std::vector<Entity>{both, positionOnly}));
 }
 
-TEST_F(EntityViewUVETest, Entry_MutatesLiveStorage) {
-    const EntityUVE entity = entityManager.CreateEntityUVE();
-    entityManager.AddComponentUVE<PositionUVE>(entity, 1.0F);
-    for (auto entry : entityManager.ViewUVE<PositionUVE>()) {
-        entry.GetUVE<PositionUVE>().x += 10.0F;
+TEST_F(EntityViewTest, Entry_MutatesLiveStorage) {
+    const Entity entity = entityManager.CreateEntity();
+    entityManager.AddComponent<Position>(entity, 1.0F);
+    for (auto entry : entityManager.View<Position>()) {
+        entry.Get<Position>().x += 10.0F;
     }
-    EXPECT_FLOAT_EQ(entityManager.GetComponentUVE<PositionUVE>(entity).x, 11.0F);
+    EXPECT_FLOAT_EQ(entityManager.GetComponent<Position>(entity).x, 11.0F);
 }
 
-TEST_F(EntityViewUVETest, View_SnapshotsAndReQueries) {
-    const EntityUVE entity = entityManager.CreateEntityUVE();
-    entityManager.AddComponentUVE<PositionUVE>(entity, 0.0F);
-    const EntityViewUVE<PositionUVE> before = entityManager.ViewUVE<PositionUVE>();
-    EXPECT_EQ(before.SizeUVE(), 1U);
-    const EntityUVE late = entityManager.CreateEntityUVE();
-    entityManager.AddComponentUVE<PositionUVE>(late, 0.0F);
-    EXPECT_EQ(before.SizeUVE(), 1U); // The old view does not see the new entity.
-    EXPECT_EQ(entityManager.ViewUVE<PositionUVE>().SizeUVE(), 2U);
-    EXPECT_TRUE(entityManager.ViewUVE<VelocityUVE>().IsEmptyUVE());
+TEST_F(EntityViewTest, View_SnapshotsAndReQueries) {
+    const Entity entity = entityManager.CreateEntity();
+    entityManager.AddComponent<Position>(entity, 0.0F);
+    const EntityView<Position> before = entityManager.View<Position>();
+    EXPECT_EQ(before.Size(), 1U);
+    const Entity late = entityManager.CreateEntity();
+    entityManager.AddComponent<Position>(late, 0.0F);
+    EXPECT_EQ(before.Size(), 1U); // The old view does not see the new entity.
+    EXPECT_EQ(entityManager.View<Position>().Size(), 2U);
+    EXPECT_TRUE(entityManager.View<Velocity>().IsEmpty());
 }
 
 } // namespace

@@ -16,9 +16,9 @@ namespace {
 
 /// `.uvfont` payload version. The payload is [u32 version][u32 name bytes][name][u32 data
 /// bytes][data], all integers little-endian via the binary-buffer codec.
-inline constexpr std::uint32_t kFontPayloadVersionUVE = 1U;
+inline constexpr std::uint32_t kFontPayloadVersion = 1U;
 
-[[nodiscard]] bool HasSfntMagicUVE(const std::vector<std::byte>& bytes) noexcept {
+[[nodiscard]] bool HasSfntMagic(const std::vector<std::byte>& bytes) noexcept {
     if (bytes.size() < 4U) {
         return false;
     }
@@ -35,18 +35,18 @@ inline constexpr std::uint32_t kFontPayloadVersionUVE = 1U;
 
 } // namespace
 
-bool IsFontAssetValidUVE(const FontAssetUVE& font) noexcept {
-    return font.familyName.size() <= kMaximumFontFamilyNameBytesUVE && !font.fontData.empty() &&
-           font.fontData.size() <= kMaximumFontAssetBytesUVE && HasSfntMagicUVE(font.fontData);
+bool IsFontAssetValid(const FontAsset& font) noexcept {
+    return font.familyName.size() <= kMaximumFontFamilyNameBytes && !font.fontData.empty() &&
+           font.fontData.size() <= kMaximumFontAssetBytes && HasSfntMagic(font.fontData);
 }
 
-bool LoadFontAssetUVE(const std::filesystem::path& path, FontAssetUVE& outFont) {
-    const std::optional<std::pair<UveFileHeaderUVE, std::vector<std::byte>>> file = ReadUveFileUVE(path);
+bool LoadFontAsset(const std::filesystem::path& path, FontAsset& outFont) {
+    const std::optional<std::pair<UveFileHeader, std::vector<std::byte>>> file = ReadUveFile(path);
     if (!file.has_value()) {
-        return false; // ReadUveFileUVE already logged the specific reason.
+        return false; // ReadUveFile already logged the specific reason.
     }
-    if (file->first.assetType != AssetKindUVE::Font) {
-        UVE_ERROR("FontAssetUVE: \"{}\" is not a font file (asset type {})", path.string(),
+    if (file->first.assetType != AssetKind::Font) {
+        UVE_ERROR("FontAsset: \"{}\" is not a font file (asset type {})", path.string(),
                   static_cast<std::uint32_t>(file->first.assetType));
         return false;
     }
@@ -54,54 +54,54 @@ bool LoadFontAssetUVE(const std::filesystem::path& path, FontAssetUVE& outFont) 
     std::size_t offset = 0U;
     std::uint32_t version = 0U;
     std::uint32_t nameLength = 0U;
-    if (!Utilities::ReadUint32LeFromBufferUVE(payload, offset, version) ||
-        !Utilities::ReadUint32LeFromBufferUVE(payload, offset, nameLength)) {
-        UVE_ERROR("FontAssetUVE: \"{}\" has a truncated font header", path.string());
+    if (!Utilities::ReadUint32LeFromBuffer(payload, offset, version) ||
+        !Utilities::ReadUint32LeFromBuffer(payload, offset, nameLength)) {
+        UVE_ERROR("FontAsset: \"{}\" has a truncated font header", path.string());
         return false;
     }
-    if (version != kFontPayloadVersionUVE) {
-        UVE_ERROR("FontAssetUVE: \"{}\" has an unknown payload version {}", path.string(), version);
+    if (version != kFontPayloadVersion) {
+        UVE_ERROR("FontAsset: \"{}\" has an unknown payload version {}", path.string(), version);
         return false;
     }
-    if (nameLength > kMaximumFontFamilyNameBytesUVE || payload.size() - offset < nameLength) {
-        UVE_ERROR("FontAssetUVE: \"{}\" declares an impossible family-name length", path.string());
+    if (nameLength > kMaximumFontFamilyNameBytes || payload.size() - offset < nameLength) {
+        UVE_ERROR("FontAsset: \"{}\" declares an impossible family-name length", path.string());
         return false;
     }
-    FontAssetUVE font;
+    FontAsset font;
     font.familyName.assign(reinterpret_cast<const char*>(payload.data()) + offset, nameLength);
     offset += nameLength;
     std::uint32_t dataLength = 0U;
-    if (!Utilities::ReadUint32LeFromBufferUVE(payload, offset, dataLength)) {
-        UVE_ERROR("FontAssetUVE: \"{}\" has a truncated font-data header", path.string());
+    if (!Utilities::ReadUint32LeFromBuffer(payload, offset, dataLength)) {
+        UVE_ERROR("FontAsset: \"{}\" has a truncated font-data header", path.string());
         return false;
     }
     // Exact fit: trailing bytes are corruption, not a newer version (versions bump the header).
-    if (dataLength > kMaximumFontAssetBytesUVE || payload.size() - offset != dataLength) {
-        UVE_ERROR("FontAssetUVE: \"{}\" declares an impossible font-data length", path.string());
+    if (dataLength > kMaximumFontAssetBytes || payload.size() - offset != dataLength) {
+        UVE_ERROR("FontAsset: \"{}\" declares an impossible font-data length", path.string());
         return false;
     }
     font.fontData.assign(payload.begin() + static_cast<std::ptrdiff_t>(offset), payload.end());
-    if (!IsFontAssetValidUVE(font)) {
-        UVE_ERROR("FontAssetUVE: \"{}\" holds unrecognised font bytes", path.string());
+    if (!IsFontAssetValid(font)) {
+        UVE_ERROR("FontAsset: \"{}\" holds unrecognised font bytes", path.string());
         return false;
     }
     outFont = std::move(font);
     return true;
 }
 
-bool SaveFontAssetUVE(const FontAssetUVE& font, const std::filesystem::path& path) {
-    if (!IsFontAssetValidUVE(font)) {
-        UVE_ERROR("FontAssetUVE: refusing to save an invalid font to {}", path.string());
+bool SaveFontAsset(const FontAsset& font, const std::filesystem::path& path) {
+    if (!IsFontAssetValid(font)) {
+        UVE_ERROR("FontAsset: refusing to save an invalid font to {}", path.string());
         return false;
     }
     std::vector<std::byte> payload;
-    Utilities::AppendUint32LeUVE(payload, kFontPayloadVersionUVE);
-    Utilities::AppendUint32LeUVE(payload, static_cast<std::uint32_t>(font.familyName.size()));
+    Utilities::AppendUint32Le(payload, kFontPayloadVersion);
+    Utilities::AppendUint32Le(payload, static_cast<std::uint32_t>(font.familyName.size()));
     const auto* const nameBytes = reinterpret_cast<const std::byte*>(font.familyName.data());
     payload.insert(payload.end(), nameBytes, nameBytes + font.familyName.size());
-    Utilities::AppendUint32LeUVE(payload, static_cast<std::uint32_t>(font.fontData.size()));
+    Utilities::AppendUint32Le(payload, static_cast<std::uint32_t>(font.fontData.size()));
     payload.insert(payload.end(), font.fontData.begin(), font.fontData.end());
-    return WriteUveFileUVE(path, AssetKindUVE::Font, payload);
+    return WriteUveFile(path, AssetKind::Font, payload);
 }
 
 } // namespace UVE::Asset

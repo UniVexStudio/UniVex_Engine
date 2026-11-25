@@ -7,34 +7,34 @@
 #include <utility>
 namespace UVE::Network {
 namespace {
-constexpr std::uint32_t kHalfSequenceSpaceUVE = 0x80000000U;
-[[nodiscard]] bool IsNewerSequenceUVE(const std::uint32_t candidate,
+constexpr std::uint32_t kHalfSequenceSpace = 0x80000000U;
+[[nodiscard]] bool IsNewerSequence(const std::uint32_t candidate,
                                       const std::uint32_t reference) noexcept {
     const std::uint32_t distance = candidate - reference;
-    return distance != 0U && distance < kHalfSequenceSpaceUVE;
+    return distance != 0U && distance < kHalfSequenceSpace;
 }
 
-[[nodiscard]] bool IsConsistentReliableAcknowledgementStateUVE(
-    const ReliableAcknowledgementStateUVE& state) noexcept {
+[[nodiscard]] bool IsConsistentReliableAcknowledgementState(
+    const ReliableAcknowledgementState& state) noexcept {
     if (!state.hasReceivedSequence) {
         return state.latestReceivedSequence == 0U && state.receivedHistoryBits == 0U;
     }
     return state.latestReceivedSequence != 0U;
 }
 
-[[nodiscard]] bool IsConsistentInactiveReassemblyStateUVE(
-    const ReliablePayloadReassemblyStateUVE& state) noexcept {
-    return !state.IsActiveUVE() && state.fragmentCount == 0U && state.receivedFragmentCount == 0U &&
+[[nodiscard]] bool IsConsistentInactiveReassemblyState(
+    const ReliablePayloadReassemblyState& state) noexcept {
+    return !state.IsActive() && state.fragmentCount == 0U && state.receivedFragmentCount == 0U &&
            state.receivedByteCount == 0U && state.fragments.empty();
 }
 
-[[nodiscard]] bool IsConsistentActiveReassemblyStateUVE(
-    const ReliablePayloadReassemblyStateUVE& state) noexcept {
-    if (!state.IsActiveUVE() || state.fragmentCount == 0U ||
-        state.fragmentCount > kReliablePacketMaximumFragmentCountUVE ||
+[[nodiscard]] bool IsConsistentActiveReassemblyState(
+    const ReliablePayloadReassemblyState& state) noexcept {
+    if (!state.IsActive() || state.fragmentCount == 0U ||
+        state.fragmentCount > kReliablePacketMaximumFragmentCount ||
         state.fragments.size() != state.fragmentCount || state.receivedFragmentCount == 0U ||
         state.receivedFragmentCount > state.fragmentCount ||
-        state.receivedByteCount > kReliablePacketMaximumReassembledPayloadBytesUVE) {
+        state.receivedByteCount > kReliablePacketMaximumReassembledPayloadBytes) {
         return false;
     }
 
@@ -45,9 +45,9 @@ constexpr std::uint32_t kHalfSequenceSpaceUVE = 0x80000000U;
             continue;
         }
         ++actualFragmentCount;
-        if (fragment.size() > kReliablePacketMaximumPayloadBytesUVE ||
-            actualByteCount > kReliablePacketMaximumReassembledPayloadBytesUVE ||
-            fragment.size() > kReliablePacketMaximumReassembledPayloadBytesUVE - actualByteCount) {
+        if (fragment.size() > kReliablePacketMaximumPayloadBytes ||
+            actualByteCount > kReliablePacketMaximumReassembledPayloadBytes ||
+            fragment.size() > kReliablePacketMaximumReassembledPayloadBytes - actualByteCount) {
             return false;
         }
         actualByteCount += fragment.size();
@@ -56,14 +56,14 @@ constexpr std::uint32_t kHalfSequenceSpaceUVE = 0x80000000U;
 }
 } // namespace
 
-bool SerializeReliablePacketHeaderUVE(const ReliablePacketHeaderUVE& header,
+bool SerializeReliablePacketHeader(const ReliablePacketHeader& header,
                                       std::vector<std::uint8_t>& outBytes) noexcept {
     if (header.sequence == 0U || header.acknowledgedSequence == 0U) {
         return false;
     }
     try {
         std::vector<std::uint8_t> bytes;
-        bytes.reserve(kReliablePacketHeaderWireBytesUVE);
+        bytes.reserve(kReliablePacketHeaderWireBytes);
         const auto appendUint32 = [&bytes](const std::uint32_t value) {
             bytes.push_back(static_cast<std::uint8_t>(value & 0xFFU));
             bytes.push_back(static_cast<std::uint8_t>((value >> 8U) & 0xFFU));
@@ -80,9 +80,9 @@ bool SerializeReliablePacketHeaderUVE(const ReliablePacketHeaderUVE& header,
     }
 }
 
-bool DeserializeReliablePacketHeaderUVE(const std::vector<std::uint8_t>& bytes,
-                                        ReliablePacketHeaderUVE& outHeader) noexcept {
-    if (bytes.size() != kReliablePacketHeaderWireBytesUVE) {
+bool DeserializeReliablePacketHeader(const std::vector<std::uint8_t>& bytes,
+                                        ReliablePacketHeader& outHeader) noexcept {
+    if (bytes.size() != kReliablePacketHeaderWireBytes) {
         return false;
     }
     const auto readUint32 = [&bytes](const std::size_t offset) {
@@ -91,7 +91,7 @@ bool DeserializeReliablePacketHeaderUVE(const std::vector<std::uint8_t>& bytes,
                (static_cast<std::uint32_t>(bytes[offset + 2U]) << 16U) |
                (static_cast<std::uint32_t>(bytes[offset + 3U]) << 24U);
     };
-    const ReliablePacketHeaderUVE decoded{readUint32(0U), readUint32(4U), readUint32(8U)};
+    const ReliablePacketHeader decoded{readUint32(0U), readUint32(4U), readUint32(8U)};
     if (decoded.sequence == 0U || decoded.acknowledgedSequence == 0U) {
         return false;
     }
@@ -99,17 +99,17 @@ bool DeserializeReliablePacketHeaderUVE(const std::vector<std::uint8_t>& bytes,
     return true;
 }
 
-bool SerializeReliablePayloadFragmentUVE(const ReliablePayloadFragmentUVE& fragment,
+bool SerializeReliablePayloadFragment(const ReliablePayloadFragment& fragment,
                                          std::vector<std::uint8_t>& outBytes) noexcept {
     if (fragment.messageId == 0U || fragment.fragmentCount == 0U ||
-        fragment.fragmentCount > kReliablePacketMaximumFragmentCountUVE ||
+        fragment.fragmentCount > kReliablePacketMaximumFragmentCount ||
         fragment.fragmentIndex >= fragment.fragmentCount || fragment.payloadBytes.empty() ||
-        fragment.payloadBytes.size() > kReliablePacketMaximumPayloadBytesUVE) {
+        fragment.payloadBytes.size() > kReliablePacketMaximumPayloadBytes) {
         return false;
     }
     try {
         std::vector<std::uint8_t> bytes;
-        bytes.reserve(kReliablePayloadFragmentHeaderWireBytesUVE + fragment.payloadBytes.size());
+        bytes.reserve(kReliablePayloadFragmentHeaderWireBytes + fragment.payloadBytes.size());
         const auto appendUint32 = [&bytes](const std::uint32_t value) {
             bytes.push_back(static_cast<std::uint8_t>(value & 0xFFU));
             bytes.push_back(static_cast<std::uint8_t>((value >> 8U) & 0xFFU));
@@ -128,10 +128,10 @@ bool SerializeReliablePayloadFragmentUVE(const ReliablePayloadFragmentUVE& fragm
     }
 }
 
-bool DeserializeReliablePayloadFragmentUVE(const std::vector<std::uint8_t>& bytes,
-                                           ReliablePayloadFragmentUVE& outFragment) noexcept {
-    if (bytes.size() < kReliablePayloadFragmentHeaderWireBytesUVE ||
-        bytes.size() > kReliablePayloadFragmentHeaderWireBytesUVE + kReliablePacketMaximumPayloadBytesUVE) {
+bool DeserializeReliablePayloadFragment(const std::vector<std::uint8_t>& bytes,
+                                           ReliablePayloadFragment& outFragment) noexcept {
+    if (bytes.size() < kReliablePayloadFragmentHeaderWireBytes ||
+        bytes.size() > kReliablePayloadFragmentHeaderWireBytes + kReliablePacketMaximumPayloadBytes) {
         return false;
     }
     const auto readUint32 = [&bytes](const std::size_t offset) {
@@ -144,18 +144,18 @@ bool DeserializeReliablePayloadFragmentUVE(const std::vector<std::uint8_t>& byte
     const std::uint32_t fragmentIndex = readUint32(4U);
     const std::uint32_t fragmentCount = readUint32(8U);
     const std::uint32_t payloadSize = readUint32(12U);
-    if (messageId == 0U || fragmentCount == 0U || fragmentCount > kReliablePacketMaximumFragmentCountUVE ||
+    if (messageId == 0U || fragmentCount == 0U || fragmentCount > kReliablePacketMaximumFragmentCount ||
         fragmentIndex >= fragmentCount || payloadSize == 0U ||
-        payloadSize > kReliablePacketMaximumPayloadBytesUVE ||
-        static_cast<std::size_t>(payloadSize) != bytes.size() - kReliablePayloadFragmentHeaderWireBytesUVE) {
+        payloadSize > kReliablePacketMaximumPayloadBytes ||
+        static_cast<std::size_t>(payloadSize) != bytes.size() - kReliablePayloadFragmentHeaderWireBytes) {
         return false;
     }
     try {
-        ReliablePayloadFragmentUVE decoded;
+        ReliablePayloadFragment decoded;
         decoded.messageId = messageId;
         decoded.fragmentIndex = fragmentIndex;
         decoded.fragmentCount = fragmentCount;
-        decoded.payloadBytes.assign(bytes.begin() + static_cast<std::ptrdiff_t>(kReliablePayloadFragmentHeaderWireBytesUVE),
+        decoded.payloadBytes.assign(bytes.begin() + static_cast<std::ptrdiff_t>(kReliablePayloadFragmentHeaderWireBytes),
                                      bytes.end());
         outFragment = std::move(decoded);
         return true;
@@ -164,22 +164,22 @@ bool DeserializeReliablePayloadFragmentUVE(const std::vector<std::uint8_t>& byte
     }
 }
 
-bool BuildReliablePayloadFragmentsUVE(const std::uint32_t messageId,
+bool BuildReliablePayloadFragments(const std::uint32_t messageId,
                                        const std::vector<std::uint8_t>& payloadBytes,
                                        const std::size_t maximumFragmentBytes,
-                                       std::vector<ReliablePayloadFragmentUVE>& outFragments) noexcept {
-    ReliablePayloadFragmentPlanUVE plan;
-    if (messageId == 0U || !PlanReliablePayloadFragmentsUVE(payloadBytes.size(), maximumFragmentBytes, plan)) {
+                                       std::vector<ReliablePayloadFragment>& outFragments) noexcept {
+    ReliablePayloadFragmentPlan plan;
+    if (messageId == 0U || !PlanReliablePayloadFragments(payloadBytes.size(), maximumFragmentBytes, plan)) {
         return false;
     }
     try {
-        std::vector<ReliablePayloadFragmentUVE> fragments;
+        std::vector<ReliablePayloadFragment> fragments;
         fragments.reserve(plan.fragmentCount);
         std::size_t payloadOffset = 0U;
         for (std::size_t index = 0U; index < plan.fragmentCount; ++index) {
             const std::size_t remainingBytes = payloadBytes.size() - payloadOffset;
             const std::size_t currentBytes = std::min(remainingBytes, maximumFragmentBytes);
-            ReliablePayloadFragmentUVE fragment;
+            ReliablePayloadFragment fragment;
             fragment.messageId = messageId;
             fragment.fragmentIndex = static_cast<std::uint32_t>(index);
             fragment.fragmentCount = static_cast<std::uint32_t>(plan.fragmentCount);
@@ -196,14 +196,14 @@ bool BuildReliablePayloadFragmentsUVE(const std::uint32_t messageId,
     }
 }
 
-bool SerializeReliablePacketFragmentUVE(const ReliablePacketHeaderUVE& header,
-                                         const ReliablePayloadFragmentUVE& fragment,
+bool SerializeReliablePacketFragment(const ReliablePacketHeader& header,
+                                         const ReliablePayloadFragment& fragment,
                                          std::vector<std::uint8_t>& outBytes) noexcept {
     try {
         std::vector<std::uint8_t> headerBytes;
         std::vector<std::uint8_t> fragmentBytes;
-        if (!SerializeReliablePacketHeaderUVE(header, headerBytes) ||
-            !SerializeReliablePayloadFragmentUVE(fragment, fragmentBytes)) {
+        if (!SerializeReliablePacketHeader(header, headerBytes) ||
+            !SerializeReliablePayloadFragment(fragment, fragmentBytes)) {
             return false;
         }
         std::vector<std::uint8_t> bytes;
@@ -217,21 +217,21 @@ bool SerializeReliablePacketFragmentUVE(const ReliablePacketHeaderUVE& header,
     }
 }
 
-bool DeserializeReliablePacketFragmentUVE(const std::vector<std::uint8_t>& bytes,
-                                           ReliablePacketHeaderUVE& outHeader,
-                                           ReliablePayloadFragmentUVE& outFragment) noexcept {
-    if (bytes.size() < kReliablePacketFragmentWireHeaderBytesUVE ||
-        bytes.size() > kReliablePacketFragmentWireHeaderBytesUVE + kReliablePacketMaximumPayloadBytesUVE) {
+bool DeserializeReliablePacketFragment(const std::vector<std::uint8_t>& bytes,
+                                           ReliablePacketHeader& outHeader,
+                                           ReliablePayloadFragment& outFragment) noexcept {
+    if (bytes.size() < kReliablePacketFragmentWireHeaderBytes ||
+        bytes.size() > kReliablePacketFragmentWireHeaderBytes + kReliablePacketMaximumPayloadBytes) {
         return false;
     }
     try {
-        const auto headerEnd = bytes.begin() + static_cast<std::ptrdiff_t>(kReliablePacketHeaderWireBytesUVE);
+        const auto headerEnd = bytes.begin() + static_cast<std::ptrdiff_t>(kReliablePacketHeaderWireBytes);
         std::vector<std::uint8_t> headerBytes(bytes.begin(), headerEnd);
         std::vector<std::uint8_t> fragmentBytes(headerEnd, bytes.end());
-        ReliablePacketHeaderUVE decodedHeader;
-        ReliablePayloadFragmentUVE decodedFragment;
-        if (!DeserializeReliablePacketHeaderUVE(headerBytes, decodedHeader) ||
-            !DeserializeReliablePayloadFragmentUVE(fragmentBytes, decodedFragment)) {
+        ReliablePacketHeader decodedHeader;
+        ReliablePayloadFragment decodedFragment;
+        if (!DeserializeReliablePacketHeader(headerBytes, decodedHeader) ||
+            !DeserializeReliablePayloadFragment(fragmentBytes, decodedFragment)) {
             return false;
         }
         outHeader = decodedHeader;
@@ -242,22 +242,22 @@ bool DeserializeReliablePacketFragmentUVE(const std::vector<std::uint8_t>& bytes
     }
 }
 
-ReliablePayloadReassemblyStatusUVE AcceptReliablePayloadFragmentUVE(
+ReliablePayloadReassemblyStatus AcceptReliablePayloadFragment(
     const std::uint32_t messageId, const std::size_t fragmentIndex, const std::size_t fragmentCount,
-    const std::vector<std::uint8_t>& fragmentBytes, ReliablePayloadReassemblyStateUVE& state,
+    const std::vector<std::uint8_t>& fragmentBytes, ReliablePayloadReassemblyState& state,
     std::vector<std::uint8_t>& outPayload) noexcept {
     if (messageId == 0U || fragmentCount == 0U ||
-        fragmentCount > kReliablePacketMaximumFragmentCountUVE || fragmentIndex >= fragmentCount ||
-        fragmentBytes.empty() || fragmentBytes.size() > kReliablePacketMaximumPayloadBytesUVE) {
-        return ReliablePayloadReassemblyStatusUVE::Invalid;
+        fragmentCount > kReliablePacketMaximumFragmentCount || fragmentIndex >= fragmentCount ||
+        fragmentBytes.empty() || fragmentBytes.size() > kReliablePacketMaximumPayloadBytes) {
+        return ReliablePayloadReassemblyStatus::Invalid;
     }
 
-    if (!state.IsActiveUVE()) {
-        if (!IsConsistentInactiveReassemblyStateUVE(state)) {
-            return ReliablePayloadReassemblyStatusUVE::Invalid;
+    if (!state.IsActive()) {
+        if (!IsConsistentInactiveReassemblyState(state)) {
+            return ReliablePayloadReassemblyStatus::Invalid;
         }
         try {
-            ReliablePayloadReassemblyStateUVE initialState;
+            ReliablePayloadReassemblyState initialState;
             initialState.messageId = messageId;
             initialState.fragmentCount = fragmentCount;
             initialState.fragments.resize(fragmentCount);
@@ -266,37 +266,37 @@ ReliablePayloadReassemblyStatusUVE AcceptReliablePayloadFragmentUVE(
             initialState.receivedByteCount = fragmentBytes.size();
             state = std::move(initialState);
         } catch (const std::bad_alloc&) {
-            state.ResetUVE();
-            return ReliablePayloadReassemblyStatusUVE::Invalid;
+            state.Reset();
+            return ReliablePayloadReassemblyStatus::Invalid;
         }
     } else {
-        if (!IsConsistentActiveReassemblyStateUVE(state)) {
-            return ReliablePayloadReassemblyStatusUVE::Invalid;
+        if (!IsConsistentActiveReassemblyState(state)) {
+            return ReliablePayloadReassemblyStatus::Invalid;
         }
         if (state.messageId != messageId || state.fragmentCount != fragmentCount ||
             state.fragments.size() != fragmentCount) {
-            return ReliablePayloadReassemblyStatusUVE::Conflict;
+            return ReliablePayloadReassemblyStatus::Conflict;
         }
-        if (state.receivedByteCount > kReliablePacketMaximumReassembledPayloadBytesUVE ||
-            fragmentBytes.size() > kReliablePacketMaximumReassembledPayloadBytesUVE - state.receivedByteCount) {
-            return ReliablePayloadReassemblyStatusUVE::Invalid;
+        if (state.receivedByteCount > kReliablePacketMaximumReassembledPayloadBytes ||
+            fragmentBytes.size() > kReliablePacketMaximumReassembledPayloadBytes - state.receivedByteCount) {
+            return ReliablePayloadReassemblyStatus::Invalid;
         }
         std::vector<std::uint8_t>& storedFragment = state.fragments[fragmentIndex];
         if (!storedFragment.empty()) {
-            return storedFragment == fragmentBytes ? ReliablePayloadReassemblyStatusUVE::Duplicate
-                                                    : ReliablePayloadReassemblyStatusUVE::Conflict;
+            return storedFragment == fragmentBytes ? ReliablePayloadReassemblyStatus::Duplicate
+                                                    : ReliablePayloadReassemblyStatus::Conflict;
         }
         try {
             storedFragment = fragmentBytes;
             ++state.receivedFragmentCount;
             state.receivedByteCount += fragmentBytes.size();
         } catch (const std::bad_alloc&) {
-            return ReliablePayloadReassemblyStatusUVE::Invalid;
+            return ReliablePayloadReassemblyStatus::Invalid;
         }
     }
 
     if (state.receivedFragmentCount < state.fragmentCount) {
-        return ReliablePayloadReassemblyStatusUVE::Accepted;
+        return ReliablePayloadReassemblyStatus::Accepted;
     }
 
     try {
@@ -307,44 +307,44 @@ ReliablePayloadReassemblyStatusUVE AcceptReliablePayloadFragmentUVE(
         }
         outPayload = std::move(assembled);
     } catch (const std::bad_alloc&) {
-        return ReliablePayloadReassemblyStatusUVE::Invalid;
+        return ReliablePayloadReassemblyStatus::Invalid;
     }
-    state.ResetUVE();
-    return ReliablePayloadReassemblyStatusUVE::Complete;
+    state.Reset();
+    return ReliablePayloadReassemblyStatus::Complete;
 }
 
-bool PlanReliablePayloadFragmentsUVE(const std::size_t payloadBytes,
+bool PlanReliablePayloadFragments(const std::size_t payloadBytes,
                                       const std::size_t fragmentBytes,
-                                      ReliablePayloadFragmentPlanUVE& outPlan,
+                                      ReliablePayloadFragmentPlan& outPlan,
                                       const std::size_t maximumFragments) noexcept {
     if (payloadBytes == 0U || fragmentBytes == 0U ||
-        fragmentBytes > kReliablePacketMaximumPayloadBytesUVE || maximumFragments == 0U) {
+        fragmentBytes > kReliablePacketMaximumPayloadBytes || maximumFragments == 0U) {
         return false;
     }
     const std::size_t fragmentCount = payloadBytes / fragmentBytes +
                                       (payloadBytes % fragmentBytes == 0U ? 0U : 1U);
     const std::size_t boundedMaximumFragments =
-        maximumFragments < kReliablePacketMaximumFragmentCountUVE
+        maximumFragments < kReliablePacketMaximumFragmentCount
             ? maximumFragments
-            : kReliablePacketMaximumFragmentCountUVE;
+            : kReliablePacketMaximumFragmentCount;
     if (fragmentCount == 0U || fragmentCount > boundedMaximumFragments) {
         return false;
     }
     const std::size_t remainder = payloadBytes % fragmentBytes;
-    outPlan = ReliablePayloadFragmentPlanUVE{fragmentCount, fragmentBytes,
+    outPlan = ReliablePayloadFragmentPlan{fragmentCount, fragmentBytes,
                                               remainder == 0U ? fragmentBytes : remainder,
                                               fragmentCount > 1U};
     return true;
 }
 
-bool ValidateReliablePayloadBudgetUVE(const std::size_t payloadBytes,
+bool ValidateReliablePayloadBudget(const std::size_t payloadBytes,
                                       const std::size_t maximumBytes) noexcept {
     const std::size_t boundedMaximumBytes =
-        maximumBytes < kReliablePacketMaximumPayloadBytesUVE ? maximumBytes : kReliablePacketMaximumPayloadBytesUVE;
+        maximumBytes < kReliablePacketMaximumPayloadBytes ? maximumBytes : kReliablePacketMaximumPayloadBytes;
     return payloadBytes <= boundedMaximumBytes;
 }
 
-bool ComputeReliableRetryTimeoutUVE(const float baseTimeoutSeconds, const std::uint32_t retryCount,
+bool ComputeReliableRetryTimeout(const float baseTimeoutSeconds, const std::uint32_t retryCount,
                                      const float maximumTimeoutSeconds, float& outTimeoutSeconds) noexcept {
     if (!std::isfinite(baseTimeoutSeconds) || baseTimeoutSeconds <= 0.0F ||
         !std::isfinite(maximumTimeoutSeconds) || maximumTimeoutSeconds < baseTimeoutSeconds ||
@@ -363,7 +363,7 @@ bool ComputeReliableRetryTimeoutUVE(const float baseTimeoutSeconds, const std::u
     return std::isfinite(outTimeoutSeconds);
 }
 
-bool ReliableRetryScheduleUVE::ConfigureUVE(const float baseTimeoutSeconds,
+bool ReliableRetrySchedule::Configure(const float baseTimeoutSeconds,
                                            const float maximumTimeoutSeconds,
                                            const std::uint32_t maximumRetries) noexcept {
     if (!std::isfinite(baseTimeoutSeconds) || baseTimeoutSeconds <= 0.0F ||
@@ -380,34 +380,34 @@ bool ReliableRetryScheduleUVE::ConfigureUVE(const float baseTimeoutSeconds,
     return true;
 }
 
-ReliableRetransmitStatusUVE ReliableRetryScheduleUVE::AdvanceUVE(const float elapsedSeconds) noexcept {
+ReliableRetransmitStatus ReliableRetrySchedule::Advance(const float elapsedSeconds) noexcept {
     if (!m_configured || !std::isfinite(elapsedSeconds) || elapsedSeconds < 0.0F) {
-        return ReliableRetransmitStatusUVE::Invalid;
+        return ReliableRetransmitStatus::Invalid;
     }
     float retryTimeoutSeconds = 0.0F;
-    if (!ComputeReliableRetryTimeoutUVE(m_baseTimeoutSeconds, m_retryCount, m_maximumTimeoutSeconds,
+    if (!ComputeReliableRetryTimeout(m_baseTimeoutSeconds, m_retryCount, m_maximumTimeoutSeconds,
                                         retryTimeoutSeconds)) {
-        return ReliableRetransmitStatusUVE::Invalid;
+        return ReliableRetransmitStatus::Invalid;
     }
     const float candidateElapsedSeconds = m_elapsedSeconds + elapsedSeconds;
     if (!std::isfinite(candidateElapsedSeconds)) {
-        return ReliableRetransmitStatusUVE::Invalid;
+        return ReliableRetransmitStatus::Invalid;
     }
     m_elapsedSeconds = candidateElapsedSeconds;
-    return EvaluateReliableRetransmitPolicyUVE(
-        ReliableRetransmitPolicyInputUVE{m_elapsedSeconds, retryTimeoutSeconds, m_retryCount, m_maximumRetries});
+    return EvaluateReliableRetransmitPolicy(
+        ReliableRetransmitPolicyInput{m_elapsedSeconds, retryTimeoutSeconds, m_retryCount, m_maximumRetries});
 }
 
-bool ReliableRetryScheduleUVE::CommitRetryUVE() noexcept {
+bool ReliableRetrySchedule::CommitRetry() noexcept {
     if (!m_configured || m_retryCount >= m_maximumRetries) {
         return false;
     }
     float retryTimeoutSeconds = 0.0F;
-    if (!ComputeReliableRetryTimeoutUVE(m_baseTimeoutSeconds, m_retryCount, m_maximumTimeoutSeconds,
+    if (!ComputeReliableRetryTimeout(m_baseTimeoutSeconds, m_retryCount, m_maximumTimeoutSeconds,
                                         retryTimeoutSeconds) ||
-        EvaluateReliableRetransmitPolicyUVE(
-            ReliableRetransmitPolicyInputUVE{m_elapsedSeconds, retryTimeoutSeconds, m_retryCount, m_maximumRetries}) !=
-            ReliableRetransmitStatusUVE::Due) {
+        EvaluateReliableRetransmitPolicy(
+            ReliableRetransmitPolicyInput{m_elapsedSeconds, retryTimeoutSeconds, m_retryCount, m_maximumRetries}) !=
+            ReliableRetransmitStatus::Due) {
         return false;
     }
     ++m_retryCount;
@@ -415,7 +415,7 @@ bool ReliableRetryScheduleUVE::CommitRetryUVE() noexcept {
     return true;
 }
 
-void ReliableRetryScheduleUVE::ResetUVE() noexcept {
+void ReliableRetrySchedule::Reset() noexcept {
     m_baseTimeoutSeconds = 0.0F;
     m_maximumTimeoutSeconds = 0.0F;
     m_elapsedSeconds = 0.0F;
@@ -424,87 +424,87 @@ void ReliableRetryScheduleUVE::ResetUVE() noexcept {
     m_configured = false;
 }
 
-ReliableRetransmitStatusUVE EvaluateReliableRetransmitPolicyUVE(
-    const ReliableRetransmitPolicyInputUVE& input) noexcept {
+ReliableRetransmitStatus EvaluateReliableRetransmitPolicy(
+    const ReliableRetransmitPolicyInput& input) noexcept {
     if (!std::isfinite(input.elapsedSeconds) || input.elapsedSeconds < 0.0F ||
         !std::isfinite(input.retryTimeoutSeconds) || input.retryTimeoutSeconds <= 0.0F ||
         input.retryCount > input.maximumRetries) {
-        return ReliableRetransmitStatusUVE::Invalid;
+        return ReliableRetransmitStatus::Invalid;
     }
     if (input.retryCount == input.maximumRetries) {
-        return ReliableRetransmitStatusUVE::Exhausted;
+        return ReliableRetransmitStatus::Exhausted;
     }
-    return input.elapsedSeconds >= input.retryTimeoutSeconds ? ReliableRetransmitStatusUVE::Due
-                                                               : ReliableRetransmitStatusUVE::Waiting;
+    return input.elapsedSeconds >= input.retryTimeoutSeconds ? ReliableRetransmitStatus::Due
+                                                               : ReliableRetransmitStatus::Waiting;
 }
-ReliablePacketReceiveStatusUVE AcceptReliableSequenceUVE(
-    const std::uint32_t sequence, ReliableAcknowledgementStateUVE& state) noexcept {
-    if (sequence == 0U || !IsConsistentReliableAcknowledgementStateUVE(state)) {
-        return ReliablePacketReceiveStatusUVE::Invalid;
+ReliablePacketReceiveStatus AcceptReliableSequence(
+    const std::uint32_t sequence, ReliableAcknowledgementState& state) noexcept {
+    if (sequence == 0U || !IsConsistentReliableAcknowledgementState(state)) {
+        return ReliablePacketReceiveStatus::Invalid;
     }
     if (!state.hasReceivedSequence) {
         state.latestReceivedSequence = sequence;
         state.receivedHistoryBits = 0U;
         state.hasReceivedSequence = true;
-        return ReliablePacketReceiveStatusUVE::Accepted;
+        return ReliablePacketReceiveStatus::Accepted;
     }
-    if (IsNewerSequenceUVE(sequence, state.latestReceivedSequence)) {
+    if (IsNewerSequence(sequence, state.latestReceivedSequence)) {
         const std::uint32_t distance = sequence - state.latestReceivedSequence;
-        if (distance > kReliablePacketMaximumSelectiveAckBitsUVE) {
+        if (distance > kReliablePacketMaximumSelectiveAckBits) {
             state.receivedHistoryBits = 0U;
-        } else if (distance == kReliablePacketMaximumSelectiveAckBitsUVE) {
-            state.receivedHistoryBits = 1U << (kReliablePacketMaximumSelectiveAckBitsUVE - 1U);
+        } else if (distance == kReliablePacketMaximumSelectiveAckBits) {
+            state.receivedHistoryBits = 1U << (kReliablePacketMaximumSelectiveAckBits - 1U);
         } else {
             state.receivedHistoryBits <<= distance;
             state.receivedHistoryBits |= 1U << (distance - 1U);
         }
         state.latestReceivedSequence = sequence;
-        return ReliablePacketReceiveStatusUVE::Accepted;
+        return ReliablePacketReceiveStatus::Accepted;
     }
     const std::uint32_t distance = state.latestReceivedSequence - sequence;
     if (distance == 0U) {
-        return ReliablePacketReceiveStatusUVE::Duplicate;
+        return ReliablePacketReceiveStatus::Duplicate;
     }
-    if (distance > kReliablePacketMaximumSelectiveAckBitsUVE) {
-        return ReliablePacketReceiveStatusUVE::TooOld;
+    if (distance > kReliablePacketMaximumSelectiveAckBits) {
+        return ReliablePacketReceiveStatus::TooOld;
     }
     const std::uint32_t bit = 1U << (distance - 1U);
     if ((state.receivedHistoryBits & bit) != 0U) {
-        return ReliablePacketReceiveStatusUVE::Duplicate;
+        return ReliablePacketReceiveStatus::Duplicate;
     }
     state.receivedHistoryBits |= bit;
-    return ReliablePacketReceiveStatusUVE::Accepted;
+    return ReliablePacketReceiveStatus::Accepted;
 }
-bool ApplyReliableAcknowledgementsUVE(
-    const ReliablePacketHeaderUVE& header, std::uint32_t& pendingSequenceMask,
+bool ApplyReliableAcknowledgements(
+    const ReliablePacketHeader& header, std::uint32_t& pendingSequenceMask,
     const std::uint32_t oldestPendingSequence) noexcept {
     if (header.sequence == 0U || header.acknowledgedSequence == 0U || oldestPendingSequence == 0U) {
         return false;
     }
     bool changed = false;
     const std::uint32_t cumulativeDistance = header.acknowledgedSequence - oldestPendingSequence;
-    if (cumulativeDistance < kHalfSequenceSpaceUVE &&
-        cumulativeDistance < kReliablePacketMaximumSelectiveAckBitsUVE) {
+    if (cumulativeDistance < kHalfSequenceSpace &&
+        cumulativeDistance < kReliablePacketMaximumSelectiveAckBits) {
         const std::uint32_t cumulativeMask =
-            cumulativeDistance == kReliablePacketMaximumSelectiveAckBitsUVE - 1U
+            cumulativeDistance == kReliablePacketMaximumSelectiveAckBits - 1U
                 ? std::numeric_limits<std::uint32_t>::max()
                 : (1U << (cumulativeDistance + 1U)) - 1U;
         const std::uint32_t before = pendingSequenceMask;
         pendingSequenceMask &= ~cumulativeMask;
         changed = before != pendingSequenceMask;
     }
-    for (std::uint32_t bitIndex = 0U; bitIndex < kReliablePacketMaximumSelectiveAckBitsUVE; ++bitIndex) {
+    for (std::uint32_t bitIndex = 0U; bitIndex < kReliablePacketMaximumSelectiveAckBits; ++bitIndex) {
         if ((header.selectiveAcknowledgementBits & (1U << bitIndex)) == 0U) {
             continue;
         }
         const std::uint32_t selectiveSequence = header.acknowledgedSequence + bitIndex + 1U;
         // Reject reserved zero and any arithmetic wrap that is not newer in sequence space.
         if (selectiveSequence == 0U ||
-            !IsNewerSequenceUVE(selectiveSequence, header.acknowledgedSequence)) {
+            !IsNewerSequence(selectiveSequence, header.acknowledgedSequence)) {
             continue;
         }
         const std::uint32_t pendingDistance = selectiveSequence - oldestPendingSequence;
-        if (pendingDistance >= kReliablePacketMaximumSelectiveAckBitsUVE) {
+        if (pendingDistance >= kReliablePacketMaximumSelectiveAckBits) {
             continue;
         }
         const std::uint32_t before = pendingSequenceMask;

@@ -9,7 +9,7 @@
 namespace UVE::Window {
 namespace {
 
-[[nodiscard]] std::uint32_t RoundPositiveDimensionUVE(const double value) noexcept {
+[[nodiscard]] std::uint32_t RoundPositiveDimension(const double value) noexcept {
     const double maximum = static_cast<double>(std::numeric_limits<std::uint32_t>::max());
     if (!(value > 0.0) || !std::isfinite(value) || value > maximum) {
         return 0U;
@@ -20,13 +20,13 @@ namespace {
 
 } // namespace
 
-PresentationLayoutUVE ComputePresentationLayoutUVE(
+PresentationLayout ComputePresentationLayout(
     const std::uint32_t framebufferWidth, const std::uint32_t framebufferHeight,
     const std::uint32_t referenceWidth, const std::uint32_t referenceHeight,
-    const Platform::AspectPolicyUVE aspectPolicy, const bool integerOnlyScaling) noexcept {
-    PresentationLayoutUVE result;
+    const Platform::AspectPolicy aspectPolicy, const bool integerOnlyScaling) noexcept {
+    PresentationLayout result;
     if (framebufferWidth == 0U || framebufferHeight == 0U || referenceWidth == 0U || referenceHeight == 0U ||
-        Platform::GetAspectPolicyNameUVE(aspectPolicy).empty()) {
+        Platform::GetAspectPolicyName(aspectPolicy).empty()) {
         return result;
     }
 
@@ -43,19 +43,19 @@ PresentationLayoutUVE ComputePresentationLayoutUVE(
     result.logicalHeight = baseHeight;
 
     switch (aspectPolicy) {
-    case Platform::AspectPolicyUVE::Ignore:
+    case Platform::AspectPolicy::Ignore:
         // Fill the output exactly; scaleX/scaleY intentionally differ when aspect ratios do.
         break;
-    case Platform::AspectPolicyUVE::Keep:
+    case Platform::AspectPolicy::Keep:
         // Logical dimensions stay at the reference size; a fitted output rectangle is calculated below.
         break;
-    case Platform::AspectPolicyUVE::KeepWidth:
+    case Platform::AspectPolicy::KeepWidth:
         result.logicalHeight = baseWidth / framebufferAspect;
         break;
-    case Platform::AspectPolicyUVE::KeepHeight:
+    case Platform::AspectPolicy::KeepHeight:
         result.logicalWidth = baseHeight * framebufferAspect;
         break;
-    case Platform::AspectPolicyUVE::Expand:
+    case Platform::AspectPolicy::Expand:
         if (framebufferAspect > referenceAspect) {
             result.logicalWidth = baseHeight * framebufferAspect;
         } else {
@@ -66,10 +66,10 @@ PresentationLayoutUVE ComputePresentationLayoutUVE(
 
     if (!(result.logicalWidth > 0.0) || !(result.logicalHeight > 0.0) ||
         !std::isfinite(result.logicalWidth) || !std::isfinite(result.logicalHeight)) {
-        return PresentationLayoutUVE{};
+        return PresentationLayout{};
     }
 
-    if (aspectPolicy == Platform::AspectPolicyUVE::Ignore) {
+    if (aspectPolicy == Platform::AspectPolicy::Ignore) {
         if (integerOnlyScaling) {
             // Ignore intentionally permits different horizontal and vertical scales, so pixel-perfect
             // mode floors each axis independently rather than distorting that policy into uniform Keep.
@@ -81,8 +81,8 @@ PresentationLayoutUVE ComputePresentationLayoutUVE(
                 result.scaleY = frameHeight / baseHeight;
                 return result;
             }
-            result.width = std::min(framebufferWidth, RoundPositiveDimensionUVE(baseWidth * integerScaleX));
-            result.height = std::min(framebufferHeight, RoundPositiveDimensionUVE(baseHeight * integerScaleY));
+            result.width = std::min(framebufferWidth, RoundPositiveDimension(baseWidth * integerScaleX));
+            result.height = std::min(framebufferHeight, RoundPositiveDimension(baseHeight * integerScaleY));
         }
     } else {
         const double scale = std::min(frameWidth / result.logicalWidth, frameHeight / result.logicalHeight);
@@ -96,16 +96,16 @@ PresentationLayoutUVE ComputePresentationLayoutUVE(
                 effectiveScale = scale;
             }
         }
-        if (aspectPolicy == Platform::AspectPolicyUVE::Keep || integerOnlyScaling) {
+        if (aspectPolicy == Platform::AspectPolicy::Keep || integerOnlyScaling) {
             result.width = std::min(framebufferWidth,
-                                    RoundPositiveDimensionUVE(result.logicalWidth * effectiveScale));
+                                    RoundPositiveDimension(result.logicalWidth * effectiveScale));
             result.height = std::min(framebufferHeight,
-                                     RoundPositiveDimensionUVE(result.logicalHeight * effectiveScale));
+                                     RoundPositiveDimension(result.logicalHeight * effectiveScale));
         }
     }
 
     if (result.width == 0U || result.height == 0U) {
-        return PresentationLayoutUVE{};
+        return PresentationLayout{};
     }
     result.x = (framebufferWidth - result.width) / 2U;
     result.y = (framebufferHeight - result.height) / 2U;

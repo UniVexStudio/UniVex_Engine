@@ -27,14 +27,14 @@
 namespace UVE::Asset {
 namespace {
 
-constexpr float kDegenerateTriangleEpsilonSquaredUVE = 0.00000001F;
+constexpr float kDegenerateTriangleEpsilonSquared = 0.00000001F;
 
-[[nodiscard]] bool IsFiniteBoundsUVE(const Math::AabbUVE& bounds) noexcept {
-    return Math::IsFiniteUVE(bounds.min) && Math::IsFiniteUVE(bounds.max) &&
+[[nodiscard]] bool IsFiniteBounds(const Math::Aabb& bounds) noexcept {
+    return Math::IsFinite(bounds.min) && Math::IsFinite(bounds.max) &&
            bounds.min.x <= bounds.max.x && bounds.min.y <= bounds.max.y && bounds.min.z <= bounds.max.z;
 }
 
-[[nodiscard]] std::string_view NextTokenUVE(std::string_view& rest) noexcept {
+[[nodiscard]] std::string_view NextToken(std::string_view& rest) noexcept {
     while (!rest.empty() && (rest.front() == ' ' || rest.front() == '\t')) {
         rest.remove_prefix(1U);
     }
@@ -44,7 +44,7 @@ constexpr float kDegenerateTriangleEpsilonSquaredUVE = 0.00000001F;
     return token;
 }
 
-[[nodiscard]] std::optional<float> ParseFiniteFloatUVE(const std::string_view text) noexcept {
+[[nodiscard]] std::optional<float> ParseFiniteFloat(const std::string_view text) noexcept {
     if (text.empty()) {
         return std::nullopt;
     }
@@ -68,61 +68,61 @@ constexpr float kDegenerateTriangleEpsilonSquaredUVE = 0.00000001F;
 #endif
 }
 
-[[nodiscard]] bool ParsePositionUVE(std::string_view rest, Math::Vector3UVE& outPosition) noexcept {
-    const std::optional<float> x = ParseFiniteFloatUVE(NextTokenUVE(rest));
-    const std::optional<float> y = ParseFiniteFloatUVE(NextTokenUVE(rest));
-    const std::optional<float> z = ParseFiniteFloatUVE(NextTokenUVE(rest));
+[[nodiscard]] bool ParsePosition(std::string_view rest, Math::Vector3& outPosition) noexcept {
+    const std::optional<float> x = ParseFiniteFloat(NextToken(rest));
+    const std::optional<float> y = ParseFiniteFloat(NextToken(rest));
+    const std::optional<float> z = ParseFiniteFloat(NextToken(rest));
     if (!x || !y || !z) {
         return false;
     }
 
-    const std::string_view weightText = NextTokenUVE(rest);
+    const std::string_view weightText = NextToken(rest);
     if (!weightText.empty()) {
-        const std::optional<float> weight = ParseFiniteFloatUVE(weightText);
-        if (!weight || std::abs(*weight) <= kDegenerateTriangleEpsilonSquaredUVE) {
+        const std::optional<float> weight = ParseFiniteFloat(weightText);
+        if (!weight || std::abs(*weight) <= kDegenerateTriangleEpsilonSquared) {
             return false;
         }
-        outPosition = Math::Vector3UVE{*x / *weight, *y / *weight, *z / *weight};
+        outPosition = Math::Vector3{*x / *weight, *y / *weight, *z / *weight};
     } else {
-        outPosition = Math::Vector3UVE{*x, *y, *z};
+        outPosition = Math::Vector3{*x, *y, *z};
     }
-    if (!NextTokenUVE(rest).empty()) {
+    if (!NextToken(rest).empty()) {
         return false;
     }
     return std::isfinite(outPosition.x) && std::isfinite(outPosition.y) && std::isfinite(outPosition.z);
 }
 
-[[nodiscard]] bool ParseTexcoordUVE(std::string_view rest, Math::Vector2UVE& outTexcoord) noexcept {
-    const std::optional<float> u = ParseFiniteFloatUVE(NextTokenUVE(rest));
-    const std::optional<float> v = ParseFiniteFloatUVE(NextTokenUVE(rest));
+[[nodiscard]] bool ParseTexcoord(std::string_view rest, Math::Vector2& outTexcoord) noexcept {
+    const std::optional<float> u = ParseFiniteFloat(NextToken(rest));
+    const std::optional<float> v = ParseFiniteFloat(NextToken(rest));
     if (!u || !v) {
         return false;
     }
-    if (!NextTokenUVE(rest).empty()) {
+    if (!NextToken(rest).empty()) {
         return false;
     }
-    outTexcoord = Math::Vector2UVE{*u, *v};
+    outTexcoord = Math::Vector2{*u, *v};
     return true;
 }
 
-[[nodiscard]] bool ParseNormalUVE(std::string_view rest, Math::Vector3UVE& outNormal) noexcept {
-    const std::optional<float> x = ParseFiniteFloatUVE(NextTokenUVE(rest));
-    const std::optional<float> y = ParseFiniteFloatUVE(NextTokenUVE(rest));
-    const std::optional<float> z = ParseFiniteFloatUVE(NextTokenUVE(rest));
+[[nodiscard]] bool ParseNormal(std::string_view rest, Math::Vector3& outNormal) noexcept {
+    const std::optional<float> x = ParseFiniteFloat(NextToken(rest));
+    const std::optional<float> y = ParseFiniteFloat(NextToken(rest));
+    const std::optional<float> z = ParseFiniteFloat(NextToken(rest));
     if (!x || !y || !z) {
         return false;
     }
-    if (!NextTokenUVE(rest).empty()) {
+    if (!NextToken(rest).empty()) {
         return false;
     }
-    outNormal = Math::Vector3UVE{*x, *y, *z};
-    const float lengthSquared = Math::LengthSquaredUVE(outNormal);
-    return std::isfinite(lengthSquared) && lengthSquared > kDegenerateTriangleEpsilonSquaredUVE;
+    outNormal = Math::Vector3{*x, *y, *z};
+    const float lengthSquared = Math::LengthSquared(outNormal);
+    return std::isfinite(lengthSquared) && lengthSquared > kDegenerateTriangleEpsilonSquared;
 }
 
-void UpdateBoundsUVE(const Math::Vector3UVE& position, bool& hasBounds, Math::AabbUVE& bounds) noexcept {
+void UpdateBounds(const Math::Vector3& position, bool& hasBounds, Math::Aabb& bounds) noexcept {
     if (!hasBounds) {
-        bounds = Math::AabbUVE{position, position};
+        bounds = Math::Aabb{position, position};
         hasBounds = true;
         return;
     }
@@ -134,27 +134,27 @@ void UpdateBoundsUVE(const Math::Vector3UVE& position, bool& hasBounds, Math::Aa
     bounds.max.z = std::max(bounds.max.z, position.z);
 }
 
-[[nodiscard]] Math::Vector3UVE ComputeFaceNormalUVE(const Math::Vector3UVE& first,
-                                                     const Math::Vector3UVE& second,
-                                                     const Math::Vector3UVE& third) noexcept {
-    const Math::Vector3UVE firstEdge = second - first;
-    const Math::Vector3UVE secondEdge = third - first;
-    if (!Math::IsFiniteUVE(firstEdge) || !Math::IsFiniteUVE(secondEdge)) {
+[[nodiscard]] Math::Vector3 ComputeFaceNormal(const Math::Vector3& first,
+                                                     const Math::Vector3& second,
+                                                     const Math::Vector3& third) noexcept {
+    const Math::Vector3 firstEdge = second - first;
+    const Math::Vector3 secondEdge = third - first;
+    if (!Math::IsFinite(firstEdge) || !Math::IsFinite(secondEdge)) {
         return {};
     }
-    const Math::Vector3UVE cross = Math::CrossUVE(firstEdge, secondEdge);
-    const float lengthSquared = Math::LengthSquaredUVE(cross);
-    if (!std::isfinite(lengthSquared) || lengthSquared <= kDegenerateTriangleEpsilonSquaredUVE) {
+    const Math::Vector3 cross = Math::Cross(firstEdge, secondEdge);
+    const float lengthSquared = Math::LengthSquared(cross);
+    if (!std::isfinite(lengthSquared) || lengthSquared <= kDegenerateTriangleEpsilonSquared) {
         return {};
     }
-    const Math::Vector3UVE normalized = Math::NormalizeUVE(cross);
-    return Math::IsFiniteUVE(normalized) ? normalized : Math::Vector3UVE{};
+    const Math::Vector3 normalized = Math::Normalize(cross);
+    return Math::IsFinite(normalized) ? normalized : Math::Vector3{};
 }
 
 /// The `usemtl` argument: everything after the directive with the surrounding whitespace removed,
-/// which is the same reading ImportObjMaterialsUVE takes of the same line. Material names may
+/// which is the same reading ImportObjMaterials takes of the same line. Material names may
 /// contain spaces, so the remainder is kept whole.
-[[nodiscard]] std::string_view MaterialArgumentUVE(std::string_view rest) noexcept {
+[[nodiscard]] std::string_view MaterialArgument(std::string_view rest) noexcept {
     while (!rest.empty() && (rest.front() == ' ' || rest.front() == '\t')) {
         rest.remove_prefix(1U);
     }
@@ -166,32 +166,32 @@ void UpdateBoundsUVE(const Math::Vector3UVE& position, bool& hasBounds, Math::Aa
 
 } // namespace
 
-bool ConvertObjMeshUVE(const std::string_view source, MeshAssetUVE& outMesh,
-                       std::vector<ObjSurfaceRangeUVE>* const outSurfaces) {
+bool ConvertObjMesh(const std::string_view source, MeshAsset& outMesh,
+                       std::vector<ObjSurfaceRange>* const outSurfaces) {
     if (outSurfaces != nullptr) {
         outSurfaces->clear();
     }
-    if (source.empty() || source.size() > kMaximumObjMeshSourceBytesUVE) {
+    if (source.empty() || source.size() > kMaximumObjMeshSourceBytes) {
         return false;
     }
 
-    std::vector<Math::Vector3UVE> positions;
-    std::vector<Math::Vector2UVE> texcoords;
-    std::vector<Math::Vector3UVE> normals;
+    std::vector<Math::Vector3> positions;
+    std::vector<Math::Vector2> texcoords;
+    std::vector<Math::Vector3> normals;
     positions.reserve(64U);
     texcoords.reserve(64U);
     normals.reserve(64U);
 
-    MeshAssetUVE candidate;
+    MeshAsset candidate;
     bool hasBounds = false;
 
     // Surface tracking. Runs are recorded only while they are still worth saving: once a file has
     // more `usemtl` runs than a mesh can hold, `surfacesOverflowed` stops the bookkeeping and the
     // result keeps the whole-buffer draw instead of a table that could never be saved.
     std::string currentMaterial;
-    std::vector<ObjSurfaceRangeUVE> surfaceRanges;
+    std::vector<ObjSurfaceRange> surfaceRanges;
     bool surfacesOverflowed = false;
-    const auto beginSurfaceRunUVE = [&](const std::size_t firstIndex) {
+    const auto beginSurfaceRun = [&](const std::size_t firstIndex) {
         if (outSurfaces == nullptr || surfacesOverflowed) {
             return;
         }
@@ -202,13 +202,13 @@ bool ConvertObjMeshUVE(const std::string_view source, MeshAssetUVE& outMesh,
                 return; // same material continuing a run
             }
         }
-        if (surfaceRanges.size() >= kMaximumMeshSurfacesUVE) {
+        if (surfaceRanges.size() >= kMaximumMeshSurfaces) {
             surfacesOverflowed = true;
             surfaceRanges.clear();
             return;
         }
         surfaceRanges.push_back(
-            ObjSurfaceRangeUVE{static_cast<std::uint32_t>(firstIndex), 0U, currentMaterial});
+            ObjSurfaceRange{static_cast<std::uint32_t>(firstIndex), 0U, currentMaterial});
     };
 
     std::size_t lineStart = 0U;
@@ -230,49 +230,49 @@ bool ConvertObjMeshUVE(const std::string_view source, MeshAssetUVE& outMesh,
 
         if (!line.empty()) {
             std::string_view rest = line;
-            const std::string_view directive = NextTokenUVE(rest);
+            const std::string_view directive = NextToken(rest);
             if (directive == "v") {
-                if (positions.size() >= kMaximumObjMeshVerticesUVE) {
+                if (positions.size() >= kMaximumObjMeshVertices) {
                     return false;
                 }
-                Math::Vector3UVE position;
-                if (!ParsePositionUVE(rest, position)) {
+                Math::Vector3 position;
+                if (!ParsePosition(rest, position)) {
                     return false;
                 }
                 positions.push_back(position);
             } else if (directive == "vt") {
-                if (texcoords.size() >= kMaximumObjMeshVerticesUVE) {
+                if (texcoords.size() >= kMaximumObjMeshVertices) {
                     return false;
                 }
-                Math::Vector2UVE texcoord;
-                if (!ParseTexcoordUVE(rest, texcoord)) {
+                Math::Vector2 texcoord;
+                if (!ParseTexcoord(rest, texcoord)) {
                     return false;
                 }
                 texcoords.push_back(texcoord);
             } else if (directive == "vn") {
-                if (normals.size() >= kMaximumObjMeshVerticesUVE) {
+                if (normals.size() >= kMaximumObjMeshVertices) {
                     return false;
                 }
-                Math::Vector3UVE normal;
-                if (!ParseNormalUVE(rest, normal)) {
+                Math::Vector3 normal;
+                if (!ParseNormal(rest, normal)) {
                     return false;
                 }
-                normals.push_back(Math::NormalizeUVE(normal));
+                normals.push_back(Math::Normalize(normal));
             } else if (directive == "usemtl") {
-                currentMaterial.assign(MaterialArgumentUVE(rest));
+                currentMaterial.assign(MaterialArgument(rest));
             } else if (directive == "f") {
-                std::vector<ObjFaceVertexUVE> faceVertices;
+                std::vector<ObjFaceVertex> faceVertices;
                 faceVertices.reserve(8U);
                 while (true) {
-                    const std::string_view token = NextTokenUVE(rest);
+                    const std::string_view token = NextToken(rest);
                     if (token.empty()) {
                         break;
                     }
-                    if (faceVertices.size() >= kMaximumObjMeshVerticesUVE / 3U + 2U) {
+                    if (faceVertices.size() >= kMaximumObjMeshVertices / 3U + 2U) {
                         return false;
                     }
-                    ObjFaceVertexUVE faceVertex;
-                    if (!ResolveObjFaceVertexUVE(token, static_cast<std::uint32_t>(positions.size()),
+                    ObjFaceVertex faceVertex;
+                    if (!ResolveObjFaceVertex(token, static_cast<std::uint32_t>(positions.size()),
                                                  static_cast<std::uint32_t>(texcoords.size()),
                                                  static_cast<std::uint32_t>(normals.size()), faceVertex)) {
                         return false;
@@ -284,39 +284,39 @@ bool ConvertObjMeshUVE(const std::string_view source, MeshAssetUVE& outMesh,
                 }
 
                 for (std::size_t triangleIndex = 1U; triangleIndex + 1U < faceVertices.size(); ++triangleIndex) {
-                    const std::array<ObjFaceVertexUVE, 3> triangle{
+                    const std::array<ObjFaceVertex, 3> triangle{
                         faceVertices[0], faceVertices[triangleIndex], faceVertices[triangleIndex + 1U]};
-                    const Math::Vector3UVE firstPosition = positions[triangle[0].positionIndex];
-                    const Math::Vector3UVE secondPosition = positions[triangle[1].positionIndex];
-                    const Math::Vector3UVE thirdPosition = positions[triangle[2].positionIndex];
-                    const Math::Vector3UVE faceNormal =
-                        ComputeFaceNormalUVE(firstPosition, secondPosition, thirdPosition);
-                    if (Math::LengthSquaredUVE(faceNormal) <= kDegenerateTriangleEpsilonSquaredUVE ||
-                        candidate.vertices.size() > kMaximumObjMeshVerticesUVE - 3U) {
+                    const Math::Vector3 firstPosition = positions[triangle[0].positionIndex];
+                    const Math::Vector3 secondPosition = positions[triangle[1].positionIndex];
+                    const Math::Vector3 thirdPosition = positions[triangle[2].positionIndex];
+                    const Math::Vector3 faceNormal =
+                        ComputeFaceNormal(firstPosition, secondPosition, thirdPosition);
+                    if (Math::LengthSquared(faceNormal) <= kDegenerateTriangleEpsilonSquared ||
+                        candidate.vertices.size() > kMaximumObjMeshVertices - 3U) {
                         return false;
                     }
 
-                    const std::array<Math::Vector3UVE, 3> trianglePositions{
+                    const std::array<Math::Vector3, 3> trianglePositions{
                         firstPosition, secondPosition, thirdPosition};
                     // One run per material, opened at the first index of the triangle that uses it.
                     // A zero-length run cannot be emitted: the check happens before the three
                     // indices are appended, so every run owns at least one whole triangle.
-                    beginSurfaceRunUVE(candidate.indices.size());
+                    beginSurfaceRun(candidate.indices.size());
                     for (std::size_t corner = 0U; corner < triangle.size(); ++corner) {
-                        const ObjFaceVertexUVE& faceVertex = triangle[corner];
-                        MeshVertexUVE vertex;
+                        const ObjFaceVertex& faceVertex = triangle[corner];
+                        MeshVertex vertex;
                         vertex.position = trianglePositions[corner];
                         vertex.normal = faceVertex.normalIndex.has_value()
                                             ? normals[*faceVertex.normalIndex]
                                             : faceNormal;
                         if (faceVertex.texcoordIndex.has_value()) {
-                            const Math::Vector2UVE& texcoord = texcoords[*faceVertex.texcoordIndex];
+                            const Math::Vector2& texcoord = texcoords[*faceVertex.texcoordIndex];
                             vertex.u = texcoord.x;
                             vertex.v = texcoord.y;
                         }
                         candidate.vertices.push_back(vertex);
                         candidate.indices.push_back(static_cast<std::uint32_t>(candidate.vertices.size() - 1U));
-                        UpdateBoundsUVE(vertex.position, hasBounds, candidate.localBounds);
+                        UpdateBounds(vertex.position, hasBounds, candidate.localBounds);
                     }
                 }
             }
@@ -342,15 +342,15 @@ bool ConvertObjMeshUVE(const std::string_view source, MeshAssetUVE& outMesh,
         }
         outSurfaces->swap(surfaceRanges);
     }
-    if (!TryGenerateMeshTangentsUVE(candidate.vertices, candidate.indices)) {
+    if (!TryGenerateMeshTangents(candidate.vertices, candidate.indices)) {
         return false;
     }
-    if (!IsFiniteBoundsUVE(candidate.localBounds)) {
+    if (!IsFiniteBounds(candidate.localBounds)) {
         return false;
     }
-    for (const MeshVertexUVE& vertex : candidate.vertices) {
-        if (!Math::IsFiniteUVE(vertex.position) || !Math::IsFiniteUVE(vertex.normal) ||
-            !std::isfinite(vertex.u) || !std::isfinite(vertex.v) || !Math::IsFiniteUVE(vertex.tangent) ||
+    for (const MeshVertex& vertex : candidate.vertices) {
+        if (!Math::IsFinite(vertex.position) || !Math::IsFinite(vertex.normal) ||
+            !std::isfinite(vertex.u) || !std::isfinite(vertex.v) || !Math::IsFinite(vertex.tangent) ||
             !std::isfinite(vertex.tangentHandedness)) {
             return false;
         }

@@ -11,31 +11,31 @@
 
 namespace UVE::Physics {
 
-/// IRaycastSystemUVE is the spec's `RaycastSystemUVE` (Part 7.5). The point query routes known
+/// IRaycastSystem is the spec's `RaycastSystem` (Part 7.5). The point query routes known
 /// Box/Sphere/Capsule colliders through exact bounded target geometry: oriented-box slab tests,
 /// sphere quadratics, and finite capsule cylinder/cap tests. Unknown shape values retain the
 /// conservative cached-AABB fallback. Shape casts remain a separate continuous-sweep API. The
 /// interface is stateless and can later be replaced by a backend wrapper without call-site change.
-/// Thread-safety: implementations should be stateless (no members), matching CollisionSystemUVE's
-/// contract — every method only reads the IEntityManagerUVE passed in; RaycastUVE() performs no
-/// mutation, so concurrent read-only calls are safe as long as the passed-in IEntityManagerUVE's
+/// Thread-safety: implementations should be stateless (no members), matching CollisionSystem's
+/// contract — every method only reads the IEntityManager passed in; Raycast() performs no
+/// mutation, so concurrent read-only calls are safe as long as the passed-in IEntityManager's
 /// own concurrent-read guarantees hold (a pre-existing property, not something this interface
 /// changes).
-class IRaycastSystemUVE {
+class IRaycastSystem {
 public:
-    virtual ~IRaycastSystemUVE() = default;
+    virtual ~IRaycastSystem() = default;
 
     /// Returns the closest hit within `[0, query.maxDistance]`, or std::nullopt if nothing was
-    /// hit. Only entities with both WorldTransformComponentUVE and ColliderComponentUVE are
+    /// hit. Only entities with both WorldTransformComponent and ColliderComponent are
     /// considered; `query.ignoreEntity` and every entity in `query.excludedEntities` are excluded
     /// outright (before the mask, so no layer can bring one back), `query.layerMask` filters via
     /// `(collider.collisionLayer & layerMask) != 0`. Ties (multiple entities at exactly the same
-    /// distance) are broken deterministically: whichever entity ForEachUVE's own deterministic
+    /// distance) are broken deterministically: whichever entity ForEach's own deterministic
     /// chunk-order iteration encounters first wins — the same same-platform/same-build/
-    /// same-input-sequence determinism scope PhysicsSystemUVE (Increment 15) already documents,
+    /// same-input-sequence determinism scope PhysicsSystem (Increment 15) already documents,
     /// made an explicit contract here rather than an accidental byproduct.
-    [[nodiscard]] virtual std::optional<RaycastHitUVE> RaycastUVE(Scene::IEntityManagerUVE& entityManager,
-                                                                    const RaycastQueryUVE& query) const = 0;
+    [[nodiscard]] virtual std::optional<RaycastHit> Raycast(Scene::IEntityManager& entityManager,
+                                                                    const RaycastQuery& query) const = 0;
 };
 
 } // namespace UVE::Physics

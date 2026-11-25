@@ -20,7 +20,7 @@ struct ANativeWindow;
 namespace UVE::Window {
 
 /// One live finger contact on the Android surface, in physical surface pixels.
-struct AndroidTouchContactUVE final {
+struct AndroidTouchContact final {
     std::int32_t id = -1;
     float x = 0.0F;
     float y = 0.0F;
@@ -28,62 +28,62 @@ struct AndroidTouchContactUVE final {
 };
 
 /// The one GLFW window, standing for the activity's surface.
-[[nodiscard]] GLFWwindow* AndroidGlfwWindowUVE();
+[[nodiscard]] GLFWwindow* AndroidGlfwWindow();
 /// Binds the active Android activity so GLFW clipboard calls talk to Android's ClipboardManager.
-void SetAndroidGlfwActivityUVE(ANativeActivity* activity);
+void SetAndroidGlfwActivity(ANativeActivity* activity);
 /// The surface the window draws to (null while the activity has none).
-void SetAndroidGlfwSurfaceUVE(ANativeWindow* surface);
-void SetAndroidGlfwFocusUVE(bool focused);
+void SetAndroidGlfwSurface(ANativeWindow* surface);
+void SetAndroidGlfwFocus(bool focused);
 /// Screen density relative to the 160 dpi baseline, reported as the window's content scale.
-void SetAndroidGlfwContentScaleUVE(float scale);
+void SetAndroidGlfwContentScale(float scale);
 
-enum class AndroidPointerPhaseUVE { Down, Move, Up, Cancel };
+enum class AndroidPointerPhase { Down, Move, Up, Cancel };
 /// A touch of the primary finger, in surface pixels.
-void DispatchAndroidGlfwPointerUVE(AndroidPointerPhaseUVE phase, float x, float y);
+void DispatchAndroidGlfwPointer(AndroidPointerPhase phase, float x, float y);
 /// The pointer moved to (x, y), in surface pixels, with no button change (gestures).
-void DispatchAndroidGlfwCursorUVE(float x, float y);
+void DispatchAndroidGlfwCursor(float x, float y);
 /// A mouse button (GLFW_MOUSE_BUTTON_*) pressed or released at (x, y): what touch gestures stand for.
-void DispatchAndroidGlfwMouseButtonUVE(int button, bool down, float x, float y);
+void DispatchAndroidGlfwMouseButton(int button, bool down, float x, float y);
 /// A scroll of the mouse wheel by `dy` notches (a pinch), and `dx` sideways (a mouse's horizontal wheel).
-void DispatchAndroidGlfwScrollUVE(float dy, float dx = 0.0F);
+void DispatchAndroidGlfwScroll(float dy, float dx = 0.0F);
 /// Text the soft keyboard typed (UTF-32 code point).
-void DispatchAndroidGlfwCharUVE(unsigned int codepoint);
+void DispatchAndroidGlfwChar(unsigned int codepoint);
 /// A key from the soft keyboard or a hardware keyboard, as a GLFW key code.
-void DispatchAndroidGlfwKeyUVE(int glfwKey, int action, int mods);
+void DispatchAndroidGlfwKey(int glfwKey, int action, int mods);
 
 /// Modifiers (GLFW_MOD_*) every key and mouse-button event carries: the ones held on a hardware
 /// keyboard, set from each input event's meta state, OR the sticky ones latched by the on-screen
 /// Controls panel (Ctrl/Shift/Alt for touch).
-void SetAndroidGlfwHeldModsUVE(int glfwMods);
-void SetAndroidGlfwStickyModsUVE(int glfwMods);
-[[nodiscard]] int AndroidGlfwStickyModsUVE();
+void SetAndroidGlfwHeldMods(int glfwMods);
+void SetAndroidGlfwStickyMods(int glfwMods);
+[[nodiscard]] int AndroidGlfwStickyMods();
 
 /// True while a hardware mouse or external keyboard is connected or actively used on Android.
-void SetAndroidGlfwHardwareInputUVE(bool active);
-[[nodiscard]] bool AndroidGlfwHasHardwareInputUVE();
+void SetAndroidGlfwHardwareInput(bool active);
+[[nodiscard]] bool AndroidGlfwHasHardwareInput();
 
 /// Multi-touch contact stream for the on-screen Android viewport touch controller.
-void SetAndroidGlfwTouchContactsUVE(std::vector<AndroidTouchContactUVE> contacts);
-[[nodiscard]] std::vector<AndroidTouchContactUVE> AndroidGlfwTouchContactsUVE();
+void SetAndroidGlfwTouchContacts(std::vector<AndroidTouchContact> contacts);
+[[nodiscard]] std::vector<AndroidTouchContact> AndroidGlfwTouchContacts();
 /// Registers a hit-test callback (in physical surface pixels) that returns true when a finger
 /// landing at (x, y) belongs to the on-screen viewport touch controller.
-void SetAndroidGlfwTouchClaimHookUVE(std::function<bool(float x, float y)> hook);
-[[nodiscard]] bool AndroidGlfwClaimTouchAtUVE(float x, float y);
+void SetAndroidGlfwTouchClaimHook(std::function<bool(float x, float y)> hook);
+[[nodiscard]] bool AndroidGlfwClaimTouchAt(float x, float y);
 
 /// Storage permission and public external directory queries routed through the bound activity.
-[[nodiscard]] bool AndroidGlfwHasAllFilesAccessUVE();
-void RequestAndroidGlfwAllFilesAccessUVE();
-[[nodiscard]] AndroidStoragePathsUVE ReadAndroidGlfwStoragePathsUVE();
-[[nodiscard]] AndroidSafeAreaUVE ReadAndroidGlfwSafeAreaUVE();
+[[nodiscard]] bool AndroidGlfwHasAllFilesAccess();
+void RequestAndroidGlfwAllFilesAccess();
+[[nodiscard]] AndroidStoragePaths ReadAndroidGlfwStoragePaths();
+[[nodiscard]] AndroidSafeArea ReadAndroidGlfwSafeArea();
 
 /// The interface wants typed text (a text field has focus): the app shows the soft keyboard.
-void SetAndroidGlfwTextInputUVE(bool wanted);
-[[nodiscard]] bool AndroidGlfwTextInputWantedUVE();
+void SetAndroidGlfwTextInput(bool wanted);
+[[nodiscard]] bool AndroidGlfwTextInputWanted();
 
 /// True once something called glfwSetWindowShouldClose on the window.
-[[nodiscard]] bool AndroidGlfwCloseRequestedUVE();
+[[nodiscard]] bool AndroidGlfwCloseRequested();
 /// Starts the window afresh for an app taking over the activity (the editor opened a second time
 /// from the Hub): no close request, no held buttons, no text input.
-void ResetAndroidGlfwWindowUVE();
+void ResetAndroidGlfwWindow();
 
 } // namespace UVE::Window

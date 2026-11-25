@@ -7,10 +7,10 @@
 namespace UVE::Asset {
 
 /// Registers the FBX source importer. It reads the caller-owned path, converts it through
-/// ConvertFbxMeshUVE and publishes one validated MeshAssetUVE as a .uvmodel destination, leaving
-/// AssetImporterUVE responsible for database registration. It owns no materials, textures,
+/// ConvertFbxMesh and publishes one validated MeshAsset as a .uvmodel destination, leaving
+/// AssetImporter responsible for database registration. It owns no materials, textures,
 /// separate skeleton or animation assets, VFS mounts, GPU resources or background work (a skinned
 /// mesh keeps its skin inside the .uvmodel).
-void RegisterFbxImporterUVE(IAssetImporterUVE& importer);
+void RegisterFbxImporter(IAssetImporter& importer);
 
 } // namespace UVE::Asset

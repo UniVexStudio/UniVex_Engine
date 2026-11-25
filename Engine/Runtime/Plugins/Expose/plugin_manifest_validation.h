@@ -10,33 +10,33 @@
 
 namespace UVE::Plugins {
 
-inline constexpr std::size_t kNativePluginManifestMaximumIdentifierBytesUVE = 128U;
-inline constexpr std::size_t kNativePluginManifestMaximumDisplayNameBytesUVE = 256U;
-inline constexpr std::size_t kNativePluginCapabilityPolicyMaximumEntriesUVE = 64U;
+inline constexpr std::size_t kNativePluginManifestMaximumIdentifierBytes = 128U;
+inline constexpr std::size_t kNativePluginManifestMaximumDisplayNameBytes = 256U;
+inline constexpr std::size_t kNativePluginCapabilityPolicyMaximumEntries = 64U;
 
-struct NativePluginCapabilityPolicyUVE final {
+struct NativePluginCapabilityPolicy final {
     bool allowAllCapabilities = true;
     std::vector<std::string> allowedCapabilityIds;
 };
 
-enum class NativePluginAbiNegotiationCodeUVE : std::uint8_t {
+enum class NativePluginAbiNegotiationCode : std::uint8_t {
     Compatible = 0,
     InvalidEngineProtocol,
     UnsupportedPluginProtocol,
 };
 
-struct NativePluginAbiNegotiationResultUVE final {
-    NativePluginAbiNegotiationCodeUVE code = NativePluginAbiNegotiationCodeUVE::InvalidEngineProtocol;
+struct NativePluginAbiNegotiationResult final {
+    NativePluginAbiNegotiationCode code = NativePluginAbiNegotiationCode::InvalidEngineProtocol;
     std::uint32_t engineProtocol = 0U;
     std::uint32_t pluginProtocol = 0U;
     std::string message;
 
-    [[nodiscard]] bool IsCompatibleUVE() const noexcept {
-        return code == NativePluginAbiNegotiationCodeUVE::Compatible;
+    [[nodiscard]] bool IsCompatible() const noexcept {
+        return code == NativePluginAbiNegotiationCode::Compatible;
     }
 };
 
-enum class NativePluginManifestValidationCodeUVE : std::uint8_t {
+enum class NativePluginManifestValidationCode : std::uint8_t {
     InvalidPluginId = 0,
     EmptyDisplayName,
     DisplayNameTooLong,
@@ -49,29 +49,29 @@ enum class NativePluginManifestValidationCodeUVE : std::uint8_t {
     CapabilityNotAllowed,
 };
 
-struct NativePluginManifestDiagnosticUVE final {
-    NativePluginManifestValidationCodeUVE code = NativePluginManifestValidationCodeUVE::InvalidPluginId;
+struct NativePluginManifestDiagnostic final {
+    NativePluginManifestValidationCode code = NativePluginManifestValidationCode::InvalidPluginId;
     std::size_t capabilityIndex = 0U;
     std::string message;
 };
 
-struct NativePluginManifestValidationResultUVE final {
-    std::vector<NativePluginManifestDiagnosticUVE> diagnostics;
+struct NativePluginManifestValidationResult final {
+    std::vector<NativePluginManifestDiagnostic> diagnostics;
 
-    [[nodiscard]] bool IsValidUVE() const noexcept {
+    [[nodiscard]] bool IsValid() const noexcept {
         return diagnostics.empty();
     }
 };
 
-[[nodiscard]] NativePluginAbiNegotiationResultUVE NegotiateNativePluginAbiUVE(
-    const NativePluginManifestUVE& manifest,
-    std::uint32_t engineProtocol = kNativePluginProtocolVersionUVE);
+[[nodiscard]] NativePluginAbiNegotiationResult NegotiateNativePluginAbi(
+    const NativePluginManifest& manifest,
+    std::uint32_t engineProtocol = kNativePluginProtocolVersion);
 
-[[nodiscard]] NativePluginManifestValidationResultUVE ValidateNativePluginManifestUVE(
-    const NativePluginManifestUVE& manifest);
+[[nodiscard]] NativePluginManifestValidationResult ValidateNativePluginManifest(
+    const NativePluginManifest& manifest);
 
-[[nodiscard]] NativePluginManifestValidationResultUVE ValidateNativePluginManifestUVE(
-    const NativePluginManifestUVE& manifest,
-    const NativePluginCapabilityPolicyUVE& policy);
+[[nodiscard]] NativePluginManifestValidationResult ValidateNativePluginManifest(
+    const NativePluginManifest& manifest,
+    const NativePluginCapabilityPolicy& policy);
 
 } // namespace UVE::Plugins

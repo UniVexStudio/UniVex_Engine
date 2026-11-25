@@ -16,17 +16,17 @@
 
 namespace UVE::Core {
 
-/// A narrow Core-owned control seam, deliberately separate from ISimulationControlUVE (which by its
+/// A narrow Core-owned control seam, deliberately separate from ISimulationControl (which by its
 /// own contract must not expose renderer implementation details to editor code): the one thing an
 /// embedding editor needs to tell Core about its own presentation layout - the pixel sub-rect of
 /// the window its 3D viewport panel actually occupies, so Core's render target sizing, projection
 /// aspect ratio, and on-screen placement all track that panel rather than the full window. See
-/// EngineCoreUVE::SetEditorViewportRegionUVE()'s own doc comment for the full contract.
-class IEditorViewportHostUVE {
+/// EngineCore::SetEditorViewportRegion()'s own doc comment for the full contract.
+class IEditorViewportHost {
 public:
-    virtual ~IEditorViewportHostUVE() = default;
+    virtual ~IEditorViewportHost() = default;
 
-    virtual void SetEditorViewportRegionUVE(std::optional<Render::ViewportRectUVE> region) noexcept = 0;
+    virtual void SetEditorViewportRegion(std::optional<Render::ViewportRect> region) noexcept = 0;
 };
 
 } // namespace UVE::Core

@@ -9,28 +9,28 @@
 
 namespace UVE::Utilities {
 
-/// TimerUVE is the concrete, engine-standard implementation of ITimerUVE,
+/// Timer is the concrete, engine-standard implementation of ITimer,
 /// wrapping std::chrono::steady_clock. Delta time and total time are stored
 /// internally as double: a float total would lose meaningful precision
 /// over a long-running session, while a float delta is fine for per-frame
-/// use (see GetDeltaTimeFloatUVE).
+/// use (see GetDeltaTimeFloat).
 /// Thread-safety: not thread-safe. Owned and ticked exclusively by the
-/// frame-pipeline thread (EngineCoreUVE's main loop); no internal
+/// frame-pipeline thread (EngineCore's main loop); no internal
 /// synchronization is provided.
-class TimerUVE final : public ITimerUVE {
+class Timer final : public ITimer {
 public:
-    TimerUVE();
+    Timer();
 
     void Tick() override;
-    [[nodiscard]] double GetDeltaTimeUVE() const override;
-    [[nodiscard]] float GetDeltaTimeFloatUVE() const override;
-    [[nodiscard]] double GetTotalTimeUVE() const override;
+    [[nodiscard]] double GetDeltaTime() const override;
+    [[nodiscard]] float GetDeltaTimeFloat() const override;
+    [[nodiscard]] double GetTotalTime() const override;
     void Reset() override;
-    void SetMaxDeltaTimeUVE(double maxDeltaSeconds) override;
-    void SetFixedTimestepUVE(double fixedDeltaSeconds) override;
-    void SetMaxStepsPerTickUVE(int maxSteps) override;
-    FixedStepResultUVE AdvanceFixedStepUVE() override;
-    void DiscardFixedStepAccumulatorUVE() noexcept override;
+    void SetMaxDeltaTime(double maxDeltaSeconds) override;
+    void SetFixedTimestep(double fixedDeltaSeconds) override;
+    void SetMaxStepsPerTick(int maxSteps) override;
+    FixedStepResult AdvanceFixedStep() override;
+    void DiscardFixedStepAccumulator() noexcept override;
 
 private:
     std::chrono::steady_clock::time_point m_lastTickTime;
@@ -41,8 +41,8 @@ private:
     double m_fixedDeltaTime = 1.0 / 60.0;
     double m_accumulator = 0.0;
 
-    /// Cap on stepsToRun returned by a single AdvanceFixedStepUVE() call
-    /// (SetMaxStepsPerTickUVE). A second, independent spiral-of-death guard
+    /// Cap on stepsToRun returned by a single AdvanceFixedStep() call
+    /// (SetMaxStepsPerTick). A second, independent spiral-of-death guard
     /// beyond the per-Tick() delta clamp: even with a clamped delta, a
     /// sustained run of low frame rates could otherwise let the accumulator
     /// grow forever if steps consistently take longer to run than they

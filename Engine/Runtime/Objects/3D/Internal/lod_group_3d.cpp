@@ -15,20 +15,20 @@ namespace {
 /// The hysteresis to actually resolve with. A non-finite or negative value is a configuration
 /// mistake: it resolves as no band at all, which is the behaviour that was there before the field,
 /// rather than an arbitrary band nobody asked for.
-[[nodiscard]] float EffectiveHysteresisUVE(const float declared) noexcept {
+[[nodiscard]] float EffectiveHysteresis(const float declared) noexcept {
     if (!std::isfinite(declared) || declared <= 0.0F) {
         return 0.0F;
     }
-    return std::min(declared, kMaximumLodHysteresisUVE);
+    return std::min(declared, kMaximumLodHysteresis);
 }
 
 } // namespace
 
-bool IsLodGroup3DObjectComponentValidUVE(const LodGroup3DComponentUVE& value) noexcept {
-    if (value.levelCount == 0U || value.levelCount > kMaximumLodLevelsUVE || value.currentLevel >= value.levelCount) {
+bool IsLodGroup3DObjectComponentValid(const LodGroup3DComponent& value) noexcept {
+    if (value.levelCount == 0U || value.levelCount > kMaximumLodLevels || value.currentLevel >= value.levelCount) {
         return false;
     }
-    if (!std::isfinite(value.hysteresis) || value.hysteresis < 0.0F || value.hysteresis > kMaximumLodHysteresisUVE) {
+    if (!std::isfinite(value.hysteresis) || value.hysteresis < 0.0F || value.hysteresis > kMaximumLodHysteresis) {
         return false;
     }
     for (std::size_t index = 0U; index < value.levelCount; ++index) {
@@ -40,25 +40,25 @@ bool IsLodGroup3DObjectComponentValidUVE(const LodGroup3DComponentUVE& value) no
     return true;
 }
 
-void ApplyLodGroup3DObjectDefinitionUVE(IEntityManagerUVE& entityManager, const EntityUVE entity,
-                                        const LodGroup3DObjectDefinitionUVE& value) {
-    ApplyObject3DRecipeUVE(entityManager, entity, LodGroup3DObjectDefinitionUVE::defaultName);
-    if (entityManager.IsAliveUVE(entity) && !entityManager.HasComponentUVE<LodGroup3DComponentUVE>(entity)) {
-        entityManager.AddComponentUVE<LodGroup3DComponentUVE>(entity, value.lod);
+void ApplyLodGroup3DObjectDefinition(IEntityManager& entityManager, const Entity entity,
+                                        const LodGroup3DObjectDefinition& value) {
+    ApplyObject3DRecipe(entityManager, entity, LodGroup3DObjectDefinition::defaultName);
+    if (entityManager.IsAlive(entity) && !entityManager.HasComponent<LodGroup3DComponent>(entity)) {
+        entityManager.AddComponent<LodGroup3DComponent>(entity, value.lod);
     }
 }
 
-void ResolveLodGroup3DLevelUVE(LodGroup3DComponentUVE& value, const float distanceToCamera) noexcept {
+void ResolveLodGroup3DLevel(LodGroup3DComponent& value, const float distanceToCamera) noexcept {
     // Every degenerate case resolves to "draw at full detail". A configuration mistake should be
     // visible so it gets fixed, not silently hide geometry and look like a missing asset.
-    if (!value.enabled || value.levelCount == 0U || value.levelCount > kMaximumLodLevelsUVE ||
+    if (!value.enabled || value.levelCount == 0U || value.levelCount > kMaximumLodLevels ||
         value.currentLevel >= value.levelCount || !std::isfinite(distanceToCamera)) {
         value.currentLevel = 0U;
         value.culledByDistance = false;
         return;
     }
 
-    const float hysteresis = EffectiveHysteresisUVE(value.hysteresis);
+    const float hysteresis = EffectiveHysteresis(value.hysteresis);
 
     // No band: the level a distance maps to, full stop. This is the stateless scan the renderer
     // always used, kept as its own path rather than folded into the walk below, so an object that
@@ -124,15 +124,15 @@ void ResolveLodGroup3DLevelUVE(LodGroup3DComponentUVE& value, const float distan
     value.culledByDistance = level == lastLevel && distanceToCamera > lastThreshold * (1.0F + hysteresis);
 }
 
-Asset::AssetGuidUVE ResolveLodGroup3DMeshGuidUVE(const LodGroup3DComponentUVE& value,
-                                                 const Asset::AssetGuidUVE& baseMeshGuid) noexcept {
+Asset::AssetGuid ResolveLodGroup3DMeshGuid(const LodGroup3DComponent& value,
+                                                 const Asset::AssetGuid& baseMeshGuid) noexcept {
     // A level outside the chain cannot be read from, and a group with no levels has nothing to say:
     // both fall back to the entity's own mesh rather than to a stale or out-of-range slot.
-    if (value.levelCount == 0U || value.levelCount > kMaximumLodLevelsUVE || value.currentLevel >= value.levelCount) {
+    if (value.levelCount == 0U || value.levelCount > kMaximumLodLevels || value.currentLevel >= value.levelCount) {
         return baseMeshGuid;
     }
-    const Asset::AssetGuidUVE& levelMesh = value.lodMeshGuids[value.currentLevel];
-    return levelMesh == Asset::kInvalidAssetGuidUVE ? baseMeshGuid : levelMesh;
+    const Asset::AssetGuid& levelMesh = value.lodMeshGuids[value.currentLevel];
+    return levelMesh == Asset::kInvalidAssetGuid ? baseMeshGuid : levelMesh;
 }
 
 } // namespace UVE::Scene

@@ -16,7 +16,7 @@
 
 namespace UVE::Asset::Detail {
 
-bool EnsureBasisUniversalInitializedUVE() noexcept {
+bool EnsureBasisUniversalInitialized() noexcept {
     static std::once_flag initializationFlag;
     static bool initialized = false;
 

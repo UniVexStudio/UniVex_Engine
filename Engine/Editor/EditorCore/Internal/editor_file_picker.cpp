@@ -19,13 +19,13 @@
 namespace UVE::Editor {
 namespace {
 
-[[nodiscard]] std::string LowerUVE(std::string text) {
+[[nodiscard]] std::string Lower(std::string text) {
     std::ranges::transform(text, text.begin(), [](const unsigned char c) { return static_cast<char>(std::tolower(c)); });
     return text;
 }
 
 /// The save target for the picker's name, or nullopt with the picker's status explaining why.
-[[nodiscard]] std::optional<std::filesystem::path> SaveTargetUVE(FilePickerStateUVE& picker,
+[[nodiscard]] std::optional<std::filesystem::path> SaveTarget(FilePickerState& picker,
                                                                  const std::filesystem::path& contentRoot) {
     if (picker.saveName.empty() || picker.saveName.find('/') != std::string::npos ||
         picker.saveName.find('\\') != std::string::npos) {
@@ -41,22 +41,22 @@ namespace {
     const std::filesystem::path directory = contentRoot / picker.directory;
     std::error_code error;
     std::filesystem::create_directories(directory, error);
-    return EditorUVE::MakeUniqueContentPathUVE(directory, picker.saveName, picker.request.extensions.front());
+    return Editor::MakeUniqueContentPath(directory, picker.saveName, picker.request.extensions.front());
 }
 
 } // namespace
 
-FilePickerListingUVE EditorUVE::BuildFilePickerListingUVE(const std::vector<Asset::ProjectFileEntryUVE>& entries,
+FilePickerListing Editor::BuildFilePickerListing(const std::vector<Asset::ProjectFileEntry>& entries,
                                                            const std::filesystem::path& directory,
                                                            const std::vector<std::string>& extensions,
                                                            std::string_view search) {
-    FilePickerListingUVE listing;
-    const std::string needle = LowerUVE(std::string{search});
-    for (const Asset::ProjectFileEntryUVE& entry : entries) {
+    FilePickerListing listing;
+    const std::string needle = Lower(std::string{search});
+    for (const Asset::ProjectFileEntry& entry : entries) {
         if (entry.relativePath.parent_path() != directory) {
             continue;
         }
-        if (entry.kind == Asset::ProjectFileEntryKindUVE::Directory) {
+        if (entry.kind == Asset::ProjectFileEntryKind::Directory) {
             listing.folders.push_back(entry.relativePath);
             continue;
         }
@@ -68,7 +68,7 @@ FilePickerListingUVE EditorUVE::BuildFilePickerListingUVE(const std::vector<Asse
         if (!kindMatches) {
             continue;
         }
-        if (!needle.empty() && LowerUVE(entry.relativePath.stem().string()).find(needle) == std::string::npos) {
+        if (!needle.empty() && Lower(entry.relativePath.stem().string()).find(needle) == std::string::npos) {
             continue;
         }
         listing.files.push_back(entry.relativePath);
@@ -81,19 +81,19 @@ FilePickerListingUVE EditorUVE::BuildFilePickerListingUVE(const std::vector<Asse
     return listing;
 }
 
-void EditorUVE::OpenFilePickerUVE(FilePickerRequestUVE request) {
+void Editor::OpenFilePicker(FilePickerRequest request) {
     if (m_filePickerHost) {
         // A pick made for the open entity lands on the entity, whatever is active when it fires.
         if (m_entityDocumentActive && request.onPick) {
             request.onPick = [this, pick = std::move(request.onPick)](const std::filesystem::path& chosen) {
-                const EntityDocumentScopeUVE scope(*this);
+                const EntityDocumentScope scope(*this);
                 pick(chosen);
             };
         }
         if (m_entityDocumentActive && request.onPickMany) {
             request.onPickMany = [this, pickMany = std::move(request.onPickMany)](
                                      const std::vector<std::filesystem::path>& chosen) {
-                const EntityDocumentScopeUVE scope(*this);
+                const EntityDocumentScope scope(*this);
                 pickMany(chosen);
             };
         }
@@ -101,14 +101,14 @@ void EditorUVE::OpenFilePickerUVE(FilePickerRequestUVE request) {
         return;
     }
     // One picker: opening another replaces the pending one, and the replaced onPick never fires.
-    FilePickerStateUVE picker;
+    FilePickerState picker;
     picker.request = std::move(request);
     picker.directory = picker.request.startDirectory;
     picker.saveName = picker.request.saveName;
     m_filePicker = std::move(picker);
 }
 
-void EditorUVE::CloseFilePickerUVE() {
+void Editor::CloseFilePicker() {
     m_filePicker.reset();
 }
 

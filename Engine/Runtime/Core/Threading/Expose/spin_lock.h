@@ -6,7 +6,7 @@
 
 namespace UVE::Threading {
 
-/// `SpinLockUVE` is a test-and-set spinlock for critical sections measured in nanoseconds: a
+/// `SpinLock` is a test-and-set spinlock for critical sections measured in nanoseconds: a
 /// flag flip, a counter bump, a pointer swing. It never sleeps, so holding it across anything
 /// that blocks (allocation, I/O, another lock) burns a core for the duration — that is the
 /// documented misuse, and anything longer wants `std::mutex`.
@@ -16,14 +16,14 @@ namespace UVE::Threading {
 /// cannot be guarded is a bug farm. Same rationale as the containers' lowercase `begin`/`end`.
 ///
 /// Not recursive: locking twice from the same thread deadlocks. Copy/move deleted — a lock has
-/// identity (its address is what threads agree on), like `JobCounterUVE`.
-class SpinLockUVE final {
+/// identity (its address is what threads agree on), like `JobCounter`.
+class SpinLock final {
 public:
-    SpinLockUVE() = default;
-    SpinLockUVE(const SpinLockUVE&) = delete;
-    SpinLockUVE& operator=(const SpinLockUVE&) = delete;
-    SpinLockUVE(SpinLockUVE&&) = delete;
-    SpinLockUVE& operator=(SpinLockUVE&&) = delete;
+    SpinLock() = default;
+    SpinLock(const SpinLock&) = delete;
+    SpinLock& operator=(const SpinLock&) = delete;
+    SpinLock(SpinLock&&) = delete;
+    SpinLock& operator=(SpinLock&&) = delete;
 
     void lock() noexcept {
         while (m_flag.test_and_set(std::memory_order_acquire)) {

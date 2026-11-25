@@ -11,7 +11,7 @@
 
 namespace UVE::Scene {
 
-enum class AreaSpaceOverrideModeUVE : std::uint8_t {
+enum class AreaSpaceOverrideMode : std::uint8_t {
     Disabled = 0,
     Combine = 1,
     CombineReplace = 2,
@@ -19,63 +19,63 @@ enum class AreaSpaceOverrideModeUVE : std::uint8_t {
     ReplaceCombine = 4,
 };
 
-inline constexpr std::size_t kMaximumArea3DOverlapsUVE = 32U;
-inline constexpr float kDefaultAreaGravityMagnitudeUVE = 9.81F;
+inline constexpr std::size_t kMaximumArea3DOverlaps = 32U;
+inline constexpr float kDefaultAreaGravityMagnitude = 9.81F;
 
-struct AreaComponentUVE final {
-    Math::Vector3UVE halfExtents{0.5F, 0.5F, 0.5F};
+struct AreaComponent final {
+    Math::Vector3 halfExtents{0.5F, 0.5F, 0.5F};
     std::uint32_t collisionLayer = 1;
     std::uint32_t collisionMask = 0xFFFFFFFFU;
     bool monitoring = true;
     bool monitorable = true;
 
-    AreaSpaceOverrideModeUVE gravityOverride = AreaSpaceOverrideModeUVE::Disabled;
-    Math::Vector3UVE gravityDirection{0.0F, -1.0F, 0.0F};
-    float gravityMagnitude = kDefaultAreaGravityMagnitudeUVE;
+    AreaSpaceOverrideMode gravityOverride = AreaSpaceOverrideMode::Disabled;
+    Math::Vector3 gravityDirection{0.0F, -1.0F, 0.0F};
+    float gravityMagnitude = kDefaultAreaGravityMagnitude;
     bool gravityPoint = false;
-    Math::Vector3UVE gravityPointOffset{};
+    Math::Vector3 gravityPointOffset{};
     float gravityPointUnitDistance = 0.0F;
-    AreaSpaceOverrideModeUVE linearDampOverride = AreaSpaceOverrideModeUVE::Disabled;
+    AreaSpaceOverrideMode linearDampOverride = AreaSpaceOverrideMode::Disabled;
     float linearDamp = 0.1F;
-    AreaSpaceOverrideModeUVE angularDampOverride = AreaSpaceOverrideModeUVE::Disabled;
+    AreaSpaceOverrideMode angularDampOverride = AreaSpaceOverrideMode::Disabled;
     float angularDamp = 0.1F;
     std::int32_t priority = 0;
 
-    std::array<EntityUVE, kMaximumArea3DOverlapsUVE> overlappingBodies{};
+    std::array<Entity, kMaximumArea3DOverlaps> overlappingBodies{};
     std::uint8_t overlappingBodyCount = 0U;
     bool overlappingBodiesTruncated = false;
-    std::array<EntityUVE, kMaximumArea3DOverlapsUVE> overlappingAreas{};
+    std::array<Entity, kMaximumArea3DOverlaps> overlappingAreas{};
     std::uint8_t overlappingAreaCount = 0U;
     bool overlappingAreasTruncated = false;
 };
 
-[[nodiscard]] bool IsAreaSpaceOverrideModeValidUVE(AreaSpaceOverrideModeUVE mode) noexcept;
+[[nodiscard]] bool IsAreaSpaceOverrideModeValid(AreaSpaceOverrideMode mode) noexcept;
 
-[[nodiscard]] inline bool HasAreaSpaceOverrideUVE(const AreaComponentUVE& area) noexcept {
-    return area.gravityOverride != AreaSpaceOverrideModeUVE::Disabled ||
-           area.linearDampOverride != AreaSpaceOverrideModeUVE::Disabled ||
-           area.angularDampOverride != AreaSpaceOverrideModeUVE::Disabled;
+[[nodiscard]] inline bool HasAreaSpaceOverride(const AreaComponent& area) noexcept {
+    return area.gravityOverride != AreaSpaceOverrideMode::Disabled ||
+           area.linearDampOverride != AreaSpaceOverrideMode::Disabled ||
+           area.angularDampOverride != AreaSpaceOverrideMode::Disabled;
 }
 
-[[nodiscard]] bool IsAreaComponentValidUVE(const AreaComponentUVE& area) noexcept;
+[[nodiscard]] bool IsAreaComponentValid(const AreaComponent& area) noexcept;
 
 /// Sanitizes `area` so `halfExtents`, collision layers, space-override modes, gravity, and damping fields are valid.
-[[nodiscard]] AreaComponentUVE SanitizeAreaComponentUVE(const AreaComponentUVE& area) noexcept;
+[[nodiscard]] AreaComponent SanitizeAreaComponent(const AreaComponent& area) noexcept;
 
 /// True when `entity` is currently in `area.overlappingBodies` (`[0, overlappingBodyCount)`).
-[[nodiscard]] bool ContainsAreaOverlappingBodyUVE(const AreaComponentUVE& area,
-                                                  EntityUVE entity) noexcept;
+[[nodiscard]] bool ContainsAreaOverlappingBody(const AreaComponent& area,
+                                                  Entity entity) noexcept;
 
 /// True when `entity` is currently in `area.overlappingAreas` (`[0, overlappingAreaCount)`).
-[[nodiscard]] bool ContainsAreaOverlappingAreaUVE(const AreaComponentUVE& area,
-                                                  EntityUVE entity) noexcept;
+[[nodiscard]] bool ContainsAreaOverlappingArea(const AreaComponent& area,
+                                                  Entity entity) noexcept;
 
 /// Evaluates the local gravity acceleration vector at `bodyWorldPosition` relative to `areaWorldPosition`.
-[[nodiscard]] Math::Vector3UVE EvaluateAreaGravityVectorUVE(
-    const AreaComponentUVE& area, const Math::Vector3UVE& areaWorldPosition,
-    const Math::Vector3UVE& bodyWorldPosition) noexcept;
+[[nodiscard]] Math::Vector3 EvaluateAreaGravityVector(
+    const AreaComponent& area, const Math::Vector3& areaWorldPosition,
+    const Math::Vector3& bodyWorldPosition) noexcept;
 
 /// Clears runtime overlap buffers (`overlappingBodyCount`, `overlappingAreaCount`, and truncation flags).
-void ClearAreaRuntimeOverlapsUVE(AreaComponentUVE& area) noexcept;
+void ClearAreaRuntimeOverlaps(AreaComponent& area) noexcept;
 
 } // namespace UVE::Scene

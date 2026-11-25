@@ -12,23 +12,23 @@
 
 namespace UVE::Threading {
 
-JobGraphObjectHandleUVE JobGraphUVE::AddJobUVE(JobUVE job) {
+JobGraphObjectHandle JobGraph::AddJob(Job job) {
     if (m_executed) {
-        UVE_ERROR("JobGraphUVE: AddJobUVE() called after ExecuteUVE() - ignored");
-        return kInvalidJobGraphObjectHandleUVE;
+        UVE_ERROR("JobGraph: AddJob() called after Execute() - ignored");
+        return kInvalidJobGraphObjectHandle;
     }
-    const auto handle = static_cast<JobGraphObjectHandleUVE>(m_objects.size());
-    auto object = std::make_unique<ObjectUVE>();
+    const auto handle = static_cast<JobGraphObjectHandle>(m_objects.size());
+    auto object = std::make_unique<Object>();
     object->job = std::move(job);
     m_objects.push_back(std::move(object));
     return handle;
 }
 
-bool JobGraphUVE::CanReachUVE(const JobGraphObjectHandleUVE from, const JobGraphObjectHandleUVE to) const {
-    std::unordered_set<JobGraphObjectHandleUVE> visited;
-    std::deque<JobGraphObjectHandleUVE> frontier{from};
+bool JobGraph::CanReach(const JobGraphObjectHandle from, const JobGraphObjectHandle to) const {
+    std::unordered_set<JobGraphObjectHandle> visited;
+    std::deque<JobGraphObjectHandle> frontier{from};
     while (!frontier.empty()) {
-        const JobGraphObjectHandleUVE current = frontier.front();
+        const JobGraphObjectHandle current = frontier.front();
         frontier.pop_front();
         if (current == to) {
             return true;
@@ -36,35 +36,35 @@ bool JobGraphUVE::CanReachUVE(const JobGraphObjectHandleUVE from, const JobGraph
         if (!visited.insert(current).second) {
             continue;
         }
-        for (const JobGraphObjectHandleUVE successor : m_objects[current]->successors) {
+        for (const JobGraphObjectHandle successor : m_objects[current]->successors) {
             frontier.push_back(successor);
         }
     }
     return false;
 }
 
-bool JobGraphUVE::AddDependencyUVE(const JobGraphObjectHandleUVE dependent, const JobGraphObjectHandleUVE dependency) {
+bool JobGraph::AddDependency(const JobGraphObjectHandle dependent, const JobGraphObjectHandle dependency) {
     if (m_executed) {
-        UVE_ERROR("JobGraphUVE: AddDependencyUVE() called after ExecuteUVE() - ignored");
+        UVE_ERROR("JobGraph: AddDependency() called after Execute() - ignored");
         return false;
     }
     if (dependent == dependency || dependent >= m_objects.size() || dependency >= m_objects.size()) {
-        UVE_ERROR("JobGraphUVE: AddDependencyUVE() received an invalid or self-referential handle pair");
+        UVE_ERROR("JobGraph: AddDependency() received an invalid or self-referential handle pair");
         return false;
     }
     // The graph edge runs dependency -> dependent (dependency's completion unblocks dependent),
     // so a cycle exists iff dependent can already reach dependency along existing edges.
-    if (CanReachUVE(dependent, dependency)) {
-        UVE_ERROR("JobGraphUVE: AddDependencyUVE() rejected - would create a cycle");
+    if (CanReach(dependent, dependency)) {
+        UVE_ERROR("JobGraph: AddDependency() rejected - would create a cycle");
         return false;
     }
     m_objects[dependency]->successors.push_back(dependent);
     return true;
 }
 
-void JobGraphUVE::ExecuteUVE(IThreadPoolUVE& pool) {
+void JobGraph::Execute(IThreadPool& pool) {
     if (m_executed) {
-        UVE_ERROR("JobGraphUVE: ExecuteUVE() called more than once - ignored");
+        UVE_ERROR("JobGraph: Execute() called more than once - ignored");
         return;
     }
     m_executed = true;
@@ -72,15 +72,15 @@ void JobGraphUVE::ExecuteUVE(IThreadPoolUVE& pool) {
         return;
     }
 
-    for (const std::unique_ptr<ObjectUVE>& object : m_objects) {
-        for (const JobGraphObjectHandleUVE successor : object->successors) {
+    for (const std::unique_ptr<Object>& object : m_objects) {
+        for (const JobGraphObjectHandle successor : object->successors) {
             m_objects[successor]->remainingDependencies.fetch_add(1, std::memory_order_relaxed);
         }
     }
     // Snapshot which objects start with zero dependencies BEFORE submitting anything. This must
     // not be folded into the submission loop below: the moment the first root object is submitted,
     // a worker thread can start running it concurrently with this function still walking later
-    // indices - and that worker's own cascade (SubmitObjectUVE's fetch_sub) can decrement a later
+    // indices - and that worker's own cascade (SubmitObject's fetch_sub) can decrement a later
     // object's remainingDependencies to zero before this loop ever reaches it. A live
     // `.load() == 0` check at that point would then submit the same object a second time, racing
     // against the cascade's own (correctly deduplicated, fetch_sub-return-value-gated) submission
@@ -93,45 +93,45 @@ void JobGraphUVE::ExecuteUVE(IThreadPoolUVE& pool) {
         isRootObject[index] = (m_objects[index]->remainingDependencies.load(std::memory_order_relaxed) == 0);
     }
     // Every object is pending exactly once, counted before any of them can possibly start -
-    // matching JobCounterUVE's own "increment before the job can run" contract.
+    // matching JobCounter's own "increment before the job can run" contract.
     for (std::size_t index = 0; index < m_objects.size(); ++index) {
-        m_completionCounter.IncrementUVE();
+        m_completionCounter.Increment();
     }
     for (std::size_t index = 0; index < m_objects.size(); ++index) {
         if (isRootObject[index]) {
-            SubmitObjectUVE(pool, index);
+            SubmitObject(pool, index);
         }
     }
 }
 
-void JobGraphUVE::SubmitObjectUVE(IThreadPoolUVE& pool, const JobGraphObjectHandleUVE index) {
-    pool.SubmitUVE([this, &pool, index] {
-        ObjectUVE& object = *m_objects[index];
+void JobGraph::SubmitObject(IThreadPool& pool, const JobGraphObjectHandle index) {
+    pool.Submit([this, &pool, index] {
+        Object& object = *m_objects[index];
         try {
             if (object.job) {
                 object.job();
             }
         } catch (const std::exception& exception) {
-            UVE_ERROR("JobGraphUVE: job {} threw an exception: {}", index, exception.what());
+            UVE_ERROR("JobGraph: job {} threw an exception: {}", index, exception.what());
         } catch (...) {
-            UVE_ERROR("JobGraphUVE: job {} threw an unknown, non-std::exception value", index);
+            UVE_ERROR("JobGraph: job {} threw an unknown, non-std::exception value", index);
         }
 
-        for (const JobGraphObjectHandleUVE successor : object.successors) {
+        for (const JobGraphObjectHandle successor : object.successors) {
             // fetch_sub returns the pre-decrement value; the one thread that observes it drop
             // from 1 to 0 is the one whose dependency completion actually unblocks this successor
             // (every other predecessor of the same successor sees a value > 1 and does nothing),
             // so exactly one submission happens no matter how many predecessors finish at once.
             if (m_objects[successor]->remainingDependencies.fetch_sub(1, std::memory_order_acq_rel) == 1) {
-                SubmitObjectUVE(pool, successor);
+                SubmitObject(pool, successor);
             }
         }
-        m_completionCounter.DecrementAndNotifyUVE();
+        m_completionCounter.DecrementAndNotify();
     });
 }
 
-void JobGraphUVE::WaitUVE() {
-    m_completionCounter.WaitUVE();
+void JobGraph::Wait() {
+    m_completionCounter.Wait();
 }
 
 } // namespace UVE::Threading

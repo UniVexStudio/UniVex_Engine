@@ -10,18 +10,18 @@ namespace UVE::Render {
 
 namespace {
 
-[[nodiscard]] bool RenderItemTieBreakLessUVE(const RenderItemUVE& lhs, const RenderItemUVE& rhs) noexcept {
-    const std::uint64_t lhsMaterialGuid = lhs.materialHandle.GetGuidUVE().value;
-    const std::uint64_t rhsMaterialGuid = rhs.materialHandle.GetGuidUVE().value;
+[[nodiscard]] bool RenderItemTieBreakLess(const RenderItem& lhs, const RenderItem& rhs) noexcept {
+    const std::uint64_t lhsMaterialGuid = lhs.materialHandle.GetGuid().value;
+    const std::uint64_t rhsMaterialGuid = rhs.materialHandle.GetGuid().value;
     if (lhsMaterialGuid != rhsMaterialGuid) {
         return lhsMaterialGuid < rhsMaterialGuid;
     }
-    return lhs.meshHandle.GetGuidUVE().value < rhs.meshHandle.GetGuidUVE().value;
+    return lhs.meshHandle.GetGuid().value < rhs.meshHandle.GetGuid().value;
 }
 
 } // namespace
 
-void RenderQueueUVE::ClearUVE() noexcept {
+void RenderQueue::Clear() noexcept {
     opaqueItems.clear();
     transparentItems.clear();
     particleItems.clear();
@@ -32,14 +32,14 @@ void RenderQueueUVE::ClearUVE() noexcept {
     invalidRenderEligibility = 0U;
 }
 
-void RenderQueueUVE::ReserveUVE(const std::size_t opaqueCapacity, const std::size_t transparentCapacity,
+void RenderQueue::Reserve(const std::size_t opaqueCapacity, const std::size_t transparentCapacity,
                                 const std::size_t particleCapacity) {
     opaqueItems.reserve(opaqueCapacity);
     transparentItems.reserve(transparentCapacity);
     particleItems.reserve(particleCapacity);
 }
 
-void RenderQueueUVE::SortForDepthOnlyPassUVE() {
+void RenderQueue::SortForDepthOnlyPass() {
     // Mesh first - that is the whole point, since the batcher only merges adjacent same-mesh runs.
     // Depth second so that within one mesh the pass still draws nearest-first and the depth test
     // rejects as much as possible; material last purely to keep the order total and therefore
@@ -48,13 +48,13 @@ void RenderQueueUVE::SortForDepthOnlyPassUVE() {
     // Only opaqueItems is reordered. A depth-only pass does not draw transparent geometry or
     // particles, so touching those buckets would be work with no consumer - and they keep whatever
     // order they had, which nothing in this pass reads.
-    std::sort(opaqueItems.begin(), opaqueItems.end(), [](const RenderItemUVE& lhs, const RenderItemUVE& rhs) {
-        const std::uint64_t lhsMeshGuid = lhs.meshHandle.GetGuidUVE().value;
-        const std::uint64_t rhsMeshGuid = rhs.meshHandle.GetGuidUVE().value;
+    std::sort(opaqueItems.begin(), opaqueItems.end(), [](const RenderItem& lhs, const RenderItem& rhs) {
+        const std::uint64_t lhsMeshGuid = lhs.meshHandle.GetGuid().value;
+        const std::uint64_t rhsMeshGuid = rhs.meshHandle.GetGuid().value;
         if (lhsMeshGuid != rhsMeshGuid) {
             return lhsMeshGuid < rhsMeshGuid;
         }
-        // Same non-finite handling as SortUVE: a NaN depth must not make the comparator
+        // Same non-finite handling as Sort: a NaN depth must not make the comparator
         // inconsistent, which is undefined behaviour in std::sort rather than merely a wrong order.
         const bool lhsFinite = std::isfinite(lhs.sortDepth);
         const bool rhsFinite = std::isfinite(rhs.sortDepth);
@@ -64,12 +64,12 @@ void RenderQueueUVE::SortForDepthOnlyPassUVE() {
         if (lhsFinite && lhs.sortDepth != rhs.sortDepth) {
             return lhs.sortDepth < rhs.sortDepth;
         }
-        return lhs.materialHandle.GetGuidUVE().value < rhs.materialHandle.GetGuidUVE().value;
+        return lhs.materialHandle.GetGuid().value < rhs.materialHandle.GetGuid().value;
     });
 }
 
-void RenderQueueUVE::SortUVE() {
-    std::sort(opaqueItems.begin(), opaqueItems.end(), [](const RenderItemUVE& lhs, const RenderItemUVE& rhs) {
+void RenderQueue::Sort() {
+    std::sort(opaqueItems.begin(), opaqueItems.end(), [](const RenderItem& lhs, const RenderItem& rhs) {
         const bool lhsFinite = std::isfinite(lhs.sortDepth);
         const bool rhsFinite = std::isfinite(rhs.sortDepth);
         if (lhsFinite != rhsFinite) {
@@ -78,9 +78,9 @@ void RenderQueueUVE::SortUVE() {
         if (lhsFinite && lhs.sortDepth != rhs.sortDepth) {
             return lhs.sortDepth < rhs.sortDepth;
         }
-        return RenderItemTieBreakLessUVE(lhs, rhs);
+        return RenderItemTieBreakLess(lhs, rhs);
     });
-    std::sort(transparentItems.begin(), transparentItems.end(), [](const RenderItemUVE& lhs, const RenderItemUVE& rhs) {
+    std::sort(transparentItems.begin(), transparentItems.end(), [](const RenderItem& lhs, const RenderItem& rhs) {
         const bool lhsFinite = std::isfinite(lhs.sortDepth);
         const bool rhsFinite = std::isfinite(rhs.sortDepth);
         if (lhsFinite != rhsFinite) {
@@ -89,10 +89,10 @@ void RenderQueueUVE::SortUVE() {
         if (lhsFinite && lhs.sortDepth != rhs.sortDepth) {
             return lhs.sortDepth > rhs.sortDepth;
         }
-        return RenderItemTieBreakLessUVE(lhs, rhs);
+        return RenderItemTieBreakLess(lhs, rhs);
     });
-    std::sort(particleItems.begin(), particleItems.end(), [](const ParticleRenderItemUVE& lhs,
-                                                             const ParticleRenderItemUVE& rhs) {
+    std::sort(particleItems.begin(), particleItems.end(), [](const ParticleRenderItem& lhs,
+                                                             const ParticleRenderItem& rhs) {
         if (lhs.sortDepth != rhs.sortDepth) {
             return lhs.sortDepth > rhs.sortDepth;
         }
@@ -106,8 +106,8 @@ void RenderQueueUVE::SortUVE() {
     });
 }
 
-void RenderQueueUVE::AppendParticleSnapshotUVE(const ParticleRenderSnapshotUVE& snapshot) {
-    if (!ValidateParticleRenderSnapshotUVE(snapshot)) {
+void RenderQueue::AppendParticleSnapshot(const ParticleRenderSnapshot& snapshot) {
+    if (!ValidateParticleRenderSnapshot(snapshot)) {
         particleItemsTruncated = true;
         return;
     }

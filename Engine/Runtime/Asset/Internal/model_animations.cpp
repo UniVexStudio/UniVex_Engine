@@ -17,18 +17,18 @@ namespace {
 //   section: u32 tag 'UVAN', u32 version (2), u32 count, u64 source stamp,
 //            count x { u32 nameBytes, name, f64 durationSeconds, u32 payloadBytes, clip payload }
 //   footer:  u64 offset of the section, u32 tag 'UVAN'
-constexpr std::uint32_t kVersionUVE = 2U;
-constexpr std::size_t kFooterBytesUVE = sizeof(std::uint64_t) + sizeof(std::uint32_t);
+constexpr std::uint32_t kVersion = 2U;
+constexpr std::size_t kFooterBytes = sizeof(std::uint64_t) + sizeof(std::uint32_t);
 
 template <class T>
-void AppendUVE(std::vector<std::byte>& out, const T value) {
+void Append(std::vector<std::byte>& out, const T value) {
     std::byte bytes[sizeof(T)];
     std::memcpy(bytes, &value, sizeof(T));
     out.insert(out.end(), bytes, bytes + sizeof(T));
 }
 
 template <class T>
-[[nodiscard]] bool ReadUVE(const std::vector<std::byte>& in, std::size_t& at, T& value) {
+[[nodiscard]] bool Read(const std::vector<std::byte>& in, std::size_t& at, T& value) {
     if (at > in.size() || in.size() - at < sizeof(T)) {
         return false;
     }
@@ -38,35 +38,35 @@ template <class T>
 }
 
 /// Where the takes section starts in `payload`, or nullopt when it has none.
-[[nodiscard]] std::optional<std::size_t> SectionStartUVE(const std::vector<std::byte>& payload) {
-    if (payload.size() < kFooterBytesUVE) {
+[[nodiscard]] std::optional<std::size_t> SectionStart(const std::vector<std::byte>& payload) {
+    if (payload.size() < kFooterBytes) {
         return std::nullopt;
     }
-    std::size_t at = payload.size() - kFooterBytesUVE;
+    std::size_t at = payload.size() - kFooterBytes;
     std::uint64_t offset = 0U;
     std::uint32_t tag = 0U;
-    if (!ReadUVE(payload, at, offset) || !ReadUVE(payload, at, tag) || tag != kModelAnimationSectionTagUVE ||
-        offset + sizeof(std::uint32_t) > payload.size() - kFooterBytesUVE) {
+    if (!Read(payload, at, offset) || !Read(payload, at, tag) || tag != kModelAnimationSectionTag ||
+        offset + sizeof(std::uint32_t) > payload.size() - kFooterBytes) {
         return std::nullopt;
     }
     std::size_t check = static_cast<std::size_t>(offset);
     std::uint32_t head = 0U;
-    if (!ReadUVE(payload, check, head) || head != kModelAnimationSectionTagUVE) {
+    if (!Read(payload, check, head) || head != kModelAnimationSectionTag) {
         return std::nullopt;
     }
     return static_cast<std::size_t>(offset);
 }
 
-struct TakeUVE final {
+struct Take final {
     std::string name;
     double duration = 0.0;
     std::size_t payloadAt = 0U;
     std::uint32_t payloadBytes = 0U;
 };
 
-[[nodiscard]] bool ReadTakesUVE(const std::vector<std::byte>& payload, std::vector<TakeUVE>& out, std::uint64_t* stamp = nullptr) {
+[[nodiscard]] bool ReadTakes(const std::vector<std::byte>& payload, std::vector<Take>& out, std::uint64_t* stamp = nullptr) {
     out.clear();
-    const std::optional<std::size_t> start = SectionStartUVE(payload);
+    const std::optional<std::size_t> start = SectionStart(payload);
     if (!start.has_value()) {
         return true;
     }
@@ -74,22 +74,22 @@ struct TakeUVE final {
     std::uint32_t version = 0U;
     std::uint32_t count = 0U;
     std::uint64_t source = 0U;
-    if (!ReadUVE(payload, at, version) || version < 1U || version > kVersionUVE || !ReadUVE(payload, at, count) || count > 65536U ||
-        (version >= 2U && !ReadUVE(payload, at, source))) {
+    if (!Read(payload, at, version) || version < 1U || version > kVersion || !Read(payload, at, count) || count > 65536U ||
+        (version >= 2U && !Read(payload, at, source))) {
         return false;
     }
     if (stamp != nullptr) {
         *stamp = source;
     }
     for (std::uint32_t i = 0U; i < count; ++i) {
-        TakeUVE take;
+        Take take;
         std::uint32_t nameBytes = 0U;
-        if (!ReadUVE(payload, at, nameBytes) || nameBytes > 4096U || payload.size() - at < nameBytes) {
+        if (!Read(payload, at, nameBytes) || nameBytes > 4096U || payload.size() - at < nameBytes) {
             return false;
         }
         take.name.assign(reinterpret_cast<const char*>(payload.data() + at), nameBytes);
         at += nameBytes;
-        if (!ReadUVE(payload, at, take.duration) || !ReadUVE(payload, at, take.payloadBytes) || payload.size() - at < take.payloadBytes) {
+        if (!Read(payload, at, take.duration) || !Read(payload, at, take.payloadBytes) || payload.size() - at < take.payloadBytes) {
             return false;
         }
         take.payloadAt = at;
@@ -99,9 +99,9 @@ struct TakeUVE final {
     return true;
 }
 
-[[nodiscard]] std::optional<std::vector<std::byte>> ReadMeshPayloadUVE(const std::filesystem::path& model) {
-    const std::optional<std::pair<UveFileHeaderUVE, std::vector<std::byte>>> file = ReadUveFileUVE(model);
-    if (!file.has_value() || file->first.assetType != AssetKindUVE::Mesh) {
+[[nodiscard]] std::optional<std::vector<std::byte>> ReadMeshPayload(const std::filesystem::path& model) {
+    const std::optional<std::pair<UveFileHeader, std::vector<std::byte>>> file = ReadUveFile(model);
+    if (!file.has_value() || file->first.assetType != AssetKind::Mesh) {
         return std::nullopt;
     }
     return file->second;
@@ -109,41 +109,41 @@ struct TakeUVE final {
 
 } // namespace
 
-std::vector<ModelAnimationEntryUVE> ListModelAnimationsUVE(const std::filesystem::path& model) {
-    std::vector<ModelAnimationEntryUVE> out;
+std::vector<ModelAnimationEntry> ListModelAnimations(const std::filesystem::path& model) {
+    std::vector<ModelAnimationEntry> out;
     std::error_code error;
     if (!std::filesystem::is_regular_file(model, error)) {
         return out;
     }
-    const std::optional<std::vector<std::byte>> payload = ReadMeshPayloadUVE(model);
-    std::vector<TakeUVE> takes;
-    if (!payload.has_value() || !ReadTakesUVE(*payload, takes)) {
+    const std::optional<std::vector<std::byte>> payload = ReadMeshPayload(model);
+    std::vector<Take> takes;
+    if (!payload.has_value() || !ReadTakes(*payload, takes)) {
         return out;
     }
-    for (const TakeUVE& take : takes) {
-        out.push_back(ModelAnimationEntryUVE{take.name, take.duration});
+    for (const Take& take : takes) {
+        out.push_back(ModelAnimationEntry{take.name, take.duration});
     }
     return out;
 }
 
-bool LoadModelAnimationUVE(const std::filesystem::path& model, const std::string& name, AnimationClipAssetUVE& outClip) {
-    const std::optional<std::vector<std::byte>> payload = ReadMeshPayloadUVE(model);
-    std::vector<TakeUVE> takes;
-    if (!payload.has_value() || !ReadTakesUVE(*payload, takes)) {
+bool LoadModelAnimation(const std::filesystem::path& model, const std::string& name, AnimationClipAsset& outClip) {
+    const std::optional<std::vector<std::byte>> payload = ReadMeshPayload(model);
+    std::vector<Take> takes;
+    if (!payload.has_value() || !ReadTakes(*payload, takes)) {
         return false;
     }
-    for (const TakeUVE& take : takes) {
+    for (const Take& take : takes) {
         if (take.name == name) {
             const std::vector<std::byte> clip(payload->begin() + static_cast<std::ptrdiff_t>(take.payloadAt),
                                               payload->begin() + static_cast<std::ptrdiff_t>(take.payloadAt + take.payloadBytes));
-            return ParseAnimationClipPayloadUVE(clip, outClip);
+            return ParseAnimationClipPayload(clip, outClip);
         }
     }
     return false;
 }
 
-bool LoadAllModelAnimationsUVE(const std::filesystem::path& model,
-                               std::vector<AnimationClipAssetUVE>& outClips,
+bool LoadAllModelAnimations(const std::filesystem::path& model,
+                               std::vector<AnimationClipAsset>& outClips,
                                std::uint64_t* outStamp) {
     outClips.clear();
     if (outStamp != nullptr) {
@@ -153,21 +153,21 @@ bool LoadAllModelAnimationsUVE(const std::filesystem::path& model,
     if (!std::filesystem::is_regular_file(model, error)) {
         return false;
     }
-    const std::optional<std::vector<std::byte>> payload = ReadMeshPayloadUVE(model);
-    std::vector<TakeUVE> takes;
+    const std::optional<std::vector<std::byte>> payload = ReadMeshPayload(model);
+    std::vector<Take> takes;
     std::uint64_t stamp = 0U;
-    if (!payload.has_value() || !ReadTakesUVE(*payload, takes, &stamp)) {
+    if (!payload.has_value() || !ReadTakes(*payload, takes, &stamp)) {
         return false;
     }
     if (outStamp != nullptr) {
         *outStamp = stamp;
     }
     outClips.reserve(takes.size());
-    for (const TakeUVE& take : takes) {
+    for (const Take& take : takes) {
         const std::vector<std::byte> bytes(payload->begin() + static_cast<std::ptrdiff_t>(take.payloadAt),
                                            payload->begin() + static_cast<std::ptrdiff_t>(take.payloadAt + take.payloadBytes));
-        AnimationClipAssetUVE clip;
-        if (ParseAnimationClipPayloadUVE(bytes, clip)) {
+        AnimationClipAsset clip;
+        if (ParseAnimationClipPayload(bytes, clip)) {
             clip.clipId = take.name;
             outClips.push_back(std::move(clip));
         }
@@ -175,82 +175,82 @@ bool LoadAllModelAnimationsUVE(const std::filesystem::path& model,
     return true;
 }
 
-bool InspectModelAnimationsSummaryUVE(
+bool InspectModelAnimationsSummary(
     const std::filesystem::path& model,
-    std::vector<std::pair<std::string, AnimationClipSummaryUVE>>& outSummaries) {
+    std::vector<std::pair<std::string, AnimationClipSummary>>& outSummaries) {
     outSummaries.clear();
     std::error_code error;
     if (!std::filesystem::is_regular_file(model, error)) {
         return false;
     }
-    const std::optional<std::vector<std::byte>> payload = ReadMeshPayloadUVE(model);
-    std::vector<TakeUVE> takes;
-    if (!payload.has_value() || !ReadTakesUVE(*payload, takes)) {
+    const std::optional<std::vector<std::byte>> payload = ReadMeshPayload(model);
+    std::vector<Take> takes;
+    if (!payload.has_value() || !ReadTakes(*payload, takes)) {
         return false;
     }
     outSummaries.reserve(takes.size());
-    for (const TakeUVE& take : takes) {
+    for (const Take& take : takes) {
         const std::span<const std::byte> bytes(payload->data() + take.payloadAt, take.payloadBytes);
-        outSummaries.emplace_back(take.name, InspectAnimationClipSummaryUVE(bytes));
+        outSummaries.emplace_back(take.name, InspectAnimationClipSummary(bytes));
     }
     return true;
 }
 
-std::vector<std::byte> ExtractModelAnimationSectionUVE(const std::vector<std::byte>& meshPayload) {
-    const std::optional<std::size_t> start = SectionStartUVE(meshPayload);
+std::vector<std::byte> ExtractModelAnimationSection(const std::vector<std::byte>& meshPayload) {
+    const std::optional<std::size_t> start = SectionStart(meshPayload);
     if (!start.has_value()) {
         return {};
     }
     return std::vector<std::byte>(meshPayload.begin() + static_cast<std::ptrdiff_t>(*start), meshPayload.end());
 }
 
-std::uint64_t ReadModelAnimationStampUVE(const std::filesystem::path& model) {
+std::uint64_t ReadModelAnimationStamp(const std::filesystem::path& model) {
     std::error_code error;
     if (!std::filesystem::is_regular_file(model, error)) {
         return 0U;
     }
-    const std::optional<std::vector<std::byte>> payload = ReadMeshPayloadUVE(model);
-    std::vector<TakeUVE> takes;
+    const std::optional<std::vector<std::byte>> payload = ReadMeshPayload(model);
+    std::vector<Take> takes;
     std::uint64_t stamp = 0U;
-    if (!payload.has_value() || !ReadTakesUVE(*payload, takes, &stamp) || takes.empty()) {
+    if (!payload.has_value() || !ReadTakes(*payload, takes, &stamp) || takes.empty()) {
         return 0U;
     }
     return stamp;
 }
 
-bool SaveModelAnimationsUVE(const std::filesystem::path& model, const std::vector<AnimationClipAssetUVE>& clips, const std::uint64_t sourceStamp) {
-    std::optional<std::vector<std::byte>> payload = ReadMeshPayloadUVE(model);
+bool SaveModelAnimations(const std::filesystem::path& model, const std::vector<AnimationClipAsset>& clips, const std::uint64_t sourceStamp) {
+    std::optional<std::vector<std::byte>> payload = ReadMeshPayload(model);
     if (!payload.has_value()) {
         return false;
     }
-    if (const std::optional<std::size_t> start = SectionStartUVE(*payload)) {
+    if (const std::optional<std::size_t> start = SectionStart(*payload)) {
         payload->resize(*start);
     }
     if (!clips.empty()) {
         const std::size_t sectionAt = payload->size();
-        AppendUVE(*payload, kModelAnimationSectionTagUVE);
-        AppendUVE(*payload, kVersionUVE);
-        AppendUVE(*payload, static_cast<std::uint32_t>(clips.size()));
-        AppendUVE(*payload, sourceStamp);
-        for (const AnimationClipAssetUVE& clip : clips) {
+        Append(*payload, kModelAnimationSectionTag);
+        Append(*payload, kVersion);
+        Append(*payload, static_cast<std::uint32_t>(clips.size()));
+        Append(*payload, sourceStamp);
+        for (const AnimationClipAsset& clip : clips) {
             std::vector<std::byte> bytes;
-            if (!SerializeAnimationClipPayloadUVE(clip, bytes)) {
+            if (!SerializeAnimationClipPayload(clip, bytes)) {
                 return false;
             }
-            AppendUVE(*payload, static_cast<std::uint32_t>(clip.clipId.size()));
+            Append(*payload, static_cast<std::uint32_t>(clip.clipId.size()));
             const auto* name = reinterpret_cast<const std::byte*>(clip.clipId.data());
             payload->insert(payload->end(), name, name + clip.clipId.size());
-            AppendUVE(*payload, clip.durationSeconds);
-            AppendUVE(*payload, static_cast<std::uint32_t>(bytes.size()));
+            Append(*payload, clip.durationSeconds);
+            Append(*payload, static_cast<std::uint32_t>(bytes.size()));
             payload->insert(payload->end(), bytes.begin(), bytes.end());
         }
-        AppendUVE(*payload, static_cast<std::uint64_t>(sectionAt));
-        AppendUVE(*payload, kModelAnimationSectionTagUVE);
+        Append(*payload, static_cast<std::uint64_t>(sectionAt));
+        Append(*payload, kModelAnimationSectionTag);
     }
-    return WriteUveFileUVE(model, AssetKindUVE::Mesh, *payload);
+    return WriteUveFile(model, AssetKind::Mesh, *payload);
 }
 
-bool SplitEmbeddedClipPathUVE(const std::filesystem::path& path, std::filesystem::path& outModel, std::string& outTake) {
+bool SplitEmbeddedClipPath(const std::filesystem::path& path, std::filesystem::path& outModel, std::string& outTake) {
     const std::string text = path.generic_string();
     const std::size_t hash = text.rfind('#');
     if (hash == std::string::npos || hash + 1U >= text.size()) {
@@ -265,10 +265,10 @@ bool SplitEmbeddedClipPathUVE(const std::filesystem::path& path, std::filesystem
     return true;
 }
 
-std::string AssetDisplayNameUVE(const std::filesystem::path& path) {
+std::string AssetDisplayName(const std::filesystem::path& path) {
     std::filesystem::path model;
     std::string take;
-    if (!SplitEmbeddedClipPathUVE(path, model, take)) {
+    if (!SplitEmbeddedClipPath(path, model, take)) {
         return path.stem().string();
     }
     // "Hero.fbx.uvmodel" reads as "Hero".
@@ -280,7 +280,7 @@ std::string AssetDisplayNameUVE(const std::filesystem::path& path) {
     return take.empty() || take == name ? name : name + " / " + take;
 }
 
-std::filesystem::path MakeEmbeddedClipPathUVE(const std::filesystem::path& model, const std::string& take) {
+std::filesystem::path MakeEmbeddedClipPath(const std::filesystem::path& model, const std::string& take) {
     return std::filesystem::path{model.generic_string() + "#" + take};
 }
 

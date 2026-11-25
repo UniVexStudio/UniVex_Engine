@@ -19,7 +19,7 @@ namespace UVE::Editor {
 namespace {
 
 /// The UI font at a pixel size (the game's text drawn as big as it will be on screen).
-const prism::Font& FontAtUVE(const float px, const bool bold) {
+const prism::Font& FontAt(const float px, const bool bold) {
     static std::map<std::pair<int, bool>, std::shared_ptr<prism::Font>> cache;
     const int size = std::clamp(static_cast<int>(std::lround(px)), 6, 160);
     const auto key = std::make_pair(size, bold);
@@ -34,7 +34,7 @@ const prism::Font& FontAtUVE(const float px, const bool bold) {
     return *font;
 }
 
-[[nodiscard]] prism::Color MixUVE(const prism::Color a, const prism::Color b, const float t) {
+[[nodiscard]] prism::Color Mix(const prism::Color a, const prism::Color b, const float t) {
     const auto lerp = [t](const std::uint8_t x, const std::uint8_t y) {
         return static_cast<std::uint8_t>(std::lround(static_cast<float>(x) + (static_cast<float>(y) - static_cast<float>(x)) * t));
     };
@@ -43,36 +43,36 @@ const prism::Font& FontAtUVE(const float px, const bool bold) {
 
 } // namespace
 
-WidgetDesignerViewUVE::WidgetDesignerViewUVE() {
+WidgetDesignerView::WidgetDesignerView() {
     setTooltip("Designer: click a widget to select it, drag it to move it");
 }
 
-void WidgetDesignerViewUVE::SetItemsUVE(std::vector<ItemUVE> items) {
+void WidgetDesignerView::SetItems(std::vector<Item> items) {
     m_items = std::move(items);
     invalidate();
 }
 
-void WidgetDesignerViewUVE::SetSelectedUVE(const Scene::EntityUVE entity) {
+void WidgetDesignerView::SetSelected(const Scene::Entity entity) {
     if (m_selected != entity) {
         m_selected = entity;
         invalidate();
     }
 }
 
-void WidgetDesignerViewUVE::SetLivePreviewUVE(const Scene::EntityUVE entity) {
+void WidgetDesignerView::SetLivePreview(const Scene::Entity entity) {
     if (m_livePreview != entity) {
         m_livePreview = entity;
         invalidate();
     }
 }
 
-prism::Rect WidgetDesignerViewUVE::ViewRectOfUVE(const Scene::EntityUVE entity) const {
-    for (const ItemUVE& item : m_items) {
+prism::Rect WidgetDesignerView::ViewRectOf(const Scene::Entity entity) const {
+    for (const Item& item : m_items) {
         if (item.entity != entity || !item.visible) {
             continue;
         }
-        const prism::Rect v = ToViewUVE(item.rect);
-        const prism::Rect canvas = CanvasRectUVE();
+        const prism::Rect v = ToView(item.rect);
+        const prism::Rect canvas = CanvasRect();
         const float x0 = std::max(v.x, canvas.x);
         const float y0 = std::max(v.y, canvas.y);
         const float x1 = std::min(v.right(), canvas.right());
@@ -85,50 +85,50 @@ prism::Rect WidgetDesignerViewUVE::ViewRectOfUVE(const Scene::EntityUVE entity) 
     return prism::Rect{};
 }
 
-void WidgetDesignerViewUVE::SetResolutionUVE(const float width, const float height) {
+void WidgetDesignerView::SetResolution(const float width, const float height) {
     m_designW = std::max(64.0F, width);
     m_designH = std::max(64.0F, height);
     invalidate();
 }
 
-prism::Vec2 WidgetDesignerViewUVE::measure(const prism::Vec2 available) {
+prism::Vec2 WidgetDesignerView::measure(const prism::Vec2 available) {
     return constrain(prism::Vec2{std::max(available.x, 200.0F), std::max(available.y, 150.0F)});
 }
 
-float WidgetDesignerViewUVE::ScaleUVE() const {
+float WidgetDesignerView::Scale() const {
     const prism::Rect r = rect();
     const float margin = 36.0F;
     return std::max(0.05F, std::min((r.w - 2.0F * margin) / m_designW, (r.h - 2.0F * margin - 18.0F) / m_designH));
 }
 
-prism::Rect WidgetDesignerViewUVE::CanvasRectUVE() const {
+prism::Rect WidgetDesignerView::CanvasRect() const {
     const prism::Rect r = rect();
-    const float s = ScaleUVE();
+    const float s = Scale();
     const float w = std::floor(m_designW * s);
     const float h = std::floor(m_designH * s);
     return prism::Rect{std::floor(r.x + (r.w - w) * 0.5F), std::floor(r.y + 18.0F + (r.h - 18.0F - h) * 0.5F), w, h};
 }
 
-float WidgetDesignerViewUVE::MeasureTextUVE(const std::string_view text, const float fontSize) {
+float WidgetDesignerView::MeasureText(const std::string_view text, const float fontSize) {
     // Measured at a large size and scaled, so small text is not rounded to whole pixels per glyph.
     constexpr float kReferencePx = 64.0F;
-    return FontAtUVE(kReferencePx, false).width(text) * (fontSize / kReferencePx);
+    return FontAt(kReferencePx, false).width(text) * (fontSize / kReferencePx);
 }
 
-prism::Rect WidgetDesignerViewUVE::ToViewUVE(const prism::Rect& design) const {
-    const prism::Rect canvas = CanvasRectUVE();
-    const float s = ScaleUVE();
+prism::Rect WidgetDesignerView::ToView(const prism::Rect& design) const {
+    const prism::Rect canvas = CanvasRect();
+    const float s = Scale();
     return prism::Rect{canvas.x + design.x * s, canvas.y + design.y * s, design.w * s, design.h * s};
 }
 
-Scene::EntityUVE WidgetDesignerViewUVE::HitUVE(const prism::Vec2 p) const {
+Scene::Entity WidgetDesignerView::Hit(const prism::Vec2 p) const {
     // The last drawn is on top.
     for (auto it = m_items.rbegin(); it != m_items.rend(); ++it) {
-        if (it->visible && ToViewUVE(it->rect).contains(p)) {
+        if (it->visible && ToView(it->rect).contains(p)) {
             // A Button's label is part of the Button: the Button is what is picked and moved.
-            if (it->kind == KindUVE::Text && it->parent != Scene::kInvalidEntityUVE) {
-                for (const ItemUVE& other : m_items) {
-                    if (other.entity == it->parent && other.kind == KindUVE::Button) {
+            if (it->kind == Kind::Text && it->parent != Scene::kInvalidEntity) {
+                for (const Item& other : m_items) {
+                    if (other.entity == it->parent && other.kind == Kind::Button) {
                         return other.entity;
                     }
                 }
@@ -136,10 +136,10 @@ Scene::EntityUVE WidgetDesignerViewUVE::HitUVE(const prism::Vec2 p) const {
             return it->entity;
         }
     }
-    return Scene::kInvalidEntityUVE;
+    return Scene::kInvalidEntity;
 }
 
-void WidgetDesignerViewUVE::paint(prism::Canvas& c) {
+void WidgetDesignerView::paint(prism::Canvas& c) {
     const prism::Theme& t = prism::theme();
     const prism::Rect r = rect();
     c.fillRect(r, prism::Color(24, 25, 28));
@@ -150,8 +150,8 @@ void WidgetDesignerViewUVE::paint(prism::Canvas& c) {
     for (float y = r.y + 16.0F; y < r.bottom(); y += 32.0F) {
         c.hline(r.x, r.right(), std::floor(y), prism::Color(30, 31, 35));
     }
-    const prism::Rect canvas = CanvasRectUVE();
-    const float s = ScaleUVE();
+    const prism::Rect canvas = CanvasRect();
+    const float s = Scale();
     c.shadow(canvas, 2.0F, 10, prism::Color(0, 0, 0, 120));
     c.fillRect(canvas, prism::Color(46, 52, 62));
     c.gradientV(canvas, prism::Color(54, 62, 76), prism::Color(36, 40, 48));
@@ -162,14 +162,14 @@ void WidgetDesignerViewUVE::paint(prism::Canvas& c) {
              t.textDim, prism::HAlign::Left, false);
 
     c.pushClip(canvas);
-    for (const ItemUVE& item : m_items) {
+    for (const Item& item : m_items) {
         if (!item.visible) {
             continue;
         }
-        const prism::Rect v = ToViewUVE(item.rect);
+        const prism::Rect v = ToView(item.rect);
         switch (item.kind) {
-            case KindUVE::Text: {
-                const prism::Font& font = FontAtUVE(item.fontSize * s, false);
+            case Kind::Text: {
+                const prism::Font& font = FontAt(item.fontSize * s, false);
                 const auto drawLines = [&](const prism::Vec2 offset, const prism::Color colour) {
                     for (const auto& [baseline, line] : item.lines) {
                         // `text` takes the line box's top: the baseline less the font's ascent.
@@ -189,16 +189,16 @@ void WidgetDesignerViewUVE::paint(prism::Canvas& c) {
                 drawLines(prism::Vec2{}, item.color);
                 break;
             }
-            case KindUVE::Button: {
-                const prism::Color base = item.entity == m_hover ? MixUVE(item.color, prism::Color(255, 255, 255), 0.12F) : item.color;
+            case Kind::Button: {
+                const prism::Color base = item.entity == m_hover ? Mix(item.color, prism::Color(255, 255, 255), 0.12F) : item.color;
                 c.fillRoundRect(v, 4.0F * s, base);
-                c.strokeRoundRect(v, 4.0F * s, MixUVE(base, prism::Color(0, 0, 0), 0.35F));
+                c.strokeRoundRect(v, 4.0F * s, Mix(base, prism::Color(0, 0, 0), 0.35F));
                 break;
             }
-            case KindUVE::Image:
+            case Kind::Image:
                 c.fillRect(v, item.color);
                 break;
-            case KindUVE::ProgressBar: {
+            case Kind::ProgressBar: {
                 c.fillRoundRect(v, 3.0F * s, prism::Color(30, 32, 36));
                 prism::Rect fill = v;
                 fill.w = std::floor(v.w * std::clamp(item.value, 0.0F, 1.0F));
@@ -206,7 +206,7 @@ void WidgetDesignerViewUVE::paint(prism::Canvas& c) {
                 c.strokeRoundRect(v, 3.0F * s, prism::Color(80, 84, 92));
                 break;
             }
-            case KindUVE::Slider: {
+            case Kind::Slider: {
                 const float mid = v.y + v.h * 0.5F;
                 c.fillRoundRect(prism::Rect{v.x, mid - 2.0F, v.w, 4.0F}, 2.0F, prism::Color(70, 74, 82));
                 const float knobX = v.x + v.w * std::clamp(item.value, 0.0F, 1.0F);
@@ -214,7 +214,7 @@ void WidgetDesignerViewUVE::paint(prism::Canvas& c) {
                 c.fillCircle(prism::Vec2{knobX, mid}, std::max(4.0F, v.h * 0.35F), prism::Color(230, 232, 236));
                 break;
             }
-            case KindUVE::CheckBox: {
+            case Kind::CheckBox: {
                 const float side = std::min(v.w, v.h);
                 const prism::Rect box{v.x, v.y + (v.h - side) * 0.5F, side, side};
                 c.fillRoundRect(box, 3.0F, item.checked ? t.highlight : t.field);
@@ -228,10 +228,10 @@ void WidgetDesignerViewUVE::paint(prism::Canvas& c) {
                 }
                 break;
             }
-            case KindUVE::ComboBox: {
+            case Kind::ComboBox: {
                 c.fillRoundRect(v, 3.0F * s, prism::Color(34, 34, 40));
                 c.strokeRoundRect(v, 3.0F * s, prism::Color(150, 120, 230));
-                const prism::Font& font = FontAtUVE(item.fontSize * s, false);
+                const prism::Font& font = FontAt(item.fontSize * s, false);
                 c.textIn(font, prism::Rect{v.x + 6.0F * s, v.y, v.w - v.h - 8.0F * s, v.h}, item.text, item.color, prism::HAlign::Left, true);
                 const float a = std::max(3.0F, v.h * 0.18F);
                 const prism::Vec2 mid{v.right() - v.h * 0.5F, v.y + v.h * 0.5F};
@@ -239,13 +239,13 @@ void WidgetDesignerViewUVE::paint(prism::Canvas& c) {
                 c.fillPolygon(tri, prism::Color(220, 210, 245));
                 break;
             }
-            case KindUVE::VerticalBox:
-            case KindUVE::HorizontalBox:
-            case KindUVE::WrapBox:
-            case KindUVE::ScrollBox: {
+            case Kind::VerticalBox:
+            case Kind::HorizontalBox:
+            case Kind::WrapBox:
+            case Kind::ScrollBox: {
                 // A panel lays its children out; it draws nothing in the game, so the Designer marks
                 // where it is with a dashed edge and its name.
-                const prism::Color edge = item.kind == KindUVE::ScrollBox ? prism::Color(60, 200, 190, 200) : prism::Color(245, 160, 60, 200);
+                const prism::Color edge = item.kind == Kind::ScrollBox ? prism::Color(60, 200, 190, 200) : prism::Color(245, 160, 60, 200);
                 const float dash = 6.0F;
                 for (float x = v.x; x < v.right(); x += dash * 2.0F) {
                     c.hline(x, std::min(x + dash, v.right()), std::floor(v.y), edge);
@@ -255,36 +255,36 @@ void WidgetDesignerViewUVE::paint(prism::Canvas& c) {
                     c.vline(std::floor(v.x), y, std::min(y + dash, v.bottom()), edge);
                     c.vline(std::floor(v.right()) - 1.0F, y, std::min(y + dash, v.bottom()), edge);
                 }
-                if (item.kind == KindUVE::ScrollBox) {
+                if (item.kind == Kind::ScrollBox) {
                     const prism::Rect track{v.right() - 8.0F, v.y + 3.0F, 5.0F, v.h - 6.0F};
                     c.fillRoundRect(track, 2.0F, prism::Color(30, 32, 38));
                     c.fillRoundRect(prism::Rect{track.x, track.y, track.w, track.h * 0.35F}, 2.0F, prism::Color(60, 200, 190));
                 }
-                if (const EditorIconsUVE::ImageUVE icon = WidgetIconUVE(item.kind, 14); icon) {
+                if (const EditorIcons::Image icon = WidgetIcon(item.kind, 14); icon) {
                     c.blitBlend(icon.pixels, icon.size, icon.size, icon.size, prism::Rect{v.x + 3.0F, v.y + 3.0F, 14.0F, 14.0F});
                 }
                 c.textIn(*t.small, prism::Rect{v.x + 20.0F, v.y + 2.0F, std::max(0.0F, v.w - 24.0F), 16.0F}, item.name, edge,
                          prism::HAlign::Left, true);
                 break;
             }
-            case KindUVE::Border:
+            case Kind::Border:
                 c.fillRoundRect(v, 6.0F * s, item.color);
-                c.strokeRoundRect(v, 6.0F * s, MixUVE(item.color, prism::Color(255, 255, 255), 0.3F), std::max(1, static_cast<int>(3.0F * s)));
+                c.strokeRoundRect(v, 6.0F * s, Mix(item.color, prism::Color(255, 255, 255), 0.3F), std::max(1, static_cast<int>(3.0F * s)));
                 break;
-            case KindUVE::Spacer:
+            case Kind::Spacer:
                 if (item.entity == m_hover || item.entity == m_selected) {
                     c.fillRect(v, prism::Color(200, 200, 210, 30));
                 }
                 break;
-            case KindUVE::View3D: {
+            case Kind::View3D: {
                 if (item.entity == m_livePreview) {
                     // The live picture is drawn under the Designer: leave its place open, and name it.
-                    const prism::Rect hole = ViewRectOfUVE(item.entity);
+                    const prism::Rect hole = ViewRectOf(item.entity);
                     if (hole.w > 0.0F) {
                         c.fillRaw(hole, 0x00000000U);
                         const prism::Rect strip{hole.x, hole.y, hole.w, std::min(hole.h, 20.0F)};
                         c.fillRect(strip, prism::Color(10, 12, 18, 150));
-                        if (const EditorIconsUVE::ImageUVE icon = WidgetIconUVE(KindUVE::View3D, 14); icon) {
+                        if (const EditorIcons::Image icon = WidgetIcon(Kind::View3D, 14); icon) {
                             c.blitBlend(icon.pixels, icon.size, icon.size, icon.size, prism::Rect{strip.x + 3.0F, strip.y + 3.0F, 14.0F, 14.0F});
                         }
                         c.textIn(*t.small, prism::Rect{strip.x + 20.0F, strip.y + 2.0F, std::max(0.0F, strip.w - 24.0F), 16.0F}, item.text,
@@ -311,7 +311,7 @@ void WidgetDesignerViewUVE::paint(prism::Canvas& c) {
                                prism::Color(250, 205, 80, 200), 1.5F);
                     }
                 }
-                if (const EditorIconsUVE::ImageUVE icon = WidgetIconUVE(KindUVE::View3D, 16); icon) {
+                if (const EditorIcons::Image icon = WidgetIcon(Kind::View3D, 16); icon) {
                     c.blitBlend(icon.pixels, icon.size, icon.size, icon.size, prism::Rect{v.x + 4.0F, v.y + 4.0F, 16.0F, 16.0F});
                 }
                 c.textIn(*t.small, prism::Rect{v.x + 24.0F, v.y + 4.0F, std::max(0.0F, v.w - 28.0F), 16.0F},
@@ -322,12 +322,12 @@ void WidgetDesignerViewUVE::paint(prism::Canvas& c) {
                 c.popClip();
                 break;
             }
-            case KindUVE::Canvas:
+            case Kind::Canvas:
                 break;
-            case KindUVE::TextBox: {
+            case Kind::TextBox: {
                 c.fillRoundRect(v, 3.0F * s, prism::Color(22, 23, 26));
                 c.strokeRoundRect(v, 3.0F * s, prism::Color(96, 102, 112));
-                const prism::Font& font = FontAtUVE(item.fontSize * s, false);
+                const prism::Font& font = FontAt(item.fontSize * s, false);
                 c.textIn(font, prism::Rect{v.x + 6.0F * s, v.y, v.w - 12.0F * s, v.h}, item.text.empty() ? item.name : item.text,
                          item.text.empty() ? prism::Color(120, 124, 132) : item.color, prism::HAlign::Left, true);
                 break;
@@ -337,11 +337,11 @@ void WidgetDesignerViewUVE::paint(prism::Canvas& c) {
     c.popClip();
 
     // Hover and selection on top: an outline, and handles on the selected one.
-    for (const ItemUVE& item : m_items) {
+    for (const Item& item : m_items) {
         if (!item.visible || (item.entity != m_selected && item.entity != m_hover)) {
             continue;
         }
-        const prism::Rect v = ToViewUVE(item.rect);
+        const prism::Rect v = ToView(item.rect);
         const prism::Rect frame{std::floor(v.x) - 1.0F, std::floor(v.y) - 1.0F, std::ceil(v.w) + 2.0F, std::ceil(v.h) + 2.0F};
         if (item.entity == m_selected) {
             c.strokeRect(frame, t.highlight, 2);
@@ -358,12 +358,12 @@ void WidgetDesignerViewUVE::paint(prism::Canvas& c) {
     }
 }
 
-int WidgetDesignerViewUVE::HandleAtUVE(const prism::Vec2 p) const {
-    for (const ItemUVE& item : m_items) {
-        if (item.entity != m_selected || !item.visible || item.kind == KindUVE::Canvas) {
+int WidgetDesignerView::HandleAt(const prism::Vec2 p) const {
+    for (const Item& item : m_items) {
+        if (item.entity != m_selected || !item.visible || item.kind == Kind::Canvas) {
             continue;
         }
-        const prism::Rect v = ToViewUVE(item.rect);
+        const prism::Rect v = ToView(item.rect);
         const prism::Rect frame{std::floor(v.x) - 1.0F, std::floor(v.y) - 1.0F, std::ceil(v.w) + 2.0F, std::ceil(v.h) + 2.0F};
         const prism::Vec2 corners[] = {frame.pos(), prism::Vec2{frame.right(), frame.y}, prism::Vec2{frame.x, frame.bottom()},
                                        prism::Vec2{frame.right(), frame.bottom()}};
@@ -376,20 +376,20 @@ int WidgetDesignerViewUVE::HandleAtUVE(const prism::Vec2 p) const {
     return -1;
 }
 
-prism::Cursor WidgetDesignerViewUVE::cursor() const {
+prism::Cursor WidgetDesignerView::cursor() const {
     if (m_resizeCorner >= 0 || m_hoverCorner >= 0) {
         return prism::Cursor::SizeAll;
     }
-    return m_dragging ? prism::Cursor::SizeAll : (m_hover != Scene::kInvalidEntityUVE ? prism::Cursor::Hand : prism::Cursor::Arrow);
+    return m_dragging ? prism::Cursor::SizeAll : (m_hover != Scene::kInvalidEntity ? prism::Cursor::Hand : prism::Cursor::Arrow);
 }
 
-bool WidgetDesignerViewUVE::onMouseDown(const prism::MouseEvent& e) {
+bool WidgetDesignerView::onMouseDown(const prism::MouseEvent& e) {
     if (e.button != prism::MouseButton::Left) {
         return false;
     }
     // A corner handle of the selected widget resizes it.
-    if (const int corner = HandleAtUVE(e.pos); corner >= 0) {
-        for (const ItemUVE& item : m_items) {
+    if (const int corner = HandleAt(e.pos); corner >= 0) {
+        for (const Item& item : m_items) {
             if (item.entity == m_selected) {
                 m_resizeCorner = corner;
                 m_resizeStart = item.rect;
@@ -399,12 +399,12 @@ bool WidgetDesignerViewUVE::onMouseDown(const prism::MouseEvent& e) {
             }
         }
     }
-    const Scene::EntityUVE hit = HitUVE(e.pos);
+    const Scene::Entity hit = Hit(e.pos);
     m_selected = hit;
     if (onPicked) {
         onPicked(hit);
     }
-    m_dragging = hit != Scene::kInvalidEntityUVE;
+    m_dragging = hit != Scene::kInvalidEntity;
     m_moved = false;
     m_dragLast = e.pos;
     m_dragAccum = prism::Vec2{0.0F, 0.0F};
@@ -412,30 +412,30 @@ bool WidgetDesignerViewUVE::onMouseDown(const prism::MouseEvent& e) {
     return true;
 }
 
-bool WidgetDesignerViewUVE::onMouseMove(const prism::MouseEvent& e) {
+bool WidgetDesignerView::onMouseMove(const prism::MouseEvent& e) {
     if (m_resizeCorner >= 0) {
-        const float s = ScaleUVE();
+        const float s = Scale();
         const float dx = std::round((e.pos.x - m_resizePress.x) / s);
         const float dy = std::round((e.pos.y - m_resizePress.y) / s);
         prism::Rect r = m_resizeStart;
-        constexpr float kMinimumUVE = 8.0F;
+        constexpr float kMinimum = 8.0F;
         const bool left = m_resizeCorner == 0 || m_resizeCorner == 2;
         const bool top = m_resizeCorner == 0 || m_resizeCorner == 1;
         if (left) {
-            const float w = std::max(kMinimumUVE, m_resizeStart.w - dx);
+            const float w = std::max(kMinimum, m_resizeStart.w - dx);
             r.x = m_resizeStart.right() - w;
             r.w = w;
         } else {
-            r.w = std::max(kMinimumUVE, m_resizeStart.w + dx);
+            r.w = std::max(kMinimum, m_resizeStart.w + dx);
         }
         if (top) {
-            const float h = std::max(kMinimumUVE, m_resizeStart.h - dy);
+            const float h = std::max(kMinimum, m_resizeStart.h - dy);
             r.y = m_resizeStart.bottom() - h;
             r.h = h;
         } else {
-            r.h = std::max(kMinimumUVE, m_resizeStart.h + dy);
+            r.h = std::max(kMinimum, m_resizeStart.h + dy);
         }
-        for (ItemUVE& item : m_items) {
+        for (Item& item : m_items) {
             if (item.entity == m_selected) {
                 item.rect = r;
             }
@@ -448,19 +448,19 @@ bool WidgetDesignerViewUVE::onMouseMove(const prism::MouseEvent& e) {
         return true;
     }
     if (!m_dragging) {
-        const int corner = HandleAtUVE(e.pos);
+        const int corner = HandleAt(e.pos);
         if (corner != m_hoverCorner) {
             m_hoverCorner = corner;
             invalidate();
         }
-        const Scene::EntityUVE hover = HitUVE(e.pos);
+        const Scene::Entity hover = Hit(e.pos);
         if (hover != m_hover) {
             m_hover = hover;
             invalidate();
         }
         return false;
     }
-    const float s = ScaleUVE();
+    const float s = Scale();
     // Whole design pixels, so the widget stays on the pixel grid.
     m_dragAccum.x += (e.pos.x - m_dragLast.x) / s;
     m_dragAccum.y += (e.pos.y - m_dragLast.y) / s;
@@ -473,7 +473,7 @@ bool WidgetDesignerViewUVE::onMouseMove(const prism::MouseEvent& e) {
     m_dragAccum.x -= dx;
     m_dragAccum.y -= dy;
     m_moved = true;
-    for (ItemUVE& item : m_items) {
+    for (Item& item : m_items) {
         if (item.entity == m_selected || item.parent == m_selected) {
             item.rect.x += dx;
             item.rect.y += dy;
@@ -486,11 +486,11 @@ bool WidgetDesignerViewUVE::onMouseMove(const prism::MouseEvent& e) {
     return true;
 }
 
-bool WidgetDesignerViewUVE::onMouseUp(const prism::MouseEvent& e) {
+bool WidgetDesignerView::onMouseUp(const prism::MouseEvent& e) {
     if (e.button == prism::MouseButton::Left && m_resizeCorner >= 0) {
         m_resizeCorner = -1;
         if (m_resized && onResized) {
-            for (const ItemUVE& item : m_items) {
+            for (const Item& item : m_items) {
                 if (item.entity == m_selected) {
                     onResized(m_selected, item.rect, true);
                 }

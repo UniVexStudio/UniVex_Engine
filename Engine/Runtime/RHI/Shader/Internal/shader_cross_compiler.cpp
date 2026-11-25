@@ -8,27 +8,27 @@
 namespace UVE::Render::Shader {
 namespace {
 
-[[nodiscard]] std::string_view VersionHeaderForDialectUVE(const ShaderTargetDialectUVE dialect) noexcept {
+[[nodiscard]] std::string_view VersionHeaderForDialect(const ShaderTargetDialect dialect) noexcept {
     switch (dialect) {
-        case ShaderTargetDialectUVE::OpenGL430:
+        case ShaderTargetDialect::OpenGL430:
             return "#version 430 core\n";
-        case ShaderTargetDialectUVE::OpenGLES300:
+        case ShaderTargetDialect::OpenGLES300:
             return "#version 300 es\nprecision highp float;\nprecision highp int;\n";
-        case ShaderTargetDialectUVE::VulkanGlsl450:
+        case ShaderTargetDialect::VulkanGlsl450:
             return "#version 450\n#define UVE_VULKAN 1\n";
     }
     return "#version 430 core\n";
 }
 
-[[nodiscard]] std::string_view StageMacroForStageUVE(const ShaderStageUVE stage) noexcept {
+[[nodiscard]] std::string_view StageMacroForStage(const ShaderStage stage) noexcept {
     switch (stage) {
-        case ShaderStageUVE::Vertex:
+        case ShaderStage::Vertex:
             return "#define VERTEX_SHADER 1\n";
-        case ShaderStageUVE::Fragment:
+        case ShaderStage::Fragment:
             return "#define FRAGMENT_SHADER 1\n";
-        case ShaderStageUVE::Compute:
+        case ShaderStage::Compute:
             return "#define COMPUTE_SHADER 1\n";
-        case ShaderStageUVE::Geometry:
+        case ShaderStage::Geometry:
             return "#define GEOMETRY_SHADER 1\n";
     }
     return "";
@@ -36,10 +36,10 @@ namespace {
 
 } // namespace
 
-ShaderCrossCompileResultUVE TranspileShaderSourceForDialectUVE(const std::string_view singleSource,
-                                                               const ShaderStageUVE stage,
-                                                               const ShaderTargetDialectUVE dialect) {
-    ShaderCrossCompileResultUVE out{};
+ShaderCrossCompileResult TranspileShaderSourceForDialect(const std::string_view singleSource,
+                                                               const ShaderStage stage,
+                                                               const ShaderTargetDialect dialect) {
+    ShaderCrossCompileResult out{};
     if (singleSource.empty()) {
         out.errorMessage = "Shader source is empty";
         return out;
@@ -66,8 +66,8 @@ ShaderCrossCompileResultUVE TranspileShaderSourceForDialectUVE(const std::string
             stripped.append(body.substr(0U, lineStart));
             stripped.append(body.substr(afterVersion));
             out.source.reserve(stripped.size() + 128U);
-            out.source.append(VersionHeaderForDialectUVE(dialect));
-            out.source.append(StageMacroForStageUVE(stage));
+            out.source.append(VersionHeaderForDialect(dialect));
+            out.source.append(StageMacroForStage(stage));
             out.source.append(stripped);
             out.ok = true;
             return out;
@@ -80,8 +80,8 @@ ShaderCrossCompileResultUVE TranspileShaderSourceForDialectUVE(const std::string
     }
 
     out.source.reserve(body.size() + 128U);
-    out.source.append(VersionHeaderForDialectUVE(dialect));
-    out.source.append(StageMacroForStageUVE(stage));
+    out.source.append(VersionHeaderForDialect(dialect));
+    out.source.append(StageMacroForStage(stage));
     out.source.append(body);
     out.ok = true;
     return out;

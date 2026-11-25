@@ -4,7 +4,7 @@
 
 namespace UVE::Window {
 
-bool ValidateMonitorDimensionsUVE(const int width, const int height, std::uint32_t& outWidth,
+bool ValidateMonitorDimensions(const int width, const int height, std::uint32_t& outWidth,
                                   std::uint32_t& outHeight) noexcept {
     if (width <= 0 || height <= 0) {
         return false;
@@ -14,7 +14,7 @@ bool ValidateMonitorDimensionsUVE(const int width, const int height, std::uint32
     return true;
 }
 
-bool ValidateMonitorInfoUVE(const MonitorInfoUVE& monitor) noexcept {
+bool ValidateMonitorInfo(const MonitorInfo& monitor) noexcept {
     return !monitor.name.empty() && monitor.name.size() <= 256U &&
            monitor.name.find('\0') == std::string::npos && monitor.width > 0U && monitor.height > 0U &&
            std::isfinite(monitor.contentScaleX) && std::isfinite(monitor.contentScaleY) &&
@@ -22,13 +22,13 @@ bool ValidateMonitorInfoUVE(const MonitorInfoUVE& monitor) noexcept {
            monitor.contentScaleX <= 16.0F && monitor.contentScaleY <= 16.0F;
 }
 
-bool ValidateMonitorSnapshotUVE(const std::vector<MonitorInfoUVE>& monitors) noexcept {
-    if (monitors.size() > kMaximumMonitorSnapshotEntriesUVE) {
+bool ValidateMonitorSnapshot(const std::vector<MonitorInfo>& monitors) noexcept {
+    if (monitors.size() > kMaximumMonitorSnapshotEntries) {
         return false;
     }
     bool primarySeen = false;
-    for (const MonitorInfoUVE& monitor : monitors) {
-        if (!ValidateMonitorInfoUVE(monitor)) {
+    for (const MonitorInfo& monitor : monitors) {
+        if (!ValidateMonitorInfo(monitor)) {
             return false;
         }
         if (monitor.isPrimary && primarySeen) {

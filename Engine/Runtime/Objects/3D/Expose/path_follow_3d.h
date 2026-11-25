@@ -10,14 +10,14 @@
 
 namespace UVE::Scene {
 
-class IEntityManagerUVE;
+class IEntityManager;
 
-/// Moves and optionally orients an entity along a target `Path3DComponentUVE` at `progressMetres`
+/// Moves and optionally orients an entity along a target `Path3DComponent` at `progressMetres`
 /// (advancing automatically by `speedMetresPerSecond * deltaTimeSeconds` each frame when
 /// `enabled == true`). `hOffset` and `vOffset` shift the follower perpendicular to the path along
 /// the sampled `right` and `up` axes.
-struct PathFollow3DComponentUVE final {
-    EntityUVE pathEntity = kInvalidEntityUVE;
+struct PathFollow3DComponent final {
+    Entity pathEntity = kInvalidEntity;
     float progressMetres = 0.0F;
     float speedMetresPerSecond = 0.0F;
     float hOffset = 0.0F;
@@ -28,31 +28,31 @@ struct PathFollow3DComponentUVE final {
     /// Runtime state, never persisted: normalized progress in `[0, 1]` along the path.
     float progressRatio = 0.0F;
 
-    [[nodiscard]] bool operator==(const PathFollow3DComponentUVE&) const = default;
+    [[nodiscard]] bool operator==(const PathFollow3DComponent&) const = default;
 };
 
-[[nodiscard]] bool IsPathFollow3DComponentValidUVE(const PathFollow3DComponentUVE& value) noexcept;
+[[nodiscard]] bool IsPathFollow3DComponentValid(const PathFollow3DComponent& value) noexcept;
 
-[[nodiscard]] PathFollow3DComponentUVE SanitizePathFollow3DComponentUVE(
-    const PathFollow3DComponentUVE& value) noexcept;
+[[nodiscard]] PathFollow3DComponent SanitizePathFollow3DComponent(
+    const PathFollow3DComponent& value) noexcept;
 
 /// Advances `value.progressMetres` and updates `value.progressRatio` against `pathTotalLength`.
-void StepPathFollow3DProgressUVE(PathFollow3DComponentUVE& value, float pathTotalLength,
+void StepPathFollow3DProgress(PathFollow3DComponent& value, float pathTotalLength,
                                  float deltaTimeSeconds) noexcept;
 
-struct PathFollow3DObjectDefinitionUVE final {
+struct PathFollow3DObjectDefinition final {
     static constexpr std::string_view defaultName = "PathFollow3D";
-    PathFollow3DComponentUVE follower{};
+    PathFollow3DComponent follower{};
 };
 
-[[nodiscard]] bool IsPathFollow3DObjectDefinitionValidUVE(
-    const PathFollow3DObjectDefinitionUVE& value) noexcept;
+[[nodiscard]] bool IsPathFollow3DObjectDefinitionValid(
+    const PathFollow3DObjectDefinition& value) noexcept;
 
-void ApplyPathFollow3DObjectDefinitionUVE(IEntityManagerUVE& entityManager, EntityUVE entity,
-                                          const PathFollow3DObjectDefinitionUVE& value);
+void ApplyPathFollow3DObjectDefinition(IEntityManager& entityManager, Entity entity,
+                                          const PathFollow3DObjectDefinition& value);
 
-/// Steps every enabled `PathFollow3DComponentUVE` in deterministic entity order and writes its
-/// sampled pose to its `TransformComponentUVE`. Returns the number of followers updated.
-std::size_t UpdatePathFollow3DObjectsUVE(IEntityManagerUVE& entityManager, float deltaTimeSeconds);
+/// Steps every enabled `PathFollow3DComponent` in deterministic entity order and writes its
+/// sampled pose to its `TransformComponent`. Returns the number of followers updated.
+std::size_t UpdatePathFollow3DObjects(IEntityManager& entityManager, float deltaTimeSeconds);
 
 } // namespace UVE::Scene

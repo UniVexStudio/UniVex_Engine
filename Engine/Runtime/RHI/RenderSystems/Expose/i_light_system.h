@@ -15,44 +15,44 @@
 
 namespace UVE::Render {
 
-/// The fixed maximum number of simultaneously active lights ILightSystemUVE extracts per frame
+/// The fixed maximum number of simultaneously active lights ILightSystem extracts per frame
 /// (Increment 25). No light culling/prioritization system exists — if more than this many light
 /// entities exist in a scene, which ones are kept is first-encountered order (see
-/// ILightSystemUVE::ExtractActiveLightsUVE's own doc comment), not a distance- or
-/// importance-based selection. A compile-time constant, not an EngineConfigUVE field — mirrors
-/// the existing fixed-texture-slot-constant precedent (kAlbedoTextureSlotUVE etc. in
+/// ILightSystem::ExtractActiveLights's own doc comment), not a distance- or
+/// importance-based selection. A compile-time constant, not an EngineConfig field — mirrors
+/// the existing fixed-texture-slot-constant precedent (kAlbedoTextureSlot etc. in
 /// renderer_3d_uve.cpp) rather than adding runtime configurability nobody asked for.
-constexpr std::size_t kMaxLightsUVE = 16;
+constexpr std::size_t kMaxLights = 16;
 
-/// One light slot's data for this frame, extracted by ILightSystemUVE::ExtractActiveLightsUVE().
+/// One light slot's data for this frame, extracted by ILightSystem::ExtractActiveLights().
 /// `intensity == 0.0F` is the deliberate "this slot is empty" sentinel — no std::optional,
-/// matching this codebase's existing no-shader-branching philosophy (compare Renderer3DUVE's
+/// matching this codebase's existing no-shader-branching philosophy (compare Renderer3D's
 /// fallback-texture pattern, Increment 22): a shader multiplying by uLights[i].intensity
 /// naturally goes dark with no special-casing needed on either the C++ or GLSL side. Always a
 /// full record regardless of `type` — e.g. a Directional slot's `position`/`range`/
 /// `spotAngleDegrees` are simply unused by the (documented, not implemented) GLSL type-branch,
 /// rather than the C++ side omitting fields based on type.
-struct LightDataUVE {
-    Scene::LightTypeUVE type = Scene::LightTypeUVE::Directional;
+struct LightData {
+    Scene::LightType type = Scene::LightType::Directional;
 
     /// Point/Spot: world position. Unused (meaningless) for Directional.
-    Math::Vector3UVE position{};
+    Math::Vector3 position{};
 
     // direction = where light PHOTONS travel (NOT surface-to-light). GLSL usage:
     // max(dot(N, -direction), 0.0) for Lambertian diffuse (negate: 'direction' points
     // toward the surface, N·L needs the surface-to-light vector). Meaningful for
     // Directional/Spot; unused for Point (radiates in all directions).
-    Math::Vector3UVE direction{0.0F, 0.0F, -1.0F};
+    Math::Vector3 direction{0.0F, 0.0F, -1.0F};
 
     /// The light entity's world rotation, carried alongside `direction` (which is already the
     /// rotated forward vector derived from this same rotation). Introduced for directional-light
-    /// shadow mapping (Increment 26): `Matrix4x4UVE::ViewFromPositionAndRotationUVE(position,
+    /// shadow mapping (Increment 26): `Matrix4x4::ViewFromPositionAndRotation(position,
     /// rotation)` needs a quaternion, not a direction vector, so this reuses that existing factory
     /// directly for a shadow-casting light's view matrix instead of inventing a new
     /// direction-to-view-matrix construction.
-    Math::QuaternionUVE rotation{};
+    Math::Quaternion rotation{};
 
-    Math::ColorUVE color{1.0F, 1.0F, 1.0F};
+    Math::Color color{1.0F, 1.0F, 1.0F};
     float intensity = 0.0F;
 
     /// Point/Spot falloff distance. Unused for Directional.
@@ -63,7 +63,7 @@ struct LightDataUVE {
 
     /// Directional only: whether this light may be the frame's shadow caster.
     bool castsShadows = true;
-    /// True when the light entity carries EditorInternalEntityComponentUVE (e.g. viewport headlight).
+    /// True when the light entity carries EditorInternalEntityComponent (e.g. viewport headlight).
     bool isEditorInternal = false;
     /// Directional only: shadows reach this far from the camera; 0 follows the camera's far plane.
     float shadowMaxDistance = 0.0F;
@@ -99,42 +99,42 @@ struct LightDataUVE {
     float distanceFadeLength = 10.0F;
 };
 
-/// This frame's active lights — see kMaxLightsUVE. A `FixedArrayUVE`, not a `std::array`: only
-/// extracted lights occupy slots (`SizeUVE()`), so consumers iterate the live range instead of
-/// probing trailing `LightDataUVE{}` sentinels (intensity == 0.0F) for occupancy. The renderer
-/// upload still walks all kMaxLightsUVE fixed shader slots and zero-fills the unused ones.
-using LightListUVE = Containers::FixedArrayUVE<LightDataUVE, kMaxLightsUVE>;
+/// This frame's active lights — see kMaxLights. A `FixedArray`, not a `std::array`: only
+/// extracted lights occupy slots (`Size()`), so consumers iterate the live range instead of
+/// probing trailing `LightData{}` sentinels (intensity == 0.0F) for occupancy. The renderer
+/// upload still walks all kMaxLights fixed shader slots and zero-fills the unused ones.
+using LightList = Containers::FixedArray<LightData, kMaxLights>;
 
-/// ILightSystemUVE extracts this frame's active lights from the ECS (the spec's `LightSystemUVE`,
+/// ILightSystem extracts this frame's active lights from the ECS (the spec's `LightSystem`,
 /// Part 7.2 — "Light culling, IBL (diffuse + specular probes)"). Culling and IBL remain deferred
-/// future work; Increment 25 adds Point/Spot light types and support for up to kMaxLightsUVE
+/// future work; Increment 25 adds Point/Spot light types and support for up to kMaxLights
 /// simultaneous lights (v1, Increment 23, supported at most one Directional light only). Reads
-/// every entity with both `Scene::WorldTransformComponentUVE` and `Scene::LightComponentUVE` via
-/// `IEntityManagerUVE::ForEachUVE`.
+/// every entity with both `Scene::WorldTransformComponent` and `Scene::LightComponent` via
+/// `IEntityManager::ForEach`.
 /// Thread-safety: implementations should be stateless (holding no members), matching
-/// `ICameraSystemUVE`'s/`IMeshRendererUVE`'s contract — every method only reads the
-/// `IEntityManagerUVE` passed in.
-class ILightSystemUVE {
+/// `ICameraSystem`'s/`IMeshRenderer`'s contract — every method only reads the
+/// `IEntityManager` passed in.
+class ILightSystem {
 public:
-    virtual ~ILightSystemUVE() = default;
+    virtual ~ILightSystem() = default;
 
-    /// Returns up to kMaxLightsUVE of the first light entities
-    /// `ForEachUVE<WorldTransformComponentUVE, LightComponentUVE>` encounters this call; the
-    /// returned list holds exactly those lights (`SizeUVE()`), with no trailing-sentinel slots.
-    /// `IEntityManagerUVE::ForEachUVE` only guarantees "every matching
-    /// entity exactly once, order unspecified" — if more than kMaxLightsUVE light entities exist,
+    /// Returns up to kMaxLights of the first light entities
+    /// `ForEach<WorldTransformComponent, LightComponent>` encounters this call; the
+    /// returned list holds exactly those lights (`Size()`), with no trailing-sentinel slots.
+    /// `IEntityManager::ForEach` only guarantees "every matching
+    /// entity exactly once, order unspecified" — if more than kMaxLights light entities exist,
     /// which ones are kept is first-encountered/arbitrary this v1 (no distance- or
     /// importance-based selection — that's future work, same deferral v1 already documented).
     /// Deterministic and stable for any fixed set of light entities that all share one archetype
     /// (the common case): within a single archetype, iteration order is chunk/row creation order.
     /// Across different archetypes, order is `std::unordered_map`-hash-dependent — not a
     /// documented guarantee.
-    /// Non-`const` `entityManager`, unlike `ICameraSystemUVE`'s methods: `ForEachUVE` has no
-    /// `const` overload (same reason `IMeshRendererUVE::ExtractRenderQueueUVE` takes a non-`const`
+    /// Non-`const` `entityManager`, unlike `ICameraSystem`'s methods: `ForEach` has no
+    /// `const` overload (same reason `IMeshRenderer::ExtractRenderQueue` takes a non-`const`
     /// reference too).
-    [[nodiscard]] virtual LightListUVE ExtractActiveLightsUVE(Scene::IEntityManagerUVE& entityManager) const = 0;
+    [[nodiscard]] virtual LightList ExtractActiveLights(Scene::IEntityManager& entityManager) const = 0;
 
-    /// Returns the same up-to-kMaxLightsUVE lights, but choosing WHICH lights when a scene has
+    /// Returns the same up-to-kMaxLights lights, but choosing WHICH lights when a scene has
     /// more than fit, by their estimated contribution at `viewPosition`.
     ///
     /// The overload exists because first-encountered order is not merely arbitrary, it is
@@ -150,10 +150,10 @@ public:
     ///
     /// The default implementation ignores `viewPosition` and forwards to the unordered overload,
     /// so existing test doubles keep compiling and keep their previous behavior.
-    [[nodiscard]] virtual LightListUVE ExtractActiveLightsForViewUVE(
-        Scene::IEntityManagerUVE& entityManager, const Math::Vector3UVE& viewPosition) const {
+    [[nodiscard]] virtual LightList ExtractActiveLightsForView(
+        Scene::IEntityManager& entityManager, const Math::Vector3& viewPosition) const {
         static_cast<void>(viewPosition);
-        return ExtractActiveLightsUVE(entityManager);
+        return ExtractActiveLights(entityManager);
     }
 };
 

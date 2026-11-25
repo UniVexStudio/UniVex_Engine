@@ -7,11 +7,11 @@
 
 namespace {
 
-constexpr int kSuccessExitCodeUVE = 0;
-constexpr int kUsageExitCodeUVE = 2;
-constexpr int kOperationalFailureExitCodeUVE = 3;
+constexpr int kSuccessExitCode = 0;
+constexpr int kUsageExitCode = 2;
+constexpr int kOperationalFailureExitCode = 3;
 
-void PrintUsageUVE() {
+void PrintUsage() {
     std::cerr << "Usage: uve_pack --project <path-to.uvproject> --runtime <path-to-uve_runtime> "
                  "--output <distributable-folder> [--cook windows|android]\n";
 }
@@ -19,12 +19,12 @@ void PrintUsageUVE() {
 } // namespace
 
 int main(int argc, char** argv) {
-    UVE::Pack::ProjectPackOptionsUVE options{};
+    UVE::Pack::ProjectPackOptions options{};
     for (int index = 1; index < argc; ++index) {
         const std::string_view argument = argv[index];
         if ((argument == "--project" || argument == "--runtime" || argument == "--output" || argument == "--cook") && index + 1 >= argc) {
-            PrintUsageUVE();
-            return kUsageExitCodeUVE;
+            PrintUsage();
+            return kUsageExitCode;
         }
         if (argument == "--project") {
             options.projectFile = argv[++index];
@@ -34,24 +34,24 @@ int main(int argc, char** argv) {
             options.outputDirectory = argv[++index];
         } else if (argument == "--cook") {
             const std::string_view target = argv[++index];
-            if (target == "windows") options.cookTarget = UVE::Pack::CookTargetUVE::Windows;
-            else if (target == "android") options.cookTarget = UVE::Pack::CookTargetUVE::Android;
-            else { PrintUsageUVE(); return kUsageExitCodeUVE; }
+            if (target == "windows") options.cookTarget = UVE::Pack::CookTarget::Windows;
+            else if (target == "android") options.cookTarget = UVE::Pack::CookTarget::Android;
+            else { PrintUsage(); return kUsageExitCode; }
         } else {
-            PrintUsageUVE();
-            return kUsageExitCodeUVE;
+            PrintUsage();
+            return kUsageExitCode;
         }
     }
     if (options.projectFile.empty() || options.runtimeExecutablePath.empty() || options.outputDirectory.empty()) {
-        PrintUsageUVE();
-        return kUsageExitCodeUVE;
+        PrintUsage();
+        return kUsageExitCode;
     }
 
-    const UVE::Pack::ProjectPackResultUVE result = UVE::Pack::ProjectPackagerUVE::PackUVE(options);
-    if (result.IsSuccessUVE()) {
+    const UVE::Pack::ProjectPackResult result = UVE::Pack::ProjectPackager::Pack(options);
+    if (result.IsSuccess()) {
         std::cout << result.message << '\n';
-        return kSuccessExitCodeUVE;
+        return kSuccessExitCode;
     }
     std::cerr << "uve_pack failed: " << result.message << '\n';
-    return kOperationalFailureExitCodeUVE;
+    return kOperationalFailureExitCode;
 }

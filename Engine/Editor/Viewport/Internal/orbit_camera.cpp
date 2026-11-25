@@ -19,7 +19,7 @@ namespace {
 // always turns the short way round instead of unwinding past 180 degrees.
 float WrapAngleDelta(float delta) {
     // NOTE: viewport-core is host-independent by contract, so this uses std::numbers rather
-    // than UVE::Math::kPiUVE (see GizmoDrag.cpp, same pattern).
+    // than UVE::Math::kPi (see GizmoDrag.cpp, same pattern).
     constexpr float kPi = std::numbers::pi_v<float>;
     float wrapped = std::fmod(delta + kPi, 2.f * kPi);
     if (wrapped < 0.f) wrapped += 2.f * kPi;

@@ -13,17 +13,17 @@ namespace {
 
 // Positions the grid can hold: finite, and close enough that the floor-to-cell math stays
 // inside an int even for the smallest allowed cell (1e6 / 1e-3 = 1e9 < 2^31).
-[[nodiscard]] bool ValidPositionUVE(const Math::Vector3UVE& position) noexcept {
+[[nodiscard]] bool ValidPosition(const Math::Vector3& position) noexcept {
     return std::isfinite(position.x) && std::isfinite(position.y) && std::isfinite(position.z) &&
-           std::fabs(position.x) <= kInterestMaximumCoordinateUVE &&
-           std::fabs(position.y) <= kInterestMaximumCoordinateUVE &&
-           std::fabs(position.z) <= kInterestMaximumCoordinateUVE;
+           std::fabs(position.x) <= kInterestMaximumCoordinate &&
+           std::fabs(position.y) <= kInterestMaximumCoordinate &&
+           std::fabs(position.z) <= kInterestMaximumCoordinate;
 }
 
 // Squared distance, so verdicts never pass through a square root: the comparisons stay exact
 // for the clean radii the tests (and level designers) use.
-[[nodiscard]] float DistanceSquaredUVE(const Math::Vector3UVE& a,
-                                       const Math::Vector3UVE& b) noexcept {
+[[nodiscard]] float DistanceSquared(const Math::Vector3& a,
+                                       const Math::Vector3& b) noexcept {
     const float dx = a.x - b.x;
     const float dy = a.y - b.y;
     const float dz = a.z - b.z;
@@ -31,7 +31,7 @@ namespace {
 }
 
 // Order inside a cell means nothing, so removal swaps with the back: O(cell population).
-void EraseFromCellUVE(std::vector<NetworkEntityIdUVE>& cell, const NetworkEntityIdUVE netId) {
+void EraseFromCell(std::vector<NetworkEntityId>& cell, const NetworkEntityId netId) {
     const auto found = std::find(cell.begin(), cell.end(), netId);
     if (found != cell.end()) {
         *found = cell.back();
@@ -41,26 +41,26 @@ void EraseFromCellUVE(std::vector<NetworkEntityIdUVE>& cell, const NetworkEntity
 
 } // namespace
 
-NetworkInterestUVE::NetworkInterestUVE(const InterestConfigUVE& config) noexcept
-    : m_cellSize((std::isfinite(config.cellSize) && config.cellSize >= kInterestMinimumCellSizeUVE)
+NetworkInterest::NetworkInterest(const InterestConfig& config) noexcept
+    : m_cellSize((std::isfinite(config.cellSize) && config.cellSize >= kInterestMinimumCellSize)
                      ? config.cellSize
-                     : kInterestDefaultCellSizeUVE),
+                     : kInterestDefaultCellSize),
       m_hysteresisMargin((std::isfinite(config.hysteresisMargin) && config.hysteresisMargin >= 0.0F)
                              ? config.hysteresisMargin
                              : 0.0F) {}
 
-bool NetworkInterestUVE::AddViewerUVE(const InterestViewerIdUVE viewer, const float radius,
-                                      const Math::Vector3UVE& position) {
-    if (viewer == kInvalidInterestViewerUVE || !std::isfinite(radius) || radius <= 0.0F ||
-        !ValidPositionUVE(position) || m_viewers.find(viewer) != m_viewers.end()) {
+bool NetworkInterest::AddViewer(const InterestViewerId viewer, const float radius,
+                                      const Math::Vector3& position) {
+    if (viewer == kInvalidInterestViewer || !std::isfinite(radius) || radius <= 0.0F ||
+        !ValidPosition(position) || m_viewers.find(viewer) != m_viewers.end()) {
         return false;
     }
-    m_viewers.emplace(viewer, ViewerRecordUVE{radius, position});
+    m_viewers.emplace(viewer, ViewerRecord{radius, position});
     return true;
 }
 
-std::vector<InterestViewerIdUVE> NetworkInterestUVE::ViewersUVE() const {
-    std::vector<InterestViewerIdUVE> viewers;
+std::vector<InterestViewerId> NetworkInterest::Viewers() const {
+    std::vector<InterestViewerId> viewers;
     viewers.reserve(m_viewers.size());
     for (const auto& [viewer, _] : m_viewers) {
         viewers.push_back(viewer);
@@ -69,8 +69,8 @@ std::vector<InterestViewerIdUVE> NetworkInterestUVE::ViewersUVE() const {
     return viewers;
 }
 
-std::optional<Math::Vector3UVE> NetworkInterestUVE::ViewerPositionUVE(
-    const InterestViewerIdUVE viewer) const noexcept {
+std::optional<Math::Vector3> NetworkInterest::ViewerPosition(
+    const InterestViewerId viewer) const noexcept {
     const auto found = m_viewers.find(viewer);
     if (found == m_viewers.end()) {
         return std::nullopt;
@@ -78,8 +78,8 @@ std::optional<Math::Vector3UVE> NetworkInterestUVE::ViewerPositionUVE(
     return found->second.position;
 }
 
-std::optional<Math::Vector3UVE> NetworkInterestUVE::EntityPositionUVE(
-    const NetworkEntityIdUVE netId) const noexcept {
+std::optional<Math::Vector3> NetworkInterest::EntityPosition(
+    const NetworkEntityId netId) const noexcept {
     const auto entity = m_entities.find(netId);
     if (entity == m_entities.end()) {
         return std::nullopt;
@@ -87,28 +87,28 @@ std::optional<Math::Vector3UVE> NetworkInterestUVE::EntityPositionUVE(
     return entity->second.position;
 }
 
-bool NetworkInterestUVE::RemoveViewerUVE(const InterestViewerIdUVE viewer) noexcept {
+bool NetworkInterest::RemoveViewer(const InterestViewerId viewer) noexcept {
     if (m_viewers.erase(viewer) == 0U) {
         return false;
     }
-    SweepViewerPairsUVE(viewer);
+    SweepViewerPairs(viewer);
     return true;
 }
 
-bool NetworkInterestUVE::AddEntityUVE(const NetworkEntityIdUVE netId,
-                                      const Math::Vector3UVE& position,
-                                      const bool alwaysRelevant, const InterestTierUVE tier) {
-    if (!ValidPositionUVE(position) || m_entities.find(netId) != m_entities.end()) {
+bool NetworkInterest::AddEntity(const NetworkEntityId netId,
+                                      const Math::Vector3& position,
+                                      const bool alwaysRelevant, const InterestTier tier) {
+    if (!ValidPosition(position) || m_entities.find(netId) != m_entities.end()) {
         return false;
     }
-    m_entities.emplace(netId, EntityRecordUVE{position, alwaysRelevant, tier});
-    const CellKeyUVE cell = CellOfUVE(position);
+    m_entities.emplace(netId, EntityRecord{position, alwaysRelevant, tier});
+    const CellKey cell = CellOf(position);
     m_entityCells.emplace(netId, cell);
     m_cells[cell].push_back(netId);
     return true;
 }
 
-bool NetworkInterestUVE::RemoveEntityUVE(const NetworkEntityIdUVE netId) noexcept {
+bool NetworkInterest::RemoveEntity(const NetworkEntityId netId) noexcept {
     const auto entity = m_entities.find(netId);
     if (entity == m_entities.end()) {
         return false;
@@ -117,7 +117,7 @@ bool NetworkInterestUVE::RemoveEntityUVE(const NetworkEntityIdUVE netId) noexcep
     if (placed != m_entityCells.end()) {
         const auto cell = m_cells.find(placed->second);
         if (cell != m_cells.end()) {
-            EraseFromCellUVE(cell->second, netId);
+            EraseFromCell(cell->second, netId);
             if (cell->second.empty()) {
                 m_cells.erase(cell);
             }
@@ -125,22 +125,22 @@ bool NetworkInterestUVE::RemoveEntityUVE(const NetworkEntityIdUVE netId) noexcep
         m_entityCells.erase(placed);
     }
     m_entities.erase(entity);
-    SweepEntityPairsUVE(netId);
+    SweepEntityPairs(netId);
     return true;
 }
 
-bool NetworkInterestUVE::UpdateViewerUVE(const InterestViewerIdUVE viewer,
-                                         const Math::Vector3UVE& position) noexcept {
+bool NetworkInterest::UpdateViewer(const InterestViewerId viewer,
+                                         const Math::Vector3& position) noexcept {
     const auto found = m_viewers.find(viewer);
-    if (found == m_viewers.end() || !ValidPositionUVE(position)) {
+    if (found == m_viewers.end() || !ValidPosition(position)) {
         return false;
     }
     found->second.position = position;
     return true;
 }
 
-bool NetworkInterestUVE::SetEntityTierUVE(const NetworkEntityIdUVE netId,
-                                          const InterestTierUVE tier) noexcept {
+bool NetworkInterest::SetEntityTier(const NetworkEntityId netId,
+                                          const InterestTier tier) noexcept {
     const auto entity = m_entities.find(netId);
     if (entity == m_entities.end()) {
         return false;
@@ -149,8 +149,8 @@ bool NetworkInterestUVE::SetEntityTierUVE(const NetworkEntityIdUVE netId,
     return true;
 }
 
-std::optional<InterestTierUVE> NetworkInterestUVE::EntityTierUVE(
-    const NetworkEntityIdUVE netId) const noexcept {
+std::optional<InterestTier> NetworkInterest::EntityTier(
+    const NetworkEntityId netId) const noexcept {
     const auto entity = m_entities.find(netId);
     if (entity == m_entities.end()) {
         return std::nullopt;
@@ -158,7 +158,7 @@ std::optional<InterestTierUVE> NetworkInterestUVE::EntityTierUVE(
     return entity->second.tier;
 }
 
-bool NetworkInterestUVE::SetEntityRateUVE(const NetworkEntityIdUVE netId,
+bool NetworkInterest::SetEntityRate(const NetworkEntityId netId,
                                           const std::uint8_t everyN) noexcept {
     const auto entity = m_entities.find(netId);
     if (entity == m_entities.end()) {
@@ -168,8 +168,8 @@ bool NetworkInterestUVE::SetEntityRateUVE(const NetworkEntityIdUVE netId,
     return true;
 }
 
-std::optional<std::uint8_t> NetworkInterestUVE::EntityRateUVE(
-    const NetworkEntityIdUVE netId) const noexcept {
+std::optional<std::uint8_t> NetworkInterest::EntityRate(
+    const NetworkEntityId netId) const noexcept {
     const auto entity = m_entities.find(netId);
     if (entity == m_entities.end()) {
         return std::nullopt;
@@ -177,10 +177,10 @@ std::optional<std::uint8_t> NetworkInterestUVE::EntityRateUVE(
     return entity->second.rateOverride;
 }
 
-bool NetworkInterestUVE::UpdateEntityUVE(const NetworkEntityIdUVE netId,
-                                         const Math::Vector3UVE& position) noexcept {
+bool NetworkInterest::UpdateEntity(const NetworkEntityId netId,
+                                         const Math::Vector3& position) noexcept {
     const auto entity = m_entities.find(netId);
-    if (entity == m_entities.end() || !ValidPositionUVE(position)) {
+    if (entity == m_entities.end() || !ValidPosition(position)) {
         return false;
     }
     entity->second.position = position;
@@ -188,13 +188,13 @@ bool NetworkInterestUVE::UpdateEntityUVE(const NetworkEntityIdUVE netId,
     if (placed == m_entityCells.end()) {
         return true;
     }
-    const CellKeyUVE next = CellOfUVE(position);
+    const CellKey next = CellOf(position);
     if (placed->second == next) {
         return true;
     }
     const auto old = m_cells.find(placed->second);
     if (old != m_cells.end()) {
-        EraseFromCellUVE(old->second, netId);
+        EraseFromCell(old->second, netId);
         if (old->second.empty()) {
             m_cells.erase(old);
         }
@@ -204,8 +204,8 @@ bool NetworkInterestUVE::UpdateEntityUVE(const NetworkEntityIdUVE netId,
     return true;
 }
 
-bool NetworkInterestUVE::IsRelevantUVE(const InterestViewerIdUVE viewer,
-                                       const NetworkEntityIdUVE netId) {
+bool NetworkInterest::IsRelevant(const InterestViewerId viewer,
+                                       const NetworkEntityId netId) {
     ++m_stats.queries;
     const auto foundViewer = m_viewers.find(viewer);
     const auto foundEntity = m_entities.find(netId);
@@ -217,11 +217,11 @@ bool NetworkInterestUVE::IsRelevantUVE(const InterestViewerIdUVE viewer,
     // The clock advances for every known pair - relevant, culled, or always - since each
     // query is one send tick seen. Throttling is orthogonal to relevance: always-relevant
     // skips the distance, never the rate.
-    const bool sendTick = ThrottleUVE(viewer, netId);
+    const bool sendTick = Throttle(viewer, netId);
     const bool verdict =
         foundEntity->second.alwaysRelevant ||
-        JudgeUVE(viewer, netId,
-                 DistanceSquaredUVE(foundViewer->second.position, foundEntity->second.position),
+        Judge(viewer, netId,
+                 DistanceSquared(foundViewer->second.position, foundEntity->second.position),
                  foundViewer->second.radius);
     if (!verdict) {
         ++m_stats.culled;
@@ -235,13 +235,13 @@ bool NetworkInterestUVE::IsRelevantUVE(const InterestViewerIdUVE viewer,
     return true;
 }
 
-std::vector<NetworkEntityIdUVE> NetworkInterestUVE::RelevantEntitiesUVE(
-    const InterestViewerIdUVE viewer) {
+std::vector<NetworkEntityId> NetworkInterest::RelevantEntities(
+    const InterestViewerId viewer) {
     ++m_stats.refreshes;
     const auto foundViewer = m_viewers.find(viewer);
     if (foundViewer == m_viewers.end()) {
         ++m_stats.unknownIds;
-        std::vector<NetworkEntityIdUVE> all;
+        std::vector<NetworkEntityId> all;
         all.reserve(m_entities.size());
         for (const auto& [netId, _] : m_entities) {
             all.push_back(netId);
@@ -254,31 +254,31 @@ std::vector<NetworkEntityIdUVE> NetworkInterestUVE::RelevantEntitiesUVE(
     // and judges truly, instead of iterating millions of empty ones. Dense-thousands scale
     // would iterate the sphere's cell range instead; that swap is noted, not needed yet.
     const float reach = foundViewer->second.radius + m_hysteresisMargin;
-    std::vector<NetworkEntityIdUVE> relevant;
+    std::vector<NetworkEntityId> relevant;
     // Always-relevant entities first, flat: they live anywhere - including cells the overlap
     // gate below would rightly skip for distance-judged entities - so the grid never sees
     // them at all. Their sets are tiny (a player, a boss); the scan costs nothing.
     for (const auto& [netId, record] : m_entities) {
-        if (record.alwaysRelevant && ThrottleUVE(viewer, netId)) {
+        if (record.alwaysRelevant && Throttle(viewer, netId)) {
             relevant.push_back(netId);
         }
     }
     for (const auto& [cell, members] : m_cells) {
-        if (!CellOverlapsUVE(cell, foundViewer->second.position, reach)) {
+        if (!CellOverlaps(cell, foundViewer->second.position, reach)) {
             continue;
         }
-        for (const NetworkEntityIdUVE netId : members) {
+        for (const NetworkEntityId netId : members) {
             const auto entity = m_entities.find(netId);
             if (entity == m_entities.end() || entity->second.alwaysRelevant) {
                 continue;
             }
             // Both advance always (no short-circuit): bulk and single queries share one
             // clock per pair, so a bulk refresh lands on the same phase as single queries.
-            const bool judged = JudgeUVE(
+            const bool judged = Judge(
                 viewer, netId,
-                DistanceSquaredUVE(foundViewer->second.position, entity->second.position),
+                DistanceSquared(foundViewer->second.position, entity->second.position),
                 foundViewer->second.radius);
-            const bool sendTick = ThrottleUVE(viewer, netId);
+            const bool sendTick = Throttle(viewer, netId);
             if (judged && sendTick) {
                 relevant.push_back(netId);
             }
@@ -288,14 +288,14 @@ std::vector<NetworkEntityIdUVE> NetworkInterestUVE::RelevantEntitiesUVE(
     return relevant;
 }
 
-NetworkInterestUVE::CellKeyUVE NetworkInterestUVE::CellOfUVE(
-    const Math::Vector3UVE& position) const noexcept {
-    return CellKeyUVE{static_cast<int>(std::floor(position.x / m_cellSize)),
+NetworkInterest::CellKey NetworkInterest::CellOf(
+    const Math::Vector3& position) const noexcept {
+    return CellKey{static_cast<int>(std::floor(position.x / m_cellSize)),
                       static_cast<int>(std::floor(position.y / m_cellSize)),
                       static_cast<int>(std::floor(position.z / m_cellSize))};
 }
 
-bool NetworkInterestUVE::CellOverlapsUVE(const CellKeyUVE& cell, const Math::Vector3UVE& center,
+bool NetworkInterest::CellOverlaps(const CellKey& cell, const Math::Vector3& center,
                                          const float radius) const noexcept {
     // Closest point on the cell box to the sphere center, in doubles: at extreme coordinates
     // float box math would drift by hundreds of units, and a wrongly skipped cell would cull
@@ -317,7 +317,7 @@ bool NetworkInterestUVE::CellOverlapsUVE(const CellKeyUVE& cell, const Math::Vec
     return dx * dx + dy * dy + dz * dz <= reach * reach;
 }
 
-void NetworkInterestUVE::SweepViewerPairsUVE(const InterestViewerIdUVE viewer) noexcept {
+void NetworkInterest::SweepViewerPairs(const InterestViewerId viewer) noexcept {
     for (auto pair = m_relevantPairs.begin(); pair != m_relevantPairs.end();) {
         pair = pair->first == viewer ? m_relevantPairs.erase(pair) : std::next(pair);
     }
@@ -326,7 +326,7 @@ void NetworkInterestUVE::SweepViewerPairsUVE(const InterestViewerIdUVE viewer) n
     }
 }
 
-void NetworkInterestUVE::SweepEntityPairsUVE(const NetworkEntityIdUVE netId) noexcept {
+void NetworkInterest::SweepEntityPairs(const NetworkEntityId netId) noexcept {
     for (auto pair = m_relevantPairs.begin(); pair != m_relevantPairs.end();) {
         pair = pair->second == netId ? m_relevantPairs.erase(pair) : std::next(pair);
     }
@@ -335,23 +335,23 @@ void NetworkInterestUVE::SweepEntityPairsUVE(const NetworkEntityIdUVE netId) noe
     }
 }
 
-bool NetworkInterestUVE::ThrottleUVE(const InterestViewerIdUVE viewer,
-                                     const NetworkEntityIdUVE netId) noexcept {
+bool NetworkInterest::Throttle(const InterestViewerId viewer,
+                                     const NetworkEntityId netId) noexcept {
     const auto entity = m_entities.find(netId);
     if (entity == m_entities.end()) {
         return true;
     }
     const std::uint8_t divisor = entity->second.rateOverride != 0U
                                      ? entity->second.rateOverride
-                                     : TierDivisorUVE(entity->second.tier);
-    const std::pair<InterestViewerIdUVE, NetworkEntityIdUVE> pair{viewer, netId};
+                                     : TierDivisor(entity->second.tier);
+    const std::pair<InterestViewerId, NetworkEntityId> pair{viewer, netId};
     const std::uint64_t tick = m_sendTicks[pair]++;
     return (tick + static_cast<std::uint64_t>(netId)) % divisor == 0U;
 }
 
-bool NetworkInterestUVE::JudgeUVE(const InterestViewerIdUVE viewer, const NetworkEntityIdUVE netId,
+bool NetworkInterest::Judge(const InterestViewerId viewer, const NetworkEntityId netId,
                                   const float distanceSquared, const float radius) noexcept {
-    const std::pair<InterestViewerIdUVE, NetworkEntityIdUVE> pair{viewer, netId};
+    const std::pair<InterestViewerId, NetworkEntityId> pair{viewer, netId};
     if (distanceSquared <= radius * radius) {
         m_relevantPairs.insert(pair);
         return true;

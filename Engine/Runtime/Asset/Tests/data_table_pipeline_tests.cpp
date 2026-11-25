@@ -24,10 +24,10 @@
 namespace UVE::Asset::Tests {
 namespace {
 
-[[nodiscard]] bool WaitForTerminalStateUVE(const AssetHandleUVE<DataTableUVE>& handle,
+[[nodiscard]] bool WaitForTerminalState(const AssetHandle<DataTable>& handle,
                                            const int maxIterations = 200000) {
     for (int iteration = 0; iteration < maxIterations; ++iteration) {
-        if (handle.IsReadyUVE() || handle.HasFailedUVE()) {
+        if (handle.IsReady() || handle.HasFailed()) {
             return true;
         }
         std::this_thread::yield();
@@ -35,16 +35,16 @@ namespace {
     return false;
 }
 
-TEST(DataTablePipelineUVE, BootstrapComposesImportAndTypedLoadServices) {
-    const std::filesystem::path source = ::UVE::Tests::ScratchRootUVE() / "uve_data_table_pipeline.csv";
+TEST(DataTablePipeline, BootstrapComposesImportAndTypedLoadServices) {
+    const std::filesystem::path source = ::UVE::Tests::ScratchRoot() / "uve_data_table_pipeline.csv";
     const std::filesystem::path destination =
-        ::UVE::Tests::ScratchRootUVE() / "uve_data_table_pipeline.uvtable";
+        ::UVE::Tests::ScratchRoot() / "uve_data_table_pipeline.uvtable";
     static_cast<void>(std::filesystem::remove(source));
     static_cast<void>(std::filesystem::remove(destination));
-    struct CleanupUVE final {
+    struct Cleanup final {
         std::filesystem::path source;
         std::filesystem::path destination;
-        ~CleanupUVE() {
+        ~Cleanup() {
             static_cast<void>(std::filesystem::remove(source));
             static_cast<void>(std::filesystem::remove(destination));
         }
@@ -56,25 +56,25 @@ TEST(DataTablePipelineUVE, BootstrapComposesImportAndTypedLoadServices) {
         output << "id,damage\npistol,25\n";
     }
 
-    AssetImporterUVE importer;
-    Threading::ThreadPoolUVE threadPool(2);
-    Events::EventSystemUVE eventSystem;
-    AssetManagerUVE assetManager(threadPool, eventSystem);
-    AssetDatabaseUVE assetDatabase;
-    RegisterDataTablePipelineUVE(importer, assetManager);
+    AssetImporter importer;
+    Threading::ThreadPool threadPool(2);
+    Events::EventSystem eventSystem;
+    AssetManager assetManager(threadPool, eventSystem);
+    AssetDatabase assetDatabase;
+    RegisterDataTablePipeline(importer, assetManager);
 
-    DataTableImportSettingsUVE settings;
+    DataTableImportSettings settings;
     settings.tableName = "weapons";
-    settings.columns = {DataTableColumnUVE{"damage", DataTableColumnTypeUVE::Integer}};
-    const AssetGuidUVE guid = importer.ImportUVE(source, destination, assetDatabase, settings);
-    ASSERT_NE(guid, kInvalidAssetGuidUVE);
+    settings.columns = {DataTableColumn{"damage", DataTableColumnType::Integer}};
+    const AssetGuid guid = importer.Import(source, destination, assetDatabase, settings);
+    ASSERT_NE(guid, kInvalidAssetGuid);
 
-    const AssetHandleUVE<DataTableUVE> handle = assetManager.LoadUVE<DataTableUVE>(guid, assetDatabase);
-    ASSERT_TRUE(WaitForTerminalStateUVE(handle));
-    ASSERT_TRUE(handle.IsReadyUVE());
-    const DataTableUVE* const table = handle.TryGetUVE();
+    const AssetHandle<DataTable> handle = assetManager.Load<DataTable>(guid, assetDatabase);
+    ASSERT_TRUE(WaitForTerminalState(handle));
+    ASSERT_TRUE(handle.IsReady());
+    const DataTable* const table = handle.TryGet();
     ASSERT_NE(table, nullptr);
-    const DataTableSnapshotUVE snapshot = table->GetSnapshotUVE();
+    const DataTableSnapshot snapshot = table->GetSnapshot();
     ASSERT_EQ(snapshot.name, "weapons");
     ASSERT_EQ(snapshot.rows.size(), 1U);
     ASSERT_EQ(snapshot.rows.front().values.size(), 1U);

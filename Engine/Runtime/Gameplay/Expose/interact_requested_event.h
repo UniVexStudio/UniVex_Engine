@@ -6,11 +6,11 @@
 
 namespace UVE::Gameplay {
 
-struct InteractRequestedEventUVE final {
-    Scene::EntityUVE interactor = Scene::kInvalidEntityUVE;
-    Scene::EntityUVE area = Scene::kInvalidEntityUVE;
+struct InteractRequestedEvent final {
+    Scene::Entity interactor = Scene::kInvalidEntity;
+    Scene::Entity area = Scene::kInvalidEntity;
 
-    [[nodiscard]] bool operator==(const InteractRequestedEventUVE&) const noexcept = default;
+    [[nodiscard]] bool operator==(const InteractRequestedEvent&) const noexcept = default;
 };
 
 } // namespace UVE::Gameplay

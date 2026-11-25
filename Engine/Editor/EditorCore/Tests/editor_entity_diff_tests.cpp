@@ -10,19 +10,19 @@
 namespace UVE::Editor {
 namespace {
 
-using KindUVE = EntityDiffRowUVE::KindUVE;
+using Kind = EntityDiffRow::Kind;
 
 // A root "Prop" (collider) with a child "Wheel" (transform), as the scene serializer writes it.
-constexpr const char* kSavedUVE = R"({"entities":[
-  {"localId":0,"components":{"NameComponentUVE":{"name":"Prop"},"HierarchyComponentUVE":{"parentLocalId":-1},
-                             "ColliderComponentUVE":{"friction":0.0,"disabled":false}}},
-  {"localId":1,"components":{"NameComponentUVE":{"name":"Wheel"},"HierarchyComponentUVE":{"parentLocalId":0},
-                             "TransformComponentUVE":{"localPosition":[0.0,0.0,0.0]}}}
+constexpr const char* kSaved = R"({"entities":[
+  {"localId":0,"components":{"NameComponent":{"name":"Prop"},"HierarchyComponent":{"parentLocalId":-1},
+                             "ColliderComponent":{"friction":0.0,"disabled":false}}},
+  {"localId":1,"components":{"NameComponent":{"name":"Wheel"},"HierarchyComponent":{"parentLocalId":0},
+                             "TransformComponent":{"localPosition":[0.0,0.0,0.0]}}}
 ]})";
 
-[[nodiscard]] const EntityDiffRowUVE* FindUVE(const std::vector<EntityDiffRowUVE>& rows, const KindUVE kind,
+[[nodiscard]] const EntityDiffRow* Find(const std::vector<EntityDiffRow>& rows, const Kind kind,
                                               const std::string& object, const std::string& what) {
-    for (const EntityDiffRowUVE& row : rows) {
+    for (const EntityDiffRow& row : rows) {
         if (row.kind == kind && row.object == object && row.what == what) {
             return &row;
         }
@@ -30,54 +30,54 @@ constexpr const char* kSavedUVE = R"({"entities":[
     return nullptr;
 }
 
-TEST(EditorEntityDiffUVETest, SamePayload_HasNoDifferences) {
-    EXPECT_TRUE(DiffEntityPayloadsUVE(kSavedUVE, kSavedUVE).empty());
+TEST(EditorEntityDiffTest, SamePayload_HasNoDifferences) {
+    EXPECT_TRUE(DiffEntityPayloads(kSaved, kSaved).empty());
 }
 
-TEST(EditorEntityDiffUVETest, RootRenamedAfterTheFile_IsNotADifference) {
+TEST(EditorEntityDiffTest, RootRenamedAfterTheFile_IsNotADifference) {
     const std::string current = R"({"entities":[
-      {"localId":0,"components":{"NameComponentUVE":{"name":"Crate"},"HierarchyComponentUVE":{"parentLocalId":-1},
-                                 "ColliderComponentUVE":{"friction":0.0,"disabled":false}}},
-      {"localId":1,"components":{"NameComponentUVE":{"name":"Wheel"},"HierarchyComponentUVE":{"parentLocalId":0},
-                                 "TransformComponentUVE":{"localPosition":[0.0,0.0,0.0]}}}]})";
-    EXPECT_TRUE(DiffEntityPayloadsUVE(kSavedUVE, current).empty());
+      {"localId":0,"components":{"NameComponent":{"name":"Crate"},"HierarchyComponent":{"parentLocalId":-1},
+                                 "ColliderComponent":{"friction":0.0,"disabled":false}}},
+      {"localId":1,"components":{"NameComponent":{"name":"Wheel"},"HierarchyComponent":{"parentLocalId":0},
+                                 "TransformComponent":{"localPosition":[0.0,0.0,0.0]}}}]})";
+    EXPECT_TRUE(DiffEntityPayloads(kSaved, current).empty());
 }
 
-TEST(EditorEntityDiffUVETest, ChangedProperty_AddedObject_RemovedComponent) {
+TEST(EditorEntityDiffTest, ChangedProperty_AddedObject_RemovedComponent) {
     // friction changed, the Wheel lost its transform and gained a light, a Lamp was added under the root.
     const std::string current = R"({"entities":[
-      {"localId":0,"components":{"NameComponentUVE":{"name":"Prop"},"HierarchyComponentUVE":{"parentLocalId":-1},
-                                 "ColliderComponentUVE":{"friction":0.5,"disabled":false}}},
-      {"localId":1,"components":{"NameComponentUVE":{"name":"Wheel"},"HierarchyComponentUVE":{"parentLocalId":0},
-                                 "LightComponentUVE":{"intensity":2.0}}},
-      {"localId":2,"components":{"NameComponentUVE":{"name":"Lamp"},"HierarchyComponentUVE":{"parentLocalId":0}}}]})";
-    const std::vector<EntityDiffRowUVE> rows = DiffEntityPayloadsUVE(kSavedUVE, current);
-    const EntityDiffRowUVE* friction = FindUVE(rows, KindUVE::Changed, "(root)", "Collider.friction");
+      {"localId":0,"components":{"NameComponent":{"name":"Prop"},"HierarchyComponent":{"parentLocalId":-1},
+                                 "ColliderComponent":{"friction":0.5,"disabled":false}}},
+      {"localId":1,"components":{"NameComponent":{"name":"Wheel"},"HierarchyComponent":{"parentLocalId":0},
+                                 "LightComponent":{"intensity":2.0}}},
+      {"localId":2,"components":{"NameComponent":{"name":"Lamp"},"HierarchyComponent":{"parentLocalId":0}}}]})";
+    const std::vector<EntityDiffRow> rows = DiffEntityPayloads(kSaved, current);
+    const EntityDiffRow* friction = Find(rows, Kind::Changed, "(root)", "Collider.friction");
     ASSERT_NE(friction, nullptr);
     EXPECT_EQ(friction->before, "0");
     EXPECT_EQ(friction->after, "0.5");
-    EXPECT_NE(FindUVE(rows, KindUVE::Removed, "(root)/Wheel", "Transform"), nullptr);
-    EXPECT_NE(FindUVE(rows, KindUVE::Added, "(root)/Wheel", "Light"), nullptr);
-    EXPECT_NE(FindUVE(rows, KindUVE::Added, "(root)/Lamp", ""), nullptr);
+    EXPECT_NE(Find(rows, Kind::Removed, "(root)/Wheel", "Transform"), nullptr);
+    EXPECT_NE(Find(rows, Kind::Added, "(root)/Wheel", "Light"), nullptr);
+    EXPECT_NE(Find(rows, Kind::Added, "(root)/Lamp", ""), nullptr);
     EXPECT_EQ(rows.size(), 4U);
 }
 
-TEST(EditorEntityDiffUVETest, RemovedObject_AndSameNamedSiblings) {
+TEST(EditorEntityDiffTest, RemovedObject_AndSameNamedSiblings) {
     const std::string saved = R"({"entities":[
-      {"localId":0,"components":{"NameComponentUVE":{"name":"Car"},"HierarchyComponentUVE":{"parentLocalId":-1}}},
-      {"localId":1,"components":{"NameComponentUVE":{"name":"Wheel"},"HierarchyComponentUVE":{"parentLocalId":0}}},
-      {"localId":2,"components":{"NameComponentUVE":{"name":"Wheel"},"HierarchyComponentUVE":{"parentLocalId":0}}}]})";
+      {"localId":0,"components":{"NameComponent":{"name":"Car"},"HierarchyComponent":{"parentLocalId":-1}}},
+      {"localId":1,"components":{"NameComponent":{"name":"Wheel"},"HierarchyComponent":{"parentLocalId":0}}},
+      {"localId":2,"components":{"NameComponent":{"name":"Wheel"},"HierarchyComponent":{"parentLocalId":0}}}]})";
     const std::string current = R"({"entities":[
-      {"localId":0,"components":{"NameComponentUVE":{"name":"Car"},"HierarchyComponentUVE":{"parentLocalId":-1}}},
-      {"localId":1,"components":{"NameComponentUVE":{"name":"Wheel"},"HierarchyComponentUVE":{"parentLocalId":0}}}]})";
-    const std::vector<EntityDiffRowUVE> rows = DiffEntityPayloadsUVE(saved, current);
+      {"localId":0,"components":{"NameComponent":{"name":"Car"},"HierarchyComponent":{"parentLocalId":-1}}},
+      {"localId":1,"components":{"NameComponent":{"name":"Wheel"},"HierarchyComponent":{"parentLocalId":0}}}]})";
+    const std::vector<EntityDiffRow> rows = DiffEntityPayloads(saved, current);
     ASSERT_EQ(rows.size(), 1U);
-    EXPECT_EQ(rows[0].kind, KindUVE::Removed);
+    EXPECT_EQ(rows[0].kind, Kind::Removed);
     EXPECT_EQ(rows[0].object, "(root)/Wheel #2");
 }
 
-TEST(EditorEntityDiffUVETest, UnreadablePayloads_GiveNoRows) {
-    EXPECT_TRUE(DiffEntityPayloadsUVE("not json", "{]").empty());
+TEST(EditorEntityDiffTest, UnreadablePayloads_GiveNoRows) {
+    EXPECT_TRUE(DiffEntityPayloads("not json", "{]").empty());
 }
 
 } // namespace

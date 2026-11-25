@@ -5,6 +5,6 @@
 
 namespace {
 
-[[maybe_unused]] const int kNoEntrySentinelUVE = 0;
+[[maybe_unused]] const int kNoEntrySentinel = 0;
 
 } // namespace

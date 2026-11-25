@@ -15,7 +15,7 @@ namespace UVE::Scene {
 /// component cannot meaningfully address more shapes than the asset it is attached to may hold, and
 /// mirroring the number here is what keeps a rejected asset from being reachable through a
 /// component that outgrew it.
-inline constexpr std::size_t kMaximumMorphTargetWeightsUVE = Asset::kMaximumMeshMorphTargetsUVE;
+inline constexpr std::size_t kMaximumMorphTargetWeights = Asset::kMaximumMeshMorphTargets;
 
 /// One blend shape's current value, addressed BY NAME rather than by index.
 ///
@@ -23,11 +23,11 @@ inline constexpr std::size_t kMaximumMorphTargetWeightsUVE = Asset::kMaximumMesh
 /// re-exporting a face mesh with an added shape shifts every index after the insertion point, and
 /// an index-addressed component would silently animate the wrong muscle. A name that no longer
 /// exists is then a detectable, reportable miss rather than a silent misdrive.
-struct MorphTargetWeightUVE final {
+struct MorphTargetWeight final {
     std::string target;
     float weight = 0.0F;
 
-    [[nodiscard]] bool operator==(const MorphTargetWeightUVE&) const noexcept = default;
+    [[nodiscard]] bool operator==(const MorphTargetWeight&) const noexcept = default;
 };
 
 /// The blend-shape state of one mesh instance: a set of named weights and the switch that pauses
@@ -42,17 +42,17 @@ struct MorphTargetWeightUVE final {
 /// `enabled` exists so a state machine, a game pause, or a "reset face" operation can stop the
 /// effect without destroying the authored weights - the same reason the engine's other modifiers
 /// carry theirs.
-struct MorphTargetComponentUVE final {
-    std::vector<MorphTargetWeightUVE> weights;
+struct MorphTargetComponent final {
+    std::vector<MorphTargetWeight> weights;
     bool enabled = true;
 
-    [[nodiscard]] bool operator==(const MorphTargetComponentUVE&) const noexcept = default;
+    [[nodiscard]] bool operator==(const MorphTargetComponent&) const noexcept = default;
 };
 
 /// Validates the component's own structure: the size cap, non-empty and unique names, finite
 /// weights. Says nothing about whether the names exist on any particular mesh - that is a question
-/// only a mesh can answer, and it is TryResolveMorphTargetWeightsUVE that asks it.
-[[nodiscard]] bool IsMorphTargetComponentValidUVE(const MorphTargetComponentUVE& component) noexcept;
+/// only a mesh can answer, and it is TryResolveMorphTargetWeights that asks it.
+[[nodiscard]] bool IsMorphTargetComponentValid(const MorphTargetComponent& component) noexcept;
 
 /// Resolves this component into the flat, index-addressed weight array a mesh's morph evaluation
 /// consumes: `outWeights[i]` is the weight of `targets[i]`.
@@ -67,21 +67,21 @@ struct MorphTargetComponentUVE final {
 /// `defaults` is non-empty and does not match `targets`, when any default is non-finite, or when an
 /// entry names a shape the mesh does not have. A name miss is a hard failure on purpose: silently
 /// dropping it would let a mistyped "jawOpen" play as a perfectly still face with no diagnostic.
-[[nodiscard]] bool TryResolveMorphTargetWeightsUVE(const MorphTargetComponentUVE& component,
-                                                   std::span<const Asset::MeshMorphTargetUVE> targets,
+[[nodiscard]] bool TryResolveMorphTargetWeights(const MorphTargetComponent& component,
+                                                   std::span<const Asset::MeshMorphTarget> targets,
                                                    std::span<const float> defaults,
                                                    std::vector<float>& outWeights);
 
 /// Applies the component's weights to `bindVertices` through the mesh's shapes.
 ///
 /// This is the one call a runtime mesh path needs: it resolves names to indices and then evaluates
-/// them with the CPU authority in AccumulateMorphTargetsUVE, so nothing that drives blend shapes
+/// them with the CPU authority in AccumulateMorphTargets, so nothing that drives blend shapes
 /// has to know how the accumulation works. A disabled component still produces `outVertices` - it
 /// produces the mesh at its DEFAULT weights, because "disabled" means "this component contributes
 /// nothing", not "the mesh has no face".
-[[nodiscard]] bool EvaluateMorphTargetsUVE(const MorphTargetComponentUVE& component,
-                                            const Asset::MeshAssetUVE& mesh,
-                                            std::span<const Asset::MeshVertexUVE> bindVertices,
-                                            std::vector<Asset::MeshVertexUVE>& outVertices);
+[[nodiscard]] bool EvaluateMorphTargets(const MorphTargetComponent& component,
+                                            const Asset::MeshAsset& mesh,
+                                            std::span<const Asset::MeshVertex> bindVertices,
+                                            std::vector<Asset::MeshVertex>& outVertices);
 
 } // namespace UVE::Scene

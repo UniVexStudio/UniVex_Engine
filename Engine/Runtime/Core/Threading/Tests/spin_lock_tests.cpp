@@ -11,16 +11,16 @@
 namespace UVE::Threading::Tests {
 namespace {
 
-TEST(SpinLockUVETest, GuardsACounterAcrossThreads) {
-    SpinLockUVE lock;
+TEST(SpinLockTest, GuardsACounterAcrossThreads) {
+    SpinLock lock;
     int counter = 0;
-    constexpr int kThreadsUVE = 4;
-    constexpr int kRoundsUVE = 2000;
+    constexpr int kThreads = 4;
+    constexpr int kRounds = 2000;
     std::vector<std::thread> workers;
-    for (int thread = 0; thread < kThreadsUVE; ++thread) {
+    for (int thread = 0; thread < kThreads; ++thread) {
         workers.emplace_back([&lock, &counter] {
-            for (int round = 0; round < kRoundsUVE; ++round) {
-                const std::lock_guard<SpinLockUVE> guard{lock};
+            for (int round = 0; round < kRounds; ++round) {
+                const std::lock_guard<SpinLock> guard{lock};
                 ++counter;
             }
         });
@@ -28,11 +28,11 @@ TEST(SpinLockUVETest, GuardsACounterAcrossThreads) {
     for (std::thread& worker : workers) {
         worker.join();
     }
-    EXPECT_EQ(counter, kThreadsUVE * kRoundsUVE);
+    EXPECT_EQ(counter, kThreads * kRounds);
 }
 
-TEST(SpinLockUVETest, TryLock_SucceedsWhenFreeFailsWhenHeld) {
-    SpinLockUVE lock;
+TEST(SpinLockTest, TryLock_SucceedsWhenFreeFailsWhenHeld) {
+    SpinLock lock;
     EXPECT_TRUE(lock.try_lock());
     EXPECT_FALSE(lock.try_lock()); // Not recursive: the held lock refuses itself.
     lock.unlock();
