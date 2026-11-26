@@ -502,6 +502,13 @@ struct EngineConfig {
     /// scene placed, wherever the camera looks; Enabled preserves the shipped culling behaviour.
     FrustumCullingMode frustumCullingMode = FrustumCullingMode::Enabled;
 
+    /// GPU occlusion culling for the main colour view. An object the previous frame proved fully
+    /// hidden behind geometry already drawn is skipped. Conservative by construction: a skip needs
+    /// a query that returned zero samples AND an unchanged view projection since that query was
+    /// issued, so a camera cut never trusts a stale verdict. Off by default because it costs a
+    /// query and a proxy draw per candidate; on for a scene dense enough to pay for them.
+    bool gpuOcclusionCullingEnabled = false;
+
     /// Extended Part 1 Project Settings (Physics 3D, Input, Audio, Animation, Navigation,
     /// Networking, Localisation, Quality Tiers, and Packaging).
     double defaultLinearDamping = 0.01;

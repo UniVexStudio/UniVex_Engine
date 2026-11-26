@@ -62,6 +62,7 @@ inline constexpr std::string_view kContactShadowsSteps = "rendering.shadows.cont
 inline constexpr std::string_view kContactShadowsThickness = "rendering.shadows.contactShadowsThickness";
 inline constexpr std::string_view kContactShadowsStrength = "rendering.shadows.contactShadowsStrength";
 inline constexpr std::string_view kFrustumCullingMode = "rendering.culling.frustumCulling";
+inline constexpr std::string_view kGpuOcclusionCulling = "rendering.culling.gpuOcclusionCulling";
 inline constexpr std::string_view kAutoSaveInterval = "application.save.autoSaveInterval";
 inline constexpr std::string_view kQuitOnLastWindowClosed = "application.quitOnLastWindowClosed";
 inline constexpr std::string_view kBootBackgroundColor = "application.boot.backgroundColor";

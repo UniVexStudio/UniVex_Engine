@@ -674,6 +674,42 @@ TEST(EngineSettingsLayeringTest, FrustumCullingModeSettingDefaultsEnabledAndOver
     EXPECT_EQ(cliConfig.frustumCullingMode, FrustumCullingMode::DebugFreeze);
 }
 
+TEST(EngineSettingsLayeringTest, GpuOcclusionCullingIsOffByDefaultAndReachesTheConfig) {
+    Config::SettingsRegistry registry;
+    ASSERT_TRUE(RegisterEngineProjectSettings(registry));
+    namespace Id = EngineProjectSettingId;
+
+    Config::SettingsStack defaults(registry);
+    const auto defaultValue = defaults.GetValue(Id::kGpuOcclusionCulling);
+    ASSERT_TRUE(defaultValue.has_value());
+    EXPECT_FALSE(std::get<bool>(*defaultValue))
+        << "the query and proxy draw per candidate must be opted into, not paid for by default";
+
+    const Config::SettingDescriptor* const descriptor = registry.Find(Id::kGpuOcclusionCulling);
+    ASSERT_NE(descriptor, nullptr);
+    EXPECT_EQ(descriptor->type, Config::SettingType::Bool);
+    EXPECT_EQ(descriptor->category, "Rendering/Culling");
+    EXPECT_TRUE(descriptor->HasFlag(Config::kSettingFlagPerPlatform));
+    EXPECT_TRUE(descriptor->HasFlag(Config::kSettingFlagRestartRequired));
+    EXPECT_TRUE(IsEngineConfigSettingId(Id::kGpuOcclusionCulling));
+
+    ConfigManager project;
+    ConfigManager user;
+    ConfigManager platform;
+    ConfigManager commandLineValues;
+    project.SetBool(Id::kGpuOcclusionCulling, true);
+    Config::SettingsStack settings(registry);
+    ASSERT_TRUE(AttachEngineSettingsLayers(settings, project, user, platform, commandLineValues));
+
+    EngineConfig config{};
+    ApplyEngineSettings(settings, config);
+    EXPECT_TRUE(config.gpuOcclusionCullingEnabled);
+
+    platform.SetBool(Id::kGpuOcclusionCulling, false);
+    ApplyEngineSettings(settings, config);
+    EXPECT_FALSE(config.gpuOcclusionCullingEnabled) << "the platform layer outranks the project";
+}
+
 TEST(EngineSettingsLayeringTest, ConvertsTypedCommandLineFlagsAndUsesThemAsTopLayer) {
     Config::SettingsRegistry registry;
     ASSERT_TRUE(RegisterEngineProjectSettings(registry));

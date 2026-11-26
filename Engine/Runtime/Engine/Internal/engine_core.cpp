@@ -5496,6 +5496,7 @@ void ApplyEngineConfigToRenderer3D(const EngineConfig& config, Render::IRenderer
         static_cast<std::uint32_t>(std::max<std::int64_t>(config.pointSpotShadowResolution, 0)));
     Render::CullingSettings cullingSettings;
     cullingSettings.frustumCullingEnabled = config.frustumCullingMode == FrustumCullingMode::Enabled;
+    cullingSettings.gpuOcclusionCullingEnabled = config.gpuOcclusionCullingEnabled;
     renderer.SetCullingSettings(cullingSettings);
     renderer.SetMaterialSamplerSettings(
         config.defaultTextureRepeatMode != 0,

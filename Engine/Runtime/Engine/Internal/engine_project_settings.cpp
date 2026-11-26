@@ -337,6 +337,17 @@ struct EngineProjectSetting final {
          [](EngineConfig& config, const SettingValue& value) {
              config.frustumCullingMode = static_cast<FrustumCullingMode>(std::get<std::int64_t>(value));
          }},
+        {RestartRequired(PlatformOverride(Config::MakeBoolSetting(
+             std::string(Id::kGpuOcclusionCulling), defaults.gpuOcclusionCullingEnabled,
+             "GPU Occlusion Culling", "Rendering/Culling",
+             "Skip meshes the previous frame proved hidden behind geometry already drawn. Costs an "
+             "occlusion query and a proxy draw per candidate, so it pays off on scenes with many "
+             "objects and little benefit on small ones. A skip only happens when the query returned "
+             "zero samples and the camera has not moved since it was issued. Built-in primitives are "
+             "not covered yet; this applies to meshes and surface instances."))),
+         [](EngineConfig& config, const SettingValue& value) {
+             config.gpuOcclusionCullingEnabled = std::get<bool>(value);
+         }},
         {RestartRequired(Config::MakeFloatSetting(
              std::string(Id::kAutoSaveInterval), defaults.autoSaveIntervalSeconds, 10.0, 3600.0,
              "Auto-Save Interval", "Application/Save", "Seconds between writes to the game's auto-save slot.")),
