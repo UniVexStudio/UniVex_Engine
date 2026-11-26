@@ -3168,7 +3168,9 @@ struct Renderer3D::Impl {
         if (entry.resources.vertexBuffer.value == 0U || entry.vertexBytes != bytes.size()) {
             DestroyBufferIfValid(renderDevice, entry.resources.vertexBuffer);
             entry.resources.vertexBuffer =
-                renderDevice.CreateBuffer(BufferDesc{bytes.size(), BufferUsage::Vertex}, bytes);
+                renderDevice.CreateBuffer(BufferDesc{bytes.size(), BufferUsage::Vertex,
+                                                     BufferMemory::Auto, BufferUpdateFrequency::Dynamic},
+                                          bytes);
             entry.vertexBytes = bytes.size();
         } else if (!renderDevice.UpdateBuffer(entry.resources.vertexBuffer, bytes)) {
             return nullptr;
@@ -3754,7 +3756,8 @@ struct Renderer3D::Impl {
     [[nodiscard]] bool EnsureInstanceBufferCapacity(const std::size_t instanceCount) {
         if (instanceBaseBuffer == kInvalidBufferHandle) {
             instanceBaseBuffer = renderDevice.CreateBuffer(
-                BufferDesc{sizeof(std::int32_t), BufferUsage::Storage});
+                BufferDesc{sizeof(std::int32_t), BufferUsage::Storage, BufferMemory::Auto,
+                           BufferUpdateFrequency::Dynamic});
             if (instanceBaseBuffer == kInvalidBufferHandle) {
                 return false;
             }
@@ -3769,7 +3772,8 @@ struct Renderer3D::Impl {
             }
         }
         instanceBufferCapacity = 0U;
-        const BufferDesc desc{instanceCount * sizeof(Math::Matrix4x4), BufferUsage::Storage};
+        const BufferDesc desc{instanceCount * sizeof(Math::Matrix4x4), BufferUsage::Storage,
+                              BufferMemory::Auto, BufferUpdateFrequency::Dynamic};
         instanceTransformBuffer = renderDevice.CreateBuffer(desc);
         instanceNormalTransformBuffer = renderDevice.CreateBuffer(desc);
         if (instanceTransformBuffer == kInvalidBufferHandle ||
@@ -4313,7 +4317,8 @@ struct Renderer3D::Impl {
         if (entry.vertexBuffer == kInvalidBufferHandle || entry.vertexBytes != vertexBytes.size()) {
             DestroyBufferIfValid(renderDevice, entry.vertexBuffer);
             entry.vertexBuffer = renderDevice.CreateBuffer(
-                BufferDesc{vertexBytes.size(), BufferUsage::Vertex}, vertexBytes);
+                BufferDesc{vertexBytes.size(), BufferUsage::Vertex, BufferMemory::Auto,
+                           BufferUpdateFrequency::Dynamic}, vertexBytes);
             entry.vertexBytes = vertexBytes.size();
         } else if (!renderDevice.UpdateBuffer(entry.vertexBuffer, vertexBytes)) {
             return nullptr;
@@ -4321,7 +4326,8 @@ struct Renderer3D::Impl {
         if (entry.indexBuffer == kInvalidBufferHandle || entry.indexBytes != indexBytes.size()) {
             DestroyBufferIfValid(renderDevice, entry.indexBuffer);
             entry.indexBuffer = renderDevice.CreateBuffer(
-                BufferDesc{indexBytes.size(), BufferUsage::Index}, indexBytes);
+                BufferDesc{indexBytes.size(), BufferUsage::Index, BufferMemory::Auto,
+                           BufferUpdateFrequency::Dynamic}, indexBytes);
             entry.indexBytes = indexBytes.size();
         } else if (!renderDevice.UpdateBuffer(entry.indexBuffer, indexBytes)) {
             return nullptr;
@@ -5114,7 +5120,7 @@ Renderer3D::Renderer3D(IRenderDevice& renderDevice, IRenderSystem& renderSystem,
     m_impl->particleVertexStaging.reserve(kMaximumParticleGpuDrawCommands * kParticleVerticesPerCommand);
     m_impl->particleVertexBuffer = renderDevice.CreateBuffer(
         BufferDesc{sizeof(ParticleVertex) * kMaximumParticleGpuDrawCommands * kParticleVerticesPerCommand,
-                      BufferUsage::Vertex});
+                      BufferUsage::Vertex, BufferMemory::Auto, BufferUpdateFrequency::Dynamic});
 
     Shader::ShaderProgramDesc decalProgramDesc;
     decalProgramDesc.virtualFilePath = std::string(Shader::BuiltIn::kDecalVirtualPath);
@@ -5187,7 +5193,8 @@ Renderer3D::Renderer3D(IRenderDevice& renderDevice, IRenderSystem& renderSystem,
     m_impl->uiOverlayProgram = shaderManager.CreateProgram(uiOverlayProgramDesc);
     m_impl->uiVertexStaging.reserve(kMaximumUIQuads * kUIVerticesPerQuad);
     m_impl->uiVertexBuffer = renderDevice.CreateBuffer(
-        BufferDesc{sizeof(UIVertex) * kMaximumUIQuads * kUIVerticesPerQuad, BufferUsage::Vertex});
+        BufferDesc{sizeof(UIVertex) * kMaximumUIQuads * kUIVerticesPerQuad, BufferUsage::Vertex,
+                   BufferMemory::Auto, BufferUpdateFrequency::Dynamic});
 
     m_impl->vfxSpriteRenderer.Initialize(renderDevice, shaderManager);
 
@@ -7471,10 +7478,6 @@ void Renderer3D::RenderFrame(Scene::IEntityManager& entityManager, Scene::Entity
                  !m_impl->renderDevice.IsPresentationSurfaceSrgb());
             m_impl->toneMappingProgram->SetInt("uEncodeSrgbOutput", encodeSrgbOutput ? 1 : 0);
             m_impl->toneMappingProgram->SetInt("uSsaoCompositeEnabled", ssaoActive ? 1 : 0);
-            if (ssaoActive) {
-                m_impl->toneMappingProgram->SetInt(
-                    "uSsaoBlurEnabled", m_impl->postProcessSettings.ssaoBlurEnabled ? 1 : 0);
-            }
             m_impl->toneMappingProgram->SetInt("uContactShadowCompositeEnabled", contactShadowActive ? 1 : 0);
             m_impl->toneMappingProgram->SetInt("uSsrCompositeEnabled", ssrActive ? 1 : 0);
             m_impl->toneMappingProgram->SetInt("uBloomCompositeEnabled", bloomActive ? 1 : 0);

@@ -425,7 +425,8 @@ bool VfxSpriteRenderer::EnsureStorageBufferCapacity(IRenderDevice& renderDevice,
         m_instanceStorageCapacity = 0U;
     }
     m_instanceStorageBuffer = renderDevice.CreateBuffer(
-        BufferDesc{newCapacity * sizeof(VfxSpriteGpuInstance), BufferUsage::Storage});
+        BufferDesc{newCapacity * sizeof(VfxSpriteGpuInstance), BufferUsage::Storage,
+                   BufferMemory::Auto, BufferUpdateFrequency::Dynamic});
     if (m_instanceStorageBuffer == kInvalidBufferHandle) {
         return false;
     }
@@ -451,7 +452,8 @@ bool VfxSpriteRenderer::EnsureFallbackBufferCapacity(IRenderDevice& renderDevice
         m_fallbackVertexCapacity = 0U;
     }
     m_fallbackVertexBuffer = renderDevice.CreateBuffer(
-        BufferDesc{newCapacity * sizeof(VfxSpriteFallbackVertex), BufferUsage::Vertex});
+        BufferDesc{newCapacity * sizeof(VfxSpriteFallbackVertex), BufferUsage::Vertex,
+                   BufferMemory::Auto, BufferUpdateFrequency::Dynamic});
     if (m_fallbackVertexBuffer == kInvalidBufferHandle) {
         return false;
     }

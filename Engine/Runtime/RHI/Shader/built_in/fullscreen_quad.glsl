@@ -38,7 +38,6 @@ uniform int uEncodeSrgbOutput;
 
 // Unified composite enable flags (eliminates separate full-res RGBA16F LoadOp::Load passes).
 uniform int uSsaoCompositeEnabled;
-uniform int uSsaoBlurEnabled;
 uniform int uContactShadowCompositeEnabled;
 uniform int uSsrCompositeEnabled;
 uniform int uBloomCompositeEnabled;

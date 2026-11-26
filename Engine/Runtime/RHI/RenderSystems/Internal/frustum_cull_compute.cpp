@@ -96,6 +96,7 @@ bool FrustumCullCompute::Initialize(std::string* const outInfoLog) {
     BufferDesc planeDesc;
     planeDesc.usage = BufferUsage::Storage;
     planeDesc.sizeBytes = kFrustumPlaneCount * sizeof(CullPlaneGpu);
+    planeDesc.updateFrequency = BufferUpdateFrequency::Dynamic; // rewritten every pass
     m_planeBuffer = m_device.CreateBuffer(planeDesc);
     if (m_planeBuffer == kInvalidBufferHandle) {
         UVE_WARNING("FrustumCullCompute could not allocate its frustum-plane buffer.");
@@ -107,6 +108,7 @@ bool FrustumCullCompute::Initialize(std::string* const outInfoLog) {
     BufferDesc paramDesc;
     paramDesc.usage = BufferUsage::Storage;
     paramDesc.sizeBytes = sizeof(FrustumCullParamsGpu);
+    paramDesc.updateFrequency = BufferUpdateFrequency::Dynamic; // rewritten every pass
     m_paramBuffer = m_device.CreateBuffer(paramDesc);
     if (m_paramBuffer == kInvalidBufferHandle) {
         UVE_WARNING("FrustumCullCompute could not allocate its parameter buffer.");
@@ -141,6 +143,7 @@ bool FrustumCullCompute::EnsureBufferCapacity(const std::size_t boxCount) {
     BufferDesc boxDesc;
     boxDesc.usage = BufferUsage::Storage;
     boxDesc.sizeBytes = boxCount * sizeof(CullBoxGpu);
+    boxDesc.updateFrequency = BufferUpdateFrequency::Dynamic; // rewritten every pass
     m_boxBuffer = m_device.CreateBuffer(boxDesc);
 
     BufferDesc visibilityDesc;

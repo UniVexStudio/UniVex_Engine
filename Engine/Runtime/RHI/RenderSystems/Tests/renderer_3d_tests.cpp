@@ -712,13 +712,13 @@ TEST_F(Renderer3DTest, SSAORadiusIntensityPowerQualityAndBlurReachTheirShaderPas
     });
     ASSERT_NE(highSampleCount, highQualityCommands.cend());
     EXPECT_EQ(std::get<SetUniformIntCommand>(*highSampleCount).value, 12);
+    // With the blur off the separable blur passes are not recorded at all, so nothing sets the flag.
     const auto disabledBlur = std::find_if(highQualityCommands.cbegin(), highQualityCommands.cend(),
                                             [](const RecordedCommand& command) {
         return std::holds_alternative<SetUniformIntCommand>(command) &&
                std::get<SetUniformIntCommand>(command).name == "uSsaoBlurEnabled";
     });
-    ASSERT_NE(disabledBlur, highQualityCommands.cend());
-    EXPECT_EQ(std::get<SetUniformIntCommand>(*disabledBlur).value, 0);
+    EXPECT_EQ(disabledBlur, highQualityCommands.cend());
 }
 
 TEST_F(Renderer3DTest, ContactShadowSettingsReachTheirPassAndTheDiagnostics) {
