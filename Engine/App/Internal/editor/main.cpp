@@ -111,6 +111,7 @@ struct EditorLaunchOptions final {
     /// Screenshot aid: put a folder, a sun, a camera and a box in the level and select the box, so the
     /// panels and the viewport gizmos have content.
     bool prismDemoObject = false;
+    int prismDemoGrid = 0;
     bool prismDemoGizmos = false;
 };
 
@@ -155,6 +156,19 @@ struct EditorLaunchOptions final {
         if (argument == "--prism-demo-gizmos") {
             options.prismDemoObject = true;
             options.prismDemoGizmos = true;
+            continue;
+        }
+        if (argument == "--prism-demo-grid" && index + 1 < argc) {
+            int side = 0;
+            const std::string_view text{argv[index + 1]};
+            const auto parsed = std::from_chars(text.data(), text.data() + text.size(), side);
+            if (parsed.ec != std::errc{} || parsed.ptr != text.data() + text.size() || side < 1 || side > 64) {
+                options.error = "--prism-demo-grid requires a layer count from 1 to 64";
+                return options;
+            }
+            options.prismDemoGrid = side;
+            options.prismDemoObject = true;
+            ++index;
             continue;
         }
         if (argument == "--prism-screenshot" && index + 1 < argc) {
@@ -544,6 +558,32 @@ int UVE::App::RunEditor(const int argc, char** argv, const EditorPlatform& platf
                 }
             }
             static_cast<void>(editor.CreateDocumentSceneObject(UVE::Scene::Objects::SceneObjectKind::BoxMesh3D));
+            if (options.prismDemoGrid > 0) {
+                // A stack of large overlapping boxes at staggered depths. Many small boxes would
+                // measure per-draw setup instead; this measures the thing a fill-rate change
+                // changes - how much screen area every pass has to shade.
+                UVE::Scene::IEntityManager& entities = engine.GetServices().GetEntityManager();
+                const int count = options.prismDemoGrid;
+                for (int index = 0; index < count; ++index) {
+                    const UVE::Scene::Entity entity = editor.CreateDocumentSceneObject(
+                        UVE::Scene::Objects::SceneObjectKind::BoxMesh3D, editor.GetDocumentViewport());
+                    if (entity == UVE::Scene::kInvalidEntity ||
+                        !entities.HasComponent<UVE::Scene::TransformComponent>(entity)) {
+                        continue;
+                    }
+                    auto& transform = entities.GetComponent<UVE::Scene::TransformComponent>(entity);
+                    const float stagger = static_cast<float>(index);
+                    transform.localPosition = UVE::Math::Vector3{
+                        0.05F * static_cast<float>((index * 37) % 7) - 0.15F,
+                        0.05F * static_cast<float>((index * 53) % 7) - 0.15F,
+                        -0.35F * stagger};
+                    transform.localScale = UVE::Math::Vector3{5.0F, 5.0F, 5.0F};
+                }
+                // The per-object selection outline is editor overlay work that scales with the
+                // grid and would sit on top of whatever the renderer does; leave it out of the
+                // measurement.
+                editor.ClearSelection();
+            }
         }
 
         if (options.bridgeStdio) {
