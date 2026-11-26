@@ -8,6 +8,7 @@
 #include <cstdio>
 #include <array>
 #include <chrono>
+#include <cstdlib>
 #include <cstddef>
 #include <cmath>
 #include <cstdint>
@@ -1091,6 +1092,11 @@ struct Renderer3D::Impl {
     std::size_t spotShadowCandidatesThisFrame = 0U;
     std::size_t pointShadowCandidatesThisFrame = 0U;
     std::shared_ptr<Shader::ShaderProgram> toneMappingProgram;
+    /// Fog-free variant of the tone mapper (ShaderProgramDesc::extraDefines UVE_TM_LEAN).
+    std::shared_ptr<Shader::ShaderProgram> toneMappingLeanProgram;
+    /// UVE_TONE_MAPPING_LEAN=0 forces the full tone mapper, so the lean variant can be A/B'd
+    /// on target hardware without rebuilding.
+    bool toneMappingLeanAllowed = true;
     std::shared_ptr<Shader::ShaderProgram> proceduralSkyProgram;
 
     /// Project-selected presentation clear color used when no world environment supplies a sky.
@@ -5005,6 +5011,17 @@ Renderer3D::Renderer3D(IRenderDevice& renderDevice, IRenderSystem& renderSystem,
     toneMappingProgramDesc.depthWriteEnabled = false;
     toneMappingProgramDesc.debugName = "ToneMapping";
     m_impl->toneMappingProgram = shaderManager.CreateProgram(toneMappingProgramDesc);
+    {
+        // Same source and virtual path, one define: the fog block (god rays, volume march,
+        // analytic height fog) is the largest dead-code region in the hottest fullscreen shader.
+        Shader::ShaderProgramDesc leanDesc = toneMappingProgramDesc;
+        leanDesc.debugName = "ToneMappingLean";
+        leanDesc.extraDefines.emplace_back("UVE_TM_LEAN", "1");
+        m_impl->toneMappingLeanProgram = shaderManager.CreateProgram(leanDesc);
+        if (const char* const leanOverride = std::getenv("UVE_TONE_MAPPING_LEAN")) {
+            m_impl->toneMappingLeanAllowed = std::string_view{leanOverride} != "0";
+        }
+    }
 
     Shader::ShaderProgramDesc proceduralSkyProgramDesc;
     proceduralSkyProgramDesc.virtualFilePath = std::string(Shader::BuiltIn::kProceduralSkyVirtualPath);
@@ -7414,6 +7431,14 @@ void Renderer3D::RenderFrame(Scene::IEntityManager& entityManager, Scene::Entity
             if (!m_impl->toneMappingProgram->IsValid()) {
                 return;
             }
+            // Fog is the only block the lean variant compiles out, so a fog-free frame gets the
+            // same math with far fewer registers; an unusable lean program falls back to full.
+            const bool leanToneMapping =
+                m_impl->toneMappingLeanProgram != nullptr && m_impl->toneMappingLeanProgram->IsValid() &&
+                m_impl->toneMappingLeanAllowed && !m_impl->environmentFrame.fogEnabled &&
+                m_impl->fogVolumeCount == 0U;
+            const auto& toneMappingProgram =
+                leanToneMapping ? m_impl->toneMappingLeanProgram : m_impl->toneMappingProgram;
             m_impl->lastFrameDiagnostics.toneMappingPassRecorded = true;
             const bool fastApproximateAAEnabled =
                 m_impl->postProcessSettings.fastApproximateAAEnabled && !m_impl->probeCaptureViewActive;
@@ -7448,26 +7473,26 @@ void Renderer3D::RenderFrame(Scene::IEntityManager& entityManager, Scene::Entity
                                                       static_cast<std::int32_t>(m_impl->destinationTextureSizeOverride->second)}};
             }
             commandBuffer.BeginRenderPass(passDesc);
-            m_impl->toneMappingProgram->SetInt("uSourceTexture", 0);
-            m_impl->toneMappingProgram->SetInt("uNearestUpscaling",
+            toneMappingProgram->SetInt("uSourceTexture", 0);
+            toneMappingProgram->SetInt("uNearestUpscaling",
                                                  m_impl->postProcessSettings.nearestUpscalingEnabled ? 1 : 0);
             const std::int32_t toneMappingMethod =
                 !m_impl->postProcessSettings.acesToneMappingEnabled
                     ? 0
                     : static_cast<std::int32_t>(std::min(m_impl->postProcessSettings.toneMappingMethod, 2U));
-            m_impl->toneMappingProgram->SetInt("uToneMappingMethod", toneMappingMethod);
-            m_impl->toneMappingProgram->SetFloat("uSharpeningAmount",
+            toneMappingProgram->SetInt("uToneMappingMethod", toneMappingMethod);
+            toneMappingProgram->SetFloat("uSharpeningAmount",
                                                    m_impl->postProcessSettings.sharpeningAmount);
-            m_impl->toneMappingProgram->SetInt("uDitheringEnabled",
+            toneMappingProgram->SetInt("uDitheringEnabled",
                                                  m_impl->postProcessSettings.ditheringEnabled ? 1 : 0);
-            m_impl->toneMappingProgram->SetInt("uFastApproximateAA", fastApproximateAAEnabled ? 1 : 0);
-            m_impl->toneMappingProgram->SetInt(
+            toneMappingProgram->SetInt("uFastApproximateAA", fastApproximateAAEnabled ? 1 : 0);
+            toneMappingProgram->SetInt(
                 "uScreenSpaceAAQuality", static_cast<std::int32_t>(m_impl->postProcessSettings.fastApproximateAAQuality));
-            m_impl->toneMappingProgram->SetFloat("uFxaaTexelX", m_impl->humanEyeTexelX);
-            m_impl->toneMappingProgram->SetFloat("uFxaaTexelY", m_impl->humanEyeTexelY);
-            m_impl->toneMappingProgram->SetInt("uSceneDepthTexture", 1);
+            toneMappingProgram->SetFloat("uFxaaTexelX", m_impl->humanEyeTexelX);
+            toneMappingProgram->SetFloat("uFxaaTexelY", m_impl->humanEyeTexelY);
+            toneMappingProgram->SetInt("uSceneDepthTexture", 1);
             // A 3D View with a sky behind it is opaque; a probe or a see-through view keeps coverage.
-            m_impl->toneMappingProgram->SetInt("uWriteCoverageAlpha",
+            toneMappingProgram->SetInt("uWriteCoverageAlpha",
                                                    m_impl->destinationTextureOverride.has_value() &&
                                                            !(m_impl->uiViewCaptureActive && !m_impl->captureTransparentBackground)
                                                        ? 1
@@ -7476,156 +7501,175 @@ void Renderer3D::RenderFrame(Scene::IEntityManager& entityManager, Scene::Entity
                 (!capturingProbe || m_impl->uiViewCaptureActive) &&
                 (m_impl->destinationTextureOverride.has_value() ||
                  !m_impl->renderDevice.IsPresentationSurfaceSrgb());
-            m_impl->toneMappingProgram->SetInt("uEncodeSrgbOutput", encodeSrgbOutput ? 1 : 0);
-            m_impl->toneMappingProgram->SetInt("uSsaoCompositeEnabled", ssaoActive ? 1 : 0);
-            m_impl->toneMappingProgram->SetInt("uContactShadowCompositeEnabled", contactShadowActive ? 1 : 0);
-            m_impl->toneMappingProgram->SetInt("uSsrCompositeEnabled", ssrActive ? 1 : 0);
-            m_impl->toneMappingProgram->SetInt("uBloomCompositeEnabled", bloomActive ? 1 : 0);
-            m_impl->toneMappingProgram->SetInt("uHasColorGrading",
+            toneMappingProgram->SetInt("uEncodeSrgbOutput", encodeSrgbOutput ? 1 : 0);
+            toneMappingProgram->SetInt("uSsaoCompositeEnabled", ssaoActive ? 1 : 0);
+            toneMappingProgram->SetInt("uContactShadowCompositeEnabled", contactShadowActive ? 1 : 0);
+            toneMappingProgram->SetInt("uSsrCompositeEnabled", ssrActive ? 1 : 0);
+            toneMappingProgram->SetInt("uBloomCompositeEnabled", bloomActive ? 1 : 0);
+            toneMappingProgram->SetInt("uHasColorGrading",
                                                  hasPostOverride && m_impl->environmentFrame.postProcessingEnabled ? 1 : 0);
-            m_impl->toneMappingProgram->SetInt("uHasLutTexture", m_impl->lutTextureEnabled ? 1 : 0);
-            m_impl->toneMappingProgram->SetInt("uLutTexture",
+            toneMappingProgram->SetInt("uHasLutTexture", m_impl->lutTextureEnabled ? 1 : 0);
+            toneMappingProgram->SetInt("uLutTexture",
                                                  static_cast<std::int32_t>(kToneMappingLutTextureSlot));
-            m_impl->toneMappingProgram->SetInt("uSsaoTexture",
+            toneMappingProgram->SetInt("uSsaoTexture",
                                                  static_cast<std::int32_t>(kToneMappingSsaoTextureSlot));
-            m_impl->toneMappingProgram->SetInt("uContactShadowTexture",
+            toneMappingProgram->SetInt("uContactShadowTexture",
                                                  static_cast<std::int32_t>(kToneMappingContactShadowTextureSlot));
-            m_impl->toneMappingProgram->SetInt("uSsrTexture",
+            toneMappingProgram->SetInt("uSsrTexture",
                                                  static_cast<std::int32_t>(kToneMappingSsrTextureSlot));
-            m_impl->toneMappingProgram->SetInt("uBloomTexture",
+            toneMappingProgram->SetInt("uBloomTexture",
                                                  static_cast<std::int32_t>(kToneMappingBloomTextureSlot));
-            m_impl->toneMappingProgram->SetFloat("uDepthNdcScale", depthNdcScale);
-            m_impl->toneMappingProgram->SetFloat("uDepthNdcBias", depthNdcBias);
-            m_impl->toneMappingProgram->SetFloat("uProjA", projA);
-            m_impl->toneMappingProgram->SetFloat("uProjB", projB);
-            m_impl->toneMappingProgram->SetFloat("uInvProjX", invProjX);
-            m_impl->toneMappingProgram->SetFloat("uInvProjY", invProjY);
-            m_impl->toneMappingProgram->SetInt("uFastReconstruct", fastDepthReconstruct ? 1 : 0);
-            m_impl->toneMappingProgram->SetInt("uHumanEye", m_impl->humanEyeEnabled ? 1 : 0);
-            m_impl->toneMappingProgram->SetFloat("uHumanEyeCenterScale", m_impl->humanEyeCenterScale);
-            m_impl->toneMappingProgram->SetFloat("uHumanEyeTexelX", m_impl->humanEyeTexelX);
-            m_impl->toneMappingProgram->SetFloat("uHumanEyeTexelY", m_impl->humanEyeTexelY);
-            m_impl->toneMappingProgram->SetFloat("uExposure", m_impl->environmentFrame.exposure);
-            m_impl->toneMappingProgram->SetInt("uFogEnabled", m_impl->environmentFrame.fogEnabled ? 1 : 0);
-            m_impl->toneMappingProgram->SetInt("uFogMode",
+            toneMappingProgram->SetFloat("uDepthNdcScale", depthNdcScale);
+            toneMappingProgram->SetFloat("uDepthNdcBias", depthNdcBias);
+            toneMappingProgram->SetFloat("uProjA", projA);
+            toneMappingProgram->SetFloat("uProjB", projB);
+            toneMappingProgram->SetFloat("uInvProjX", invProjX);
+            toneMappingProgram->SetFloat("uInvProjY", invProjY);
+            toneMappingProgram->SetInt("uFastReconstruct", fastDepthReconstruct ? 1 : 0);
+            toneMappingProgram->SetInt("uHumanEye", m_impl->humanEyeEnabled ? 1 : 0);
+            toneMappingProgram->SetFloat("uHumanEyeCenterScale", m_impl->humanEyeCenterScale);
+            toneMappingProgram->SetFloat("uHumanEyeTexelX", m_impl->humanEyeTexelX);
+            toneMappingProgram->SetFloat("uHumanEyeTexelY", m_impl->humanEyeTexelY);
+            toneMappingProgram->SetFloat("uExposure", m_impl->environmentFrame.exposure);
+            if (!leanToneMapping)
+                toneMappingProgram->SetInt("uFogEnabled", m_impl->environmentFrame.fogEnabled ? 1 : 0);
+            if (!leanToneMapping)
+                toneMappingProgram->SetInt("uFogMode",
                                                    static_cast<std::int32_t>(m_impl->environmentFrame.fogMode));
-            m_impl->toneMappingProgram->SetVector3("uFogColor", m_impl->environmentFrame.fogColor);
-            m_impl->toneMappingProgram->SetFloat("uFogDensity", m_impl->environmentFrame.fogDensity);
-            m_impl->toneMappingProgram->SetFloat("uFogStart", m_impl->environmentFrame.fogStart);
-            m_impl->toneMappingProgram->SetFloat("uFogEnd", m_impl->environmentFrame.fogEnd);
-            m_impl->toneMappingProgram->SetMatrix4x4("uInverseProjection", inverseProjection);
-            m_impl->toneMappingProgram->SetFloat("uCameraNear", m_impl->environmentCameraNear);
-            m_impl->toneMappingProgram->SetFloat("uCameraFar", m_impl->environmentCameraFar);
-            m_impl->toneMappingProgram->SetFloat("uFogSkyAffect", m_impl->environmentFrame.fogSkyAffect);
-            m_impl->toneMappingProgram->SetInt(
+            if (!leanToneMapping)
+                toneMappingProgram->SetVector3("uFogColor", m_impl->environmentFrame.fogColor);
+            if (!leanToneMapping)
+                toneMappingProgram->SetFloat("uFogDensity", m_impl->environmentFrame.fogDensity);
+            if (!leanToneMapping)
+                toneMappingProgram->SetFloat("uFogStart", m_impl->environmentFrame.fogStart);
+            if (!leanToneMapping)
+                toneMappingProgram->SetFloat("uFogEnd", m_impl->environmentFrame.fogEnd);
+            toneMappingProgram->SetMatrix4x4("uInverseProjection", inverseProjection);
+            toneMappingProgram->SetFloat("uCameraNear", m_impl->environmentCameraNear);
+            toneMappingProgram->SetFloat("uCameraFar", m_impl->environmentCameraFar);
+            if (!leanToneMapping)
+                toneMappingProgram->SetFloat("uFogSkyAffect", m_impl->environmentFrame.fogSkyAffect);
+            toneMappingProgram->SetInt(
                 "uSkyCovers", m_impl->environmentFrame.hasEnvironment && !m_impl->captureTransparentBackground ? 1 : 0);
-            m_impl->toneMappingProgram->SetInt("uOrthographic", isOrthographic ? 1 : 0);
-            m_impl->toneMappingProgram->SetFloat("uOrthoHalfHeight", orthoHalfHeight);
-            m_impl->toneMappingProgram->SetFloat("uBrightness", m_impl->environmentFrame.brightness);
-            m_impl->toneMappingProgram->SetFloat("uContrast", m_impl->environmentFrame.contrast);
-            m_impl->toneMappingProgram->SetFloat("uSaturation", m_impl->environmentFrame.saturation);
-            m_impl->toneMappingProgram->SetVector3("uColorFilter", m_impl->environmentFrame.colorFilter);
+            toneMappingProgram->SetInt("uOrthographic", isOrthographic ? 1 : 0);
+            if (!leanToneMapping)
+                toneMappingProgram->SetFloat("uOrthoHalfHeight", orthoHalfHeight);
+            toneMappingProgram->SetFloat("uBrightness", m_impl->environmentFrame.brightness);
+            toneMappingProgram->SetFloat("uContrast", m_impl->environmentFrame.contrast);
+            toneMappingProgram->SetFloat("uSaturation", m_impl->environmentFrame.saturation);
+            toneMappingProgram->SetVector3("uColorFilter", m_impl->environmentFrame.colorFilter);
             const float vignetteIntensity = m_impl->environmentFrame.postProcessingEnabled
                                                 ? m_impl->environmentFrame.vignetteIntensity
                                                 : 0.0F;
-            m_impl->toneMappingProgram->SetFloat("uVignetteIntensity", vignetteIntensity);
-            m_impl->toneMappingProgram->SetFloat("uVignetteRadius", m_impl->environmentFrame.vignetteRadius);
+            toneMappingProgram->SetFloat("uVignetteIntensity", vignetteIntensity);
+            toneMappingProgram->SetFloat("uVignetteRadius", m_impl->environmentFrame.vignetteRadius);
             const float chromaticAberrationIntensity = m_impl->environmentFrame.postProcessingEnabled
                                                            ? m_impl->environmentFrame.chromaticAberrationIntensity
                                                            : 0.0F;
-            m_impl->toneMappingProgram->SetFloat("uChromaticAberrationIntensity",
+            toneMappingProgram->SetFloat("uChromaticAberrationIntensity",
                                                     chromaticAberrationIntensity);
             const float filmGrainIntensity = m_impl->environmentFrame.postProcessingEnabled
                                                  ? m_impl->environmentFrame.filmGrainIntensity
                                                  : 0.0F;
-            m_impl->toneMappingProgram->SetFloat("uFilmGrainIntensity", filmGrainIntensity);
-            m_impl->toneMappingProgram->SetInt(
+            toneMappingProgram->SetFloat("uFilmGrainIntensity", filmGrainIntensity);
+            toneMappingProgram->SetInt(
                 "uFilmGrainFrame", static_cast<std::int32_t>(m_impl->renderSystem.GetFrameIndex() % 4096U));
             const float lensDistortionIntensity = m_impl->environmentFrame.postProcessingEnabled
                                                       ? m_impl->environmentFrame.lensDistortionIntensity
                                                       : 0.0F;
-            m_impl->toneMappingProgram->SetFloat("uLensDistortionIntensity", lensDistortionIntensity);
+            toneMappingProgram->SetFloat("uLensDistortionIntensity", lensDistortionIntensity);
             const bool depthOfFieldEnabled = m_impl->environmentFrame.postProcessingEnabled &&
                                              m_impl->environmentFrame.depthOfFieldEnabled;
-            m_impl->toneMappingProgram->SetInt("uDepthOfFieldEnabled", depthOfFieldEnabled ? 1 : 0);
-            m_impl->toneMappingProgram->SetInt(
+            toneMappingProgram->SetInt("uDepthOfFieldEnabled", depthOfFieldEnabled ? 1 : 0);
+            toneMappingProgram->SetInt(
                 "uDepthOfFieldFocusMode",
                 static_cast<std::int32_t>(m_impl->environmentFrame.depthOfFieldFocusMode));
-            m_impl->toneMappingProgram->SetInt(
+            toneMappingProgram->SetInt(
                 "uDepthOfFieldBokehShape",
                 static_cast<std::int32_t>(m_impl->environmentFrame.depthOfFieldBokehShape));
-            m_impl->toneMappingProgram->SetFloat("uDepthOfFieldFocusDistance",
+            toneMappingProgram->SetFloat("uDepthOfFieldFocusDistance",
                                                     m_impl->environmentFrame.depthOfFieldFocusDistance);
-            m_impl->toneMappingProgram->SetFloat("uDepthOfFieldAperture",
+            toneMappingProgram->SetFloat("uDepthOfFieldAperture",
                                                     m_impl->environmentFrame.depthOfFieldAperture);
-            m_impl->toneMappingProgram->SetInt(
+            toneMappingProgram->SetInt(
                 "uDepthOfFieldQuality",
                 static_cast<std::int32_t>(std::min(m_impl->environmentFrame.depthOfFieldQuality, 2U)));
             const bool motionBlurEnabled = m_impl->environmentFrame.postProcessingEnabled &&
                                            m_impl->environmentFrame.motionBlurEnabled && motionBlurHistoryReady;
-            m_impl->toneMappingProgram->SetInt("uMotionBlurEnabled", motionBlurEnabled ? 1 : 0);
-            m_impl->toneMappingProgram->SetFloat(
+            toneMappingProgram->SetInt("uMotionBlurEnabled", motionBlurEnabled ? 1 : 0);
+            toneMappingProgram->SetFloat(
                 "uMotionBlurStrength", motionBlurEnabled ? m_impl->environmentFrame.motionBlurStrength : 0.0F);
-            m_impl->toneMappingProgram->SetInt(
+            toneMappingProgram->SetInt(
                 "uMotionBlurSampleCount",
                 static_cast<std::int32_t>(std::clamp(m_impl->environmentFrame.motionBlurSampleCount, 4U, 12U)));
-            m_impl->toneMappingProgram->SetMatrix4x4("uPreviousViewProjection", previousMotionBlurViewProjection);
-            m_impl->toneMappingProgram->SetVector3("uCameraPosition", m_impl->environmentCameraPosition);
-            m_impl->toneMappingProgram->SetVector3("uCameraRight", m_impl->skyCameraRight);
-            m_impl->toneMappingProgram->SetVector3("uCameraUp", m_impl->skyCameraUp);
-            m_impl->toneMappingProgram->SetVector3("uCameraForward", m_impl->skyCameraForward);
-            m_impl->toneMappingProgram->SetFloat("uTanHalfFov", m_impl->skyTanHalfFov);
-            m_impl->toneMappingProgram->SetFloat("uAspect", m_impl->environmentAspect);
-            m_impl->toneMappingProgram->SetVector3("uSunDirection", m_impl->sunDirection);
-            m_impl->toneMappingProgram->SetVector3("uSunColor", m_impl->sunColor);
-            m_impl->toneMappingProgram->SetFloat("uSunEnergy", m_impl->sunEnergy);
-            m_impl->toneMappingProgram->SetFloat(
+            toneMappingProgram->SetMatrix4x4("uPreviousViewProjection", previousMotionBlurViewProjection);
+            toneMappingProgram->SetVector3("uCameraPosition", m_impl->environmentCameraPosition);
+            toneMappingProgram->SetVector3("uCameraRight", m_impl->skyCameraRight);
+            toneMappingProgram->SetVector3("uCameraUp", m_impl->skyCameraUp);
+            toneMappingProgram->SetVector3("uCameraForward", m_impl->skyCameraForward);
+            toneMappingProgram->SetFloat("uTanHalfFov", m_impl->skyTanHalfFov);
+            toneMappingProgram->SetFloat("uAspect", m_impl->environmentAspect);
+            toneMappingProgram->SetVector3("uSunDirection", m_impl->sunDirection);
+            if (!leanToneMapping)
+                toneMappingProgram->SetVector3("uSunColor", m_impl->sunColor);
+            toneMappingProgram->SetFloat("uSunEnergy", m_impl->sunEnergy);
+            toneMappingProgram->SetFloat(
                 "uSunAngularDiameter", sunDiscActive ? m_impl->sunDiscAngularDiameterDegrees : 0.0F);
-            m_impl->toneMappingProgram->SetFloat("uFogHeight", m_impl->environmentFrame.fogHeight);
-            m_impl->toneMappingProgram->SetFloat("uFogHeightFalloff", m_impl->environmentFrame.fogHeightFalloff);
-            m_impl->toneMappingProgram->SetFloat("uFogSunScatter", m_impl->environmentFrame.fogSunScatter);
-            m_impl->toneMappingProgram->SetFloat("uLightVolumetricFogEnergy", m_impl->sunVolumetricFogEnergy);
-            m_impl->toneMappingProgram->SetInt("uFogVolumeCount",
+            if (!leanToneMapping)
+                toneMappingProgram->SetFloat("uFogHeight", m_impl->environmentFrame.fogHeight);
+            if (!leanToneMapping)
+                toneMappingProgram->SetFloat("uFogHeightFalloff", m_impl->environmentFrame.fogHeightFalloff);
+            if (!leanToneMapping)
+                toneMappingProgram->SetFloat("uFogSunScatter", m_impl->environmentFrame.fogSunScatter);
+            if (!leanToneMapping)
+                toneMappingProgram->SetFloat("uLightVolumetricFogEnergy", m_impl->sunVolumetricFogEnergy);
+            if (!leanToneMapping)
+                toneMappingProgram->SetInt("uFogVolumeCount",
                                                    static_cast<std::int32_t>(m_impl->fogVolumeCount));
             const auto& fogNames = GetRendererUniformNames().fogVolumes;
             const std::size_t activeFogVolumes =
                 std::min(m_impl->fogVolumeCount, Scene::kMaximumFogVolumesPerFrame);
-            for (std::size_t volumeIndex = 0; volumeIndex < activeFogVolumes; ++volumeIndex) {
-                const Scene::FogVolume3DFrame& volume = m_impl->fogVolumes[volumeIndex];
-                const FogVolumeUniformNames& names = fogNames[volumeIndex];
-                m_impl->toneMappingProgram->SetVector3(names.position, volume.worldPosition);
-                m_impl->toneMappingProgram->SetVector3(names.axisX, volume.axisX);
-                m_impl->toneMappingProgram->SetVector3(names.axisY, volume.axisY);
-                m_impl->toneMappingProgram->SetVector3(names.axisZ, volume.axisZ);
-                m_impl->toneMappingProgram->SetVector3(names.scale, volume.worldScale);
-                m_impl->toneMappingProgram->SetVector3(names.size, volume.size);
-                m_impl->toneMappingProgram->SetVector3(names.albedo, volume.albedo);
-                m_impl->toneMappingProgram->SetVector3(names.emission, volume.emission);
-                m_impl->toneMappingProgram->SetFloat(names.density, volume.density);
-                m_impl->toneMappingProgram->SetFloat(names.heightFalloff, volume.heightFalloff);
-                m_impl->toneMappingProgram->SetFloat(names.edgeFade, volume.edgeFade);
-                m_impl->toneMappingProgram->SetInt(names.shape, static_cast<std::int32_t>(volume.shape));
+            if (!leanToneMapping) {
+                for (std::size_t volumeIndex = 0; volumeIndex < activeFogVolumes; ++volumeIndex) {
+                    const Scene::FogVolume3DFrame& volume = m_impl->fogVolumes[volumeIndex];
+                    const FogVolumeUniformNames& names = fogNames[volumeIndex];
+                    toneMappingProgram->SetVector3(names.position, volume.worldPosition);
+                    toneMappingProgram->SetVector3(names.axisX, volume.axisX);
+                    toneMappingProgram->SetVector3(names.axisY, volume.axisY);
+                    toneMappingProgram->SetVector3(names.axisZ, volume.axisZ);
+                    toneMappingProgram->SetVector3(names.scale, volume.worldScale);
+                    toneMappingProgram->SetVector3(names.size, volume.size);
+                    toneMappingProgram->SetVector3(names.albedo, volume.albedo);
+                    toneMappingProgram->SetVector3(names.emission, volume.emission);
+                    toneMappingProgram->SetFloat(names.density, volume.density);
+                    toneMappingProgram->SetFloat(names.heightFalloff, volume.heightFalloff);
+                    toneMappingProgram->SetFloat(names.edgeFade, volume.edgeFade);
+                    toneMappingProgram->SetInt(names.shape, static_cast<std::int32_t>(volume.shape));
+            }
             }
             const bool volumetricShadowsActive = shadowsReady && m_impl->sunVolumetricFogEnergy > 0.0F;
-            m_impl->toneMappingProgram->SetInt("uVolumetricShadowsEnabled", volumetricShadowsActive ? 1 : 0);
+            if (!leanToneMapping)
+                toneMappingProgram->SetInt("uVolumetricShadowsEnabled", volumetricShadowsActive ? 1 : 0);
             const auto& uniformNames = GetRendererUniformNames();
-            for (std::size_t cascadeIndex = 0; cascadeIndex < kShadowCascadeCount; ++cascadeIndex) {
-                m_impl->toneMappingProgram->SetMatrix4x4(
-                    uniformNames.lightSpaceMatrices[cascadeIndex],
-                    lightSpaceMatrices[cascadeIndex]);
-                m_impl->toneMappingProgram->SetFloat(
-                    uniformNames.shadowCascadeSplits[cascadeIndex],
-                    cascadeSplits[cascadeIndex]);
-                m_impl->toneMappingProgram->SetInt(
-                    uniformNames.shadowMapTextures[cascadeIndex],
-                    static_cast<std::int32_t>(kShadowCascadeFirstTextureSlot + cascadeIndex));
+            if (!leanToneMapping) {
+                for (std::size_t cascadeIndex = 0; cascadeIndex < kShadowCascadeCount; ++cascadeIndex) {
+                    toneMappingProgram->SetMatrix4x4(
+                        uniformNames.lightSpaceMatrices[cascadeIndex],
+                        lightSpaceMatrices[cascadeIndex]);
+                    toneMappingProgram->SetFloat(
+                        uniformNames.shadowCascadeSplits[cascadeIndex],
+                        cascadeSplits[cascadeIndex]);
+                    toneMappingProgram->SetInt(
+                        uniformNames.shadowMapTextures[cascadeIndex],
+                        static_cast<std::int32_t>(kShadowCascadeFirstTextureSlot + cascadeIndex));
+            }
             }
             if (volumetricShadowsActive) {
                 m_impl->lastFrameDiagnostics.volumetricFogPassRecorded = true;
             }
-            m_impl->toneMappingProgram->SetInt("uLutEnabled", m_impl->environmentFrame.lutEnabled ? 1 : 0);
-            m_impl->toneMappingProgram->SetFloat("uLutContribution", m_impl->environmentFrame.lutContribution);
-            m_impl->toneMappingProgram->ApplyTo(commandBuffer);
+            toneMappingProgram->SetInt("uLutEnabled", m_impl->environmentFrame.lutEnabled ? 1 : 0);
+            toneMappingProgram->SetFloat("uLutContribution", m_impl->environmentFrame.lutContribution);
+            toneMappingProgram->ApplyTo(commandBuffer);
             commandBuffer.BindTexture(toneMappingColorTexture, 0U);
             const SamplerHandle colorSampler = m_impl->postProcessSettings.nearestUpscalingEnabled
                                                       ? m_impl->shadowPointSampler

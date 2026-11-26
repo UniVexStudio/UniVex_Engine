@@ -85,7 +85,10 @@ out vec4 FragColor;
 
 uniform sampler2D uSourceTexture;
 uniform sampler2D uSceneDepthTexture;
+#if !defined(UVE_TM_LEAN)
+// shadow maps (volumetric fog only)
 uniform sampler2D uShadowMapTextures[3];
+#endif
 uniform sampler2D uLutTexture;
 uniform sampler2D uSsaoTexture;
 uniform sampler2D uContactShadowTexture;
@@ -126,16 +129,22 @@ uniform float uHumanEyeCenterScale;
 uniform float uHumanEyeTexelX;
 uniform float uHumanEyeTexelY;
 uniform float uExposure;
+#if !defined(UVE_TM_LEAN)
+// fog parameters
 uniform int uFogEnabled;
 uniform int uFogMode;
 uniform vec3 uFogColor;
 uniform float uFogDensity;
 uniform float uFogStart;
 uniform float uFogEnd;
+#endif
 uniform mat4 uInverseProjection;
 uniform float uCameraNear;
 uniform float uCameraFar;
+#if !defined(UVE_TM_LEAN)
+// fog sky affect
 uniform float uFogSkyAffect;
+#endif
 uniform int uSkyCovers;
 uniform int uOrthographic;
 uniform float uOrthoHalfHeight;
@@ -169,12 +178,17 @@ uniform vec3 uSunDirection;
 uniform vec3 uSunColor;
 uniform float uSunEnergy;
 uniform float uSunAngularDiameter;
+#if !defined(UVE_TM_LEAN)
+// fog shape uniforms
 uniform float uFogHeight;
 uniform float uFogHeightFalloff;
 uniform float uFogSunScatter;
 uniform float uLightVolumetricFogEnergy;
 uniform int uFogVolumeCount;
+#endif
 
+#if !defined(UVE_TM_LEAN)
+// fog volume / cascade uniforms
 struct FogVolume {
     vec3 position;
     vec3 axisX;
@@ -193,15 +207,19 @@ uniform FogVolume uFogVolumes[8];
 uniform int uVolumetricShadowsEnabled;
 uniform mat4 uLightSpaceMatrices[3];
 uniform float uShadowCascadeSplits[3];
+#endif
 uniform int uLutEnabled;
 uniform float uLutContribution;
 uniform int uColorblindMode;
 uniform float uColorblindSeverity;
 
+#if !defined(UVE_TM_LEAN)
+// fog constants
 const int kFogModeLinear = 0; // WorldEnvironmentFogMode::Linear
 const int kFogModeHeight = 2; // Exponential is 1; Height is 2.
 const int kFogVolumeRaySamples = 12;
 const float kFogVolumeScaleEpsilon = 1.0e-6;
+#endif
 
 // Filled concentric Vogel-disc taps covering inner, middle, and outer bokeh rings cleanly.
 const vec2 kDepthOfFieldOffsets[12] = vec2[12](
@@ -261,6 +279,8 @@ vec3 SrgbToLinear(vec3 srgbColor) {
     return mix(lo, hi, step(vec3(0.04045), c));
 }
 
+#if !defined(UVE_TM_LEAN)
+// volumetric shadow sampling
 float SampleVolumetricShadowDepth(int cascade, vec2 uv) {
     if (cascade == 0) { return texture(uShadowMapTextures[0], uv).r; }
     if (cascade == 1) { return texture(uShadowMapTextures[1], uv).r; }
@@ -292,6 +312,7 @@ float VolumetricShadowFactor(vec3 samplePos, float distFromCam) {
     return 1.0;
 }
 
+#endif
 vec3 SampleLut(sampler2D lut, vec3 color) {
     ivec2 lutSize = textureSize(lut, 0);
     float size = float(max(lutSize.y, 1));
@@ -757,6 +778,8 @@ vec3 ApplyCameraMotionBlur(vec2 uv, vec3 center, float depthSample) {
 
 // Exact analytical ray integral of exponential height fog along y(t) = y0 + dy * t for t in [0, rayLen].
 // Splits cleanly at y = fogHeight so every exp() argument is <= 0 (zero overflow at any altitude).
+#if !defined(UVE_TM_LEAN)
+// fog helpers
 float AnalyticalHeightFogOpticalDepth(float y0, float dy, float rayLen, float baseDensity,
                                          float fogHeight, float heightFalloff) {
     if (baseDensity <= 0.0 || rayLen <= 0.0) {
@@ -948,6 +971,7 @@ void FogVolumeIntegrate(FogVolume volume, vec3 rayOrigin, vec3 rayDirection, flo
     }
 }
 
+#endif
 void main() {
     vec2 sourceUV = LensDistortionSourceUV(vTexCoord);
     float periphery = 0.0;
@@ -982,6 +1006,8 @@ void main() {
     hdrColor = ApplyCameraMotionBlur(sourceUV, hdrColor, depth);
     hdrColor = ApplySharpening(sourceUV, hdrColor);
 
+#if !defined(UVE_TM_LEAN)
+// fog composite (god rays, volume march, analytic height fog)
     int volumeCount = clamp(uFogVolumeCount, 0, 8);
     if (uFogEnabled != 0 || volumeCount > 0) {
         vec2 ndc = sourceUV * 2.0 - 1.0;
@@ -1079,6 +1105,7 @@ void main() {
         }
         hdrColor = mix(hdrColor, inscatter, fogFactor) + volumetricSunInscatter;
     }
+#endif
 
     // Add progressive bloom pyramid in linear HDR before exposure and tone mapping.
     if (uBloomCompositeEnabled != 0) {
