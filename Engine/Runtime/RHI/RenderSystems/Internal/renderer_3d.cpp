@@ -383,6 +383,11 @@ struct MaterialGpuResources {
     /// Depth-write off, source-alpha blend. Used when SurfaceInstance3D fades the mesh or draws
     /// an overlay; the ordinary program stays opaque so solid draws keep early-z.
     std::shared_ptr<Shader::ShaderProgram> blendedProgram;
+    /// Same lit source with the alpha-cutout test compiled out and early_fragment_tests declared,
+    /// so an opaque draw rejects hidden fragments before shading them instead of after. Only built
+    /// for materials that never cut out (alphaCutoff <= 0), which is what makes dropping the test
+    /// correct; every other material keeps `program`.
+    std::shared_ptr<Shader::ShaderProgram> earlyZProgram;
 };
 
 /// Picks the program a material draws with. `blended` is true for anything that must not write
@@ -396,6 +401,9 @@ struct MaterialGpuResources {
             return nullptr;
         }
         return resources.blendedProgram.get();
+    }
+    if (resources.earlyZProgram != nullptr && resources.earlyZProgram->IsValid()) {
+        return resources.earlyZProgram.get();
     }
     if (resources.program == nullptr || !resources.program->IsValid()) {
         return nullptr;
@@ -1605,8 +1613,11 @@ struct Renderer3D::Impl {
     Shader::ShaderProgramStagesDesc defaultLitStagesDesc;
     /// Built-in lit programs by (effectiveProfile << 16) | MaterialPipelineState::Pack().
     std::unordered_map<std::uint32_t, std::shared_ptr<Shader::ShaderProgram>> standardLitPrograms;
+    /// Opaque-only early-z twins of `standardLitPrograms`, keyed the same way.
+    std::unordered_map<std::uint32_t, std::shared_ptr<Shader::ShaderProgram>> standardLitEarlyZPrograms;
     std::array<std::shared_ptr<Shader::ShaderProgram>, 3U> defaultLitProgramsByProfile{};
     std::array<std::shared_ptr<Shader::ShaderProgram>, 3U> defaultLitBlendedProgramsByProfile{};
+    std::array<std::shared_ptr<Shader::ShaderProgram>, 3U> defaultLitEarlyZProgramsByProfile{};
     RendererProfileResolution rendererProfileResolution{};
     /// Programs that already received this render pass's frame-wide lighting & shadow uniforms.
     std::vector<const Shader::ShaderProgram*> frameUniformUploadedPrograms;
@@ -2011,6 +2022,14 @@ struct Renderer3D::Impl {
         }
         defaultLitMaterialResources.program = defaultLitProgramsByProfile[idx];
         defaultLitMaterialResources.blendedProgram = defaultLitBlendedProgramsByProfile[idx];
+        if (defaultLitEarlyZProgramsByProfile[idx] == nullptr) {
+            Shader::ShaderProgramStagesDesc earlyZDesc = MakeLitStagesDescForProfile(profile);
+            earlyZDesc.fragmentSource.extraDefines.emplace_back("UVE_EARLY_Z", "1");
+            earlyZDesc.debugName = "BuiltInLit default (" +
+                                  std::string(Platform::GetRendererProfileName(profile)) + ") early-z";
+            defaultLitEarlyZProgramsByProfile[idx] = shaderManager.CreateProgramFromStages(earlyZDesc);
+        }
+        defaultLitMaterialResources.earlyZProgram = defaultLitEarlyZProgramsByProfile[idx];
     }
 
     [[nodiscard]] SizedTargetSet* ActiveTargetSetMutable() noexcept {
@@ -2670,6 +2689,41 @@ struct Renderer3D::Impl {
         return program;
     }
 
+    /// Early-z twin of StandardLitProgram, for materials that never alpha-cut out. Returns null for
+    /// any state where an early depth test changes nothing (blended or depth-writing off), so those
+    /// keep the ordinary program.
+    [[nodiscard]] std::shared_ptr<Shader::ShaderProgram> StandardLitEarlyZProgram(
+        const Asset::MaterialAsset& material) {
+        const MaterialPipelineState state = ResolveMaterialPipelineState(material);
+        if (state.blendMode != PipelineBlendMode::Opaque || !state.depthWriteEnabled) {
+            return nullptr;
+        }
+        const std::uint32_t profileSlot =
+            std::min<std::uint32_t>(static_cast<std::uint32_t>(rendererProfileResolution.effective), 2U);
+        const std::uint32_t key = (profileSlot << 16U) | state.Pack();
+        if (const auto cached = standardLitEarlyZPrograms.find(key); cached != standardLitEarlyZPrograms.end()) {
+            return cached->second;
+        }
+        if (const auto standard = standardLitPrograms.find(key);
+            standard != standardLitPrograms.end() && standard->second == defaultLitProgramsByProfile[profileSlot] &&
+            defaultLitEarlyZProgramsByProfile[profileSlot] != nullptr) {
+            return defaultLitEarlyZProgramsByProfile[profileSlot];
+        }
+        if (defaultLitStagesDesc.vertexLayout.empty()) {
+            return nullptr; // Program creation has not run yet this session.
+        }
+        Shader::ShaderProgramStagesDesc desc = MakeLitStagesDescForProfile(rendererProfileResolution.effective);
+        desc.blendMode = state.blendMode;
+        desc.cullMode = state.cullMode;
+        desc.depthTestEnabled = state.depthTestEnabled;
+        desc.depthWriteEnabled = state.depthWriteEnabled;
+        desc.fragmentSource.extraDefines.emplace_back("UVE_EARLY_Z", "1");
+        desc.debugName = "BuiltInLit early-z material state " + std::to_string(key);
+        std::shared_ptr<Shader::ShaderProgram> program = shaderManager.CreateProgramFromStages(desc);
+        standardLitEarlyZPrograms.emplace(key, program);
+        return program;
+    }
+
     [[nodiscard]] const MaterialGpuResources* ResolveMaterialGpuResources(
         const Asset::AssetHandle<Asset::MaterialAsset>& materialHandle) {
         const Asset::AssetGuid guid = materialHandle.GetGuid();
@@ -2731,6 +2785,9 @@ struct Renderer3D::Impl {
                                               *metallicRoughnessTexture,
                                               *emissiveTexture,
                                               defaultLitMaterialResources.blendedProgram});
+            if (material->alphaCutoff <= 0.0F) {
+                insertResult.first->second.earlyZProgram = StandardLitEarlyZProgram(*material);
+            }
             return &insertResult.first->second;
         }
 
