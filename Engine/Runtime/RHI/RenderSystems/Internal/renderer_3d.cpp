@@ -6492,10 +6492,20 @@ void Renderer3D::RenderFrame(Scene::IEntityManager& entityManager, Scene::Entity
                            (m_impl->environmentFrame.hasEnvironment || sunDiscActive) &&
                            m_impl->proceduralSkyProgram && m_impl->proceduralSkyProgram->IsValid();
 
+    // The floor writes the same colour and depth attachments the main pass already has, so it is
+    // recorded there instead of opening a second pass that would store and reload both.
+    const bool floorActive = !capturingProbe &&
+                             m_impl->studioFloorSettings.has_value() &&
+                             m_impl->studioFloorSettings->enabled &&
+                             m_impl->EnsureStudioFloorResources();
+    const StudioFloorSettings floorSettings =
+        m_impl->studioFloorSettings.value_or(StudioFloorSettings{});
+
     renderGraph.AddPass(
         "MainColor", std::span<const RenderGraphResourceUse>{mainResources.data(), mainResourceCount},
         [this, &queue, &frameUniforms, wboitActive, skyActive, shadowsReady, &lightSpaceMatrices,
-             &cascadeSplits, shadowOpacity, shadowBias](ICommandBuffer& commandBuffer) {
+             &cascadeSplits, shadowOpacity, shadowBias, floorActive, floorSettings,
+             viewProjection, viewPosition, lights](ICommandBuffer& commandBuffer) {
             RenderPassDesc passDesc;
             passDesc.colorAttachment = m_impl->colorTarget;
             passDesc.depthAttachment = m_impl->depthTarget;
@@ -6661,6 +6671,79 @@ void Renderer3D::RenderFrame(Scene::IEntityManager& entityManager, Scene::Entity
                 }
                 commandBuffer.Draw(3);
             }
+            if (floorActive) {
+                m_impl->studioFloorProgram->SetMatrix4x4("uViewProjection", viewProjection);
+                m_impl->studioFloorProgram->SetFloat("uFloorY", floorSettings.heightY);
+                m_impl->studioFloorProgram->SetVector3("uViewPosition", viewPosition);
+                m_impl->studioFloorProgram->SetVector3("uPivotPosition", floorSettings.pivotPosition);
+                m_impl->studioFloorProgram->SetFloat("uTileScale", floorSettings.tileScale);
+                m_impl->studioFloorProgram->SetFloat("uFadeStartRadius", floorSettings.fadeStartRadiusMeters);
+                m_impl->studioFloorProgram->SetFloat("uFadeEndRadius", floorSettings.fadeEndRadiusMeters);
+                m_impl->studioFloorProgram->SetVector3("uBaseTint", floorSettings.baseTint);
+                m_impl->studioFloorProgram->SetFloat("uRoughnessScale", floorSettings.roughnessScale);
+                m_impl->studioFloorProgram->SetFloat("uSpecularStrength", floorSettings.specularStrength);
+                m_impl->studioFloorProgram->SetVector3("uSkyTopColor", m_impl->environmentFrame.skyColor);
+                m_impl->studioFloorProgram->SetVector3("uSkyHorizonColor", m_impl->environmentFrame.horizonColor);
+                m_impl->studioFloorProgram->SetVector3("uSkyGroundColor", m_impl->environmentFrame.groundColor);
+                m_impl->studioFloorProgram->SetFloat("uAmbientEnergy", 0.55F);
+                m_impl->studioFloorProgram->SetInt("uAlbedoMap", 0);
+                m_impl->studioFloorProgram->SetInt("uNormalMap", 1);
+                m_impl->studioFloorProgram->SetInt("uOrmMap", 2);
+
+                std::array<Math::Vector3, 4U> lightPositions{};
+                std::array<Math::Vector3, 4U> lightColors{};
+                std::array<float, 4U> lightRanges{{16.0F, 16.0F, 16.0F, 16.0F}};
+                std::int32_t lightCount = 0;
+                for (const LightData& light : lights) {
+                    if (light.type == Scene::LightType::Directional || light.intensity <= 0.0F) {
+                        continue;
+                    }
+                    if (lightCount >= 4) {
+                        break;
+                    }
+                    const std::size_t idx = static_cast<std::size_t>(lightCount++);
+                    lightPositions[idx] = light.position;
+                    lightColors[idx] = Math::ToVector3(light.color) * light.intensity;
+                    lightRanges[idx] = std::max(light.range, 1.0F);
+                }
+                if (lightCount == 0) {
+                    // Built-in 3-point studio light rig centered around the studio floor pivot.
+                    const Math::Vector3 p = floorSettings.pivotPosition;
+                    lightCount = 3;
+                    lightPositions[0U] = Math::Vector3{p.x + 3.5F, floorSettings.heightY + 5.2F, p.z + 3.8F};
+                    lightColors[0U] = Math::Vector3{1.0F, 0.96F, 0.90F} * 2.2F;
+                    lightRanges[0U] = 22.0F;
+                    lightPositions[1U] = Math::Vector3{p.x - 4.0F, floorSettings.heightY + 3.8F, p.z - 3.5F};
+                    lightColors[1U] = Math::Vector3{0.58F, 0.72F, 1.0F} * 1.45F;
+                    lightRanges[1U] = 20.0F;
+                    lightPositions[2U] = Math::Vector3{p.x - 2.8F, floorSettings.heightY + 2.6F, p.z + 4.2F};
+                    lightColors[2U] = Math::Vector3{0.78F, 0.84F, 0.96F} * 0.95F;
+                    lightRanges[2U] = 18.0F;
+                }
+                m_impl->studioFloorProgram->SetInt("uLightCount", lightCount);
+                for (std::size_t i = 0U; i < 4U; ++i) {
+                    const std::string idxStr = std::to_string(i);
+                    m_impl->studioFloorProgram->SetVector3("uLightPositions[" + idxStr + "]", lightPositions[i]);
+                    m_impl->studioFloorProgram->SetVector3("uLightColors[" + idxStr + "]", lightColors[i]);
+                    m_impl->studioFloorProgram->SetFloat("uLightRanges[" + idxStr + "]", lightRanges[i]);
+                }
+
+                m_impl->studioFloorProgram->ApplyTo(commandBuffer);
+                commandBuffer.BindTexture(m_impl->studioFloorAlbedoTexture, 0U);
+                commandBuffer.BindTexture(m_impl->studioFloorNormalTexture, 1U);
+                commandBuffer.BindTexture(m_impl->studioFloorOrmTexture, 2U);
+                if (m_impl->materialRepeatSampler != kInvalidSamplerHandle) {
+                    commandBuffer.BindSampler(m_impl->materialRepeatSampler, 0U);
+                    commandBuffer.BindSampler(m_impl->materialRepeatSampler, 1U);
+                    commandBuffer.BindSampler(m_impl->materialRepeatSampler, 2U);
+                }
+                commandBuffer.BindVertexBuffer(m_impl->studioFloorVertexBuffer, 0U);
+                commandBuffer.BindIndexBuffer(m_impl->studioFloorIndexBuffer);
+                commandBuffer.DrawIndexed(6U, 1U, 0U);
+                if (m_impl->renderDevice.GetBackendName() == "OpenGL") {
+                    ++m_impl->lastFrameDiagnostics.glDrawCallsIssued;
+                }
+            }
             commandBuffer.EndRenderPass();
         });
 
@@ -6748,98 +6831,6 @@ void Renderer3D::RenderFrame(Scene::IEntityManager& entityManager, Scene::Entity
 
 
 
-    if (!capturingProbe &&
-        m_impl->studioFloorSettings.has_value() &&
-        m_impl->studioFloorSettings->enabled &&
-        m_impl->EnsureStudioFloorResources()) {
-        const StudioFloorSettings floorSettings = *m_impl->studioFloorSettings;
-        const std::array<RenderGraphResourceUse, 2U> studioFloorResources{
-            RenderGraphResourceUse{depthResource, RenderGraphResourceAccess::ReadWrite},
-            RenderGraphResourceUse{colorResource, RenderGraphResourceAccess::Write}};
-        renderGraph.AddPass(
-            "StudioFloor", studioFloorResources,
-            [this, viewProjection, viewPosition, floorSettings, lights](ICommandBuffer& commandBuffer) {
-                RenderPassDesc passDesc;
-                passDesc.colorAttachment = m_impl->colorTarget;
-                passDesc.depthAttachment = m_impl->depthTarget;
-                passDesc.colorLoadOp = LoadOp::Load;
-                passDesc.depthLoadOp = LoadOp::Load;
-                commandBuffer.BeginRenderPass(passDesc);
-
-                m_impl->studioFloorProgram->SetMatrix4x4("uViewProjection", viewProjection);
-                m_impl->studioFloorProgram->SetFloat("uFloorY", floorSettings.heightY);
-                m_impl->studioFloorProgram->SetVector3("uViewPosition", viewPosition);
-                m_impl->studioFloorProgram->SetVector3("uPivotPosition", floorSettings.pivotPosition);
-                m_impl->studioFloorProgram->SetFloat("uTileScale", floorSettings.tileScale);
-                m_impl->studioFloorProgram->SetFloat("uFadeStartRadius", floorSettings.fadeStartRadiusMeters);
-                m_impl->studioFloorProgram->SetFloat("uFadeEndRadius", floorSettings.fadeEndRadiusMeters);
-                m_impl->studioFloorProgram->SetVector3("uBaseTint", floorSettings.baseTint);
-                m_impl->studioFloorProgram->SetFloat("uRoughnessScale", floorSettings.roughnessScale);
-                m_impl->studioFloorProgram->SetFloat("uSpecularStrength", floorSettings.specularStrength);
-                m_impl->studioFloorProgram->SetVector3("uSkyTopColor", m_impl->environmentFrame.skyColor);
-                m_impl->studioFloorProgram->SetVector3("uSkyHorizonColor", m_impl->environmentFrame.horizonColor);
-                m_impl->studioFloorProgram->SetVector3("uSkyGroundColor", m_impl->environmentFrame.groundColor);
-                m_impl->studioFloorProgram->SetFloat("uAmbientEnergy", 0.55F);
-                m_impl->studioFloorProgram->SetInt("uAlbedoMap", 0);
-                m_impl->studioFloorProgram->SetInt("uNormalMap", 1);
-                m_impl->studioFloorProgram->SetInt("uOrmMap", 2);
-
-                std::array<Math::Vector3, 4U> lightPositions{};
-                std::array<Math::Vector3, 4U> lightColors{};
-                std::array<float, 4U> lightRanges{{16.0F, 16.0F, 16.0F, 16.0F}};
-                std::int32_t lightCount = 0;
-                for (const LightData& light : lights) {
-                    if (light.type == Scene::LightType::Directional || light.intensity <= 0.0F) {
-                        continue;
-                    }
-                    if (lightCount >= 4) {
-                        break;
-                    }
-                    const std::size_t idx = static_cast<std::size_t>(lightCount++);
-                    lightPositions[idx] = light.position;
-                    lightColors[idx] = Math::ToVector3(light.color) * light.intensity;
-                    lightRanges[idx] = std::max(light.range, 1.0F);
-                }
-                if (lightCount == 0) {
-                    // Built-in 3-point studio light rig centered around the studio floor pivot.
-                    const Math::Vector3 p = floorSettings.pivotPosition;
-                    lightCount = 3;
-                    lightPositions[0U] = Math::Vector3{p.x + 3.5F, floorSettings.heightY + 5.2F, p.z + 3.8F};
-                    lightColors[0U] = Math::Vector3{1.0F, 0.96F, 0.90F} * 2.2F;
-                    lightRanges[0U] = 22.0F;
-                    lightPositions[1U] = Math::Vector3{p.x - 4.0F, floorSettings.heightY + 3.8F, p.z - 3.5F};
-                    lightColors[1U] = Math::Vector3{0.58F, 0.72F, 1.0F} * 1.45F;
-                    lightRanges[1U] = 20.0F;
-                    lightPositions[2U] = Math::Vector3{p.x - 2.8F, floorSettings.heightY + 2.6F, p.z + 4.2F};
-                    lightColors[2U] = Math::Vector3{0.78F, 0.84F, 0.96F} * 0.95F;
-                    lightRanges[2U] = 18.0F;
-                }
-                m_impl->studioFloorProgram->SetInt("uLightCount", lightCount);
-                for (std::size_t i = 0U; i < 4U; ++i) {
-                    const std::string idxStr = std::to_string(i);
-                    m_impl->studioFloorProgram->SetVector3("uLightPositions[" + idxStr + "]", lightPositions[i]);
-                    m_impl->studioFloorProgram->SetVector3("uLightColors[" + idxStr + "]", lightColors[i]);
-                    m_impl->studioFloorProgram->SetFloat("uLightRanges[" + idxStr + "]", lightRanges[i]);
-                }
-
-                m_impl->studioFloorProgram->ApplyTo(commandBuffer);
-                commandBuffer.BindTexture(m_impl->studioFloorAlbedoTexture, 0U);
-                commandBuffer.BindTexture(m_impl->studioFloorNormalTexture, 1U);
-                commandBuffer.BindTexture(m_impl->studioFloorOrmTexture, 2U);
-                if (m_impl->materialRepeatSampler != kInvalidSamplerHandle) {
-                    commandBuffer.BindSampler(m_impl->materialRepeatSampler, 0U);
-                    commandBuffer.BindSampler(m_impl->materialRepeatSampler, 1U);
-                    commandBuffer.BindSampler(m_impl->materialRepeatSampler, 2U);
-                }
-                commandBuffer.BindVertexBuffer(m_impl->studioFloorVertexBuffer, 0U);
-                commandBuffer.BindIndexBuffer(m_impl->studioFloorIndexBuffer);
-                commandBuffer.DrawIndexed(6U, 1U, 0U);
-                if (m_impl->renderDevice.GetBackendName() == "OpenGL") {
-                    ++m_impl->lastFrameDiagnostics.glDrawCallsIssued;
-                }
-                commandBuffer.EndRenderPass();
-            });
-    }
 
     if (!capturingProbe &&
         m_impl->vfxSpriteRenderer.HasTranslucentBatches() &&
