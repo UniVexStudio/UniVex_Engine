@@ -1556,6 +1556,7 @@ struct Renderer3D::Impl {
     std::size_t instanceBufferCapacity = 0U;
     RenderBatchSet opaqueBatches;
     RenderBatchSet transparentBatches;
+    RenderBatchSet primitiveBatches;
     std::vector<Math::Matrix4x4> instanceNormalMatrixStaging;
     std::vector<Math::Matrix4x4> instanceTransposeStaging;
     /// Reset at the top of every frame and copied into the frame diagnostics at the end. These
@@ -4695,6 +4696,35 @@ struct Renderer3D::Impl {
     /// the primitive's own geometry. A primitive with no material - and every unmaterialed imported
     /// mesh, which shares this list - draws through the built-in default lit material, so "no
     /// material" is the PBR path with neutral inputs rather than a second, simpler shading model.
+    /// Groups adjacent primitive items a single instanced draw can carry: same geometry, same
+    /// material, and the same per-item uniforms the non-instanced path would set. Order is
+    /// preserved exactly, matching BuildRenderBatches, so the front-to-back order the primitive
+    /// bucket was sorted into survives.
+    void BuildPrimitiveBatches(const std::vector<PrimitiveRenderItem>& items) {
+        primitiveBatches.Clear();
+        primitiveBatches.instanceMatrices.reserve(items.size());
+        for (const PrimitiveRenderItem& item : items) {
+            primitiveBatches.instanceMatrices.push_back(item.worldMatrix);
+        }
+        const auto sameRun = [](const PrimitiveRenderItem& lhs, const PrimitiveRenderItem& rhs) {
+            return lhs.kind == rhs.kind && lhs.materialGuid == rhs.materialGuid &&
+                   lhs.meshGuid == rhs.meshGuid && lhs.mesh == rhs.mesh && lhs.skinned == rhs.skinned &&
+                   lhs.renderLayers == rhs.renderLayers && lhs.opacity == rhs.opacity &&
+                   lhs.firstIndex == rhs.firstIndex && lhs.indexCount == rhs.indexCount &&
+                   lhs.baseColor.x == rhs.baseColor.x && lhs.baseColor.y == rhs.baseColor.y &&
+                   lhs.baseColor.z == rhs.baseColor.z;
+        };
+        std::size_t runStart = 0U;
+        for (std::size_t index = 1U; index <= items.size(); ++index) {
+            if (index == items.size() || !sameRun(items[runStart], items[index])) {
+                primitiveBatches.batches.push_back(RenderBatch{items[runStart].meshGuid,
+                                                                items[runStart].materialGuid, runStart,
+                                                                index - runStart});
+                runStart = index;
+            }
+        }
+    }
+
     [[nodiscard]] std::size_t RecordPrimitiveItems(const std::vector<PrimitiveRenderItem>& items,
                                                        const FrameUniforms& frameUniforms,
                                                        ICommandBuffer& commandBuffer) {
@@ -4708,145 +4738,237 @@ struct Renderer3D::Impl {
         std::uint32_t lastRenderLayers = 0U;
         float lastOpacity = -1.0F;
         Math::Vector3 lastAlbedoColor{-1.0F, -1.0F, -1.0F};
-        for (const PrimitiveRenderItem& item : items) {
-            const MeshGpuResources& meshResources =
-                item.skinned != nullptr ? *item.skinned
-                : item.mesh != nullptr  ? ResolveMeshGpuResources(item.meshGuid, item.mesh)
-                                        : ResolvePrimitiveMeshGpuResources(item.kind);
-            if (!IsValidMeshGpuResources(meshResources)) {
+        const auto recordRange = [&](const std::size_t firstItem, const std::size_t itemCount) {
+            for (std::size_t rangeIndex = firstItem;
+                 rangeIndex < firstItem + itemCount; ++rangeIndex) {
+                const PrimitiveRenderItem& item = items[rangeIndex];
+                const MeshGpuResources& meshResources =
+                    item.skinned != nullptr ? *item.skinned
+                    : item.mesh != nullptr  ? ResolveMeshGpuResources(item.meshGuid, item.mesh)
+                                            : ResolvePrimitiveMeshGpuResources(item.kind);
+                if (!IsValidMeshGpuResources(meshResources)) {
+                    continue;
+                }
+
+                const bool usesDefaultMaterial = item.materialGuid == Asset::kInvalidAssetGuid;
+                const Asset::MaterialAsset* material = &kDefaultLitMaterial;
+                const MaterialGpuResources* materialResources = &defaultLitMaterialResources;
+                if (!usesDefaultMaterial) {
+                    // Start unresolved: a material still loading on a worker returns nullptr from
+                    // TryGet, and leaving the default resources in place here used to let that
+                    // nullptr reach ApplyFrameAndMaterialUniforms and crash the frame.
+                    material = nullptr;
+                    materialResources = nullptr;
+                    const auto materialIt = primitiveMaterialHandles.find(item.materialGuid);
+                    if (materialIt != primitiveMaterialHandles.end()) {
+                        material = materialIt->second.TryGet();
+                        if (material != nullptr) {
+                            materialResources = ResolveMaterialGpuResources(materialIt->second);
+                        }
+                    }
+                    if (material == nullptr || materialResources == nullptr) {
+                        if (item.mesh != nullptr) {
+                            material = &kDefaultLitMaterial;
+                            materialResources = &defaultLitMaterialResources;
+                        } else {
+                            continue;
+                        }
+                    }
+                }
+
+                // Only an imported mesh (every skinned mesh is one) is held on screen by the fallbacks
+                // below. A built-in primitive keeps the strict rule: it is drawn when its own program is
+                // linked and not before.
+                const bool isImportedMesh = item.mesh != nullptr;
+                bool blendedVariant = item.opacity < 1.0F;
+                Shader::ShaderProgram* program = MeshColorProgram(*materialResources, blendedVariant);
+                if (program == nullptr && isImportedMesh && materialResources != &defaultLitMaterialResources) {
+                    // The material's own program is not usable - still compiling on a worker, a texture
+                    // binding / metallic-roughness / normal-map variant that did not link, or a program that
+                    // failed. Dropping the draw here made an imported mesh show for a frame on the default
+                    // material and then vanish the moment its material finished loading; draw it with the
+                    // default lit program instead, so a mesh never disappears because its material resolved.
+                    material = &kDefaultLitMaterial;
+                    materialResources = &defaultLitMaterialResources;
+                    program = MeshColorProgram(*materialResources, blendedVariant);
+                }
+                if (program == nullptr && isImportedMesh && blendedVariant) {
+                    // Even the default lit blended variant is not linked yet: an opaque draw of the mesh is
+                    // better than none, and the blended one takes over as soon as it is ready.
+                    blendedVariant = false;
+                    program = MeshColorProgram(*materialResources, blendedVariant);
+                }
+                if (program == nullptr) {
+                    continue; // Still compiling or invalid: never bind a stale pipeline.
+                }
+
+                const Math::Matrix3x3 normalMatrix = ComputeNormalMatrix(item.worldMatrix);
+                const bool overrideAlbedo = usesDefaultMaterial || materialResources == &defaultLitMaterialResources;
+                const Math::Vector3 effectiveAlbedo =
+                    overrideAlbedo ? item.baseColor : Math::ToVector3(material->albedoColor);
+                const bool stateChanged = program != lastProgram || material != lastMaterial ||
+                                          materialResources != lastMaterialResources ||
+                                          blendedVariant != lastBlendedVariant;
+                if (stateChanged) {
+                    program->SetMatrix4x4("uModel", item.worldMatrix);
+                    // Normal matrix = transpose(inverse(model)); see ComputeNormalMatrix, shared with
+                    // the lit mesh path so the two cannot disagree under non-uniform scale.
+                    program->SetMatrix3x3("uNormalMatrix", normalMatrix);
+                    ApplyFrameAndMaterialUniforms(*program, *material, frameUniforms, blendedVariant);
+                    // Base Color is the DEFAULT material's albedo, so it only replaces that material's own
+                    // (white) albedo. An assigned material owns the surface outright - tinting it here would
+                    // mean a primitive could never show the material an author picked.
+                    if (overrideAlbedo) {
+                        program->SetVector3("uAlbedoColor", item.baseColor);
+                    }
+                    program->SetInt("uMeshRenderLayers", static_cast<std::int32_t>(item.renderLayers));
+                    program->SetFloat("uSurfaceOpacity", item.opacity);
+                    program->ApplyTo(commandBuffer);
+                    BindMaterialTextures(*materialResources, frameUniforms, commandBuffer);
+                    lastProgram = program;
+                    lastMaterial = material;
+                    lastMaterialResources = materialResources;
+                    lastBlendedVariant = blendedVariant;
+                    lastRenderLayers = item.renderLayers;
+                    lastOpacity = item.opacity;
+                    lastAlbedoColor = effectiveAlbedo;
+                } else if (commandBuffer.RetainsUniformStatePerPipeline()) {
+                    program->SetMatrix4x4("uModel", item.worldMatrix);
+                    program->SetMatrix3x3("uNormalMatrix", normalMatrix);
+                    if (overrideAlbedo && (effectiveAlbedo.x != lastAlbedoColor.x ||
+                                           effectiveAlbedo.y != lastAlbedoColor.y ||
+                                           effectiveAlbedo.z != lastAlbedoColor.z)) {
+                        program->SetVector3("uAlbedoColor", effectiveAlbedo);
+                        lastAlbedoColor = effectiveAlbedo;
+                    }
+                    if (item.renderLayers != lastRenderLayers) {
+                        program->SetInt("uMeshRenderLayers", static_cast<std::int32_t>(item.renderLayers));
+                        lastRenderLayers = item.renderLayers;
+                    }
+                    if (item.opacity != lastOpacity) {
+                        program->SetFloat("uSurfaceOpacity", item.opacity);
+                        lastOpacity = item.opacity;
+                    }
+                    program->ApplyTo(commandBuffer);
+                } else {
+                    commandBuffer.SetUniformMatrix4x4("uModel", item.worldMatrix);
+                    commandBuffer.SetUniformMatrix4x4("uNormalMatrix", Math::ToMatrix4x4(normalMatrix));
+                    if (overrideAlbedo && (effectiveAlbedo.x != lastAlbedoColor.x ||
+                                           effectiveAlbedo.y != lastAlbedoColor.y ||
+                                           effectiveAlbedo.z != lastAlbedoColor.z)) {
+                        commandBuffer.SetUniformVector3("uAlbedoColor", effectiveAlbedo);
+                        lastAlbedoColor = effectiveAlbedo;
+                    }
+                    if (item.renderLayers != lastRenderLayers) {
+                        commandBuffer.SetUniformInt("uMeshRenderLayers", static_cast<std::int32_t>(item.renderLayers));
+                        lastRenderLayers = item.renderLayers;
+                    }
+                    if (item.opacity != lastOpacity) {
+                        commandBuffer.SetUniformFloat("uSurfaceOpacity", item.opacity);
+                        lastOpacity = item.opacity;
+                    }
+                }
+                if (meshResources.vertexBuffer != lastVertexBuffer) {
+                    commandBuffer.BindVertexBuffer(meshResources.vertexBuffer);
+                    lastVertexBuffer = meshResources.vertexBuffer;
+                }
+                if (meshResources.indexBuffer != lastIndexBuffer) {
+                    commandBuffer.BindIndexBuffer(meshResources.indexBuffer);
+                    lastIndexBuffer = meshResources.indexBuffer;
+                }
+                const std::uint32_t count = item.indexCount == 0U ? meshResources.indexCount : item.indexCount;
+                const std::uint32_t first = item.indexCount == 0U ? 0U : item.firstIndex;
+                commandBuffer.DrawIndexed(count, 1U, first);
+                ++drawCalls;
+            }
+        };
+
+        BuildPrimitiveBatches(items);
+        bool anyBatchable = false;
+        for (const RenderBatch& batch : primitiveBatches.batches) {
+            if (batch.itemCount >= 2U) {
+                anyBatchable = true;
+                break;
+            }
+        }
+        const bool instancingUsable =
+            anyBatchable && primitiveBatches.instanceMatrices.size() <= activeMaxInstancesPerFrame &&
+            EnsureInstanceBufferCapacity(primitiveBatches.instanceMatrices.size()) &&
+            UploadInstanceTransforms(primitiveBatches.instanceMatrices);
+        for (const RenderBatch& batch : primitiveBatches.batches) {
+            if (batch.itemCount < 2U || !instancingUsable) {
+                recordRange(batch.firstItem, batch.itemCount);
                 continue;
             }
-
-            const bool usesDefaultMaterial = item.materialGuid == Asset::kInvalidAssetGuid;
+            const PrimitiveRenderItem& representative = items[batch.firstItem];
+            const MeshGpuResources& meshResources =
+                representative.skinned != nullptr ? *representative.skinned
+                : representative.mesh != nullptr
+                    ? ResolveMeshGpuResources(representative.meshGuid, representative.mesh)
+                    : ResolvePrimitiveMeshGpuResources(representative.kind);
+            if (!IsValidMeshGpuResources(meshResources)) {
+                recordRange(batch.firstItem, batch.itemCount);
+                continue;
+            }
+            const bool usesDefaultMaterial = representative.materialGuid == Asset::kInvalidAssetGuid;
             const Asset::MaterialAsset* material = &kDefaultLitMaterial;
             const MaterialGpuResources* materialResources = &defaultLitMaterialResources;
             if (!usesDefaultMaterial) {
-                // Start unresolved: a material still loading on a worker returns nullptr from
-                // TryGet, and leaving the default resources in place here used to let that
-                // nullptr reach ApplyFrameAndMaterialUniforms and crash the frame.
                 material = nullptr;
                 materialResources = nullptr;
-                const auto materialIt = primitiveMaterialHandles.find(item.materialGuid);
+                const auto materialIt = primitiveMaterialHandles.find(representative.materialGuid);
                 if (materialIt != primitiveMaterialHandles.end()) {
                     material = materialIt->second.TryGet();
                     if (material != nullptr) {
                         materialResources = ResolveMaterialGpuResources(materialIt->second);
                     }
                 }
-                if (material == nullptr || materialResources == nullptr) {
-                    if (item.mesh != nullptr) {
-                        material = &kDefaultLitMaterial;
-                        materialResources = &defaultLitMaterialResources;
-                    } else {
-                        continue;
-                    }
-                }
             }
-
-            // Only an imported mesh (every skinned mesh is one) is held on screen by the fallbacks
-            // below. A built-in primitive keeps the strict rule: it is drawn when its own program is
-            // linked and not before.
-            const bool isImportedMesh = item.mesh != nullptr;
-            bool blendedVariant = item.opacity < 1.0F;
-            Shader::ShaderProgram* program = MeshColorProgram(*materialResources, blendedVariant);
-            if (program == nullptr && isImportedMesh && materialResources != &defaultLitMaterialResources) {
-                // The material's own program is not usable - still compiling on a worker, a texture
-                // binding / metallic-roughness / normal-map variant that did not link, or a program that
-                // failed. Dropping the draw here made an imported mesh show for a frame on the default
-                // material and then vanish the moment its material finished loading; draw it with the
-                // default lit program instead, so a mesh never disappears because its material resolved.
-                material = &kDefaultLitMaterial;
-                materialResources = &defaultLitMaterialResources;
-                program = MeshColorProgram(*materialResources, blendedVariant);
+            const bool blendedVariant = representative.opacity < 1.0F;
+            Shader::ShaderProgram* program =
+                material != nullptr && materialResources != nullptr
+                    ? MeshColorProgram(*materialResources, blendedVariant)
+                    : nullptr;
+            const auto baseIndex = static_cast<std::int32_t>(batch.firstItem);
+            const std::span<const std::byte> baseBytes{reinterpret_cast<const std::byte*>(&baseIndex),
+                                                       sizeof(baseIndex)};
+            if (program == nullptr || !materialResources->supportsInstancing ||
+                !renderDevice.UpdateBuffer(instanceBaseBuffer, baseBytes)) {
+                recordRange(batch.firstItem, batch.itemCount);
+                continue;
             }
-            if (program == nullptr && isImportedMesh && blendedVariant) {
-                // Even the default lit blended variant is not linked yet: an opaque draw of the mesh is
-                // better than none, and the blended one takes over as soon as it is ready.
-                blendedVariant = false;
-                program = MeshColorProgram(*materialResources, blendedVariant);
+            const bool overrideAlbedo =
+                usesDefaultMaterial || materialResources == &defaultLitMaterialResources;
+            ApplyFrameAndMaterialUniforms(*program, *material, frameUniforms, blendedVariant);
+            if (overrideAlbedo) {
+                program->SetVector3("uAlbedoColor", representative.baseColor);
             }
-            if (program == nullptr) {
-                continue; // Still compiling or invalid: never bind a stale pipeline.
-            }
-
-            const Math::Matrix3x3 normalMatrix = ComputeNormalMatrix(item.worldMatrix);
-            const bool overrideAlbedo = usesDefaultMaterial || materialResources == &defaultLitMaterialResources;
-            const Math::Vector3 effectiveAlbedo =
-                overrideAlbedo ? item.baseColor : Math::ToVector3(material->albedoColor);
-            const bool stateChanged = program != lastProgram || material != lastMaterial ||
-                                      materialResources != lastMaterialResources ||
-                                      blendedVariant != lastBlendedVariant;
-            if (stateChanged) {
-                program->SetMatrix4x4("uModel", item.worldMatrix);
-                // Normal matrix = transpose(inverse(model)); see ComputeNormalMatrix, shared with
-                // the lit mesh path so the two cannot disagree under non-uniform scale.
-                program->SetMatrix3x3("uNormalMatrix", normalMatrix);
-                ApplyFrameAndMaterialUniforms(*program, *material, frameUniforms, blendedVariant);
-                // Base Color is the DEFAULT material's albedo, so it only replaces that material's own
-                // (white) albedo. An assigned material owns the surface outright - tinting it here would
-                // mean a primitive could never show the material an author picked.
-                if (overrideAlbedo) {
-                    program->SetVector3("uAlbedoColor", item.baseColor);
-                }
-                program->SetInt("uMeshRenderLayers", static_cast<std::int32_t>(item.renderLayers));
-                program->SetFloat("uSurfaceOpacity", item.opacity);
-                program->ApplyTo(commandBuffer);
-                BindMaterialTextures(*materialResources, frameUniforms, commandBuffer);
-                lastProgram = program;
-                lastMaterial = material;
-                lastMaterialResources = materialResources;
-                lastBlendedVariant = blendedVariant;
-                lastRenderLayers = item.renderLayers;
-                lastOpacity = item.opacity;
-                lastAlbedoColor = effectiveAlbedo;
-            } else if (commandBuffer.RetainsUniformStatePerPipeline()) {
-                program->SetMatrix4x4("uModel", item.worldMatrix);
-                program->SetMatrix3x3("uNormalMatrix", normalMatrix);
-                if (overrideAlbedo && (effectiveAlbedo.x != lastAlbedoColor.x ||
-                                       effectiveAlbedo.y != lastAlbedoColor.y ||
-                                       effectiveAlbedo.z != lastAlbedoColor.z)) {
-                    program->SetVector3("uAlbedoColor", effectiveAlbedo);
-                    lastAlbedoColor = effectiveAlbedo;
-                }
-                if (item.renderLayers != lastRenderLayers) {
-                    program->SetInt("uMeshRenderLayers", static_cast<std::int32_t>(item.renderLayers));
-                    lastRenderLayers = item.renderLayers;
-                }
-                if (item.opacity != lastOpacity) {
-                    program->SetFloat("uSurfaceOpacity", item.opacity);
-                    lastOpacity = item.opacity;
-                }
-                program->ApplyTo(commandBuffer);
-            } else {
-                commandBuffer.SetUniformMatrix4x4("uModel", item.worldMatrix);
-                commandBuffer.SetUniformMatrix4x4("uNormalMatrix", Math::ToMatrix4x4(normalMatrix));
-                if (overrideAlbedo && (effectiveAlbedo.x != lastAlbedoColor.x ||
-                                       effectiveAlbedo.y != lastAlbedoColor.y ||
-                                       effectiveAlbedo.z != lastAlbedoColor.z)) {
-                    commandBuffer.SetUniformVector3("uAlbedoColor", effectiveAlbedo);
-                    lastAlbedoColor = effectiveAlbedo;
-                }
-                if (item.renderLayers != lastRenderLayers) {
-                    commandBuffer.SetUniformInt("uMeshRenderLayers", static_cast<std::int32_t>(item.renderLayers));
-                    lastRenderLayers = item.renderLayers;
-                }
-                if (item.opacity != lastOpacity) {
-                    commandBuffer.SetUniformFloat("uSurfaceOpacity", item.opacity);
-                    lastOpacity = item.opacity;
-                }
-            }
-            if (meshResources.vertexBuffer != lastVertexBuffer) {
-                commandBuffer.BindVertexBuffer(meshResources.vertexBuffer);
-                lastVertexBuffer = meshResources.vertexBuffer;
-            }
-            if (meshResources.indexBuffer != lastIndexBuffer) {
-                commandBuffer.BindIndexBuffer(meshResources.indexBuffer);
-                lastIndexBuffer = meshResources.indexBuffer;
-            }
-            const std::uint32_t count = item.indexCount == 0U ? meshResources.indexCount : item.indexCount;
-            const std::uint32_t first = item.indexCount == 0U ? 0U : item.firstIndex;
-            commandBuffer.DrawIndexed(count, 1U, first);
+            program->SetInt("uMeshRenderLayers", static_cast<std::int32_t>(representative.renderLayers));
+            program->SetFloat("uSurfaceOpacity", representative.opacity);
+            program->ApplyTo(commandBuffer);
+            BindMaterialTextures(*materialResources, frameUniforms, commandBuffer);
+            commandBuffer.BindStorageBuffer(instanceTransformBuffer, kInstanceTransformSlot);
+            commandBuffer.BindStorageBuffer(instanceNormalTransformBuffer, kInstanceNormalTransformSlot);
+            commandBuffer.BindStorageBuffer(instanceBaseBuffer, kInstanceBaseSlot);
+            commandBuffer.BindVertexBuffer(meshResources.vertexBuffer);
+            commandBuffer.BindIndexBuffer(meshResources.indexBuffer);
+            const std::uint32_t count =
+                representative.indexCount == 0U ? meshResources.indexCount : representative.indexCount;
+            const std::uint32_t first =
+                representative.indexCount == 0U ? 0U : representative.firstIndex;
+            commandBuffer.DrawIndexed(count, static_cast<std::uint32_t>(batch.itemCount), first);
             ++drawCalls;
+            // The per-item path caches what it last bound; an instanced draw replaced that state
+            // behind its back, so the next range re-applies everything.
+            lastProgram = nullptr;
+            lastMaterial = nullptr;
+            lastMaterialResources = nullptr;
+            lastBlendedVariant = false;
+            lastVertexBuffer = kInvalidBufferHandle;
+            lastIndexBuffer = kInvalidBufferHandle;
+            lastRenderLayers = 0U;
+            lastOpacity = -1.0F;
+            lastAlbedoColor = Math::Vector3{-1.0F, -1.0F, -1.0F};
         }
         return drawCalls;
     }
