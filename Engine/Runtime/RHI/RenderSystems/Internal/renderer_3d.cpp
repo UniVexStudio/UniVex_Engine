@@ -5083,8 +5083,11 @@ Renderer3D::Renderer3D(IRenderDevice& renderDevice, IRenderSystem& renderSystem,
     Shader::ShaderProgramDesc proceduralSkyProgramDesc;
     proceduralSkyProgramDesc.virtualFilePath = std::string(Shader::BuiltIn::kProceduralSkyVirtualPath);
     proceduralSkyProgramDesc.embeddedFallbackSourceCode = std::string(Shader::BuiltIn::kProceduralSkySource);
-    proceduralSkyProgramDesc.depthTestEnabled = false;
+    // The sky is a full-screen triangle at the far plane drawn inside the main colour pass, so the
+    // depth test is what keeps it off covered pixels. It must not write depth: it is a background.
+    proceduralSkyProgramDesc.depthTestEnabled = true;
     proceduralSkyProgramDesc.depthWriteEnabled = false;
+    proceduralSkyProgramDesc.depthCompare = DepthCompare::LessOrEqual;
     proceduralSkyProgramDesc.debugName = "ProceduralSky";
     m_impl->proceduralSkyProgram = shaderManager.CreateProgram(proceduralSkyProgramDesc);
 
@@ -6482,9 +6485,17 @@ void Renderer3D::RenderFrame(Scene::IEntityManager& entityManager, Scene::Entity
         m_impl->wboitCompositeProgram != nullptr && m_impl->wboitCompositeProgram->IsValid() &&
         m_impl->EnsureWboitTargets();
 
+    const bool sunDiscActive = m_impl->sunEnergy > 0.0F &&
+                               m_impl->sunDiscAngularDiameterDegrees > 0.0F &&
+                               m_impl->sunDiscIntensity > 0.0F;
+    const bool skyActive = !m_impl->captureTransparentBackground &&
+                           (m_impl->environmentFrame.hasEnvironment || sunDiscActive) &&
+                           m_impl->proceduralSkyProgram && m_impl->proceduralSkyProgram->IsValid();
+
     renderGraph.AddPass(
         "MainColor", std::span<const RenderGraphResourceUse>{mainResources.data(), mainResourceCount},
-        [this, &queue, &frameUniforms, wboitActive](ICommandBuffer& commandBuffer) {
+        [this, &queue, &frameUniforms, wboitActive, skyActive, shadowsReady, &lightSpaceMatrices,
+             &cascadeSplits, shadowOpacity, shadowBias](ICommandBuffer& commandBuffer) {
             RenderPassDesc passDesc;
             passDesc.colorAttachment = m_impl->colorTarget;
             passDesc.depthAttachment = m_impl->depthTarget;
@@ -6550,6 +6561,105 @@ void Renderer3D::RenderFrame(Scene::IEntityManager& entityManager, Scene::Entity
                     m_impl->lastFrameDiagnostics.decalDrawCallsRecorded +
                     m_impl->lastFrameDiagnostics.vfxDrawCallsRecorded +
                     m_impl->lastFrameDiagnostics.occlusionQueriesIssued;
+            }
+            // Sky is drawn inside this pass rather than as its own: the depth attachment is
+            // already here, so the hardware rejects covered pixels instead of the shader
+            // fetching the depth texture, and the colour target is never stored and reloaded.
+            if (skyActive) {
+                m_impl->proceduralSkyProgram->SetVector3("uCameraRight", m_impl->skyCameraRight);
+                m_impl->proceduralSkyProgram->SetVector3("uCameraUp", m_impl->skyCameraUp);
+                m_impl->proceduralSkyProgram->SetVector3("uCameraForward", m_impl->skyCameraForward);
+                m_impl->proceduralSkyProgram->SetFloat("uTanHalfFov", m_impl->skyTanHalfFov);
+                m_impl->proceduralSkyProgram->SetFloat("uAspect", m_impl->environmentAspect);
+                m_impl->proceduralSkyProgram->SetInt(
+                    "uHasEnvironment", m_impl->environmentFrame.hasEnvironment ? 1 : 0);
+                m_impl->proceduralSkyProgram->SetVector3("uSkyColor", m_impl->environmentFrame.skyColor);
+                m_impl->proceduralSkyProgram->SetVector3("uHorizonColor", m_impl->environmentFrame.horizonColor);
+                m_impl->proceduralSkyProgram->SetVector3(
+                    "uGroundColor", m_impl->environmentFrame.hasEnvironment
+                                        ? m_impl->environmentFrame.groundColor
+                                        : Math::Vector3{m_impl->sceneClearColor[0], m_impl->sceneClearColor[1],
+                                                           m_impl->sceneClearColor[2]});
+                m_impl->proceduralSkyProgram->SetFloat("uSkyCurve", m_impl->environmentFrame.skyCurve);
+                m_impl->proceduralSkyProgram->SetFloat("uGroundCurve", m_impl->environmentFrame.groundCurve);
+                m_impl->proceduralSkyProgram->SetVector3("uSunDirection", m_impl->sunDirection);
+                m_impl->proceduralSkyProgram->SetVector3("uSunColor", m_impl->sunColor);
+                m_impl->proceduralSkyProgram->SetFloat("uSunEnergy", m_impl->sunEnergy);
+                m_impl->proceduralSkyProgram->SetFloat("uSunAngularDiameter",
+                                                          m_impl->sunDiscAngularDiameterDegrees);
+                m_impl->proceduralSkyProgram->SetFloat("uSunDiscIntensity", m_impl->sunDiscIntensity);
+                m_impl->proceduralSkyProgram->SetFloat("uSunLimbDarkening", m_impl->sunDiscLimbDarkening);
+                m_impl->proceduralSkyProgram->SetInt("uAtmosphericSky",
+                                                         m_impl->environmentFrame.atmosphericSky ? 1 : 0);
+                m_impl->proceduralSkyProgram->SetFloat("uAtmosphereRayleigh",
+                                                           m_impl->environmentFrame.atmosphereRayleigh);
+                m_impl->proceduralSkyProgram->SetFloat("uAtmosphereMie",
+                                                           m_impl->environmentFrame.atmosphereMie);
+                m_impl->proceduralSkyProgram->SetFloat("uAtmosphereOzone",
+                                                           m_impl->environmentFrame.atmosphereOzone);
+                m_impl->proceduralSkyProgram->SetFloat("uAtmosphereMieAnisotropy",
+                                                           m_impl->environmentFrame.atmosphereMieAnisotropy);
+                m_impl->proceduralSkyProgram->SetFloat("uAtmosphereMultiScatter",
+                                                           m_impl->environmentFrame.atmosphereMultiScatter);
+                m_impl->proceduralSkyProgram->SetFloat("uAtmosphereIntensity",
+                                                           m_impl->environmentFrame.atmosphereIntensity);
+                m_impl->proceduralSkyProgram->SetInt(
+                    "uAtmosphereSteps", static_cast<std::int32_t>(m_impl->environmentFrame.atmosphereSamples));
+                m_impl->proceduralSkyProgram->SetVector3("uCameraPosition", m_impl->environmentCameraPosition);
+                m_impl->proceduralSkyProgram->SetFloat("uSkyTime", m_impl->skyTimeSeconds);
+                m_impl->proceduralSkyProgram->SetFloat("uStarDensity", m_impl->environmentFrame.starDensity);
+                m_impl->proceduralSkyProgram->SetFloat("uStarBrightness", m_impl->environmentFrame.starBrightness);
+                m_impl->proceduralSkyProgram->SetFloat("uStarSeed", m_impl->environmentFrame.starSeed);
+                m_impl->proceduralSkyProgram->SetFloat("uMilkyWayStrength",
+                                                          m_impl->environmentFrame.milkyWayStrength);
+                m_impl->proceduralSkyProgram->SetInt("uCloudsEnabled",
+                                                        m_impl->environmentFrame.cloudsEnabled ? 1 : 0);
+                m_impl->proceduralSkyProgram->SetFloat("uCloudCoverage", m_impl->environmentFrame.cloudCoverage);
+                m_impl->proceduralSkyProgram->SetFloat("uCloudDensity", m_impl->environmentFrame.cloudDensity);
+                m_impl->proceduralSkyProgram->SetFloat("uCloudAltitude", m_impl->environmentFrame.cloudAltitude);
+                m_impl->proceduralSkyProgram->SetVector2("uCloudWind", m_impl->environmentFrame.cloudWind);
+                m_impl->proceduralSkyProgram->SetFloat("uCloudSoftness", m_impl->environmentFrame.cloudSoftness);
+                m_impl->proceduralSkyProgram->SetFloat("uCloudSilverLining",
+                                                          m_impl->environmentFrame.cloudSilverLining);
+                m_impl->proceduralSkyProgram->SetFloat("uSkyLuminance", m_impl->environmentFrame.skyLuminance);
+                m_impl->proceduralSkyProgram->SetInt("uSkyTexture", static_cast<std::int32_t>(kSkyTextureSlot));
+                m_impl->proceduralSkyProgram->SetInt("uSkyTextureEnabled", m_impl->skyTextureEnabled ? 1 : 0);
+                // Shadows belong on real floor/terrain geometry, never projected onto empty sky void.
+                m_impl->proceduralSkyProgram->SetInt("uSkyGroundShadowEnabled", 0);
+                if (shadowsReady) {
+                    m_impl->proceduralSkyProgram->SetInt("uSkyGroundShadowMap0",
+                                                            static_cast<std::int32_t>(kShadowCascadeFirstTextureSlot));
+                    m_impl->proceduralSkyProgram->SetInt("uSkyGroundShadowMap1",
+                                                            static_cast<std::int32_t>(kShadowCascadeFirstTextureSlot + 1U));
+                    m_impl->proceduralSkyProgram->SetInt("uSkyGroundShadowMap2",
+                                                            static_cast<std::int32_t>(kShadowCascadeFirstTextureSlot + 2U));
+                    m_impl->proceduralSkyProgram->SetMatrix4x4("uSkyGroundLightMatrix0", lightSpaceMatrices[0]);
+                    m_impl->proceduralSkyProgram->SetMatrix4x4("uSkyGroundLightMatrix1", lightSpaceMatrices[1]);
+                    m_impl->proceduralSkyProgram->SetMatrix4x4("uSkyGroundLightMatrix2", lightSpaceMatrices[2]);
+                    m_impl->proceduralSkyProgram->SetVector3(
+                        "uSkyGroundCascadeSplits",
+                        Math::Vector3{cascadeSplits[0], cascadeSplits[1], cascadeSplits[2]});
+                    m_impl->proceduralSkyProgram->SetFloat("uSkyGroundShadowOpacity", shadowOpacity);
+                    m_impl->proceduralSkyProgram->SetFloat("uSkyGroundShadowBias", shadowBias);
+                }
+                m_impl->proceduralSkyProgram->ApplyTo(commandBuffer);
+                if (m_impl->skyTextureEnabled) {
+                    commandBuffer.BindTexture(m_impl->skyTextureHandle, kSkyTextureSlot);
+                    if (m_impl->environmentEquirectSampler != kInvalidSamplerHandle) {
+                        commandBuffer.BindSampler(m_impl->environmentEquirectSampler, kSkyTextureSlot);
+                    }
+                }
+                if (shadowsReady) {
+                    for (std::size_t cascadeIndex = 0; cascadeIndex < kShadowCascadeCount; ++cascadeIndex) {
+                        const std::uint32_t slot =
+                            kShadowCascadeFirstTextureSlot + static_cast<std::uint32_t>(cascadeIndex);
+                        commandBuffer.BindTexture(m_impl->shadowMapTargets[cascadeIndex], slot);
+                        if (m_impl->shadowPointSampler != kInvalidSamplerHandle) {
+                            commandBuffer.BindSampler(m_impl->shadowPointSampler, slot);
+                        }
+                    }
+                }
+                commandBuffer.Draw(3);
             }
             commandBuffer.EndRenderPass();
         });
@@ -6636,130 +6746,7 @@ void Renderer3D::RenderFrame(Scene::IEntityManager& entityManager, Scene::Entity
         }
     }
 
-    const bool sunDiscActive = m_impl->sunEnergy > 0.0F &&
-                               m_impl->sunDiscAngularDiameterDegrees > 0.0F &&
-                               m_impl->sunDiscIntensity > 0.0F;
-    const bool skyActive = !m_impl->captureTransparentBackground &&
-                           (m_impl->environmentFrame.hasEnvironment || sunDiscActive) &&
-                           m_impl->proceduralSkyProgram && m_impl->proceduralSkyProgram->IsValid();
-    if (skyActive) {
-        const std::array<RenderGraphResourceUse, 5U> skyResources{
-            RenderGraphResourceUse{depthResource, RenderGraphResourceAccess::Read},
-            RenderGraphResourceUse{colorResource, RenderGraphResourceAccess::Write},
-            RenderGraphResourceUse{shadowResources[0], RenderGraphResourceAccess::Read},
-            RenderGraphResourceUse{shadowResources[1], RenderGraphResourceAccess::Read},
-            RenderGraphResourceUse{shadowResources[2], RenderGraphResourceAccess::Read}};
-        const std::size_t skyResourceCount = shadowsReady ? 5U : 2U;
-        renderGraph.AddPass(
-            "ProceduralSky", std::span<const RenderGraphResourceUse>{skyResources.data(), skyResourceCount},
-            [this, shadowsReady, &lightSpaceMatrices, &cascadeSplits, shadowOpacity, shadowBias](ICommandBuffer& commandBuffer) {
-                RenderPassDesc passDesc;
-                passDesc.colorAttachment = m_impl->colorTarget;
-                passDesc.depthAttachment = kInvalidTextureHandle;
-                passDesc.colorLoadOp = LoadOp::Load;
-                commandBuffer.BeginRenderPass(passDesc);
-                m_impl->proceduralSkyProgram->SetInt("uSceneDepthTexture", 0);
-                m_impl->proceduralSkyProgram->SetVector3("uCameraRight", m_impl->skyCameraRight);
-                m_impl->proceduralSkyProgram->SetVector3("uCameraUp", m_impl->skyCameraUp);
-                m_impl->proceduralSkyProgram->SetVector3("uCameraForward", m_impl->skyCameraForward);
-                m_impl->proceduralSkyProgram->SetFloat("uTanHalfFov", m_impl->skyTanHalfFov);
-                m_impl->proceduralSkyProgram->SetFloat("uAspect", m_impl->environmentAspect);
-                m_impl->proceduralSkyProgram->SetInt(
-                    "uHasEnvironment", m_impl->environmentFrame.hasEnvironment ? 1 : 0);
-                m_impl->proceduralSkyProgram->SetVector3("uSkyColor", m_impl->environmentFrame.skyColor);
-                m_impl->proceduralSkyProgram->SetVector3("uHorizonColor", m_impl->environmentFrame.horizonColor);
-                m_impl->proceduralSkyProgram->SetVector3(
-                    "uGroundColor", m_impl->environmentFrame.hasEnvironment
-                                        ? m_impl->environmentFrame.groundColor
-                                        : Math::Vector3{m_impl->sceneClearColor[0], m_impl->sceneClearColor[1],
-                                                           m_impl->sceneClearColor[2]});
-                m_impl->proceduralSkyProgram->SetFloat("uSkyCurve", m_impl->environmentFrame.skyCurve);
-                m_impl->proceduralSkyProgram->SetFloat("uGroundCurve", m_impl->environmentFrame.groundCurve);
-                m_impl->proceduralSkyProgram->SetVector3("uSunDirection", m_impl->sunDirection);
-                m_impl->proceduralSkyProgram->SetVector3("uSunColor", m_impl->sunColor);
-                m_impl->proceduralSkyProgram->SetFloat("uSunEnergy", m_impl->sunEnergy);
-                m_impl->proceduralSkyProgram->SetFloat("uSunAngularDiameter",
-                                                          m_impl->sunDiscAngularDiameterDegrees);
-                m_impl->proceduralSkyProgram->SetFloat("uSunDiscIntensity", m_impl->sunDiscIntensity);
-                m_impl->proceduralSkyProgram->SetFloat("uSunLimbDarkening", m_impl->sunDiscLimbDarkening);
-                m_impl->proceduralSkyProgram->SetInt("uAtmosphericSky",
-                                                         m_impl->environmentFrame.atmosphericSky ? 1 : 0);
-                m_impl->proceduralSkyProgram->SetFloat("uAtmosphereRayleigh",
-                                                           m_impl->environmentFrame.atmosphereRayleigh);
-                m_impl->proceduralSkyProgram->SetFloat("uAtmosphereMie",
-                                                           m_impl->environmentFrame.atmosphereMie);
-                m_impl->proceduralSkyProgram->SetFloat("uAtmosphereOzone",
-                                                           m_impl->environmentFrame.atmosphereOzone);
-                m_impl->proceduralSkyProgram->SetFloat("uAtmosphereMieAnisotropy",
-                                                           m_impl->environmentFrame.atmosphereMieAnisotropy);
-                m_impl->proceduralSkyProgram->SetFloat("uAtmosphereMultiScatter",
-                                                           m_impl->environmentFrame.atmosphereMultiScatter);
-                m_impl->proceduralSkyProgram->SetFloat("uAtmosphereIntensity",
-                                                           m_impl->environmentFrame.atmosphereIntensity);
-                m_impl->proceduralSkyProgram->SetInt(
-                    "uAtmosphereSteps", static_cast<std::int32_t>(m_impl->environmentFrame.atmosphereSamples));
-                m_impl->proceduralSkyProgram->SetVector3("uCameraPosition", m_impl->environmentCameraPosition);
-                m_impl->proceduralSkyProgram->SetFloat("uSkyTime", m_impl->skyTimeSeconds);
-                m_impl->proceduralSkyProgram->SetFloat("uStarDensity", m_impl->environmentFrame.starDensity);
-                m_impl->proceduralSkyProgram->SetFloat("uStarBrightness", m_impl->environmentFrame.starBrightness);
-                m_impl->proceduralSkyProgram->SetFloat("uStarSeed", m_impl->environmentFrame.starSeed);
-                m_impl->proceduralSkyProgram->SetFloat("uMilkyWayStrength",
-                                                          m_impl->environmentFrame.milkyWayStrength);
-                m_impl->proceduralSkyProgram->SetInt("uCloudsEnabled",
-                                                        m_impl->environmentFrame.cloudsEnabled ? 1 : 0);
-                m_impl->proceduralSkyProgram->SetFloat("uCloudCoverage", m_impl->environmentFrame.cloudCoverage);
-                m_impl->proceduralSkyProgram->SetFloat("uCloudDensity", m_impl->environmentFrame.cloudDensity);
-                m_impl->proceduralSkyProgram->SetFloat("uCloudAltitude", m_impl->environmentFrame.cloudAltitude);
-                m_impl->proceduralSkyProgram->SetVector2("uCloudWind", m_impl->environmentFrame.cloudWind);
-                m_impl->proceduralSkyProgram->SetFloat("uCloudSoftness", m_impl->environmentFrame.cloudSoftness);
-                m_impl->proceduralSkyProgram->SetFloat("uCloudSilverLining",
-                                                          m_impl->environmentFrame.cloudSilverLining);
-                m_impl->proceduralSkyProgram->SetFloat("uSkyLuminance", m_impl->environmentFrame.skyLuminance);
-                m_impl->proceduralSkyProgram->SetInt("uSkyTexture", static_cast<std::int32_t>(kSkyTextureSlot));
-                m_impl->proceduralSkyProgram->SetInt("uSkyTextureEnabled", m_impl->skyTextureEnabled ? 1 : 0);
-                // Shadows belong on real floor/terrain geometry, never projected onto empty sky void.
-                m_impl->proceduralSkyProgram->SetInt("uSkyGroundShadowEnabled", 0);
-                if (shadowsReady) {
-                    m_impl->proceduralSkyProgram->SetInt("uSkyGroundShadowMap0",
-                                                            static_cast<std::int32_t>(kShadowCascadeFirstTextureSlot));
-                    m_impl->proceduralSkyProgram->SetInt("uSkyGroundShadowMap1",
-                                                            static_cast<std::int32_t>(kShadowCascadeFirstTextureSlot + 1U));
-                    m_impl->proceduralSkyProgram->SetInt("uSkyGroundShadowMap2",
-                                                            static_cast<std::int32_t>(kShadowCascadeFirstTextureSlot + 2U));
-                    m_impl->proceduralSkyProgram->SetMatrix4x4("uSkyGroundLightMatrix0", lightSpaceMatrices[0]);
-                    m_impl->proceduralSkyProgram->SetMatrix4x4("uSkyGroundLightMatrix1", lightSpaceMatrices[1]);
-                    m_impl->proceduralSkyProgram->SetMatrix4x4("uSkyGroundLightMatrix2", lightSpaceMatrices[2]);
-                    m_impl->proceduralSkyProgram->SetVector3(
-                        "uSkyGroundCascadeSplits",
-                        Math::Vector3{cascadeSplits[0], cascadeSplits[1], cascadeSplits[2]});
-                    m_impl->proceduralSkyProgram->SetFloat("uSkyGroundShadowOpacity", shadowOpacity);
-                    m_impl->proceduralSkyProgram->SetFloat("uSkyGroundShadowBias", shadowBias);
-                }
-                m_impl->proceduralSkyProgram->ApplyTo(commandBuffer);
-                commandBuffer.BindTexture(m_impl->depthTarget, 0U);
-                if (m_impl->shadowPointSampler != kInvalidSamplerHandle) {
-                    commandBuffer.BindSampler(m_impl->shadowPointSampler, 0U);
-                }
-                if (m_impl->skyTextureEnabled) {
-                    commandBuffer.BindTexture(m_impl->skyTextureHandle, kSkyTextureSlot);
-                    if (m_impl->environmentEquirectSampler != kInvalidSamplerHandle) {
-                        commandBuffer.BindSampler(m_impl->environmentEquirectSampler, kSkyTextureSlot);
-                    }
-                }
-                if (shadowsReady) {
-                    for (std::size_t cascadeIndex = 0; cascadeIndex < kShadowCascadeCount; ++cascadeIndex) {
-                        const std::uint32_t slot =
-                            kShadowCascadeFirstTextureSlot + static_cast<std::uint32_t>(cascadeIndex);
-                        commandBuffer.BindTexture(m_impl->shadowMapTargets[cascadeIndex], slot);
-                        if (m_impl->shadowPointSampler != kInvalidSamplerHandle) {
-                            commandBuffer.BindSampler(m_impl->shadowPointSampler, slot);
-                        }
-                    }
-                }
-                commandBuffer.Draw(3);
-                commandBuffer.EndRenderPass();
-            });
-    }
+
 
     if (!capturingProbe &&
         m_impl->studioFloorSettings.has_value() &&

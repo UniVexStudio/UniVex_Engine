@@ -6,7 +6,7 @@ out vec2 vTexCoord;
 void main() {
     vec2 position = vec2((gl_VertexID << 1) & 2, gl_VertexID & 2);
     vTexCoord = position;
-    gl_Position = vec4(position * 2.0 - 1.0, 0.0, 1.0);
+    gl_Position = vec4(position * 2.0 - 1.0, 1.0, 1.0);
 }
 #endif
 
@@ -14,7 +14,6 @@ void main() {
 in vec2 vTexCoord;
 out vec4 FragColor;
 
-uniform sampler2D uSceneDepthTexture;
 uniform vec3 uCameraRight;
 uniform vec3 uCameraUp;
 uniform vec3 uCameraForward;
@@ -653,9 +652,6 @@ float SkyGroundShadow(vec3 groundPos, float viewDist) {
 }
 
 void main() {
-    if (texture(uSceneDepthTexture, vTexCoord).r < 1.0) {
-        discard;
-    }
     vec2 ndc = vTexCoord * 2.0 - 1.0;
     vec3 view = vec3(ndc.x * max(uTanHalfFov, 0.0) * max(uAspect, 0.0001), ndc.y * max(uTanHalfFov, 0.0), -1.0);
     vec3 worldDir = normalize(uCameraRight * view.x + uCameraUp * view.y + uCameraForward);
