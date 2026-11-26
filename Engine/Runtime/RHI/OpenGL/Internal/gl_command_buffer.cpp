@@ -1141,8 +1141,10 @@ const GlCommandBuffer::UniformRecord* GlCommandBuffer::FindUniform(std::string_v
     if (it == pipelineRecord->uniforms.end()) {
         const auto element = pipelineRecord->uniformElements.find(name);
         if (element != pipelineRecord->uniformElements.end()) return &element->second;
-        UVE_WARNING("GlCommandBuffer: SetUniform*UVE - \"{}\" is not an active uniform on the bound pipeline",
-                     name);
+        if (pipelineRecord->warnedUnknownUniforms.emplace(name).second) {
+            UVE_WARNING("GlCommandBuffer: SetUniform*UVE - \"{}\" is not an active uniform on the bound pipeline",
+                         name);
+        }
         return nullptr;
     }
     return &it->second;
