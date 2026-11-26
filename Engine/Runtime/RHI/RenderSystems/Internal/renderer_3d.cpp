@@ -5906,6 +5906,21 @@ void Renderer3D::RenderFrame(Scene::IEntityManager& entityManager, Scene::Entity
                       if (aBlend != bBlend) {
                           return !aBlend;
                       }
+                      // Solid draws go front-to-back so the depth test rejects a hidden fragment
+                      // before it is shaded - the same order RenderQueue::Sort gives the mesh layer.
+                      // Grouping these by material instead left the built-in lit program's early-z
+                      // with nothing to reject. Blended draws keep the material grouping: their
+                      // result depends on the order they composite in, not on distance alone.
+                      if (!aBlend) {
+                          const bool aFinite = std::isfinite(a.sortDepth);
+                          const bool bFinite = std::isfinite(b.sortDepth);
+                          if (aFinite != bFinite) {
+                              return aFinite;
+                          }
+                          if (aFinite && a.sortDepth != b.sortDepth) {
+                              return a.sortDepth < b.sortDepth;
+                          }
+                      }
                       if (a.materialGuid != b.materialGuid) {
                           return a.materialGuid.value < b.materialGuid.value;
                       }
