@@ -158,9 +158,13 @@ TEST(RenderGraphCompilerTest, ActualTransientHandlesAliasAndSurviveGraphClearUnt
     EXPECT_EQ(device.GetLiveResourceCount(), 1U);
     device.Submit(std::move(commands));
     std::size_t barriers = 0U;
-    for (const auto &operation : device.GetLastSubmittedCommands())
-        if (std::holds_alternative<MemoryBarrierCommand>(operation))
+    for (const auto &operation : device.GetLastSubmittedCommands()) {
+        if (const auto *barrier = std::get_if<MemoryBarrierCommand>(&operation)) {
             ++barriers;
+            // The graph orders texture hazards only; wider masks flush scopes it never ordered.
+            EXPECT_EQ(barrier->mask, MemoryBarrierMask::Framebuffer | MemoryBarrierMask::TextureFetch);
+        }
+    }
     EXPECT_EQ(barriers, 3U);
     EXPECT_EQ(device.GetLiveResourceCount(),
               1U); // deletion is owner-thread retirement, not a worker callback

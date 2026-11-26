@@ -77,6 +77,7 @@ bool MeshSkinCompute::Initialize(std::string* const outInfoLog) {
     BufferDesc paramDesc;
     paramDesc.usage = BufferUsage::Storage;
     paramDesc.sizeBytes = sizeof(MeshSkinParamsGpu);
+    paramDesc.updateFrequency = BufferUpdateFrequency::Dynamic; // rewritten every pass
     m_paramBuffer = m_device.CreateBuffer(paramDesc);
     if (m_paramBuffer == kInvalidBufferHandle) {
         UVE_WARNING("MeshSkinCompute could not allocate its parameter buffer.");
@@ -117,12 +118,16 @@ bool MeshSkinCompute::EnsureBufferCapacity(const std::size_t vertexCount,
         BufferDesc vertexDesc;
         vertexDesc.usage = BufferUsage::Storage;
         vertexDesc.sizeBytes = vertexCount * sizeof(MeshSkinVertexGpu);
+        vertexDesc.updateFrequency = BufferUpdateFrequency::Dynamic; // CPU uploads, every pass
         m_inputVertexBuffer = m_device.CreateBuffer(vertexDesc);
-        m_outputVertexBuffer = m_device.CreateBuffer(vertexDesc);
+        BufferDesc outputDesc = vertexDesc;
+        outputDesc.updateFrequency = BufferUpdateFrequency::Static; // written by the kernel
+        m_outputVertexBuffer = m_device.CreateBuffer(outputDesc);
 
         BufferDesc influenceDesc;
         influenceDesc.usage = BufferUsage::Storage;
         influenceDesc.sizeBytes = vertexCount * sizeof(MeshSkinInfluenceGpu);
+        influenceDesc.updateFrequency = BufferUpdateFrequency::Dynamic; // CPU uploads, every pass
         m_influenceBuffer = m_device.CreateBuffer(influenceDesc);
 
         if (m_inputVertexBuffer == kInvalidBufferHandle ||
@@ -145,6 +150,7 @@ bool MeshSkinCompute::EnsureBufferCapacity(const std::size_t vertexCount,
         BufferDesc matrixDesc;
         matrixDesc.usage = BufferUsage::Storage;
         matrixDesc.sizeBytes = jointCount * kMatrixFloats * sizeof(float);
+        matrixDesc.updateFrequency = BufferUpdateFrequency::Dynamic; // CPU uploads, every pass
         m_matrixBuffer = m_device.CreateBuffer(matrixDesc);
         if (m_matrixBuffer == kInvalidBufferHandle) {
             UVE_WARNING("MeshSkinCompute failed to allocate its skinning-matrix buffer.");

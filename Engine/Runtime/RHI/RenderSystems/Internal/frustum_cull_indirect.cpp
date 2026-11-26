@@ -105,6 +105,7 @@ bool FrustumCullIndirect::Initialize(std::string* const outInfoLog) {
         BufferDesc bufferDesc;
         bufferDesc.usage = fixed.usage;
         bufferDesc.sizeBytes = fixed.sizeBytes;
+        bufferDesc.updateFrequency = BufferUpdateFrequency::Dynamic; // rewritten every pass
         *fixed.handle = m_device.CreateBuffer(bufferDesc);
         if (*fixed.handle == kInvalidBufferHandle) {
             UVE_WARNING("FrustumCullIndirect could not allocate its {} buffer.", fixed.name);
@@ -143,6 +144,7 @@ bool FrustumCullIndirect::EnsureBufferCapacity(const std::size_t boxCount) {
     BufferDesc boxDesc;
     boxDesc.usage = BufferUsage::Storage;
     boxDesc.sizeBytes = boxCount * sizeof(CullBoxGpu);
+    boxDesc.updateFrequency = BufferUpdateFrequency::Dynamic; // rewritten every pass
     m_boxBuffer = m_device.CreateBuffer(boxDesc);
 
     // One slot per box, because the worst case is everything visible. The kernel relies on this

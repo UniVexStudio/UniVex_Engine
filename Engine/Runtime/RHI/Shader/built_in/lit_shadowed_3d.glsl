@@ -162,6 +162,12 @@ in vec4 vLightSpacePosition;
 #if !defined(UVE_COMPATIBILITY)
 in vec4 vLightSpacePositions[3];
 #endif
+#if defined(UVE_EARLY_Z)
+// Alpha cutout is compiled out of this variant, so the depth test can run before the shader:
+// opaque draws then reject hidden fragments instead of shading them.
+layout(early_fragment_tests) in;
+#endif
+
 #ifdef UVE_WBOIT
 layout(location = 0) out vec4 FragColor;
 layout(location = 1) out vec4 FragRevealage;
@@ -1140,9 +1146,11 @@ void main() {
     vec2 uv1 = vTexCoord * uUvScale.xy + uUvOffset.xy;
     vec2 uv2 = vTexCoord * uUv2Scale.xy + uUv2Offset.xy;
     vec4 albedoSample = ReadMapCompat(uAlbedoTexture, uv1, uv2, uAlbedoMapTransform, uAlbedoMapControl, vec4(1.0));
+#if !defined(UVE_EARLY_Z)
     if (uAlphaCutoff > 0.0 && albedoSample.a < uAlphaCutoff) {
         discard;
     }
+#endif
     vec3 albedo = albedoSample.rgb * uAlbedoColor;
     float materialAlpha = uAlphaSource == 0 ? clamp(albedoSample.a * uAlbedoAlpha, 0.0, 1.0) : 1.0;
     float surfaceOpacity = clamp(uSurfaceOpacity, 0.0, 1.0) * materialAlpha;
@@ -1356,9 +1364,11 @@ void main() {
     UvSet uv1 = MakeUvSet(vec3(uUvScale.xy, uUvScale.x), uUvOffset, uUv1Triplanar, uUv1TriplanarSharpness);
     UvSet uv2 = MakeUvSet(uUv2Scale, uUv2Offset, uUv2Triplanar, uUv2TriplanarSharpness);
     vec4 albedoSample = ReadMap(uAlbedoTexture, uv1, uv2, uAlbedoMapTransform, uAlbedoMapControl, vec4(1.0));
+#if !defined(UVE_EARLY_Z)
     if (uAlphaCutoff > 0.0 && albedoSample.a < uAlphaCutoff) {
         discard;
     }
+#endif
     vec3 albedo = albedoSample.rgb * uAlbedoColor;
     // Material alpha from the authored source, then the instance's fade on top of it. Before this,
     // the material's alpha never reached the framebuffer at all: every surface composited at the

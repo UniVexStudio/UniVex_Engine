@@ -8,6 +8,7 @@
 #include <cstdio>
 #include <array>
 #include <chrono>
+#include <cstdlib>
 #include <cstddef>
 #include <cmath>
 #include <cstdint>
@@ -382,6 +383,11 @@ struct MaterialGpuResources {
     /// Depth-write off, source-alpha blend. Used when SurfaceInstance3D fades the mesh or draws
     /// an overlay; the ordinary program stays opaque so solid draws keep early-z.
     std::shared_ptr<Shader::ShaderProgram> blendedProgram;
+    /// Same lit source with the alpha-cutout test compiled out and early_fragment_tests declared,
+    /// so an opaque draw rejects hidden fragments before shading them instead of after. Only built
+    /// for materials that never cut out (alphaCutoff <= 0), which is what makes dropping the test
+    /// correct; every other material keeps `program`.
+    std::shared_ptr<Shader::ShaderProgram> earlyZProgram;
 };
 
 /// Picks the program a material draws with. `blended` is true for anything that must not write
@@ -395,6 +401,9 @@ struct MaterialGpuResources {
             return nullptr;
         }
         return resources.blendedProgram.get();
+    }
+    if (resources.earlyZProgram != nullptr && resources.earlyZProgram->IsValid()) {
+        return resources.earlyZProgram.get();
     }
     if (resources.program == nullptr || !resources.program->IsValid()) {
         return nullptr;
@@ -1091,6 +1100,11 @@ struct Renderer3D::Impl {
     std::size_t spotShadowCandidatesThisFrame = 0U;
     std::size_t pointShadowCandidatesThisFrame = 0U;
     std::shared_ptr<Shader::ShaderProgram> toneMappingProgram;
+    /// Fog-free variant of the tone mapper (ShaderProgramDesc::extraDefines UVE_TM_LEAN).
+    std::shared_ptr<Shader::ShaderProgram> toneMappingLeanProgram;
+    /// UVE_TONE_MAPPING_LEAN=0 forces the full tone mapper, so the lean variant can be A/B'd
+    /// on target hardware without rebuilding.
+    bool toneMappingLeanAllowed = true;
     std::shared_ptr<Shader::ShaderProgram> proceduralSkyProgram;
 
     /// Project-selected presentation clear color used when no world environment supplies a sky.
@@ -1542,6 +1556,7 @@ struct Renderer3D::Impl {
     std::size_t instanceBufferCapacity = 0U;
     RenderBatchSet opaqueBatches;
     RenderBatchSet transparentBatches;
+    RenderBatchSet primitiveBatches;
     std::vector<Math::Matrix4x4> instanceNormalMatrixStaging;
     std::vector<Math::Matrix4x4> instanceTransposeStaging;
     /// Reset at the top of every frame and copied into the frame diagnostics at the end. These
@@ -1599,8 +1614,11 @@ struct Renderer3D::Impl {
     Shader::ShaderProgramStagesDesc defaultLitStagesDesc;
     /// Built-in lit programs by (effectiveProfile << 16) | MaterialPipelineState::Pack().
     std::unordered_map<std::uint32_t, std::shared_ptr<Shader::ShaderProgram>> standardLitPrograms;
+    /// Opaque-only early-z twins of `standardLitPrograms`, keyed the same way.
+    std::unordered_map<std::uint32_t, std::shared_ptr<Shader::ShaderProgram>> standardLitEarlyZPrograms;
     std::array<std::shared_ptr<Shader::ShaderProgram>, 3U> defaultLitProgramsByProfile{};
     std::array<std::shared_ptr<Shader::ShaderProgram>, 3U> defaultLitBlendedProgramsByProfile{};
+    std::array<std::shared_ptr<Shader::ShaderProgram>, 3U> defaultLitEarlyZProgramsByProfile{};
     RendererProfileResolution rendererProfileResolution{};
     /// Programs that already received this render pass's frame-wide lighting & shadow uniforms.
     std::vector<const Shader::ShaderProgram*> frameUniformUploadedPrograms;
@@ -2005,6 +2023,14 @@ struct Renderer3D::Impl {
         }
         defaultLitMaterialResources.program = defaultLitProgramsByProfile[idx];
         defaultLitMaterialResources.blendedProgram = defaultLitBlendedProgramsByProfile[idx];
+        if (defaultLitEarlyZProgramsByProfile[idx] == nullptr) {
+            Shader::ShaderProgramStagesDesc earlyZDesc = MakeLitStagesDescForProfile(profile);
+            earlyZDesc.fragmentSource.extraDefines.emplace_back("UVE_EARLY_Z", "1");
+            earlyZDesc.debugName = "BuiltInLit default (" +
+                                  std::string(Platform::GetRendererProfileName(profile)) + ") early-z";
+            defaultLitEarlyZProgramsByProfile[idx] = shaderManager.CreateProgramFromStages(earlyZDesc);
+        }
+        defaultLitMaterialResources.earlyZProgram = defaultLitEarlyZProgramsByProfile[idx];
     }
 
     [[nodiscard]] SizedTargetSet* ActiveTargetSetMutable() noexcept {
@@ -2664,6 +2690,41 @@ struct Renderer3D::Impl {
         return program;
     }
 
+    /// Early-z twin of StandardLitProgram, for materials that never alpha-cut out. Returns null for
+    /// any state where an early depth test changes nothing (blended or depth-writing off), so those
+    /// keep the ordinary program.
+    [[nodiscard]] std::shared_ptr<Shader::ShaderProgram> StandardLitEarlyZProgram(
+        const Asset::MaterialAsset& material) {
+        const MaterialPipelineState state = ResolveMaterialPipelineState(material);
+        if (state.blendMode != PipelineBlendMode::Opaque || !state.depthWriteEnabled) {
+            return nullptr;
+        }
+        const std::uint32_t profileSlot =
+            std::min<std::uint32_t>(static_cast<std::uint32_t>(rendererProfileResolution.effective), 2U);
+        const std::uint32_t key = (profileSlot << 16U) | state.Pack();
+        if (const auto cached = standardLitEarlyZPrograms.find(key); cached != standardLitEarlyZPrograms.end()) {
+            return cached->second;
+        }
+        if (const auto standard = standardLitPrograms.find(key);
+            standard != standardLitPrograms.end() && standard->second == defaultLitProgramsByProfile[profileSlot] &&
+            defaultLitEarlyZProgramsByProfile[profileSlot] != nullptr) {
+            return defaultLitEarlyZProgramsByProfile[profileSlot];
+        }
+        if (defaultLitStagesDesc.vertexLayout.empty()) {
+            return nullptr; // Program creation has not run yet this session.
+        }
+        Shader::ShaderProgramStagesDesc desc = MakeLitStagesDescForProfile(rendererProfileResolution.effective);
+        desc.blendMode = state.blendMode;
+        desc.cullMode = state.cullMode;
+        desc.depthTestEnabled = state.depthTestEnabled;
+        desc.depthWriteEnabled = state.depthWriteEnabled;
+        desc.fragmentSource.extraDefines.emplace_back("UVE_EARLY_Z", "1");
+        desc.debugName = "BuiltInLit early-z material state " + std::to_string(key);
+        std::shared_ptr<Shader::ShaderProgram> program = shaderManager.CreateProgramFromStages(desc);
+        standardLitEarlyZPrograms.emplace(key, program);
+        return program;
+    }
+
     [[nodiscard]] const MaterialGpuResources* ResolveMaterialGpuResources(
         const Asset::AssetHandle<Asset::MaterialAsset>& materialHandle) {
         const Asset::AssetGuid guid = materialHandle.GetGuid();
@@ -2725,6 +2786,9 @@ struct Renderer3D::Impl {
                                               *metallicRoughnessTexture,
                                               *emissiveTexture,
                                               defaultLitMaterialResources.blendedProgram});
+            if (material->alphaCutoff <= 0.0F) {
+                insertResult.first->second.earlyZProgram = StandardLitEarlyZProgram(*material);
+            }
             return &insertResult.first->second;
         }
 
@@ -3168,7 +3232,9 @@ struct Renderer3D::Impl {
         if (entry.resources.vertexBuffer.value == 0U || entry.vertexBytes != bytes.size()) {
             DestroyBufferIfValid(renderDevice, entry.resources.vertexBuffer);
             entry.resources.vertexBuffer =
-                renderDevice.CreateBuffer(BufferDesc{bytes.size(), BufferUsage::Vertex}, bytes);
+                renderDevice.CreateBuffer(BufferDesc{bytes.size(), BufferUsage::Vertex,
+                                                     BufferMemory::Auto, BufferUpdateFrequency::Dynamic},
+                                          bytes);
             entry.vertexBytes = bytes.size();
         } else if (!renderDevice.UpdateBuffer(entry.resources.vertexBuffer, bytes)) {
             return nullptr;
@@ -3754,7 +3820,8 @@ struct Renderer3D::Impl {
     [[nodiscard]] bool EnsureInstanceBufferCapacity(const std::size_t instanceCount) {
         if (instanceBaseBuffer == kInvalidBufferHandle) {
             instanceBaseBuffer = renderDevice.CreateBuffer(
-                BufferDesc{sizeof(std::int32_t), BufferUsage::Storage});
+                BufferDesc{sizeof(std::int32_t), BufferUsage::Storage, BufferMemory::Auto,
+                           BufferUpdateFrequency::Dynamic});
             if (instanceBaseBuffer == kInvalidBufferHandle) {
                 return false;
             }
@@ -3769,7 +3836,8 @@ struct Renderer3D::Impl {
             }
         }
         instanceBufferCapacity = 0U;
-        const BufferDesc desc{instanceCount * sizeof(Math::Matrix4x4), BufferUsage::Storage};
+        const BufferDesc desc{instanceCount * sizeof(Math::Matrix4x4), BufferUsage::Storage,
+                              BufferMemory::Auto, BufferUpdateFrequency::Dynamic};
         instanceTransformBuffer = renderDevice.CreateBuffer(desc);
         instanceNormalTransformBuffer = renderDevice.CreateBuffer(desc);
         if (instanceTransformBuffer == kInvalidBufferHandle ||
@@ -4313,7 +4381,8 @@ struct Renderer3D::Impl {
         if (entry.vertexBuffer == kInvalidBufferHandle || entry.vertexBytes != vertexBytes.size()) {
             DestroyBufferIfValid(renderDevice, entry.vertexBuffer);
             entry.vertexBuffer = renderDevice.CreateBuffer(
-                BufferDesc{vertexBytes.size(), BufferUsage::Vertex}, vertexBytes);
+                BufferDesc{vertexBytes.size(), BufferUsage::Vertex, BufferMemory::Auto,
+                           BufferUpdateFrequency::Dynamic}, vertexBytes);
             entry.vertexBytes = vertexBytes.size();
         } else if (!renderDevice.UpdateBuffer(entry.vertexBuffer, vertexBytes)) {
             return nullptr;
@@ -4321,7 +4390,8 @@ struct Renderer3D::Impl {
         if (entry.indexBuffer == kInvalidBufferHandle || entry.indexBytes != indexBytes.size()) {
             DestroyBufferIfValid(renderDevice, entry.indexBuffer);
             entry.indexBuffer = renderDevice.CreateBuffer(
-                BufferDesc{indexBytes.size(), BufferUsage::Index}, indexBytes);
+                BufferDesc{indexBytes.size(), BufferUsage::Index, BufferMemory::Auto,
+                           BufferUpdateFrequency::Dynamic}, indexBytes);
             entry.indexBytes = indexBytes.size();
         } else if (!renderDevice.UpdateBuffer(entry.indexBuffer, indexBytes)) {
             return nullptr;
@@ -4626,6 +4696,35 @@ struct Renderer3D::Impl {
     /// the primitive's own geometry. A primitive with no material - and every unmaterialed imported
     /// mesh, which shares this list - draws through the built-in default lit material, so "no
     /// material" is the PBR path with neutral inputs rather than a second, simpler shading model.
+    /// Groups adjacent primitive items a single instanced draw can carry: same geometry, same
+    /// material, and the same per-item uniforms the non-instanced path would set. Order is
+    /// preserved exactly, matching BuildRenderBatches, so the front-to-back order the primitive
+    /// bucket was sorted into survives.
+    void BuildPrimitiveBatches(const std::vector<PrimitiveRenderItem>& items) {
+        primitiveBatches.Clear();
+        primitiveBatches.instanceMatrices.reserve(items.size());
+        for (const PrimitiveRenderItem& item : items) {
+            primitiveBatches.instanceMatrices.push_back(item.worldMatrix);
+        }
+        const auto sameRun = [](const PrimitiveRenderItem& lhs, const PrimitiveRenderItem& rhs) {
+            return lhs.kind == rhs.kind && lhs.materialGuid == rhs.materialGuid &&
+                   lhs.meshGuid == rhs.meshGuid && lhs.mesh == rhs.mesh && lhs.skinned == rhs.skinned &&
+                   lhs.renderLayers == rhs.renderLayers && lhs.opacity == rhs.opacity &&
+                   lhs.firstIndex == rhs.firstIndex && lhs.indexCount == rhs.indexCount &&
+                   lhs.baseColor.x == rhs.baseColor.x && lhs.baseColor.y == rhs.baseColor.y &&
+                   lhs.baseColor.z == rhs.baseColor.z;
+        };
+        std::size_t runStart = 0U;
+        for (std::size_t index = 1U; index <= items.size(); ++index) {
+            if (index == items.size() || !sameRun(items[runStart], items[index])) {
+                primitiveBatches.batches.push_back(RenderBatch{items[runStart].meshGuid,
+                                                                items[runStart].materialGuid, runStart,
+                                                                index - runStart});
+                runStart = index;
+            }
+        }
+    }
+
     [[nodiscard]] std::size_t RecordPrimitiveItems(const std::vector<PrimitiveRenderItem>& items,
                                                        const FrameUniforms& frameUniforms,
                                                        ICommandBuffer& commandBuffer) {
@@ -4639,145 +4738,237 @@ struct Renderer3D::Impl {
         std::uint32_t lastRenderLayers = 0U;
         float lastOpacity = -1.0F;
         Math::Vector3 lastAlbedoColor{-1.0F, -1.0F, -1.0F};
-        for (const PrimitiveRenderItem& item : items) {
-            const MeshGpuResources& meshResources =
-                item.skinned != nullptr ? *item.skinned
-                : item.mesh != nullptr  ? ResolveMeshGpuResources(item.meshGuid, item.mesh)
-                                        : ResolvePrimitiveMeshGpuResources(item.kind);
-            if (!IsValidMeshGpuResources(meshResources)) {
+        const auto recordRange = [&](const std::size_t firstItem, const std::size_t itemCount) {
+            for (std::size_t rangeIndex = firstItem;
+                 rangeIndex < firstItem + itemCount; ++rangeIndex) {
+                const PrimitiveRenderItem& item = items[rangeIndex];
+                const MeshGpuResources& meshResources =
+                    item.skinned != nullptr ? *item.skinned
+                    : item.mesh != nullptr  ? ResolveMeshGpuResources(item.meshGuid, item.mesh)
+                                            : ResolvePrimitiveMeshGpuResources(item.kind);
+                if (!IsValidMeshGpuResources(meshResources)) {
+                    continue;
+                }
+
+                const bool usesDefaultMaterial = item.materialGuid == Asset::kInvalidAssetGuid;
+                const Asset::MaterialAsset* material = &kDefaultLitMaterial;
+                const MaterialGpuResources* materialResources = &defaultLitMaterialResources;
+                if (!usesDefaultMaterial) {
+                    // Start unresolved: a material still loading on a worker returns nullptr from
+                    // TryGet, and leaving the default resources in place here used to let that
+                    // nullptr reach ApplyFrameAndMaterialUniforms and crash the frame.
+                    material = nullptr;
+                    materialResources = nullptr;
+                    const auto materialIt = primitiveMaterialHandles.find(item.materialGuid);
+                    if (materialIt != primitiveMaterialHandles.end()) {
+                        material = materialIt->second.TryGet();
+                        if (material != nullptr) {
+                            materialResources = ResolveMaterialGpuResources(materialIt->second);
+                        }
+                    }
+                    if (material == nullptr || materialResources == nullptr) {
+                        if (item.mesh != nullptr) {
+                            material = &kDefaultLitMaterial;
+                            materialResources = &defaultLitMaterialResources;
+                        } else {
+                            continue;
+                        }
+                    }
+                }
+
+                // Only an imported mesh (every skinned mesh is one) is held on screen by the fallbacks
+                // below. A built-in primitive keeps the strict rule: it is drawn when its own program is
+                // linked and not before.
+                const bool isImportedMesh = item.mesh != nullptr;
+                bool blendedVariant = item.opacity < 1.0F;
+                Shader::ShaderProgram* program = MeshColorProgram(*materialResources, blendedVariant);
+                if (program == nullptr && isImportedMesh && materialResources != &defaultLitMaterialResources) {
+                    // The material's own program is not usable - still compiling on a worker, a texture
+                    // binding / metallic-roughness / normal-map variant that did not link, or a program that
+                    // failed. Dropping the draw here made an imported mesh show for a frame on the default
+                    // material and then vanish the moment its material finished loading; draw it with the
+                    // default lit program instead, so a mesh never disappears because its material resolved.
+                    material = &kDefaultLitMaterial;
+                    materialResources = &defaultLitMaterialResources;
+                    program = MeshColorProgram(*materialResources, blendedVariant);
+                }
+                if (program == nullptr && isImportedMesh && blendedVariant) {
+                    // Even the default lit blended variant is not linked yet: an opaque draw of the mesh is
+                    // better than none, and the blended one takes over as soon as it is ready.
+                    blendedVariant = false;
+                    program = MeshColorProgram(*materialResources, blendedVariant);
+                }
+                if (program == nullptr) {
+                    continue; // Still compiling or invalid: never bind a stale pipeline.
+                }
+
+                const Math::Matrix3x3 normalMatrix = ComputeNormalMatrix(item.worldMatrix);
+                const bool overrideAlbedo = usesDefaultMaterial || materialResources == &defaultLitMaterialResources;
+                const Math::Vector3 effectiveAlbedo =
+                    overrideAlbedo ? item.baseColor : Math::ToVector3(material->albedoColor);
+                const bool stateChanged = program != lastProgram || material != lastMaterial ||
+                                          materialResources != lastMaterialResources ||
+                                          blendedVariant != lastBlendedVariant;
+                if (stateChanged) {
+                    program->SetMatrix4x4("uModel", item.worldMatrix);
+                    // Normal matrix = transpose(inverse(model)); see ComputeNormalMatrix, shared with
+                    // the lit mesh path so the two cannot disagree under non-uniform scale.
+                    program->SetMatrix3x3("uNormalMatrix", normalMatrix);
+                    ApplyFrameAndMaterialUniforms(*program, *material, frameUniforms, blendedVariant);
+                    // Base Color is the DEFAULT material's albedo, so it only replaces that material's own
+                    // (white) albedo. An assigned material owns the surface outright - tinting it here would
+                    // mean a primitive could never show the material an author picked.
+                    if (overrideAlbedo) {
+                        program->SetVector3("uAlbedoColor", item.baseColor);
+                    }
+                    program->SetInt("uMeshRenderLayers", static_cast<std::int32_t>(item.renderLayers));
+                    program->SetFloat("uSurfaceOpacity", item.opacity);
+                    program->ApplyTo(commandBuffer);
+                    BindMaterialTextures(*materialResources, frameUniforms, commandBuffer);
+                    lastProgram = program;
+                    lastMaterial = material;
+                    lastMaterialResources = materialResources;
+                    lastBlendedVariant = blendedVariant;
+                    lastRenderLayers = item.renderLayers;
+                    lastOpacity = item.opacity;
+                    lastAlbedoColor = effectiveAlbedo;
+                } else if (commandBuffer.RetainsUniformStatePerPipeline()) {
+                    program->SetMatrix4x4("uModel", item.worldMatrix);
+                    program->SetMatrix3x3("uNormalMatrix", normalMatrix);
+                    if (overrideAlbedo && (effectiveAlbedo.x != lastAlbedoColor.x ||
+                                           effectiveAlbedo.y != lastAlbedoColor.y ||
+                                           effectiveAlbedo.z != lastAlbedoColor.z)) {
+                        program->SetVector3("uAlbedoColor", effectiveAlbedo);
+                        lastAlbedoColor = effectiveAlbedo;
+                    }
+                    if (item.renderLayers != lastRenderLayers) {
+                        program->SetInt("uMeshRenderLayers", static_cast<std::int32_t>(item.renderLayers));
+                        lastRenderLayers = item.renderLayers;
+                    }
+                    if (item.opacity != lastOpacity) {
+                        program->SetFloat("uSurfaceOpacity", item.opacity);
+                        lastOpacity = item.opacity;
+                    }
+                    program->ApplyTo(commandBuffer);
+                } else {
+                    commandBuffer.SetUniformMatrix4x4("uModel", item.worldMatrix);
+                    commandBuffer.SetUniformMatrix4x4("uNormalMatrix", Math::ToMatrix4x4(normalMatrix));
+                    if (overrideAlbedo && (effectiveAlbedo.x != lastAlbedoColor.x ||
+                                           effectiveAlbedo.y != lastAlbedoColor.y ||
+                                           effectiveAlbedo.z != lastAlbedoColor.z)) {
+                        commandBuffer.SetUniformVector3("uAlbedoColor", effectiveAlbedo);
+                        lastAlbedoColor = effectiveAlbedo;
+                    }
+                    if (item.renderLayers != lastRenderLayers) {
+                        commandBuffer.SetUniformInt("uMeshRenderLayers", static_cast<std::int32_t>(item.renderLayers));
+                        lastRenderLayers = item.renderLayers;
+                    }
+                    if (item.opacity != lastOpacity) {
+                        commandBuffer.SetUniformFloat("uSurfaceOpacity", item.opacity);
+                        lastOpacity = item.opacity;
+                    }
+                }
+                if (meshResources.vertexBuffer != lastVertexBuffer) {
+                    commandBuffer.BindVertexBuffer(meshResources.vertexBuffer);
+                    lastVertexBuffer = meshResources.vertexBuffer;
+                }
+                if (meshResources.indexBuffer != lastIndexBuffer) {
+                    commandBuffer.BindIndexBuffer(meshResources.indexBuffer);
+                    lastIndexBuffer = meshResources.indexBuffer;
+                }
+                const std::uint32_t count = item.indexCount == 0U ? meshResources.indexCount : item.indexCount;
+                const std::uint32_t first = item.indexCount == 0U ? 0U : item.firstIndex;
+                commandBuffer.DrawIndexed(count, 1U, first);
+                ++drawCalls;
+            }
+        };
+
+        BuildPrimitiveBatches(items);
+        bool anyBatchable = false;
+        for (const RenderBatch& batch : primitiveBatches.batches) {
+            if (batch.itemCount >= 2U) {
+                anyBatchable = true;
+                break;
+            }
+        }
+        const bool instancingUsable =
+            anyBatchable && primitiveBatches.instanceMatrices.size() <= activeMaxInstancesPerFrame &&
+            EnsureInstanceBufferCapacity(primitiveBatches.instanceMatrices.size()) &&
+            UploadInstanceTransforms(primitiveBatches.instanceMatrices);
+        for (const RenderBatch& batch : primitiveBatches.batches) {
+            if (batch.itemCount < 2U || !instancingUsable) {
+                recordRange(batch.firstItem, batch.itemCount);
                 continue;
             }
-
-            const bool usesDefaultMaterial = item.materialGuid == Asset::kInvalidAssetGuid;
+            const PrimitiveRenderItem& representative = items[batch.firstItem];
+            const MeshGpuResources& meshResources =
+                representative.skinned != nullptr ? *representative.skinned
+                : representative.mesh != nullptr
+                    ? ResolveMeshGpuResources(representative.meshGuid, representative.mesh)
+                    : ResolvePrimitiveMeshGpuResources(representative.kind);
+            if (!IsValidMeshGpuResources(meshResources)) {
+                recordRange(batch.firstItem, batch.itemCount);
+                continue;
+            }
+            const bool usesDefaultMaterial = representative.materialGuid == Asset::kInvalidAssetGuid;
             const Asset::MaterialAsset* material = &kDefaultLitMaterial;
             const MaterialGpuResources* materialResources = &defaultLitMaterialResources;
             if (!usesDefaultMaterial) {
-                // Start unresolved: a material still loading on a worker returns nullptr from
-                // TryGet, and leaving the default resources in place here used to let that
-                // nullptr reach ApplyFrameAndMaterialUniforms and crash the frame.
                 material = nullptr;
                 materialResources = nullptr;
-                const auto materialIt = primitiveMaterialHandles.find(item.materialGuid);
+                const auto materialIt = primitiveMaterialHandles.find(representative.materialGuid);
                 if (materialIt != primitiveMaterialHandles.end()) {
                     material = materialIt->second.TryGet();
                     if (material != nullptr) {
                         materialResources = ResolveMaterialGpuResources(materialIt->second);
                     }
                 }
-                if (material == nullptr || materialResources == nullptr) {
-                    if (item.mesh != nullptr) {
-                        material = &kDefaultLitMaterial;
-                        materialResources = &defaultLitMaterialResources;
-                    } else {
-                        continue;
-                    }
-                }
             }
-
-            // Only an imported mesh (every skinned mesh is one) is held on screen by the fallbacks
-            // below. A built-in primitive keeps the strict rule: it is drawn when its own program is
-            // linked and not before.
-            const bool isImportedMesh = item.mesh != nullptr;
-            bool blendedVariant = item.opacity < 1.0F;
-            Shader::ShaderProgram* program = MeshColorProgram(*materialResources, blendedVariant);
-            if (program == nullptr && isImportedMesh && materialResources != &defaultLitMaterialResources) {
-                // The material's own program is not usable - still compiling on a worker, a texture
-                // binding / metallic-roughness / normal-map variant that did not link, or a program that
-                // failed. Dropping the draw here made an imported mesh show for a frame on the default
-                // material and then vanish the moment its material finished loading; draw it with the
-                // default lit program instead, so a mesh never disappears because its material resolved.
-                material = &kDefaultLitMaterial;
-                materialResources = &defaultLitMaterialResources;
-                program = MeshColorProgram(*materialResources, blendedVariant);
+            const bool blendedVariant = representative.opacity < 1.0F;
+            Shader::ShaderProgram* program =
+                material != nullptr && materialResources != nullptr
+                    ? MeshColorProgram(*materialResources, blendedVariant)
+                    : nullptr;
+            const auto baseIndex = static_cast<std::int32_t>(batch.firstItem);
+            const std::span<const std::byte> baseBytes{reinterpret_cast<const std::byte*>(&baseIndex),
+                                                       sizeof(baseIndex)};
+            if (program == nullptr || !materialResources->supportsInstancing ||
+                !renderDevice.UpdateBuffer(instanceBaseBuffer, baseBytes)) {
+                recordRange(batch.firstItem, batch.itemCount);
+                continue;
             }
-            if (program == nullptr && isImportedMesh && blendedVariant) {
-                // Even the default lit blended variant is not linked yet: an opaque draw of the mesh is
-                // better than none, and the blended one takes over as soon as it is ready.
-                blendedVariant = false;
-                program = MeshColorProgram(*materialResources, blendedVariant);
+            const bool overrideAlbedo =
+                usesDefaultMaterial || materialResources == &defaultLitMaterialResources;
+            ApplyFrameAndMaterialUniforms(*program, *material, frameUniforms, blendedVariant);
+            if (overrideAlbedo) {
+                program->SetVector3("uAlbedoColor", representative.baseColor);
             }
-            if (program == nullptr) {
-                continue; // Still compiling or invalid: never bind a stale pipeline.
-            }
-
-            const Math::Matrix3x3 normalMatrix = ComputeNormalMatrix(item.worldMatrix);
-            const bool overrideAlbedo = usesDefaultMaterial || materialResources == &defaultLitMaterialResources;
-            const Math::Vector3 effectiveAlbedo =
-                overrideAlbedo ? item.baseColor : Math::ToVector3(material->albedoColor);
-            const bool stateChanged = program != lastProgram || material != lastMaterial ||
-                                      materialResources != lastMaterialResources ||
-                                      blendedVariant != lastBlendedVariant;
-            if (stateChanged) {
-                program->SetMatrix4x4("uModel", item.worldMatrix);
-                // Normal matrix = transpose(inverse(model)); see ComputeNormalMatrix, shared with
-                // the lit mesh path so the two cannot disagree under non-uniform scale.
-                program->SetMatrix3x3("uNormalMatrix", normalMatrix);
-                ApplyFrameAndMaterialUniforms(*program, *material, frameUniforms, blendedVariant);
-                // Base Color is the DEFAULT material's albedo, so it only replaces that material's own
-                // (white) albedo. An assigned material owns the surface outright - tinting it here would
-                // mean a primitive could never show the material an author picked.
-                if (overrideAlbedo) {
-                    program->SetVector3("uAlbedoColor", item.baseColor);
-                }
-                program->SetInt("uMeshRenderLayers", static_cast<std::int32_t>(item.renderLayers));
-                program->SetFloat("uSurfaceOpacity", item.opacity);
-                program->ApplyTo(commandBuffer);
-                BindMaterialTextures(*materialResources, frameUniforms, commandBuffer);
-                lastProgram = program;
-                lastMaterial = material;
-                lastMaterialResources = materialResources;
-                lastBlendedVariant = blendedVariant;
-                lastRenderLayers = item.renderLayers;
-                lastOpacity = item.opacity;
-                lastAlbedoColor = effectiveAlbedo;
-            } else if (commandBuffer.RetainsUniformStatePerPipeline()) {
-                program->SetMatrix4x4("uModel", item.worldMatrix);
-                program->SetMatrix3x3("uNormalMatrix", normalMatrix);
-                if (overrideAlbedo && (effectiveAlbedo.x != lastAlbedoColor.x ||
-                                       effectiveAlbedo.y != lastAlbedoColor.y ||
-                                       effectiveAlbedo.z != lastAlbedoColor.z)) {
-                    program->SetVector3("uAlbedoColor", effectiveAlbedo);
-                    lastAlbedoColor = effectiveAlbedo;
-                }
-                if (item.renderLayers != lastRenderLayers) {
-                    program->SetInt("uMeshRenderLayers", static_cast<std::int32_t>(item.renderLayers));
-                    lastRenderLayers = item.renderLayers;
-                }
-                if (item.opacity != lastOpacity) {
-                    program->SetFloat("uSurfaceOpacity", item.opacity);
-                    lastOpacity = item.opacity;
-                }
-                program->ApplyTo(commandBuffer);
-            } else {
-                commandBuffer.SetUniformMatrix4x4("uModel", item.worldMatrix);
-                commandBuffer.SetUniformMatrix4x4("uNormalMatrix", Math::ToMatrix4x4(normalMatrix));
-                if (overrideAlbedo && (effectiveAlbedo.x != lastAlbedoColor.x ||
-                                       effectiveAlbedo.y != lastAlbedoColor.y ||
-                                       effectiveAlbedo.z != lastAlbedoColor.z)) {
-                    commandBuffer.SetUniformVector3("uAlbedoColor", effectiveAlbedo);
-                    lastAlbedoColor = effectiveAlbedo;
-                }
-                if (item.renderLayers != lastRenderLayers) {
-                    commandBuffer.SetUniformInt("uMeshRenderLayers", static_cast<std::int32_t>(item.renderLayers));
-                    lastRenderLayers = item.renderLayers;
-                }
-                if (item.opacity != lastOpacity) {
-                    commandBuffer.SetUniformFloat("uSurfaceOpacity", item.opacity);
-                    lastOpacity = item.opacity;
-                }
-            }
-            if (meshResources.vertexBuffer != lastVertexBuffer) {
-                commandBuffer.BindVertexBuffer(meshResources.vertexBuffer);
-                lastVertexBuffer = meshResources.vertexBuffer;
-            }
-            if (meshResources.indexBuffer != lastIndexBuffer) {
-                commandBuffer.BindIndexBuffer(meshResources.indexBuffer);
-                lastIndexBuffer = meshResources.indexBuffer;
-            }
-            const std::uint32_t count = item.indexCount == 0U ? meshResources.indexCount : item.indexCount;
-            const std::uint32_t first = item.indexCount == 0U ? 0U : item.firstIndex;
-            commandBuffer.DrawIndexed(count, 1U, first);
+            program->SetInt("uMeshRenderLayers", static_cast<std::int32_t>(representative.renderLayers));
+            program->SetFloat("uSurfaceOpacity", representative.opacity);
+            program->ApplyTo(commandBuffer);
+            BindMaterialTextures(*materialResources, frameUniforms, commandBuffer);
+            commandBuffer.BindStorageBuffer(instanceTransformBuffer, kInstanceTransformSlot);
+            commandBuffer.BindStorageBuffer(instanceNormalTransformBuffer, kInstanceNormalTransformSlot);
+            commandBuffer.BindStorageBuffer(instanceBaseBuffer, kInstanceBaseSlot);
+            commandBuffer.BindVertexBuffer(meshResources.vertexBuffer);
+            commandBuffer.BindIndexBuffer(meshResources.indexBuffer);
+            const std::uint32_t count =
+                representative.indexCount == 0U ? meshResources.indexCount : representative.indexCount;
+            const std::uint32_t first =
+                representative.indexCount == 0U ? 0U : representative.firstIndex;
+            commandBuffer.DrawIndexed(count, static_cast<std::uint32_t>(batch.itemCount), first);
             ++drawCalls;
+            // The per-item path caches what it last bound; an instanced draw replaced that state
+            // behind its back, so the next range re-applies everything.
+            lastProgram = nullptr;
+            lastMaterial = nullptr;
+            lastMaterialResources = nullptr;
+            lastBlendedVariant = false;
+            lastVertexBuffer = kInvalidBufferHandle;
+            lastIndexBuffer = kInvalidBufferHandle;
+            lastRenderLayers = 0U;
+            lastOpacity = -1.0F;
+            lastAlbedoColor = Math::Vector3{-1.0F, -1.0F, -1.0F};
         }
         return drawCalls;
     }
@@ -4999,12 +5190,26 @@ Renderer3D::Renderer3D(IRenderDevice& renderDevice, IRenderSystem& renderSystem,
     toneMappingProgramDesc.depthWriteEnabled = false;
     toneMappingProgramDesc.debugName = "ToneMapping";
     m_impl->toneMappingProgram = shaderManager.CreateProgram(toneMappingProgramDesc);
+    {
+        // Same source and virtual path, one define: the fog block (god rays, volume march,
+        // analytic height fog) is the largest dead-code region in the hottest fullscreen shader.
+        Shader::ShaderProgramDesc leanDesc = toneMappingProgramDesc;
+        leanDesc.debugName = "ToneMappingLean";
+        leanDesc.extraDefines.emplace_back("UVE_TM_LEAN", "1");
+        m_impl->toneMappingLeanProgram = shaderManager.CreateProgram(leanDesc);
+        if (const char* const leanOverride = std::getenv("UVE_TONE_MAPPING_LEAN")) {
+            m_impl->toneMappingLeanAllowed = std::string_view{leanOverride} != "0";
+        }
+    }
 
     Shader::ShaderProgramDesc proceduralSkyProgramDesc;
     proceduralSkyProgramDesc.virtualFilePath = std::string(Shader::BuiltIn::kProceduralSkyVirtualPath);
     proceduralSkyProgramDesc.embeddedFallbackSourceCode = std::string(Shader::BuiltIn::kProceduralSkySource);
-    proceduralSkyProgramDesc.depthTestEnabled = false;
+    // The sky is a full-screen triangle at the far plane drawn inside the main colour pass, so the
+    // depth test is what keeps it off covered pixels. It must not write depth: it is a background.
+    proceduralSkyProgramDesc.depthTestEnabled = true;
     proceduralSkyProgramDesc.depthWriteEnabled = false;
+    proceduralSkyProgramDesc.depthCompare = DepthCompare::LessOrEqual;
     proceduralSkyProgramDesc.debugName = "ProceduralSky";
     m_impl->proceduralSkyProgram = shaderManager.CreateProgram(proceduralSkyProgramDesc);
 
@@ -5114,7 +5319,7 @@ Renderer3D::Renderer3D(IRenderDevice& renderDevice, IRenderSystem& renderSystem,
     m_impl->particleVertexStaging.reserve(kMaximumParticleGpuDrawCommands * kParticleVerticesPerCommand);
     m_impl->particleVertexBuffer = renderDevice.CreateBuffer(
         BufferDesc{sizeof(ParticleVertex) * kMaximumParticleGpuDrawCommands * kParticleVerticesPerCommand,
-                      BufferUsage::Vertex});
+                      BufferUsage::Vertex, BufferMemory::Auto, BufferUpdateFrequency::Dynamic});
 
     Shader::ShaderProgramDesc decalProgramDesc;
     decalProgramDesc.virtualFilePath = std::string(Shader::BuiltIn::kDecalVirtualPath);
@@ -5187,7 +5392,8 @@ Renderer3D::Renderer3D(IRenderDevice& renderDevice, IRenderSystem& renderSystem,
     m_impl->uiOverlayProgram = shaderManager.CreateProgram(uiOverlayProgramDesc);
     m_impl->uiVertexStaging.reserve(kMaximumUIQuads * kUIVerticesPerQuad);
     m_impl->uiVertexBuffer = renderDevice.CreateBuffer(
-        BufferDesc{sizeof(UIVertex) * kMaximumUIQuads * kUIVerticesPerQuad, BufferUsage::Vertex});
+        BufferDesc{sizeof(UIVertex) * kMaximumUIQuads * kUIVerticesPerQuad, BufferUsage::Vertex,
+                   BufferMemory::Auto, BufferUpdateFrequency::Dynamic});
 
     m_impl->vfxSpriteRenderer.Initialize(renderDevice, shaderManager);
 
@@ -5825,6 +6031,21 @@ void Renderer3D::RenderFrame(Scene::IEntityManager& entityManager, Scene::Entity
                       if (aBlend != bBlend) {
                           return !aBlend;
                       }
+                      // Solid draws go front-to-back so the depth test rejects a hidden fragment
+                      // before it is shaded - the same order RenderQueue::Sort gives the mesh layer.
+                      // Grouping these by material instead left the built-in lit program's early-z
+                      // with nothing to reject. Blended draws keep the material grouping: their
+                      // result depends on the order they composite in, not on distance alone.
+                      if (!aBlend) {
+                          const bool aFinite = std::isfinite(a.sortDepth);
+                          const bool bFinite = std::isfinite(b.sortDepth);
+                          if (aFinite != bFinite) {
+                              return aFinite;
+                          }
+                          if (aFinite && a.sortDepth != b.sortDepth) {
+                              return a.sortDepth < b.sortDepth;
+                          }
+                      }
                       if (a.materialGuid != b.materialGuid) {
                           return a.materialGuid.value < b.materialGuid.value;
                       }
@@ -6386,9 +6607,27 @@ void Renderer3D::RenderFrame(Scene::IEntityManager& entityManager, Scene::Entity
         m_impl->wboitCompositeProgram != nullptr && m_impl->wboitCompositeProgram->IsValid() &&
         m_impl->EnsureWboitTargets();
 
+    const bool sunDiscActive = m_impl->sunEnergy > 0.0F &&
+                               m_impl->sunDiscAngularDiameterDegrees > 0.0F &&
+                               m_impl->sunDiscIntensity > 0.0F;
+    const bool skyActive = !m_impl->captureTransparentBackground &&
+                           (m_impl->environmentFrame.hasEnvironment || sunDiscActive) &&
+                           m_impl->proceduralSkyProgram && m_impl->proceduralSkyProgram->IsValid();
+
+    // The floor writes the same colour and depth attachments the main pass already has, so it is
+    // recorded there instead of opening a second pass that would store and reload both.
+    const bool floorActive = !capturingProbe &&
+                             m_impl->studioFloorSettings.has_value() &&
+                             m_impl->studioFloorSettings->enabled &&
+                             m_impl->EnsureStudioFloorResources();
+    const StudioFloorSettings floorSettings =
+        m_impl->studioFloorSettings.value_or(StudioFloorSettings{});
+
     renderGraph.AddPass(
         "MainColor", std::span<const RenderGraphResourceUse>{mainResources.data(), mainResourceCount},
-        [this, &queue, &frameUniforms, wboitActive](ICommandBuffer& commandBuffer) {
+        [this, &queue, &frameUniforms, wboitActive, skyActive, shadowsReady, &lightSpaceMatrices,
+             &cascadeSplits, shadowOpacity, shadowBias, floorActive, floorSettings,
+             viewProjection, viewPosition, lights](ICommandBuffer& commandBuffer) {
             RenderPassDesc passDesc;
             passDesc.colorAttachment = m_impl->colorTarget;
             passDesc.depthAttachment = m_impl->depthTarget;
@@ -6454,6 +6693,178 @@ void Renderer3D::RenderFrame(Scene::IEntityManager& entityManager, Scene::Entity
                     m_impl->lastFrameDiagnostics.decalDrawCallsRecorded +
                     m_impl->lastFrameDiagnostics.vfxDrawCallsRecorded +
                     m_impl->lastFrameDiagnostics.occlusionQueriesIssued;
+            }
+            // Sky is drawn inside this pass rather than as its own: the depth attachment is
+            // already here, so the hardware rejects covered pixels instead of the shader
+            // fetching the depth texture, and the colour target is never stored and reloaded.
+            if (skyActive) {
+                m_impl->proceduralSkyProgram->SetVector3("uCameraRight", m_impl->skyCameraRight);
+                m_impl->proceduralSkyProgram->SetVector3("uCameraUp", m_impl->skyCameraUp);
+                m_impl->proceduralSkyProgram->SetVector3("uCameraForward", m_impl->skyCameraForward);
+                m_impl->proceduralSkyProgram->SetFloat("uTanHalfFov", m_impl->skyTanHalfFov);
+                m_impl->proceduralSkyProgram->SetFloat("uAspect", m_impl->environmentAspect);
+                m_impl->proceduralSkyProgram->SetInt(
+                    "uHasEnvironment", m_impl->environmentFrame.hasEnvironment ? 1 : 0);
+                m_impl->proceduralSkyProgram->SetVector3("uSkyColor", m_impl->environmentFrame.skyColor);
+                m_impl->proceduralSkyProgram->SetVector3("uHorizonColor", m_impl->environmentFrame.horizonColor);
+                m_impl->proceduralSkyProgram->SetVector3(
+                    "uGroundColor", m_impl->environmentFrame.hasEnvironment
+                                        ? m_impl->environmentFrame.groundColor
+                                        : Math::Vector3{m_impl->sceneClearColor[0], m_impl->sceneClearColor[1],
+                                                           m_impl->sceneClearColor[2]});
+                m_impl->proceduralSkyProgram->SetFloat("uSkyCurve", m_impl->environmentFrame.skyCurve);
+                m_impl->proceduralSkyProgram->SetFloat("uGroundCurve", m_impl->environmentFrame.groundCurve);
+                m_impl->proceduralSkyProgram->SetVector3("uSunDirection", m_impl->sunDirection);
+                m_impl->proceduralSkyProgram->SetVector3("uSunColor", m_impl->sunColor);
+                m_impl->proceduralSkyProgram->SetFloat("uSunEnergy", m_impl->sunEnergy);
+                m_impl->proceduralSkyProgram->SetFloat("uSunAngularDiameter",
+                                                          m_impl->sunDiscAngularDiameterDegrees);
+                m_impl->proceduralSkyProgram->SetFloat("uSunDiscIntensity", m_impl->sunDiscIntensity);
+                m_impl->proceduralSkyProgram->SetFloat("uSunLimbDarkening", m_impl->sunDiscLimbDarkening);
+                m_impl->proceduralSkyProgram->SetInt("uAtmosphericSky",
+                                                         m_impl->environmentFrame.atmosphericSky ? 1 : 0);
+                m_impl->proceduralSkyProgram->SetFloat("uAtmosphereRayleigh",
+                                                           m_impl->environmentFrame.atmosphereRayleigh);
+                m_impl->proceduralSkyProgram->SetFloat("uAtmosphereMie",
+                                                           m_impl->environmentFrame.atmosphereMie);
+                m_impl->proceduralSkyProgram->SetFloat("uAtmosphereOzone",
+                                                           m_impl->environmentFrame.atmosphereOzone);
+                m_impl->proceduralSkyProgram->SetFloat("uAtmosphereMieAnisotropy",
+                                                           m_impl->environmentFrame.atmosphereMieAnisotropy);
+                m_impl->proceduralSkyProgram->SetFloat("uAtmosphereMultiScatter",
+                                                           m_impl->environmentFrame.atmosphereMultiScatter);
+                m_impl->proceduralSkyProgram->SetFloat("uAtmosphereIntensity",
+                                                           m_impl->environmentFrame.atmosphereIntensity);
+                m_impl->proceduralSkyProgram->SetInt(
+                    "uAtmosphereSteps", static_cast<std::int32_t>(m_impl->environmentFrame.atmosphereSamples));
+                m_impl->proceduralSkyProgram->SetVector3("uCameraPosition", m_impl->environmentCameraPosition);
+                m_impl->proceduralSkyProgram->SetFloat("uSkyTime", m_impl->skyTimeSeconds);
+                m_impl->proceduralSkyProgram->SetFloat("uStarDensity", m_impl->environmentFrame.starDensity);
+                m_impl->proceduralSkyProgram->SetFloat("uStarBrightness", m_impl->environmentFrame.starBrightness);
+                m_impl->proceduralSkyProgram->SetFloat("uStarSeed", m_impl->environmentFrame.starSeed);
+                m_impl->proceduralSkyProgram->SetFloat("uMilkyWayStrength",
+                                                          m_impl->environmentFrame.milkyWayStrength);
+                m_impl->proceduralSkyProgram->SetInt("uCloudsEnabled",
+                                                        m_impl->environmentFrame.cloudsEnabled ? 1 : 0);
+                m_impl->proceduralSkyProgram->SetFloat("uCloudCoverage", m_impl->environmentFrame.cloudCoverage);
+                m_impl->proceduralSkyProgram->SetFloat("uCloudDensity", m_impl->environmentFrame.cloudDensity);
+                m_impl->proceduralSkyProgram->SetFloat("uCloudAltitude", m_impl->environmentFrame.cloudAltitude);
+                m_impl->proceduralSkyProgram->SetVector2("uCloudWind", m_impl->environmentFrame.cloudWind);
+                m_impl->proceduralSkyProgram->SetFloat("uCloudSoftness", m_impl->environmentFrame.cloudSoftness);
+                m_impl->proceduralSkyProgram->SetFloat("uCloudSilverLining",
+                                                          m_impl->environmentFrame.cloudSilverLining);
+                m_impl->proceduralSkyProgram->SetFloat("uSkyLuminance", m_impl->environmentFrame.skyLuminance);
+                m_impl->proceduralSkyProgram->SetInt("uSkyTexture", static_cast<std::int32_t>(kSkyTextureSlot));
+                m_impl->proceduralSkyProgram->SetInt("uSkyTextureEnabled", m_impl->skyTextureEnabled ? 1 : 0);
+                // Shadows belong on real floor/terrain geometry, never projected onto empty sky void.
+                m_impl->proceduralSkyProgram->SetInt("uSkyGroundShadowEnabled", 0);
+                if (shadowsReady) {
+                    m_impl->proceduralSkyProgram->SetInt("uSkyGroundShadowMap0",
+                                                            static_cast<std::int32_t>(kShadowCascadeFirstTextureSlot));
+                    m_impl->proceduralSkyProgram->SetInt("uSkyGroundShadowMap1",
+                                                            static_cast<std::int32_t>(kShadowCascadeFirstTextureSlot + 1U));
+                    m_impl->proceduralSkyProgram->SetInt("uSkyGroundShadowMap2",
+                                                            static_cast<std::int32_t>(kShadowCascadeFirstTextureSlot + 2U));
+                    m_impl->proceduralSkyProgram->SetMatrix4x4("uSkyGroundLightMatrix0", lightSpaceMatrices[0]);
+                    m_impl->proceduralSkyProgram->SetMatrix4x4("uSkyGroundLightMatrix1", lightSpaceMatrices[1]);
+                    m_impl->proceduralSkyProgram->SetMatrix4x4("uSkyGroundLightMatrix2", lightSpaceMatrices[2]);
+                    m_impl->proceduralSkyProgram->SetVector3(
+                        "uSkyGroundCascadeSplits",
+                        Math::Vector3{cascadeSplits[0], cascadeSplits[1], cascadeSplits[2]});
+                    m_impl->proceduralSkyProgram->SetFloat("uSkyGroundShadowOpacity", shadowOpacity);
+                    m_impl->proceduralSkyProgram->SetFloat("uSkyGroundShadowBias", shadowBias);
+                }
+                m_impl->proceduralSkyProgram->ApplyTo(commandBuffer);
+                if (m_impl->skyTextureEnabled) {
+                    commandBuffer.BindTexture(m_impl->skyTextureHandle, kSkyTextureSlot);
+                    if (m_impl->environmentEquirectSampler != kInvalidSamplerHandle) {
+                        commandBuffer.BindSampler(m_impl->environmentEquirectSampler, kSkyTextureSlot);
+                    }
+                }
+                if (shadowsReady) {
+                    for (std::size_t cascadeIndex = 0; cascadeIndex < kShadowCascadeCount; ++cascadeIndex) {
+                        const std::uint32_t slot =
+                            kShadowCascadeFirstTextureSlot + static_cast<std::uint32_t>(cascadeIndex);
+                        commandBuffer.BindTexture(m_impl->shadowMapTargets[cascadeIndex], slot);
+                        if (m_impl->shadowPointSampler != kInvalidSamplerHandle) {
+                            commandBuffer.BindSampler(m_impl->shadowPointSampler, slot);
+                        }
+                    }
+                }
+                commandBuffer.Draw(3);
+            }
+            if (floorActive) {
+                m_impl->studioFloorProgram->SetMatrix4x4("uViewProjection", viewProjection);
+                m_impl->studioFloorProgram->SetFloat("uFloorY", floorSettings.heightY);
+                m_impl->studioFloorProgram->SetVector3("uViewPosition", viewPosition);
+                m_impl->studioFloorProgram->SetVector3("uPivotPosition", floorSettings.pivotPosition);
+                m_impl->studioFloorProgram->SetFloat("uTileScale", floorSettings.tileScale);
+                m_impl->studioFloorProgram->SetFloat("uFadeStartRadius", floorSettings.fadeStartRadiusMeters);
+                m_impl->studioFloorProgram->SetFloat("uFadeEndRadius", floorSettings.fadeEndRadiusMeters);
+                m_impl->studioFloorProgram->SetVector3("uBaseTint", floorSettings.baseTint);
+                m_impl->studioFloorProgram->SetFloat("uRoughnessScale", floorSettings.roughnessScale);
+                m_impl->studioFloorProgram->SetFloat("uSpecularStrength", floorSettings.specularStrength);
+                m_impl->studioFloorProgram->SetVector3("uSkyTopColor", m_impl->environmentFrame.skyColor);
+                m_impl->studioFloorProgram->SetVector3("uSkyHorizonColor", m_impl->environmentFrame.horizonColor);
+                m_impl->studioFloorProgram->SetVector3("uSkyGroundColor", m_impl->environmentFrame.groundColor);
+                m_impl->studioFloorProgram->SetFloat("uAmbientEnergy", 0.55F);
+                m_impl->studioFloorProgram->SetInt("uAlbedoMap", 0);
+                m_impl->studioFloorProgram->SetInt("uNormalMap", 1);
+                m_impl->studioFloorProgram->SetInt("uOrmMap", 2);
+
+                std::array<Math::Vector3, 4U> lightPositions{};
+                std::array<Math::Vector3, 4U> lightColors{};
+                std::array<float, 4U> lightRanges{{16.0F, 16.0F, 16.0F, 16.0F}};
+                std::int32_t lightCount = 0;
+                for (const LightData& light : lights) {
+                    if (light.type == Scene::LightType::Directional || light.intensity <= 0.0F) {
+                        continue;
+                    }
+                    if (lightCount >= 4) {
+                        break;
+                    }
+                    const std::size_t idx = static_cast<std::size_t>(lightCount++);
+                    lightPositions[idx] = light.position;
+                    lightColors[idx] = Math::ToVector3(light.color) * light.intensity;
+                    lightRanges[idx] = std::max(light.range, 1.0F);
+                }
+                if (lightCount == 0) {
+                    // Built-in 3-point studio light rig centered around the studio floor pivot.
+                    const Math::Vector3 p = floorSettings.pivotPosition;
+                    lightCount = 3;
+                    lightPositions[0U] = Math::Vector3{p.x + 3.5F, floorSettings.heightY + 5.2F, p.z + 3.8F};
+                    lightColors[0U] = Math::Vector3{1.0F, 0.96F, 0.90F} * 2.2F;
+                    lightRanges[0U] = 22.0F;
+                    lightPositions[1U] = Math::Vector3{p.x - 4.0F, floorSettings.heightY + 3.8F, p.z - 3.5F};
+                    lightColors[1U] = Math::Vector3{0.58F, 0.72F, 1.0F} * 1.45F;
+                    lightRanges[1U] = 20.0F;
+                    lightPositions[2U] = Math::Vector3{p.x - 2.8F, floorSettings.heightY + 2.6F, p.z + 4.2F};
+                    lightColors[2U] = Math::Vector3{0.78F, 0.84F, 0.96F} * 0.95F;
+                    lightRanges[2U] = 18.0F;
+                }
+                m_impl->studioFloorProgram->SetInt("uLightCount", lightCount);
+                for (std::size_t i = 0U; i < 4U; ++i) {
+                    const std::string idxStr = std::to_string(i);
+                    m_impl->studioFloorProgram->SetVector3("uLightPositions[" + idxStr + "]", lightPositions[i]);
+                    m_impl->studioFloorProgram->SetVector3("uLightColors[" + idxStr + "]", lightColors[i]);
+                    m_impl->studioFloorProgram->SetFloat("uLightRanges[" + idxStr + "]", lightRanges[i]);
+                }
+
+                m_impl->studioFloorProgram->ApplyTo(commandBuffer);
+                commandBuffer.BindTexture(m_impl->studioFloorAlbedoTexture, 0U);
+                commandBuffer.BindTexture(m_impl->studioFloorNormalTexture, 1U);
+                commandBuffer.BindTexture(m_impl->studioFloorOrmTexture, 2U);
+                if (m_impl->materialRepeatSampler != kInvalidSamplerHandle) {
+                    commandBuffer.BindSampler(m_impl->materialRepeatSampler, 0U);
+                    commandBuffer.BindSampler(m_impl->materialRepeatSampler, 1U);
+                    commandBuffer.BindSampler(m_impl->materialRepeatSampler, 2U);
+                }
+                commandBuffer.BindVertexBuffer(m_impl->studioFloorVertexBuffer, 0U);
+                commandBuffer.BindIndexBuffer(m_impl->studioFloorIndexBuffer);
+                commandBuffer.DrawIndexed(6U, 1U, 0U);
+                if (m_impl->renderDevice.GetBackendName() == "OpenGL") {
+                    ++m_impl->lastFrameDiagnostics.glDrawCallsIssued;
+                }
             }
             commandBuffer.EndRenderPass();
         });
@@ -6540,223 +6951,8 @@ void Renderer3D::RenderFrame(Scene::IEntityManager& entityManager, Scene::Entity
         }
     }
 
-    const bool sunDiscActive = m_impl->sunEnergy > 0.0F &&
-                               m_impl->sunDiscAngularDiameterDegrees > 0.0F &&
-                               m_impl->sunDiscIntensity > 0.0F;
-    const bool skyActive = !m_impl->captureTransparentBackground &&
-                           (m_impl->environmentFrame.hasEnvironment || sunDiscActive) &&
-                           m_impl->proceduralSkyProgram && m_impl->proceduralSkyProgram->IsValid();
-    if (skyActive) {
-        const std::array<RenderGraphResourceUse, 5U> skyResources{
-            RenderGraphResourceUse{depthResource, RenderGraphResourceAccess::Read},
-            RenderGraphResourceUse{colorResource, RenderGraphResourceAccess::Write},
-            RenderGraphResourceUse{shadowResources[0], RenderGraphResourceAccess::Read},
-            RenderGraphResourceUse{shadowResources[1], RenderGraphResourceAccess::Read},
-            RenderGraphResourceUse{shadowResources[2], RenderGraphResourceAccess::Read}};
-        const std::size_t skyResourceCount = shadowsReady ? 5U : 2U;
-        renderGraph.AddPass(
-            "ProceduralSky", std::span<const RenderGraphResourceUse>{skyResources.data(), skyResourceCount},
-            [this, shadowsReady, &lightSpaceMatrices, &cascadeSplits, shadowOpacity, shadowBias](ICommandBuffer& commandBuffer) {
-                RenderPassDesc passDesc;
-                passDesc.colorAttachment = m_impl->colorTarget;
-                passDesc.depthAttachment = kInvalidTextureHandle;
-                passDesc.colorLoadOp = LoadOp::Load;
-                commandBuffer.BeginRenderPass(passDesc);
-                m_impl->proceduralSkyProgram->SetInt("uSceneDepthTexture", 0);
-                m_impl->proceduralSkyProgram->SetVector3("uCameraRight", m_impl->skyCameraRight);
-                m_impl->proceduralSkyProgram->SetVector3("uCameraUp", m_impl->skyCameraUp);
-                m_impl->proceduralSkyProgram->SetVector3("uCameraForward", m_impl->skyCameraForward);
-                m_impl->proceduralSkyProgram->SetFloat("uTanHalfFov", m_impl->skyTanHalfFov);
-                m_impl->proceduralSkyProgram->SetFloat("uAspect", m_impl->environmentAspect);
-                m_impl->proceduralSkyProgram->SetInt(
-                    "uHasEnvironment", m_impl->environmentFrame.hasEnvironment ? 1 : 0);
-                m_impl->proceduralSkyProgram->SetVector3("uSkyColor", m_impl->environmentFrame.skyColor);
-                m_impl->proceduralSkyProgram->SetVector3("uHorizonColor", m_impl->environmentFrame.horizonColor);
-                m_impl->proceduralSkyProgram->SetVector3(
-                    "uGroundColor", m_impl->environmentFrame.hasEnvironment
-                                        ? m_impl->environmentFrame.groundColor
-                                        : Math::Vector3{m_impl->sceneClearColor[0], m_impl->sceneClearColor[1],
-                                                           m_impl->sceneClearColor[2]});
-                m_impl->proceduralSkyProgram->SetFloat("uSkyCurve", m_impl->environmentFrame.skyCurve);
-                m_impl->proceduralSkyProgram->SetFloat("uGroundCurve", m_impl->environmentFrame.groundCurve);
-                m_impl->proceduralSkyProgram->SetVector3("uSunDirection", m_impl->sunDirection);
-                m_impl->proceduralSkyProgram->SetVector3("uSunColor", m_impl->sunColor);
-                m_impl->proceduralSkyProgram->SetFloat("uSunEnergy", m_impl->sunEnergy);
-                m_impl->proceduralSkyProgram->SetFloat("uSunAngularDiameter",
-                                                          m_impl->sunDiscAngularDiameterDegrees);
-                m_impl->proceduralSkyProgram->SetFloat("uSunDiscIntensity", m_impl->sunDiscIntensity);
-                m_impl->proceduralSkyProgram->SetFloat("uSunLimbDarkening", m_impl->sunDiscLimbDarkening);
-                m_impl->proceduralSkyProgram->SetInt("uAtmosphericSky",
-                                                         m_impl->environmentFrame.atmosphericSky ? 1 : 0);
-                m_impl->proceduralSkyProgram->SetFloat("uAtmosphereRayleigh",
-                                                           m_impl->environmentFrame.atmosphereRayleigh);
-                m_impl->proceduralSkyProgram->SetFloat("uAtmosphereMie",
-                                                           m_impl->environmentFrame.atmosphereMie);
-                m_impl->proceduralSkyProgram->SetFloat("uAtmosphereOzone",
-                                                           m_impl->environmentFrame.atmosphereOzone);
-                m_impl->proceduralSkyProgram->SetFloat("uAtmosphereMieAnisotropy",
-                                                           m_impl->environmentFrame.atmosphereMieAnisotropy);
-                m_impl->proceduralSkyProgram->SetFloat("uAtmosphereMultiScatter",
-                                                           m_impl->environmentFrame.atmosphereMultiScatter);
-                m_impl->proceduralSkyProgram->SetFloat("uAtmosphereIntensity",
-                                                           m_impl->environmentFrame.atmosphereIntensity);
-                m_impl->proceduralSkyProgram->SetInt(
-                    "uAtmosphereSteps", static_cast<std::int32_t>(m_impl->environmentFrame.atmosphereSamples));
-                m_impl->proceduralSkyProgram->SetVector3("uCameraPosition", m_impl->environmentCameraPosition);
-                m_impl->proceduralSkyProgram->SetFloat("uSkyTime", m_impl->skyTimeSeconds);
-                m_impl->proceduralSkyProgram->SetFloat("uStarDensity", m_impl->environmentFrame.starDensity);
-                m_impl->proceduralSkyProgram->SetFloat("uStarBrightness", m_impl->environmentFrame.starBrightness);
-                m_impl->proceduralSkyProgram->SetFloat("uStarSeed", m_impl->environmentFrame.starSeed);
-                m_impl->proceduralSkyProgram->SetFloat("uMilkyWayStrength",
-                                                          m_impl->environmentFrame.milkyWayStrength);
-                m_impl->proceduralSkyProgram->SetInt("uCloudsEnabled",
-                                                        m_impl->environmentFrame.cloudsEnabled ? 1 : 0);
-                m_impl->proceduralSkyProgram->SetFloat("uCloudCoverage", m_impl->environmentFrame.cloudCoverage);
-                m_impl->proceduralSkyProgram->SetFloat("uCloudDensity", m_impl->environmentFrame.cloudDensity);
-                m_impl->proceduralSkyProgram->SetFloat("uCloudAltitude", m_impl->environmentFrame.cloudAltitude);
-                m_impl->proceduralSkyProgram->SetVector2("uCloudWind", m_impl->environmentFrame.cloudWind);
-                m_impl->proceduralSkyProgram->SetFloat("uCloudSoftness", m_impl->environmentFrame.cloudSoftness);
-                m_impl->proceduralSkyProgram->SetFloat("uCloudSilverLining",
-                                                          m_impl->environmentFrame.cloudSilverLining);
-                m_impl->proceduralSkyProgram->SetFloat("uSkyLuminance", m_impl->environmentFrame.skyLuminance);
-                m_impl->proceduralSkyProgram->SetInt("uSkyTexture", static_cast<std::int32_t>(kSkyTextureSlot));
-                m_impl->proceduralSkyProgram->SetInt("uSkyTextureEnabled", m_impl->skyTextureEnabled ? 1 : 0);
-                // Shadows belong on real floor/terrain geometry, never projected onto empty sky void.
-                m_impl->proceduralSkyProgram->SetInt("uSkyGroundShadowEnabled", 0);
-                if (shadowsReady) {
-                    m_impl->proceduralSkyProgram->SetInt("uSkyGroundShadowMap0",
-                                                            static_cast<std::int32_t>(kShadowCascadeFirstTextureSlot));
-                    m_impl->proceduralSkyProgram->SetInt("uSkyGroundShadowMap1",
-                                                            static_cast<std::int32_t>(kShadowCascadeFirstTextureSlot + 1U));
-                    m_impl->proceduralSkyProgram->SetInt("uSkyGroundShadowMap2",
-                                                            static_cast<std::int32_t>(kShadowCascadeFirstTextureSlot + 2U));
-                    m_impl->proceduralSkyProgram->SetMatrix4x4("uSkyGroundLightMatrix0", lightSpaceMatrices[0]);
-                    m_impl->proceduralSkyProgram->SetMatrix4x4("uSkyGroundLightMatrix1", lightSpaceMatrices[1]);
-                    m_impl->proceduralSkyProgram->SetMatrix4x4("uSkyGroundLightMatrix2", lightSpaceMatrices[2]);
-                    m_impl->proceduralSkyProgram->SetVector3(
-                        "uSkyGroundCascadeSplits",
-                        Math::Vector3{cascadeSplits[0], cascadeSplits[1], cascadeSplits[2]});
-                    m_impl->proceduralSkyProgram->SetFloat("uSkyGroundShadowOpacity", shadowOpacity);
-                    m_impl->proceduralSkyProgram->SetFloat("uSkyGroundShadowBias", shadowBias);
-                }
-                m_impl->proceduralSkyProgram->ApplyTo(commandBuffer);
-                commandBuffer.BindTexture(m_impl->depthTarget, 0U);
-                if (m_impl->shadowPointSampler != kInvalidSamplerHandle) {
-                    commandBuffer.BindSampler(m_impl->shadowPointSampler, 0U);
-                }
-                if (m_impl->skyTextureEnabled) {
-                    commandBuffer.BindTexture(m_impl->skyTextureHandle, kSkyTextureSlot);
-                    if (m_impl->environmentEquirectSampler != kInvalidSamplerHandle) {
-                        commandBuffer.BindSampler(m_impl->environmentEquirectSampler, kSkyTextureSlot);
-                    }
-                }
-                if (shadowsReady) {
-                    for (std::size_t cascadeIndex = 0; cascadeIndex < kShadowCascadeCount; ++cascadeIndex) {
-                        const std::uint32_t slot =
-                            kShadowCascadeFirstTextureSlot + static_cast<std::uint32_t>(cascadeIndex);
-                        commandBuffer.BindTexture(m_impl->shadowMapTargets[cascadeIndex], slot);
-                        if (m_impl->shadowPointSampler != kInvalidSamplerHandle) {
-                            commandBuffer.BindSampler(m_impl->shadowPointSampler, slot);
-                        }
-                    }
-                }
-                commandBuffer.Draw(3);
-                commandBuffer.EndRenderPass();
-            });
-    }
 
-    if (!capturingProbe &&
-        m_impl->studioFloorSettings.has_value() &&
-        m_impl->studioFloorSettings->enabled &&
-        m_impl->EnsureStudioFloorResources()) {
-        const StudioFloorSettings floorSettings = *m_impl->studioFloorSettings;
-        const std::array<RenderGraphResourceUse, 2U> studioFloorResources{
-            RenderGraphResourceUse{depthResource, RenderGraphResourceAccess::ReadWrite},
-            RenderGraphResourceUse{colorResource, RenderGraphResourceAccess::Write}};
-        renderGraph.AddPass(
-            "StudioFloor", studioFloorResources,
-            [this, viewProjection, viewPosition, floorSettings, lights](ICommandBuffer& commandBuffer) {
-                RenderPassDesc passDesc;
-                passDesc.colorAttachment = m_impl->colorTarget;
-                passDesc.depthAttachment = m_impl->depthTarget;
-                passDesc.colorLoadOp = LoadOp::Load;
-                passDesc.depthLoadOp = LoadOp::Load;
-                commandBuffer.BeginRenderPass(passDesc);
 
-                m_impl->studioFloorProgram->SetMatrix4x4("uViewProjection", viewProjection);
-                m_impl->studioFloorProgram->SetFloat("uFloorY", floorSettings.heightY);
-                m_impl->studioFloorProgram->SetVector3("uViewPosition", viewPosition);
-                m_impl->studioFloorProgram->SetVector3("uPivotPosition", floorSettings.pivotPosition);
-                m_impl->studioFloorProgram->SetFloat("uTileScale", floorSettings.tileScale);
-                m_impl->studioFloorProgram->SetFloat("uFadeStartRadius", floorSettings.fadeStartRadiusMeters);
-                m_impl->studioFloorProgram->SetFloat("uFadeEndRadius", floorSettings.fadeEndRadiusMeters);
-                m_impl->studioFloorProgram->SetVector3("uBaseTint", floorSettings.baseTint);
-                m_impl->studioFloorProgram->SetFloat("uRoughnessScale", floorSettings.roughnessScale);
-                m_impl->studioFloorProgram->SetFloat("uSpecularStrength", floorSettings.specularStrength);
-                m_impl->studioFloorProgram->SetVector3("uSkyTopColor", m_impl->environmentFrame.skyColor);
-                m_impl->studioFloorProgram->SetVector3("uSkyHorizonColor", m_impl->environmentFrame.horizonColor);
-                m_impl->studioFloorProgram->SetVector3("uSkyGroundColor", m_impl->environmentFrame.groundColor);
-                m_impl->studioFloorProgram->SetFloat("uAmbientEnergy", 0.55F);
-                m_impl->studioFloorProgram->SetInt("uAlbedoMap", 0);
-                m_impl->studioFloorProgram->SetInt("uNormalMap", 1);
-                m_impl->studioFloorProgram->SetInt("uOrmMap", 2);
-
-                std::array<Math::Vector3, 4U> lightPositions{};
-                std::array<Math::Vector3, 4U> lightColors{};
-                std::array<float, 4U> lightRanges{{16.0F, 16.0F, 16.0F, 16.0F}};
-                std::int32_t lightCount = 0;
-                for (const LightData& light : lights) {
-                    if (light.type == Scene::LightType::Directional || light.intensity <= 0.0F) {
-                        continue;
-                    }
-                    if (lightCount >= 4) {
-                        break;
-                    }
-                    const std::size_t idx = static_cast<std::size_t>(lightCount++);
-                    lightPositions[idx] = light.position;
-                    lightColors[idx] = Math::ToVector3(light.color) * light.intensity;
-                    lightRanges[idx] = std::max(light.range, 1.0F);
-                }
-                if (lightCount == 0) {
-                    // Built-in 3-point studio light rig centered around the studio floor pivot.
-                    const Math::Vector3 p = floorSettings.pivotPosition;
-                    lightCount = 3;
-                    lightPositions[0U] = Math::Vector3{p.x + 3.5F, floorSettings.heightY + 5.2F, p.z + 3.8F};
-                    lightColors[0U] = Math::Vector3{1.0F, 0.96F, 0.90F} * 2.2F;
-                    lightRanges[0U] = 22.0F;
-                    lightPositions[1U] = Math::Vector3{p.x - 4.0F, floorSettings.heightY + 3.8F, p.z - 3.5F};
-                    lightColors[1U] = Math::Vector3{0.58F, 0.72F, 1.0F} * 1.45F;
-                    lightRanges[1U] = 20.0F;
-                    lightPositions[2U] = Math::Vector3{p.x - 2.8F, floorSettings.heightY + 2.6F, p.z + 4.2F};
-                    lightColors[2U] = Math::Vector3{0.78F, 0.84F, 0.96F} * 0.95F;
-                    lightRanges[2U] = 18.0F;
-                }
-                m_impl->studioFloorProgram->SetInt("uLightCount", lightCount);
-                for (std::size_t i = 0U; i < 4U; ++i) {
-                    const std::string idxStr = std::to_string(i);
-                    m_impl->studioFloorProgram->SetVector3("uLightPositions[" + idxStr + "]", lightPositions[i]);
-                    m_impl->studioFloorProgram->SetVector3("uLightColors[" + idxStr + "]", lightColors[i]);
-                    m_impl->studioFloorProgram->SetFloat("uLightRanges[" + idxStr + "]", lightRanges[i]);
-                }
-
-                m_impl->studioFloorProgram->ApplyTo(commandBuffer);
-                commandBuffer.BindTexture(m_impl->studioFloorAlbedoTexture, 0U);
-                commandBuffer.BindTexture(m_impl->studioFloorNormalTexture, 1U);
-                commandBuffer.BindTexture(m_impl->studioFloorOrmTexture, 2U);
-                if (m_impl->materialRepeatSampler != kInvalidSamplerHandle) {
-                    commandBuffer.BindSampler(m_impl->materialRepeatSampler, 0U);
-                    commandBuffer.BindSampler(m_impl->materialRepeatSampler, 1U);
-                    commandBuffer.BindSampler(m_impl->materialRepeatSampler, 2U);
-                }
-                commandBuffer.BindVertexBuffer(m_impl->studioFloorVertexBuffer, 0U);
-                commandBuffer.BindIndexBuffer(m_impl->studioFloorIndexBuffer);
-                commandBuffer.DrawIndexed(6U, 1U, 0U);
-                if (m_impl->renderDevice.GetBackendName() == "OpenGL") {
-                    ++m_impl->lastFrameDiagnostics.glDrawCallsIssued;
-                }
-                commandBuffer.EndRenderPass();
-            });
-    }
 
     if (!capturingProbe &&
         m_impl->vfxSpriteRenderer.HasTranslucentBatches() &&
@@ -7407,6 +7603,14 @@ void Renderer3D::RenderFrame(Scene::IEntityManager& entityManager, Scene::Entity
             if (!m_impl->toneMappingProgram->IsValid()) {
                 return;
             }
+            // Fog is the only block the lean variant compiles out, so a fog-free frame gets the
+            // same math with far fewer registers; an unusable lean program falls back to full.
+            const bool leanToneMapping =
+                m_impl->toneMappingLeanProgram != nullptr && m_impl->toneMappingLeanProgram->IsValid() &&
+                m_impl->toneMappingLeanAllowed && !m_impl->environmentFrame.fogEnabled &&
+                m_impl->fogVolumeCount == 0U;
+            const auto& toneMappingProgram =
+                leanToneMapping ? m_impl->toneMappingLeanProgram : m_impl->toneMappingProgram;
             m_impl->lastFrameDiagnostics.toneMappingPassRecorded = true;
             const bool fastApproximateAAEnabled =
                 m_impl->postProcessSettings.fastApproximateAAEnabled && !m_impl->probeCaptureViewActive;
@@ -7441,26 +7645,26 @@ void Renderer3D::RenderFrame(Scene::IEntityManager& entityManager, Scene::Entity
                                                       static_cast<std::int32_t>(m_impl->destinationTextureSizeOverride->second)}};
             }
             commandBuffer.BeginRenderPass(passDesc);
-            m_impl->toneMappingProgram->SetInt("uSourceTexture", 0);
-            m_impl->toneMappingProgram->SetInt("uNearestUpscaling",
+            toneMappingProgram->SetInt("uSourceTexture", 0);
+            toneMappingProgram->SetInt("uNearestUpscaling",
                                                  m_impl->postProcessSettings.nearestUpscalingEnabled ? 1 : 0);
             const std::int32_t toneMappingMethod =
                 !m_impl->postProcessSettings.acesToneMappingEnabled
                     ? 0
                     : static_cast<std::int32_t>(std::min(m_impl->postProcessSettings.toneMappingMethod, 2U));
-            m_impl->toneMappingProgram->SetInt("uToneMappingMethod", toneMappingMethod);
-            m_impl->toneMappingProgram->SetFloat("uSharpeningAmount",
+            toneMappingProgram->SetInt("uToneMappingMethod", toneMappingMethod);
+            toneMappingProgram->SetFloat("uSharpeningAmount",
                                                    m_impl->postProcessSettings.sharpeningAmount);
-            m_impl->toneMappingProgram->SetInt("uDitheringEnabled",
+            toneMappingProgram->SetInt("uDitheringEnabled",
                                                  m_impl->postProcessSettings.ditheringEnabled ? 1 : 0);
-            m_impl->toneMappingProgram->SetInt("uFastApproximateAA", fastApproximateAAEnabled ? 1 : 0);
-            m_impl->toneMappingProgram->SetInt(
+            toneMappingProgram->SetInt("uFastApproximateAA", fastApproximateAAEnabled ? 1 : 0);
+            toneMappingProgram->SetInt(
                 "uScreenSpaceAAQuality", static_cast<std::int32_t>(m_impl->postProcessSettings.fastApproximateAAQuality));
-            m_impl->toneMappingProgram->SetFloat("uFxaaTexelX", m_impl->humanEyeTexelX);
-            m_impl->toneMappingProgram->SetFloat("uFxaaTexelY", m_impl->humanEyeTexelY);
-            m_impl->toneMappingProgram->SetInt("uSceneDepthTexture", 1);
+            toneMappingProgram->SetFloat("uFxaaTexelX", m_impl->humanEyeTexelX);
+            toneMappingProgram->SetFloat("uFxaaTexelY", m_impl->humanEyeTexelY);
+            toneMappingProgram->SetInt("uSceneDepthTexture", 1);
             // A 3D View with a sky behind it is opaque; a probe or a see-through view keeps coverage.
-            m_impl->toneMappingProgram->SetInt("uWriteCoverageAlpha",
+            toneMappingProgram->SetInt("uWriteCoverageAlpha",
                                                    m_impl->destinationTextureOverride.has_value() &&
                                                            !(m_impl->uiViewCaptureActive && !m_impl->captureTransparentBackground)
                                                        ? 1
@@ -7469,160 +7673,175 @@ void Renderer3D::RenderFrame(Scene::IEntityManager& entityManager, Scene::Entity
                 (!capturingProbe || m_impl->uiViewCaptureActive) &&
                 (m_impl->destinationTextureOverride.has_value() ||
                  !m_impl->renderDevice.IsPresentationSurfaceSrgb());
-            m_impl->toneMappingProgram->SetInt("uEncodeSrgbOutput", encodeSrgbOutput ? 1 : 0);
-            m_impl->toneMappingProgram->SetInt("uSsaoCompositeEnabled", ssaoActive ? 1 : 0);
-            if (ssaoActive) {
-                m_impl->toneMappingProgram->SetInt(
-                    "uSsaoBlurEnabled", m_impl->postProcessSettings.ssaoBlurEnabled ? 1 : 0);
-            }
-            m_impl->toneMappingProgram->SetInt("uContactShadowCompositeEnabled", contactShadowActive ? 1 : 0);
-            m_impl->toneMappingProgram->SetInt("uSsrCompositeEnabled", ssrActive ? 1 : 0);
-            m_impl->toneMappingProgram->SetInt("uBloomCompositeEnabled", bloomActive ? 1 : 0);
-            m_impl->toneMappingProgram->SetInt("uHasColorGrading",
+            toneMappingProgram->SetInt("uEncodeSrgbOutput", encodeSrgbOutput ? 1 : 0);
+            toneMappingProgram->SetInt("uSsaoCompositeEnabled", ssaoActive ? 1 : 0);
+            toneMappingProgram->SetInt("uContactShadowCompositeEnabled", contactShadowActive ? 1 : 0);
+            toneMappingProgram->SetInt("uSsrCompositeEnabled", ssrActive ? 1 : 0);
+            toneMappingProgram->SetInt("uBloomCompositeEnabled", bloomActive ? 1 : 0);
+            toneMappingProgram->SetInt("uHasColorGrading",
                                                  hasPostOverride && m_impl->environmentFrame.postProcessingEnabled ? 1 : 0);
-            m_impl->toneMappingProgram->SetInt("uHasLutTexture", m_impl->lutTextureEnabled ? 1 : 0);
-            m_impl->toneMappingProgram->SetInt("uLutTexture",
+            toneMappingProgram->SetInt("uHasLutTexture", m_impl->lutTextureEnabled ? 1 : 0);
+            toneMappingProgram->SetInt("uLutTexture",
                                                  static_cast<std::int32_t>(kToneMappingLutTextureSlot));
-            m_impl->toneMappingProgram->SetInt("uSsaoTexture",
+            toneMappingProgram->SetInt("uSsaoTexture",
                                                  static_cast<std::int32_t>(kToneMappingSsaoTextureSlot));
-            m_impl->toneMappingProgram->SetInt("uContactShadowTexture",
+            toneMappingProgram->SetInt("uContactShadowTexture",
                                                  static_cast<std::int32_t>(kToneMappingContactShadowTextureSlot));
-            m_impl->toneMappingProgram->SetInt("uSsrTexture",
+            toneMappingProgram->SetInt("uSsrTexture",
                                                  static_cast<std::int32_t>(kToneMappingSsrTextureSlot));
-            m_impl->toneMappingProgram->SetInt("uBloomTexture",
+            toneMappingProgram->SetInt("uBloomTexture",
                                                  static_cast<std::int32_t>(kToneMappingBloomTextureSlot));
-            m_impl->toneMappingProgram->SetFloat("uDepthNdcScale", depthNdcScale);
-            m_impl->toneMappingProgram->SetFloat("uDepthNdcBias", depthNdcBias);
-            m_impl->toneMappingProgram->SetFloat("uProjA", projA);
-            m_impl->toneMappingProgram->SetFloat("uProjB", projB);
-            m_impl->toneMappingProgram->SetFloat("uInvProjX", invProjX);
-            m_impl->toneMappingProgram->SetFloat("uInvProjY", invProjY);
-            m_impl->toneMappingProgram->SetInt("uFastReconstruct", fastDepthReconstruct ? 1 : 0);
-            m_impl->toneMappingProgram->SetInt("uHumanEye", m_impl->humanEyeEnabled ? 1 : 0);
-            m_impl->toneMappingProgram->SetFloat("uHumanEyeCenterScale", m_impl->humanEyeCenterScale);
-            m_impl->toneMappingProgram->SetFloat("uHumanEyeTexelX", m_impl->humanEyeTexelX);
-            m_impl->toneMappingProgram->SetFloat("uHumanEyeTexelY", m_impl->humanEyeTexelY);
-            m_impl->toneMappingProgram->SetFloat("uExposure", m_impl->environmentFrame.exposure);
-            m_impl->toneMappingProgram->SetInt("uFogEnabled", m_impl->environmentFrame.fogEnabled ? 1 : 0);
-            m_impl->toneMappingProgram->SetInt("uFogMode",
+            toneMappingProgram->SetFloat("uDepthNdcScale", depthNdcScale);
+            toneMappingProgram->SetFloat("uDepthNdcBias", depthNdcBias);
+            toneMappingProgram->SetFloat("uProjA", projA);
+            toneMappingProgram->SetFloat("uProjB", projB);
+            toneMappingProgram->SetFloat("uInvProjX", invProjX);
+            toneMappingProgram->SetFloat("uInvProjY", invProjY);
+            toneMappingProgram->SetInt("uFastReconstruct", fastDepthReconstruct ? 1 : 0);
+            toneMappingProgram->SetInt("uHumanEye", m_impl->humanEyeEnabled ? 1 : 0);
+            toneMappingProgram->SetFloat("uHumanEyeCenterScale", m_impl->humanEyeCenterScale);
+            toneMappingProgram->SetFloat("uHumanEyeTexelX", m_impl->humanEyeTexelX);
+            toneMappingProgram->SetFloat("uHumanEyeTexelY", m_impl->humanEyeTexelY);
+            toneMappingProgram->SetFloat("uExposure", m_impl->environmentFrame.exposure);
+            if (!leanToneMapping)
+                toneMappingProgram->SetInt("uFogEnabled", m_impl->environmentFrame.fogEnabled ? 1 : 0);
+            if (!leanToneMapping)
+                toneMappingProgram->SetInt("uFogMode",
                                                    static_cast<std::int32_t>(m_impl->environmentFrame.fogMode));
-            m_impl->toneMappingProgram->SetVector3("uFogColor", m_impl->environmentFrame.fogColor);
-            m_impl->toneMappingProgram->SetFloat("uFogDensity", m_impl->environmentFrame.fogDensity);
-            m_impl->toneMappingProgram->SetFloat("uFogStart", m_impl->environmentFrame.fogStart);
-            m_impl->toneMappingProgram->SetFloat("uFogEnd", m_impl->environmentFrame.fogEnd);
-            m_impl->toneMappingProgram->SetMatrix4x4("uInverseProjection", inverseProjection);
-            m_impl->toneMappingProgram->SetFloat("uCameraNear", m_impl->environmentCameraNear);
-            m_impl->toneMappingProgram->SetFloat("uCameraFar", m_impl->environmentCameraFar);
-            m_impl->toneMappingProgram->SetFloat("uFogSkyAffect", m_impl->environmentFrame.fogSkyAffect);
-            m_impl->toneMappingProgram->SetInt(
+            if (!leanToneMapping)
+                toneMappingProgram->SetVector3("uFogColor", m_impl->environmentFrame.fogColor);
+            if (!leanToneMapping)
+                toneMappingProgram->SetFloat("uFogDensity", m_impl->environmentFrame.fogDensity);
+            if (!leanToneMapping)
+                toneMappingProgram->SetFloat("uFogStart", m_impl->environmentFrame.fogStart);
+            if (!leanToneMapping)
+                toneMappingProgram->SetFloat("uFogEnd", m_impl->environmentFrame.fogEnd);
+            toneMappingProgram->SetMatrix4x4("uInverseProjection", inverseProjection);
+            toneMappingProgram->SetFloat("uCameraNear", m_impl->environmentCameraNear);
+            toneMappingProgram->SetFloat("uCameraFar", m_impl->environmentCameraFar);
+            if (!leanToneMapping)
+                toneMappingProgram->SetFloat("uFogSkyAffect", m_impl->environmentFrame.fogSkyAffect);
+            toneMappingProgram->SetInt(
                 "uSkyCovers", m_impl->environmentFrame.hasEnvironment && !m_impl->captureTransparentBackground ? 1 : 0);
-            m_impl->toneMappingProgram->SetInt("uOrthographic", isOrthographic ? 1 : 0);
-            m_impl->toneMappingProgram->SetFloat("uOrthoHalfHeight", orthoHalfHeight);
-            m_impl->toneMappingProgram->SetFloat("uBrightness", m_impl->environmentFrame.brightness);
-            m_impl->toneMappingProgram->SetFloat("uContrast", m_impl->environmentFrame.contrast);
-            m_impl->toneMappingProgram->SetFloat("uSaturation", m_impl->environmentFrame.saturation);
-            m_impl->toneMappingProgram->SetVector3("uColorFilter", m_impl->environmentFrame.colorFilter);
+            toneMappingProgram->SetInt("uOrthographic", isOrthographic ? 1 : 0);
+            if (!leanToneMapping)
+                toneMappingProgram->SetFloat("uOrthoHalfHeight", orthoHalfHeight);
+            toneMappingProgram->SetFloat("uBrightness", m_impl->environmentFrame.brightness);
+            toneMappingProgram->SetFloat("uContrast", m_impl->environmentFrame.contrast);
+            toneMappingProgram->SetFloat("uSaturation", m_impl->environmentFrame.saturation);
+            toneMappingProgram->SetVector3("uColorFilter", m_impl->environmentFrame.colorFilter);
             const float vignetteIntensity = m_impl->environmentFrame.postProcessingEnabled
                                                 ? m_impl->environmentFrame.vignetteIntensity
                                                 : 0.0F;
-            m_impl->toneMappingProgram->SetFloat("uVignetteIntensity", vignetteIntensity);
-            m_impl->toneMappingProgram->SetFloat("uVignetteRadius", m_impl->environmentFrame.vignetteRadius);
+            toneMappingProgram->SetFloat("uVignetteIntensity", vignetteIntensity);
+            toneMappingProgram->SetFloat("uVignetteRadius", m_impl->environmentFrame.vignetteRadius);
             const float chromaticAberrationIntensity = m_impl->environmentFrame.postProcessingEnabled
                                                            ? m_impl->environmentFrame.chromaticAberrationIntensity
                                                            : 0.0F;
-            m_impl->toneMappingProgram->SetFloat("uChromaticAberrationIntensity",
+            toneMappingProgram->SetFloat("uChromaticAberrationIntensity",
                                                     chromaticAberrationIntensity);
             const float filmGrainIntensity = m_impl->environmentFrame.postProcessingEnabled
                                                  ? m_impl->environmentFrame.filmGrainIntensity
                                                  : 0.0F;
-            m_impl->toneMappingProgram->SetFloat("uFilmGrainIntensity", filmGrainIntensity);
-            m_impl->toneMappingProgram->SetInt(
+            toneMappingProgram->SetFloat("uFilmGrainIntensity", filmGrainIntensity);
+            toneMappingProgram->SetInt(
                 "uFilmGrainFrame", static_cast<std::int32_t>(m_impl->renderSystem.GetFrameIndex() % 4096U));
             const float lensDistortionIntensity = m_impl->environmentFrame.postProcessingEnabled
                                                       ? m_impl->environmentFrame.lensDistortionIntensity
                                                       : 0.0F;
-            m_impl->toneMappingProgram->SetFloat("uLensDistortionIntensity", lensDistortionIntensity);
+            toneMappingProgram->SetFloat("uLensDistortionIntensity", lensDistortionIntensity);
             const bool depthOfFieldEnabled = m_impl->environmentFrame.postProcessingEnabled &&
                                              m_impl->environmentFrame.depthOfFieldEnabled;
-            m_impl->toneMappingProgram->SetInt("uDepthOfFieldEnabled", depthOfFieldEnabled ? 1 : 0);
-            m_impl->toneMappingProgram->SetInt(
+            toneMappingProgram->SetInt("uDepthOfFieldEnabled", depthOfFieldEnabled ? 1 : 0);
+            toneMappingProgram->SetInt(
                 "uDepthOfFieldFocusMode",
                 static_cast<std::int32_t>(m_impl->environmentFrame.depthOfFieldFocusMode));
-            m_impl->toneMappingProgram->SetInt(
+            toneMappingProgram->SetInt(
                 "uDepthOfFieldBokehShape",
                 static_cast<std::int32_t>(m_impl->environmentFrame.depthOfFieldBokehShape));
-            m_impl->toneMappingProgram->SetFloat("uDepthOfFieldFocusDistance",
+            toneMappingProgram->SetFloat("uDepthOfFieldFocusDistance",
                                                     m_impl->environmentFrame.depthOfFieldFocusDistance);
-            m_impl->toneMappingProgram->SetFloat("uDepthOfFieldAperture",
+            toneMappingProgram->SetFloat("uDepthOfFieldAperture",
                                                     m_impl->environmentFrame.depthOfFieldAperture);
-            m_impl->toneMappingProgram->SetInt(
+            toneMappingProgram->SetInt(
                 "uDepthOfFieldQuality",
                 static_cast<std::int32_t>(std::min(m_impl->environmentFrame.depthOfFieldQuality, 2U)));
             const bool motionBlurEnabled = m_impl->environmentFrame.postProcessingEnabled &&
                                            m_impl->environmentFrame.motionBlurEnabled && motionBlurHistoryReady;
-            m_impl->toneMappingProgram->SetInt("uMotionBlurEnabled", motionBlurEnabled ? 1 : 0);
-            m_impl->toneMappingProgram->SetFloat(
+            toneMappingProgram->SetInt("uMotionBlurEnabled", motionBlurEnabled ? 1 : 0);
+            toneMappingProgram->SetFloat(
                 "uMotionBlurStrength", motionBlurEnabled ? m_impl->environmentFrame.motionBlurStrength : 0.0F);
-            m_impl->toneMappingProgram->SetInt(
+            toneMappingProgram->SetInt(
                 "uMotionBlurSampleCount",
                 static_cast<std::int32_t>(std::clamp(m_impl->environmentFrame.motionBlurSampleCount, 4U, 12U)));
-            m_impl->toneMappingProgram->SetMatrix4x4("uPreviousViewProjection", previousMotionBlurViewProjection);
-            m_impl->toneMappingProgram->SetVector3("uCameraPosition", m_impl->environmentCameraPosition);
-            m_impl->toneMappingProgram->SetVector3("uCameraRight", m_impl->skyCameraRight);
-            m_impl->toneMappingProgram->SetVector3("uCameraUp", m_impl->skyCameraUp);
-            m_impl->toneMappingProgram->SetVector3("uCameraForward", m_impl->skyCameraForward);
-            m_impl->toneMappingProgram->SetFloat("uTanHalfFov", m_impl->skyTanHalfFov);
-            m_impl->toneMappingProgram->SetFloat("uAspect", m_impl->environmentAspect);
-            m_impl->toneMappingProgram->SetVector3("uSunDirection", m_impl->sunDirection);
-            m_impl->toneMappingProgram->SetVector3("uSunColor", m_impl->sunColor);
-            m_impl->toneMappingProgram->SetFloat("uSunEnergy", m_impl->sunEnergy);
-            m_impl->toneMappingProgram->SetFloat(
+            toneMappingProgram->SetMatrix4x4("uPreviousViewProjection", previousMotionBlurViewProjection);
+            toneMappingProgram->SetVector3("uCameraPosition", m_impl->environmentCameraPosition);
+            toneMappingProgram->SetVector3("uCameraRight", m_impl->skyCameraRight);
+            toneMappingProgram->SetVector3("uCameraUp", m_impl->skyCameraUp);
+            toneMappingProgram->SetVector3("uCameraForward", m_impl->skyCameraForward);
+            toneMappingProgram->SetFloat("uTanHalfFov", m_impl->skyTanHalfFov);
+            toneMappingProgram->SetFloat("uAspect", m_impl->environmentAspect);
+            toneMappingProgram->SetVector3("uSunDirection", m_impl->sunDirection);
+            if (!leanToneMapping)
+                toneMappingProgram->SetVector3("uSunColor", m_impl->sunColor);
+            toneMappingProgram->SetFloat("uSunEnergy", m_impl->sunEnergy);
+            toneMappingProgram->SetFloat(
                 "uSunAngularDiameter", sunDiscActive ? m_impl->sunDiscAngularDiameterDegrees : 0.0F);
-            m_impl->toneMappingProgram->SetFloat("uFogHeight", m_impl->environmentFrame.fogHeight);
-            m_impl->toneMappingProgram->SetFloat("uFogHeightFalloff", m_impl->environmentFrame.fogHeightFalloff);
-            m_impl->toneMappingProgram->SetFloat("uFogSunScatter", m_impl->environmentFrame.fogSunScatter);
-            m_impl->toneMappingProgram->SetFloat("uLightVolumetricFogEnergy", m_impl->sunVolumetricFogEnergy);
-            m_impl->toneMappingProgram->SetInt("uFogVolumeCount",
+            if (!leanToneMapping)
+                toneMappingProgram->SetFloat("uFogHeight", m_impl->environmentFrame.fogHeight);
+            if (!leanToneMapping)
+                toneMappingProgram->SetFloat("uFogHeightFalloff", m_impl->environmentFrame.fogHeightFalloff);
+            if (!leanToneMapping)
+                toneMappingProgram->SetFloat("uFogSunScatter", m_impl->environmentFrame.fogSunScatter);
+            if (!leanToneMapping)
+                toneMappingProgram->SetFloat("uLightVolumetricFogEnergy", m_impl->sunVolumetricFogEnergy);
+            if (!leanToneMapping)
+                toneMappingProgram->SetInt("uFogVolumeCount",
                                                    static_cast<std::int32_t>(m_impl->fogVolumeCount));
             const auto& fogNames = GetRendererUniformNames().fogVolumes;
             const std::size_t activeFogVolumes =
                 std::min(m_impl->fogVolumeCount, Scene::kMaximumFogVolumesPerFrame);
-            for (std::size_t volumeIndex = 0; volumeIndex < activeFogVolumes; ++volumeIndex) {
-                const Scene::FogVolume3DFrame& volume = m_impl->fogVolumes[volumeIndex];
-                const FogVolumeUniformNames& names = fogNames[volumeIndex];
-                m_impl->toneMappingProgram->SetVector3(names.position, volume.worldPosition);
-                m_impl->toneMappingProgram->SetVector3(names.axisX, volume.axisX);
-                m_impl->toneMappingProgram->SetVector3(names.axisY, volume.axisY);
-                m_impl->toneMappingProgram->SetVector3(names.axisZ, volume.axisZ);
-                m_impl->toneMappingProgram->SetVector3(names.scale, volume.worldScale);
-                m_impl->toneMappingProgram->SetVector3(names.size, volume.size);
-                m_impl->toneMappingProgram->SetVector3(names.albedo, volume.albedo);
-                m_impl->toneMappingProgram->SetVector3(names.emission, volume.emission);
-                m_impl->toneMappingProgram->SetFloat(names.density, volume.density);
-                m_impl->toneMappingProgram->SetFloat(names.heightFalloff, volume.heightFalloff);
-                m_impl->toneMappingProgram->SetFloat(names.edgeFade, volume.edgeFade);
-                m_impl->toneMappingProgram->SetInt(names.shape, static_cast<std::int32_t>(volume.shape));
+            if (!leanToneMapping) {
+                for (std::size_t volumeIndex = 0; volumeIndex < activeFogVolumes; ++volumeIndex) {
+                    const Scene::FogVolume3DFrame& volume = m_impl->fogVolumes[volumeIndex];
+                    const FogVolumeUniformNames& names = fogNames[volumeIndex];
+                    toneMappingProgram->SetVector3(names.position, volume.worldPosition);
+                    toneMappingProgram->SetVector3(names.axisX, volume.axisX);
+                    toneMappingProgram->SetVector3(names.axisY, volume.axisY);
+                    toneMappingProgram->SetVector3(names.axisZ, volume.axisZ);
+                    toneMappingProgram->SetVector3(names.scale, volume.worldScale);
+                    toneMappingProgram->SetVector3(names.size, volume.size);
+                    toneMappingProgram->SetVector3(names.albedo, volume.albedo);
+                    toneMappingProgram->SetVector3(names.emission, volume.emission);
+                    toneMappingProgram->SetFloat(names.density, volume.density);
+                    toneMappingProgram->SetFloat(names.heightFalloff, volume.heightFalloff);
+                    toneMappingProgram->SetFloat(names.edgeFade, volume.edgeFade);
+                    toneMappingProgram->SetInt(names.shape, static_cast<std::int32_t>(volume.shape));
+            }
             }
             const bool volumetricShadowsActive = shadowsReady && m_impl->sunVolumetricFogEnergy > 0.0F;
-            m_impl->toneMappingProgram->SetInt("uVolumetricShadowsEnabled", volumetricShadowsActive ? 1 : 0);
+            if (!leanToneMapping)
+                toneMappingProgram->SetInt("uVolumetricShadowsEnabled", volumetricShadowsActive ? 1 : 0);
             const auto& uniformNames = GetRendererUniformNames();
-            for (std::size_t cascadeIndex = 0; cascadeIndex < kShadowCascadeCount; ++cascadeIndex) {
-                m_impl->toneMappingProgram->SetMatrix4x4(
-                    uniformNames.lightSpaceMatrices[cascadeIndex],
-                    lightSpaceMatrices[cascadeIndex]);
-                m_impl->toneMappingProgram->SetFloat(
-                    uniformNames.shadowCascadeSplits[cascadeIndex],
-                    cascadeSplits[cascadeIndex]);
-                m_impl->toneMappingProgram->SetInt(
-                    uniformNames.shadowMapTextures[cascadeIndex],
-                    static_cast<std::int32_t>(kShadowCascadeFirstTextureSlot + cascadeIndex));
+            if (!leanToneMapping) {
+                for (std::size_t cascadeIndex = 0; cascadeIndex < kShadowCascadeCount; ++cascadeIndex) {
+                    toneMappingProgram->SetMatrix4x4(
+                        uniformNames.lightSpaceMatrices[cascadeIndex],
+                        lightSpaceMatrices[cascadeIndex]);
+                    toneMappingProgram->SetFloat(
+                        uniformNames.shadowCascadeSplits[cascadeIndex],
+                        cascadeSplits[cascadeIndex]);
+                    toneMappingProgram->SetInt(
+                        uniformNames.shadowMapTextures[cascadeIndex],
+                        static_cast<std::int32_t>(kShadowCascadeFirstTextureSlot + cascadeIndex));
+            }
             }
             if (volumetricShadowsActive) {
                 m_impl->lastFrameDiagnostics.volumetricFogPassRecorded = true;
             }
-            m_impl->toneMappingProgram->SetInt("uLutEnabled", m_impl->environmentFrame.lutEnabled ? 1 : 0);
-            m_impl->toneMappingProgram->SetFloat("uLutContribution", m_impl->environmentFrame.lutContribution);
-            m_impl->toneMappingProgram->ApplyTo(commandBuffer);
+            toneMappingProgram->SetInt("uLutEnabled", m_impl->environmentFrame.lutEnabled ? 1 : 0);
+            toneMappingProgram->SetFloat("uLutContribution", m_impl->environmentFrame.lutContribution);
+            toneMappingProgram->ApplyTo(commandBuffer);
             commandBuffer.BindTexture(toneMappingColorTexture, 0U);
             const SamplerHandle colorSampler = m_impl->postProcessSettings.nearestUpscalingEnabled
                                                       ? m_impl->shadowPointSampler

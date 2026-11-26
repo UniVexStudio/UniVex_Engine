@@ -387,7 +387,15 @@ RenderGraphExecuteResult RenderGraph::ExecuteInternal(IRenderDevice *device,
     try {
         for (std::size_t position = 0U; position < plan.passOrder.size(); ++position) {
             if (options.emitBarriers && plan.barrierBeforePass[position]) {
-                const auto result = commands.MemoryBarrier(MemoryBarrierMask::All);
+                // The graph only tracks textures, so the only hazard it can order is a
+                // framebuffer write followed by a texture fetch (or an image access, which the
+                // TextureFetch bit also covers in every backend). Emitting All additionally
+                // flushes shader-storage, vertex-input, indirect and transfer scopes that the
+                // graph never ordered - buffer hazards get their own barriers from the compute
+                // and indirect paths - and on Android this call is a no-op entirely, so nothing
+                // in this pass chain depends on the wider mask.
+                const auto result = commands.MemoryBarrier(MemoryBarrierMask::Framebuffer |
+                                                           MemoryBarrierMask::TextureFetch);
                 if (result != RenderOperationResult::Success &&
                     result != RenderOperationResult::Recorded)
                     return {RenderGraphExecuteCode::BarrierFailed, completed};

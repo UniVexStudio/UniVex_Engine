@@ -10,6 +10,7 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include "gl_functions.h"
@@ -221,6 +222,13 @@ struct GlDeviceState {
         std::unordered_map<std::string, UniformRecord, TransparentStringHash, TransparentStringEqual> uniforms;
         // Indexed aliases stay separate so public reflection still reports one array record.
         decltype(uniforms) uniformElements;
+
+        /// Names already reported by GlCommandBuffer::FindUniform's "not an active uniform"
+        /// warning. A renderer sets frame uniforms on every program variant, and a variant that
+        /// compiled a given uniform away (a #if-guarded feature block) would otherwise format and
+        /// write one log line per frame per program - real I/O on the render thread. One warning
+        /// per program is enough to diagnose the mismatch.
+        mutable std::unordered_set<std::string> warnedUnknownUniforms;
     };
     std::unordered_map<std::uint32_t, PipelineRecord> pipelines;
     std::uint32_t nextPipelineHandle = 1;

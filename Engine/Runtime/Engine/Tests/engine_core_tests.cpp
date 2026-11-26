@@ -327,12 +327,12 @@ TEST(EngineCoreTest, InvalidCommandLineSettingFallsBackToPlatformValue) {
 TEST(EngineCoreTest, ProjectSettings_DeclareEngineDefaultsAndNeedARestart) {
     Config::SettingsRegistry registry;
     ASSERT_TRUE(RegisterEngineProjectSettings(registry));
-    // 175 settings declared in the GetEngineProjectSettings() table plus the default-player entity
+    // 176 settings declared in the GetEngineProjectSettings() table plus the default-player entity
     // registered on its own; the 4 * kLayerCount layer-name settings (Physics, Render, Navigation,
     // Avoidance) are added on top of this. Spelled out because the number silently drifts every time a
     // setting is added or removed - this assertion is the drift detector, so update it deliberately
     // when the table changes (most recently removing the 6 pure-2D settings and LayerSet::Physics2D).
-    EXPECT_EQ(registry.GetCount(), 176U + (4U * kLayerCount));
+    EXPECT_EQ(registry.GetCount(), 177U + (4U * kLayerCount));
     namespace Id = EngineProjectSettingId;
     ASSERT_NE(registry.Find(Id::kDefaultPlayerEntity), nullptr);
     ASSERT_NE(registry.Find(Id::kShaderProgramCacheDirectory), nullptr);

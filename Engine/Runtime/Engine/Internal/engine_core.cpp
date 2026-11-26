@@ -19,6 +19,7 @@
 #include "raycast_audio_occlusion.h"
 
 #include "frame_pacing.h"
+#include "frame_trace.h"
 #include "render_backend_selection.h"
 #include "legacy_extension_migration.h"
 #include "png_metadata.h"
@@ -5119,10 +5120,30 @@ void EngineCore::TickFrame() {
         m_lastFrameRateCap = pacingDecision.frameRateCap;
     }
     BeginFrame();
+    const bool traceFrames = FrameTrace::Instance().IsEnabled();
+    const std::chrono::steady_clock::time_point updateBegin =
+        traceFrames ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
     Update();
+    const std::chrono::steady_clock::time_point lateUpdateBegin =
+        traceFrames ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
     LateUpdate();
+    const std::chrono::steady_clock::time_point renderBegin =
+        traceFrames ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
     Render();
+    const std::chrono::steady_clock::time_point renderEnd =
+        traceFrames ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
     EndFrame();
+    if (traceFrames) {
+        const auto secondsBetween = [](const std::chrono::steady_clock::time_point from,
+                                       const std::chrono::steady_clock::time_point to) {
+            return std::chrono::duration<double>(to - from).count();
+        };
+        FrameTrace::Instance().Record(m_frameStats.frameNumber, m_frameStats.frameTimeSeconds,
+                                      m_frameStats.deltaTimeSeconds,
+                                      secondsBetween(updateBegin, lateUpdateBegin),
+                                      secondsBetween(lateUpdateBegin, renderBegin),
+                                      secondsBetween(renderBegin, renderEnd));
+    }
 }
 
 int EngineCore::Run(int frameCount) {
@@ -5294,6 +5315,8 @@ void EngineCore::Shutdown() {
 #endif
     m_memoryManager.reset();
     m_configManager.reset();
+
+    static_cast<void>(FrameTrace::Instance().Flush());
 
     UVE_INFO("EngineCore: shutdown complete");
     m_logger->Shutdown();
@@ -5473,6 +5496,7 @@ void ApplyEngineConfigToRenderer3D(const EngineConfig& config, Render::IRenderer
         static_cast<std::uint32_t>(std::max<std::int64_t>(config.pointSpotShadowResolution, 0)));
     Render::CullingSettings cullingSettings;
     cullingSettings.frustumCullingEnabled = config.frustumCullingMode == FrustumCullingMode::Enabled;
+    cullingSettings.gpuOcclusionCullingEnabled = config.gpuOcclusionCullingEnabled;
     renderer.SetCullingSettings(cullingSettings);
     renderer.SetMaterialSamplerSettings(
         config.defaultTextureRepeatMode != 0,
