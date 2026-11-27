@@ -2996,6 +2996,12 @@ void EngineCore::SyncAnimation(const float deltaSeconds, const bool physicsStep)
                                      const Scene::Entity self, const Scene::Entity target,
                                      const Scene::Entity skeletonEntity, const Math::Vector3& delta,
                                      const float stepSeconds) {
+        // Root motion drives gameplay movement only while the simulation runs, and a zero step must
+        // not overwrite a controller's velocity (knockback, script movement).
+        if (m_simulationExecutionMode != SimulationExecutionMode::Running ||
+            Math::LengthSquared(delta) <= 1.0e-10F) {
+            return;
+        }
         const Frame skeletonFrame = worldFrameOf(skeletonEntity);
         const Math::Vector3 world = Math::RotateVector(
             skeletonFrame.rotation, Math::Vector3{delta.x * skeletonFrame.scale.x, delta.y * skeletonFrame.scale.y,
@@ -5522,7 +5528,7 @@ EngineServices& EngineCore::GetServices() {
 }
 
 Version EngineCore::GetEngineVersion() noexcept {
-    return Version{0, 1, 2, 0};
+    return Version{0, 5, 0, 0};
 }
 
 

@@ -48,9 +48,9 @@ Font::~Font() {
 }
 
 const Font& Font::atPixelScale(float scale) const {
-  if (!m_face || m_path.empty() || !std::isfinite(scale) || scale <= 1.05f) return *this;
-  int targetPx = std::clamp(int(std::lround(float(m_px) * scale)), m_px, 256);
-  if (targetPx <= m_px) return *this;
+  if (!m_face || m_path.empty() || !std::isfinite(scale) || std::abs(scale - 1.0f) < 0.02f) return *this;
+  int targetPx = std::clamp(int(std::lround(float(m_px) * scale)), 6, 256);
+  if (targetPx == m_px) return *this;
   auto it = m_scaled.find(targetPx);
   if (it != m_scaled.end()) return it->second && it->second->ok() ? *it->second : *this;
   auto scaled = std::make_unique<Font>(m_path, targetPx);

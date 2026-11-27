@@ -26,7 +26,7 @@ TEST(VersionTest, EqualityOperators_CompareAllComponents) {
 
 TEST(VersionTest, EngineCore_ReturnsExpectedVersionConstant) {
     const Version version = EngineCore::GetEngineVersion();
-    EXPECT_EQ(version, (Version{0, 1, 2, 0}));
+    EXPECT_EQ(version, (Version{0, 5, 0, 0}));
 }
 
 } // namespace

@@ -20,6 +20,7 @@
 #endif
 
 #include <algorithm>
+#include <atomic>
 #include <array>
 #include <cmath>
 #include <cstdint>
@@ -164,10 +165,13 @@ void AppendUtf8(std::string& out, const char32_t cp) {
 
 /// Logical UI scale: 1.0 on desktop (pixel-exact), or the display density scale on single-surface
 /// mobile screens, clamped so the shorter logical edge stays at least 360 layout units wide.
+std::atomic<float> g_userInterfaceScale{1.0F};
+
 [[nodiscard]] float ComputeUiScale(GLFWwindow* const window, const int fbWidth, const int fbHeight,
                                       const bool singleSurface) {
+    const float user = g_userInterfaceScale.load();
     if (!singleSurface || window == nullptr || fbWidth <= 0 || fbHeight <= 0) {
-        return 1.0F;
+        return user;
     }
     float sx = 1.0F;
     float sy = 1.0F;
@@ -175,7 +179,7 @@ void AppendUtf8(std::string& out, const char32_t cp) {
     const float rawScale = std::isfinite(sx) && sx > 0.0F ? sx : 1.0F;
     constexpr float kMinLogicalShortEdge = 500.0F;
     const float maxScale = std::max(1.0F, static_cast<float>(std::min(fbWidth, fbHeight)) / kMinLogicalShortEdge);
-    return std::clamp(rawScale, 1.0F, maxScale);
+    return std::clamp(std::clamp(rawScale, 1.0F, maxScale) * user, 0.4F, 4.0F);
 }
 
 } // namespace
@@ -1307,7 +1311,7 @@ void EditorHost::ApplyPageLayout(Window& w) {
     if (!w.page || m_main == nullptr) {
         return;
     }
-    const float scale = std::max(1.0F, m_main->uiScale);
+    const float scale = std::max(0.4F, m_main->uiScale);
     int targetUiW = m_main->uiWidth;
     int targetUiH = m_main->uiHeight;
     if (w.pageFloating) {
@@ -1412,7 +1416,7 @@ EditorViewportInput EditorHost::CaptureViewInput(const int id, const prism::Rect
         return input;
     }
     const Window& w = *found;
-    const float scale = std::max(1.0F, w.uiScale);
+    const float scale = std::max(0.4F, w.uiScale);
     const bool inside = w.mouseInside && w.mouse.x >= rect.x && w.mouse.y >= rect.y && w.mouse.x < rect.x + rect.w &&
                         w.mouse.y < rect.y + rect.h;
     // A floating panel (Details torn off, ...) leaves the viewport usable; a menu or a modal does not.
@@ -2034,6 +2038,10 @@ bool EditorHost::IsAnyWindowFocused() const {
         }
     }
     return false;
+}
+
+void SetUserInterfaceScale(const float scale) {
+    g_userInterfaceScale.store(std::isfinite(scale) ? std::clamp(scale, 0.4F, 4.0F) : 1.0F);
 }
 
 } // namespace UVE::Editor

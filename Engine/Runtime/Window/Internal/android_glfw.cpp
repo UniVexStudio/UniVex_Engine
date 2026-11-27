@@ -147,6 +147,24 @@ void DispatchAndroidGlfwMouseButton(const int button, const bool down, const flo
     }
 }
 
+void DispatchAndroidGlfwMouseButtonRelease(const int button) {
+    if (button < 0 || button > GLFW_MOUSE_BUTTON_LAST) {
+        return;
+    }
+    GLFWwindow& w = g_window;
+    auto& held = w.buttons[static_cast<std::size_t>(button)];
+    if (!held) {
+        return;
+    }
+    held = false;
+    if (button == GLFW_MOUSE_BUTTON_LEFT) {
+        w.pressed = false;
+    }
+    if (w.mouseButton != nullptr) {
+        w.mouseButton(&w, button, GLFW_RELEASE, g_heldMods | g_stickyMods);
+    }
+}
+
 void DispatchAndroidGlfwScroll(const float dy, const float dx) {
     if (g_window.scroll != nullptr) {
         g_window.scroll(&g_window, static_cast<double>(dx), static_cast<double>(dy));

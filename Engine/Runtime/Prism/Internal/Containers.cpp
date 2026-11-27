@@ -471,7 +471,7 @@ Reply ScrollView::onPreviewMouseMove(const MouseEvent& e) {
   if (std::abs(e.pos.y - m_touchStartY) >= kTouchScrollSlop) {
     m_touchDragging = true;
     const uint64_t now = Application::exists() ? Application::get().platform().nowMs() : 0;
-    const float dy = e.pos.y - m_touchLastY;
+    const float dy = std::clamp(e.pos.y - m_touchLastY, -kTouchScrollSlop * 4.0f, kTouchScrollSlop * 4.0f);
     const float dt = std::clamp(float(now - m_touchLastMs) * 0.001f, 0.004f, 0.08f);
     m_touchLastY = e.pos.y;
     m_touchLastMs = now;

@@ -45,6 +45,10 @@ inline constexpr int kExtraCaptionId = 100;
     return kExtraCaptionId + (window * 100) + n;
 }
 
+/// The user's interface zoom on top of the display's own scale (1.0 = 100%), applied live; the Hub
+/// hands it over with --ui-scale.
+void SetUserInterfaceScale(float scale);
+
 class EditorHost final {
 public:
     /// Files dragged from the system's file manager and dropped on the main window (desktop).
