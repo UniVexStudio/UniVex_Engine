@@ -181,16 +181,18 @@ prism::Ref<prism::Widget> EditorSequencerPanel::Build() {
 }
 
 prism::Ref<prism::Widget> EditorSequencerPanel::BuildToolbar() {
-    auto row = prism::hbox(3.0F);
-    row->setPadding(prism::Margin(6.0F, 3.0F, 6.0F, 3.0F));
+    m_compactToolbar = prism::Application::exists() && prism::Application::get().platform().singleSurface();
+    const bool compact = m_compactToolbar;
+    auto row = prism::hbox(compact ? 2.0F : 3.0F);
+    row->setPadding(prism::Margin(compact ? 4.0F : 6.0F, 3.0F, compact ? 4.0F : 6.0F, 3.0F));
     m_playerButton = ToolButton(prism::Icon::None, "The AnimationSequencer shown (selecting one in Components picks it too)",
                                    "Player");
-    m_playerButton->setMaxSize(120.0F, 26.0F);
+    m_playerButton->setMaxSize(compact ? 72.0F : 84.0F, 26.0F);
     m_playerButton->onClick = [this] { ShowPlayerMenu(); };
     row->add(m_playerButton, CentreSlot());
     m_clipButton = ToolButton(prism::Icon::AnimClip, "This player's animations: switch, new, add, load or export a library, rename",
                                  "No animation");
-    m_clipButton->setMaxSize(168.0F, 26.0F);
+    m_clipButton->setMaxSize(compact ? 92.0F : 104.0F, 26.0F);
     m_clipButton->onClick = [this] { ShowClipMenu(); };
     row->add(m_clipButton, CentreSlot());
     row->add(HSeparator(), CentreSlot());
@@ -221,16 +223,17 @@ prism::Ref<prism::Widget> EditorSequencerPanel::BuildToolbar() {
     m_clock = prism::make<prism::Label>("0 / 0", prism::FontRole::Mono);
     m_clock->setTooltip("The playhead's frame / the clip's frames, and its time");
     auto clockBox = prism::make<prism::SizeBox>();
-    clockBox->setWidthOverride(128.0F);
+    clockBox->setWidthOverride(compact ? 78.0F : 92.0F);
     clockBox->setContent(m_clock);
     row->add(clockBox, CentreSlot());
     row->add(HSeparator(), CentreSlot());
     m_recordButton = ToolButton(prism::Icon::Dot, "Record: move the animated object (gizmo or Inspector) and its transform is keyed "
-                                                     "at the playhead", "Rec");
+                                                     "at the playhead", compact ? "" : "Rec");
     m_recordButton->setCheckable(true);
     m_recordButton->onClick = [this] { m_editor.SetAnimationTimelineRecording(!m_editor.m_timeline.recording); };
     row->add(m_recordButton, CentreSlot());
-    m_keyButton = ToolButton(prism::Icon::Key, "Add a key at the playhead: the selected bone, else the selected object (the animated one or one under it) (K)", "Key");
+    m_keyButton = ToolButton(prism::Icon::Key, "Add a key at the playhead: the selected bone, else the selected object (the animated one or one under it) (K)",
+                             compact ? "" : "Key");
     m_keyButton->onClick = [this] {
         // A bone's row selected keys that bone; otherwise the object the clip moves, as it stands.
         if (m_editor.m_timeline.clip != nullptr && !m_editor.m_selectedSkeletonBone.empty()) {
@@ -264,7 +267,7 @@ prism::Ref<prism::Widget> EditorSequencerPanel::BuildToolbar() {
     row->add(redo, CentreSlot());
     row->add(prism::make<prism::Spacer>(), prism::Slot{1.0F});
 
-    m_dopeButton = ToolButton(prism::Icon::DopeSheet, "Dope Sheet: keys per bone and channel", "Dope");
+    m_dopeButton = ToolButton(prism::Icon::DopeSheet, "Dope Sheet: keys per bone and channel", compact ? "" : "Dope");
     m_dopeButton->setCheckable(true);
     m_dopeButton->onClick = [this] {
         m_editor.m_timeline.curves = false;
@@ -272,7 +275,8 @@ prism::Ref<prism::Widget> EditorSequencerPanel::BuildToolbar() {
             m_keys->invalidate();
         }
     };
-    m_curvesButton = ToolButton(prism::Icon::Curve, "The selected bone's values over time; drag a point to change it", "Curves");
+    m_curvesButton = ToolButton(prism::Icon::Curve, "The selected bone's values over time; drag a point to change it",
+                                compact ? "" : "Curves");
     m_curvesButton->setCheckable(true);
     m_curvesButton->onClick = [this] {
         m_editor.m_timeline.curves = true;
@@ -415,9 +419,13 @@ void EditorSequencerPanel::Refresh(const double deltaSeconds, const bool shown) 
     }
     char clock[64];
     if (state.clockInSeconds) {
-        std::snprintf(clock, sizeof(clock), "%.2f / %.2f s", state.timeSeconds, view.durationSeconds);
+        std::snprintf(clock, sizeof(clock), m_compactToolbar ? "%.2f/%.2fs" : "%.2f / %.2f s",
+                      state.timeSeconds, view.durationSeconds);
+    } else if (m_compactToolbar) {
+        std::snprintf(clock, sizeof(clock), "%ld / %ld", std::lround(state.timeSeconds * view.frameRate),
+                      std::lround(view.durationSeconds * view.frameRate));
     } else {
-        std::snprintf(clock, sizeof(clock), "%ld / %ld   %.2f s", std::lround(state.timeSeconds * view.frameRate),
+        std::snprintf(clock, sizeof(clock), "%ld / %ld %.2fs", std::lround(state.timeSeconds * view.frameRate),
                       std::lround(view.durationSeconds * view.frameRate), state.timeSeconds);
     }
     // While playing, the keys follow the playhead: a page on when it runs off the right edge.
@@ -449,7 +457,23 @@ void EditorSequencerPanel::Refresh(const double deltaSeconds, const bool shown) 
         m_shownStatus = status;
         m_status->setText(status);
     }
-    if (m_keys) {
+    const bool keysChanged =
+        state.playing || view.clip != m_lastKeysClip || state.timeSeconds != m_lastKeysTime ||
+        state.curves != m_lastKeysCurves || state.playing != m_lastKeysPlaying ||
+        state.dirty != m_lastKeysDirty || state.selectedKeys.size() != m_lastKeysSelection ||
+        state.selectedEvent != m_lastKeysEvent || state.filter != m_lastKeysFilter ||
+        state.loadError != m_lastKeysError || view.player != m_lastKeysPlayer;
+    if (m_keys && keysChanged) {
+        m_lastKeysClip = view.clip;
+        m_lastKeysTime = state.timeSeconds;
+        m_lastKeysCurves = state.curves;
+        m_lastKeysPlaying = state.playing;
+        m_lastKeysDirty = state.dirty;
+        m_lastKeysSelection = state.selectedKeys.size();
+        m_lastKeysEvent = state.selectedEvent;
+        m_lastKeysFilter = state.filter;
+        m_lastKeysError = state.loadError;
+        m_lastKeysPlayer = view.player;
         m_keys->invalidate();
     }
 }
@@ -459,10 +483,15 @@ void EditorSequencerPanel::Refresh(const double deltaSeconds, const bool shown) 
 void EditorSequencerPanel::ShowPlayerMenu() {
     const Editor::AnimationTimelineView& view = Resync();
     const Scene::IEntityManager& em = m_editor.m_services->GetEntityManager();
+    std::weak_ptr<bool> alive = m_alive;
     std::vector<prism::MenuItem> items;
     for (const Scene::Entity player : view.players) {
         items.push_back(prism::MenuItem::Check(NameOf(em, player), player == view.player,
-                                               [this, player] { m_editor.SelectEntity(player); }));
+                                               [this, alive, player] {
+                                                   if (!alive.expired()) {
+                                                       m_editor.SelectEntity(player);
+                                                   }
+                                               }));
     }
     if (m_playerButton) {
         const prism::Rect r = m_playerButton->rect();
@@ -472,6 +501,9 @@ void EditorSequencerPanel::ShowPlayerMenu() {
 
 void EditorSequencerPanel::ShowClipMenu() {
     const Editor::AnimationTimelineView& view = Resync();
+    if (m_editor.m_services == nullptr) {
+        return;
+    }
     Scene::IEntityManager& em = m_editor.m_services->GetEntityManager();
     if (view.player == Scene::kInvalidEntity || !em.IsAlive(view.player) ||
         !em.HasComponent<Scene::AnimationSequencerComponent>(view.player)) {
@@ -482,13 +514,34 @@ void EditorSequencerPanel::ShowClipMenu() {
     m_editor.RefreshSequencerLinkedClips(player);
     const Asset::AssetGuid activeClip = em.GetComponent<Scene::AnimationSequencerComponent>(player).clip;
     const Asset::AssetGuid activeLibraryRef = em.GetComponent<Scene::AnimationSequencerComponent>(player).libraryRef;
+    std::weak_ptr<bool> alive = m_alive;
 
+    // Never read/parse every clip file synchronously on menu open (causes OOM/ANR on large
+    // libraries or multi-MB .uvmodel embedded takes on Android). Use cached ClipCards when present
+    // and display the resolved asset name immediately otherwise.
     const auto clipItem = [&](const Asset::AssetGuid guid) {
-        const Editor::AnimationTimelineState::ClipCard& card = m_editor.AnimationTimelineClipCard(guid);
-        char right[48];
-        std::snprintf(right, sizeof(right), "%s  %.2f s", card.skeletal ? "bones" : "object", card.durationSeconds);
-        return prism::MenuItem::Check(card.name, guid == activeClip,
-                                      [this, player, guid] { m_editor.ChooseAnimationTimelineClip(player, guid); }, right);
+        std::string label;
+        std::string right;
+        const auto cached = m_editor.m_timeline.clipCards.find(guid.value);
+        if (cached != m_editor.m_timeline.clipCards.end() && !cached->second.name.empty()) {
+            label = cached->second.name;
+            if (cached->second.readable) {
+                char buf[48];
+                std::snprintf(buf, sizeof(buf), "%s  %.2f s", cached->second.skeletal ? "bones" : "object",
+                              cached->second.durationSeconds);
+                right = buf;
+            }
+        } else {
+            const std::filesystem::path resolved = m_editor.m_services->GetAssetDatabase().Resolve(guid);
+            label = resolved.empty() ? std::string{"(missing clip)"} : Asset::AssetDisplayName(resolved);
+        }
+        return prism::MenuItem::Check(std::move(label), guid == activeClip,
+                                      [this, alive, player, guid] {
+                                          if (!alive.expired()) {
+                                              m_editor.ChooseAnimationTimelineClip(player, guid);
+                                          }
+                                      },
+                                      std::move(right));
     };
     std::vector<prism::MenuItem> items;
     const std::vector<Asset::AssetGuid> own = m_editor.AnimationTimelineOwnClips(player);
@@ -510,114 +563,164 @@ void EditorSequencerPanel::ShowClipMenu() {
     // The current clip's own commands.
     if (activeClip != Asset::AssetGuid{}) {
         const Asset::AssetGuid current = activeClip;
-        const bool readable = m_editor.AnimationTimelineClipCard(current).readable;
+        const bool readable = m_editor.m_timeline.clip != nullptr || m_editor.AnimationTimelineClipCard(current).readable;
         std::vector<prism::MenuItem> clipMenu;
-        clipMenu.push_back(prism::MenuItem::Item("Rename...", [this] {
+        clipMenu.push_back(prism::MenuItem::Item("Rename...", [this, alive] {
+            if (alive.expired() || m_editor.m_services == nullptr) {
+                return;
+            }
             const std::string name = Asset::AssetDisplayName(m_editor.m_services->GetAssetDatabase().Resolve(m_editor.m_timeline.clipGuid));
-            AskName("Animation Name", name, [this](const std::string& to) { static_cast<void>(m_editor.RenameAnimationTimelineClip(to)); });
+            AskName("Animation Name", name, [this, alive](const std::string& to) {
+                if (!alive.expired()) {
+                    static_cast<void>(m_editor.RenameAnimationTimelineClip(to));
+                }
+            });
         }));
         clipMenu.back().enabled = m_editor.m_timeline.clip != nullptr;
-        clipMenu.push_back(prism::MenuItem::Item("Duplicate", [this, player, current] { m_editor.DuplicateAnimationTimelineClip(player, current); },
-                                                 "", prism::Icon::Duplicate));
+        clipMenu.push_back(prism::MenuItem::Item("Duplicate", [this, alive, player, current] {
+            if (!alive.expired()) {
+                m_editor.DuplicateAnimationTimelineClip(player, current);
+            }
+        }, "", prism::Icon::Duplicate));
         clipMenu.back().enabled = readable;
         clipMenu.push_back(prism::MenuItem::Sep());
-        clipMenu.push_back(prism::MenuItem::Item("Remove from Player", [this, player, current] { m_editor.RemoveAnimationTimelineClip(player, current); },
-                                                 "", prism::Icon::Trash));
+        clipMenu.push_back(prism::MenuItem::Item("Remove from Player", [this, alive, player, current] {
+            if (!alive.expired()) {
+                m_editor.RemoveAnimationTimelineClip(player, current);
+            }
+        }, "", prism::Icon::Trash));
         items.push_back(prism::MenuItem::Sep());
         items.push_back(prism::MenuItem::Sub("Current Animation", std::move(clipMenu), prism::Icon::AnimClip));
     }
 
     items.push_back(prism::MenuItem::Sep());
-    items.push_back(prism::MenuItem::Item("New Animation", [this, player, skeleton] {
+    items.push_back(prism::MenuItem::Item("New Animation", [this, alive, player, skeleton] {
+        if (alive.expired() || m_editor.m_services == nullptr) {
+            return;
+        }
         if (m_editor.CreateAnimationTimelineClip(player, skeleton)) {
             Resync();
             const std::string name = Asset::AssetDisplayName(m_editor.m_services->GetAssetDatabase().Resolve(m_editor.m_timeline.clipGuid));
-            AskName("Animation Name", name, [this](const std::string& to) { static_cast<void>(m_editor.RenameAnimationTimelineClip(to)); });
+            AskName("Animation Name", name, [this, alive](const std::string& to) {
+                if (!alive.expired()) {
+                    static_cast<void>(m_editor.RenameAnimationTimelineClip(to));
+                }
+            });
         }
     }, "", prism::Icon::Plus));
 
-    // Any clip or library in Content: the file dialog, or straight from the quick list.
+    // Any library in Content: quick submenu; project-wide clips are built lazily only when "Add Animation..." is clicked.
     const Asset::ProjectFileSnapshot project = m_editor.m_services->GetProjectFileIndex().GetSnapshot();
-    std::vector<prism::MenuItem> addMenu;
-    addMenu.push_back(prism::MenuItem::Item("Browse...", [this, player] {
-        m_editor.BrowseAnimationTimeline(player, Editor::AnimationTimelineBrowse::AddClip);
-    }, "", prism::Icon::Browse));
     std::vector<prism::MenuItem> libraryMenu;
-    libraryMenu.push_back(prism::MenuItem::Item("Browse...", [this, player] {
-        m_editor.BrowseAnimationTimeline(player, Editor::AnimationTimelineBrowse::ImportLibrary);
+    libraryMenu.push_back(prism::MenuItem::Item("Browse...", [this, alive, player] {
+        if (!alive.expired()) {
+            m_editor.BrowseAnimationTimeline(player, Editor::AnimationTimelineBrowse::ImportLibrary);
+        }
     }, "", prism::Icon::Browse));
-    bool anyClip = false;
     bool anyLibrary = false;
     for (const Asset::ProjectFileEntry& entry : project.entries) {
         if (entry.kind != Asset::ProjectFileEntryKind::File) {
             continue;
         }
+        if (Utf8GenericOf(entry.relativePath.extension()) != ".uvanimlib") {
+            continue;
+        }
+        if (!anyLibrary) {
+            libraryMenu.push_back(prism::MenuItem::Sep());
+            anyLibrary = true;
+        }
         const std::string folder = Utf8GenericOf(entry.relativePath.parent_path());
         const std::filesystem::path absolute = project.contentRoot / entry.relativePath;
-        const std::string ext = Utf8GenericOf(entry.relativePath.extension());
-        if (ext == ".uvanim") {
-            const bool listed = entry.registeredAssetGuid.has_value() && std::ranges::find(own, *entry.registeredAssetGuid) != own.end();
-            if (listed) {
+        libraryMenu.push_back(prism::MenuItem::Item(Utf8Of(entry.relativePath.stem()), [this, alive, player, absolute] {
+            if (!alive.expired()) {
+                static_cast<void>(m_editor.ImportAnimationLibraryIntoSequencer(player, absolute));
+            }
+        }, folder.empty() ? "Content" : folder));
+    }
+    if (!anyLibrary) {
+        libraryMenu.push_back(prism::MenuItem::Item("None", {}).disabled());
+    }
+    // A project may hold thousands of clips: build the searchable list lazily on click, never inside ShowClipMenu.
+    items.push_back(prism::MenuItem::Item("Add Animation...", [this, alive, player] {
+        if (alive.expired() || !m_clipButton || m_editor.m_services == nullptr) {
+            return;
+        }
+        const std::vector<Asset::AssetGuid> currentOwn = m_editor.AnimationTimelineOwnClips(player);
+        const Asset::ProjectFileSnapshot snapshot = m_editor.m_services->GetProjectFileIndex().GetSnapshot();
+        std::vector<prism::MenuItem> addMenu;
+        addMenu.push_back(prism::MenuItem::Item("Browse...", [this, alive, player] {
+            if (!alive.expired()) {
+                m_editor.BrowseAnimationTimeline(player, Editor::AnimationTimelineBrowse::AddClip);
+            }
+        }, "", prism::Icon::Browse));
+        bool anyClip = false;
+        for (const Asset::ProjectFileEntry& entry : snapshot.entries) {
+            if (entry.kind != Asset::ProjectFileEntryKind::File ||
+                Utf8GenericOf(entry.relativePath.extension()) != ".uvanim") {
+                continue;
+            }
+            if (entry.registeredAssetGuid.has_value() &&
+                std::ranges::find(currentOwn, *entry.registeredAssetGuid) != currentOwn.end()) {
                 continue;
             }
             if (!anyClip) {
                 addMenu.push_back(prism::MenuItem::Sep());
                 anyClip = true;
             }
-            addMenu.push_back(prism::MenuItem::Item(Utf8Of(entry.relativePath.stem()), [this, player, absolute] {
-                static_cast<void>(m_editor.AddClipToAnimationSequencer(player, absolute));
-            }, folder.empty() ? "Content" : folder));
-        } else if (ext == ".uvanimlib") {
-            if (!anyLibrary) {
-                libraryMenu.push_back(prism::MenuItem::Sep());
-                anyLibrary = true;
-            }
-            libraryMenu.push_back(prism::MenuItem::Item(Utf8Of(entry.relativePath.stem()), [this, player, absolute] {
-                static_cast<void>(m_editor.ImportAnimationLibraryIntoSequencer(player, absolute));
+            const std::string folder = Utf8GenericOf(entry.relativePath.parent_path());
+            const std::filesystem::path absolute = snapshot.contentRoot / entry.relativePath;
+            addMenu.push_back(prism::MenuItem::Item(Utf8Of(entry.relativePath.stem()), [this, alive, player, absolute] {
+                if (!alive.expired()) {
+                    static_cast<void>(m_editor.AddClipToAnimationSequencer(player, absolute));
+                }
             }, folder.empty() ? "Content" : folder));
         }
-    }
-    // The takes kept inside the project's models.
-    for (const Asset::AssetRecord& record : m_editor.m_services->GetAssetDatabase().GetRegisteredAssets()) {
-        std::filesystem::path model;
-        std::string take;
-        if (!Asset::SplitEmbeddedClipPath(record.path, model, take) || std::ranges::find(own, record.guid) != own.end()) {
-            continue;
+        for (const Asset::AssetRecord& record : m_editor.m_services->GetAssetDatabase().GetRegisteredAssets()) {
+            std::filesystem::path model;
+            std::string take;
+            if (!Asset::SplitEmbeddedClipPath(record.path, model, take) ||
+                std::ranges::find(currentOwn, record.guid) != currentOwn.end()) {
+                continue;
+            }
+            if (!anyClip) {
+                addMenu.push_back(prism::MenuItem::Sep());
+                anyClip = true;
+            }
+            const std::filesystem::path absolute = record.path;
+            addMenu.push_back(prism::MenuItem::Item(Asset::AssetDisplayName(absolute), [this, alive, player, absolute] {
+                if (!alive.expired()) {
+                    static_cast<void>(m_editor.AddClipToAnimationSequencer(player, absolute));
+                }
+            }, "Models"));
         }
         if (!anyClip) {
-            addMenu.push_back(prism::MenuItem::Sep());
-            anyClip = true;
+            addMenu.push_back(prism::MenuItem::Item("None", {}).disabled());
         }
-        const std::filesystem::path absolute = record.path;
-        addMenu.push_back(prism::MenuItem::Item(Asset::AssetDisplayName(absolute), [this, player, absolute] {
-            static_cast<void>(m_editor.AddClipToAnimationSequencer(player, absolute));
-        }, "Models"));
-    }
-    if (!anyClip) {
-        addMenu.push_back(prism::MenuItem::Item("None", {}).disabled());
-    }
-    if (!anyLibrary) {
-        libraryMenu.push_back(prism::MenuItem::Item("None", {}).disabled());
-    }
-    // A project may hold thousands of clips: a searchable list, not a submenu.
-    items.push_back(prism::MenuItem::Item("Add Animation...", [this, addMenu = std::move(addMenu)]() mutable {
-        if (m_clipButton) {
-            const prism::Rect r = m_clipButton->rect();
-            prism::showSearchMenu(std::move(addMenu), r, prism::PopupPlacement::Below, "Search animations");
-        }
+        const prism::Rect r = m_clipButton->rect();
+        prism::showSearchMenu(std::move(addMenu), r, prism::PopupPlacement::Below, "Search animations");
     }, "", prism::Icon::FolderOpen));
     items.push_back(prism::MenuItem::Sep());
     items.push_back(prism::MenuItem::Sub("Load Library", std::move(libraryMenu), prism::Icon::AnimLibrary));
     if (activeLibraryRef == Asset::AssetGuid{}) {
-        items.push_back(prism::MenuItem::Item("Link Library...", [this, player] {
-            m_editor.BrowseAnimationTimeline(player, Editor::AnimationTimelineBrowse::LinkLibrary);
+        items.push_back(prism::MenuItem::Item("Link Library...", [this, alive, player] {
+            if (!alive.expired()) {
+                m_editor.BrowseAnimationTimeline(player, Editor::AnimationTimelineBrowse::LinkLibrary);
+            }
         }));
     } else {
         const std::filesystem::path linked = m_editor.m_services->GetAssetDatabase().Resolve(activeLibraryRef);
         items.push_back(prism::MenuItem::Item(linked.empty() ? std::string{"Unlink Library"} : "Unlink " + Utf8Of(linked.stem()),
-                                              [this, player] { static_cast<void>(m_editor.UnlinkAnimationLibraryFromSequencer(player)); }));
+                                              [this, alive, player] {
+                                                  if (!alive.expired()) {
+                                                      static_cast<void>(m_editor.UnlinkAnimationLibraryFromSequencer(player));
+                                                  }
+                                              }));
     }
-    items.push_back(prism::MenuItem::Item("Export Library...", [this] { ExportLibrary(); }, "", prism::Icon::Save));
+    items.push_back(prism::MenuItem::Item("Export Library...", [this, alive] {
+        if (!alive.expired()) {
+            ExportLibrary();
+        }
+    }, "", prism::Icon::Save));
     if (m_clipButton) {
         const prism::Rect r = m_clipButton->rect();
         prism::showContextMenu(std::move(items), prism::Vec2{r.x, r.bottom()});
@@ -626,23 +729,40 @@ void EditorSequencerPanel::ShowClipMenu() {
 
 void EditorSequencerPanel::ShowSettingsMenu() {
     Editor::AnimationTimelineState& state = m_editor.m_timeline;
+    std::weak_ptr<bool> alive = m_alive;
     std::vector<prism::MenuItem> speeds;
     for (const double rate : {0.1, 0.25, 0.5, 1.0, 1.5, 2.0}) {
         char label[16];
         std::snprintf(label, sizeof(label), "%gx", rate);
-        speeds.push_back(prism::MenuItem::Check(label, std::abs(state.playbackRate - rate) < 1e-6, [this, rate] { m_editor.m_timeline.playbackRate = rate; }));
+        speeds.push_back(prism::MenuItem::Check(label, std::abs(state.playbackRate - rate) < 1e-6, [this, alive, rate] {
+            if (!alive.expired()) {
+                m_editor.m_timeline.playbackRate = rate;
+            }
+        }));
     }
     std::vector<prism::MenuItem> items;
     items.push_back(prism::MenuItem::Sub("Playback Speed", std::move(speeds), prism::Icon::Play));
-    items.push_back(prism::MenuItem::Check("Follow Playhead", state.followPlayhead,
-                                           [this] { m_editor.m_timeline.followPlayhead = !m_editor.m_timeline.followPlayhead; }));
-    items.push_back(prism::MenuItem::Check("Snap to Frames", state.snapToFrames,
-                                           [this] { m_editor.m_timeline.snapToFrames = !m_editor.m_timeline.snapToFrames; }));
-    items.push_back(prism::MenuItem::Check("Show Time in Seconds", state.clockInSeconds,
-                                           [this] { m_editor.m_timeline.clockInSeconds = !m_editor.m_timeline.clockInSeconds; }));
+    items.push_back(prism::MenuItem::Check("Follow Playhead", state.followPlayhead, [this, alive] {
+        if (!alive.expired()) {
+            m_editor.m_timeline.followPlayhead = !m_editor.m_timeline.followPlayhead;
+        }
+    }));
+    items.push_back(prism::MenuItem::Check("Snap to Frames", state.snapToFrames, [this, alive] {
+        if (!alive.expired()) {
+            m_editor.m_timeline.snapToFrames = !m_editor.m_timeline.snapToFrames;
+        }
+    }));
+    items.push_back(prism::MenuItem::Check("Show Time in Seconds", state.clockInSeconds, [this, alive] {
+        if (!alive.expired()) {
+            m_editor.m_timeline.clockInSeconds = !m_editor.m_timeline.clockInSeconds;
+        }
+    }));
     items.push_back(prism::MenuItem::Sep());
-    items.push_back(prism::MenuItem::Check("Record (key what is moved)", state.recording,
-                                           [this] { m_editor.SetAnimationTimelineRecording(!m_editor.m_timeline.recording); }));
+    items.push_back(prism::MenuItem::Check("Record (key what is moved)", state.recording, [this, alive] {
+        if (!alive.expired()) {
+            m_editor.SetAnimationTimelineRecording(!m_editor.m_timeline.recording);
+        }
+    }));
     if (m_settingsButton) {
         const prism::Rect r = m_settingsButton->rect();
         prism::showContextMenu(std::move(items), prism::Vec2{r.x, r.bottom()});
@@ -655,8 +775,9 @@ void EditorSequencerPanel::ExportLibrary() {
         return;
     }
     const Scene::Entity player = view.player;
-    AskName("Export Animation Library", "Animation Library", [this, player](const std::string& name) {
-        if (name.empty()) {
+    std::weak_ptr<bool> alive = m_alive;
+    AskName("Export Animation Library", "Animation Library", [this, alive, player](const std::string& name) {
+        if (alive.expired() || name.empty() || m_editor.m_services == nullptr) {
             return;
         }
         // Beside the player's current clip, else at the top of Content.
@@ -669,8 +790,9 @@ void EditorSequencerPanel::ExportLibrary() {
         if (!clip.empty() && !Asset::SplitEmbeddedClipPath(clip, model, take)) {
             folder = clip.parent_path();
         }
+        std::error_code ec;
         std::filesystem::path target = folder / (name + ".uvanimlib");
-        for (int n = 2; std::filesystem::exists(target); ++n) {
+        for (int n = 2; std::filesystem::exists(target, ec) && !ec && n < 10000; ++n) {
             target = folder / (name + " " + std::to_string(n) + ".uvanimlib");
         }
         static_cast<void>(m_editor.ExportAnimationSequencerToLibrary(player, target));

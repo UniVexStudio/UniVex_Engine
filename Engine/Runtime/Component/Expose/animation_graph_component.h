@@ -427,6 +427,8 @@ struct AnimationGraphComponent final {
     std::vector<AnimationGraphSlotPose> slotPoses;
     /// True when the last step had a Slot node that took a montage's pose.
     bool slotUsed = false;
+    /// Cached hash of node IDs/kinds/wiring from the last validated RunTree step; never saved.
+    std::uint64_t topologyHash = 0U;
 
     [[nodiscard]] static std::vector<AnimationGraphNode> MakeDefaultAnimationGraph() {
         AnimationGraphNode output;

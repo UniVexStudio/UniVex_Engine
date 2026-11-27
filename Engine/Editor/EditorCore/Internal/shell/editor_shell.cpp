@@ -1321,11 +1321,11 @@ void EditorShell::Frame() {
             }
         }
     } frameTimer{*this, frameStart};
-    RefreshOutliner();
-    RefreshDetails();
-    RefreshToolbar();
-    m_assetTable.Refresh();
-    {
+    if (!m_host.HasOpaqueFullPage()) {
+        RefreshOutliner();
+        RefreshDetails();
+        RefreshToolbar();
+        m_assetTable.Refresh();
         const int page = m_dockPages ? m_dockPages->activeIndex() : 0;
         m_dockPanels.Refresh(m_dockVisible && page == 2, m_dockVisible && page == 3, m_host.GpuFrameMs());
     }

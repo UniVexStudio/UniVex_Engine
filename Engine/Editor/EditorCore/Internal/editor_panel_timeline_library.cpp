@@ -21,6 +21,7 @@
 #include <string>
 #include <string_view>
 #include <system_error>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -410,8 +411,43 @@ const Editor::AnimationTimelineState::ClipCard& Editor::AnimationTimelineClipCar
     card.path = resolved;
     card.written = written;
     card.hasWritten = hasWritten;
-    const Asset::AnimationClipSummary summary =
-        resolved.empty() ? Asset::AnimationClipSummary{} : Asset::InspectAnimationClipFileSummary(resolved);
+    Asset::AnimationClipSummary summary{};
+    if (!model.empty() && !take.empty()) {
+        std::vector<std::pair<std::string, Asset::AnimationClipSummary>> summaries;
+        if (Asset::InspectModelAnimationsSummary(model, summaries)) {
+            std::unordered_map<std::string_view, const Asset::AnimationClipSummary*> byTake;
+            byTake.reserve(summaries.size());
+            for (const auto& [name, item] : summaries) {
+                byTake.emplace(name, &item);
+                if (name == take) {
+                    summary = item;
+                }
+            }
+            for (const Asset::AssetRecord& record : m_services->GetAssetDatabase().GetRegisteredAssets()) {
+                std::filesystem::path recModel;
+                std::string recTake;
+                if (record.guid == guid || !Asset::SplitEmbeddedClipPath(record.path, recModel, recTake) ||
+                    recModel != model) {
+                    continue;
+                }
+                AnimationTimelineState::ClipCard sibling;
+                sibling.path = record.path;
+                sibling.written = written;
+                sibling.hasWritten = hasWritten;
+                if (const auto it = byTake.find(recTake); it != byTake.end() && it->second->valid) {
+                    sibling.readable = true;
+                    sibling.name = Asset::AssetDisplayName(record.path);
+                    sibling.durationSeconds = it->second->durationSeconds;
+                    sibling.skeletal = it->second->hasBones;
+                } else {
+                    sibling.name = Asset::AssetDisplayName(record.path) + " (unreadable)";
+                }
+                m_timeline.clipCards.insert_or_assign(record.guid.value, std::move(sibling));
+            }
+        }
+    } else if (!resolved.empty()) {
+        summary = Asset::InspectAnimationClipFileSummary(resolved);
+    }
     if (summary.valid) {
         card.readable = true;
         card.name = Asset::AssetDisplayName(resolved);

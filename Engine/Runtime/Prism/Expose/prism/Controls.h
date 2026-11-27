@@ -14,10 +14,10 @@ public:
   explicit Label(std::string text = "", FontRole f = FontRole::Regular);
   void setText(std::string t);
   const std::string& text() const { return m_text; }
-  void setColor(ThemeColor c) { m_color = c; invalidate(); }
-  void setFont(FontRole f) { m_font = f; relayout(); }
-  void setAlign(HAlign a) { m_align = a; invalidate(); }
-  void setPadding(Margin m) { m_pad = m; relayout(); }
+  void setColor(ThemeColor c) { if (m_color == c) return; m_color = c; invalidate(); }
+  void setFont(FontRole f) { if (m_font == f) return; m_font = f; relayout(); }
+  void setAlign(HAlign a) { if (m_align == a) return; m_align = a; invalidate(); }
+  void setPadding(Margin m) { if (m_pad == m) return; m_pad = m; relayout(); }
   Vec2 measure(Vec2 avail) override;
   void paint(Canvas& c) override;
   bool hitSelf() const override { return !m_tooltip.empty(); }
@@ -36,18 +36,18 @@ enum class ButtonStyle { Default, Primary, Flat, Toolbar, Success };   // Succes
 class Button : public Widget {
 public:
   explicit Button(std::string text = "", Icon icon = Icon::None, ButtonStyle st = ButtonStyle::Default);
-  void setText(std::string t) { m_text = std::move(t); relayout(); }
+  void setText(std::string t) { if (m_text == t) return; m_text = std::move(t); relayout(); }
   const std::string& text() const { return m_text; }
   AccessRole accessRole() const override { return m_checkable ? AccessRole::ToggleButton : AccessRole::Button; }
   std::string accessName() const override { return !m_accessName.empty() ? m_accessName : !m_text.empty() ? m_text : m_tooltip; }
   bool accessChecked() const override { return m_checked; }
   bool accessActivate() override { KeyEvent k; k.key = Key::Space; return onKeyDown(k); }
   bool onKeyDown(const KeyEvent& e) override;
-  void setIcon(Icon i) { m_icon = i; relayout(); }
-  void setIconColor(ThemeColor c) { m_iconColor = c; m_hasIconColor = true; invalidate(); }
-  void setStyle(ButtonStyle s) { m_style = s; relayout(); }
+  void setIcon(Icon i) { if (m_icon == i) return; m_icon = i; relayout(); }
+  void setIconColor(ThemeColor c) { if (m_hasIconColor && m_iconColor == c) return; m_iconColor = c; m_hasIconColor = true; invalidate(); }
+  void setStyle(ButtonStyle s) { if (m_style == s) return; m_style = s; relayout(); }
   void setCheckable(bool c) { m_checkable = c; }
-  void setChecked(bool c) { m_checked = c; invalidate(); }
+  void setChecked(bool c) { if (m_checked == c) return; m_checked = c; invalidate(); }
   bool checked() const { return m_checked; }
   Callback<> onClick;
   Callback<bool> onToggle;
@@ -55,7 +55,7 @@ public:
   void paint(Canvas& c) override;
   bool onMouseDown(const MouseEvent& e) override;
   bool onMouseUp(const MouseEvent& e) override;
-  void onMouseLeave() override { m_pressed = false; invalidate(); }
+  void onMouseLeave() override { if (!m_pressed) return; m_pressed = false; invalidate(); }
   bool focusable() const override { return true; }
 private:
   std::string m_text;
@@ -74,7 +74,7 @@ public:
   bool accessChecked() const override { return m_checked; }
   bool accessActivate() override { setChecked(!m_checked, true); return true; }
   bool onKeyDown(const KeyEvent& e) override { if (e.key == Key::Space || e.key == Key::Enter) { setChecked(!m_checked, true); return true; } return false; }
-  void setChecked(bool c, bool notify = false) { m_checked = c; invalidate(); if (notify && onChange) onChange(c); }
+  void setChecked(bool c, bool notify = false) { if (m_checked == c && !notify) return; if (m_checked != c) { m_checked = c; invalidate(); } if (notify && onChange) onChange(c); }
   Callback<bool> onChange;
   bool focusable() const override { return true; }
   Vec2 measure(Vec2 avail) override;
@@ -93,15 +93,15 @@ public:
   Segmented& add(std::string text, Icon icon = Icon::None, std::string tip = "") {
     m_items.push_back({std::move(text), icon, std::move(tip)}); relayout(); return *this;
   }
-  void setSelected(int i, bool notify = false) { m_sel = i; invalidate(); if (notify && onSelect) onSelect(i); }
+  void setSelected(int i, bool notify = false) { if (m_sel == i && !notify) return; if (m_sel != i) { m_sel = i; invalidate(); } if (notify && onSelect) onSelect(i); }
   void setTip(int i, std::string tip) { if (i >= 0 && i < int(m_items.size())) m_items[size_t(i)].tip = std::move(tip); }
   int selected() const { return m_sel; }
   Callback<int> onSelect;
   Vec2 measure(Vec2 avail) override;
   void paint(Canvas& c) override;
   bool onMouseDown(const MouseEvent& e) override;
-  bool onMouseMove(const MouseEvent& e) override { m_hot = indexAt(e.pos); invalidate(); return false; }
-  void onMouseLeave() override { m_hot = -1; invalidate(); }
+  bool onMouseMove(const MouseEvent& e) override { int h = indexAt(e.pos); if (h != m_hot) { m_hot = h; invalidate(); } return false; }
+  void onMouseLeave() override { if (m_hot != -1) { m_hot = -1; invalidate(); } }
   const std::string& tooltipAt(Vec2 p) const override;
 private:
   int indexAt(Vec2 p) const;
@@ -119,8 +119,8 @@ public:
   bool accessValueEditable() const override { return true; }
   bool accessSetValue(const std::string& v) override { char* e = nullptr; float f = std::strtof(v.c_str(), &e); if (e == v.c_str()) return false; setValue(f, true); return true; }
   void setValue(float v, bool notify = false);
-  void setDecimals(int d) { m_dec = d; invalidate(); }
-  void setSuffix(std::string s) { m_suffix = std::move(s); invalidate(); }
+  void setDecimals(int d) { if (m_dec == d) return; m_dec = d; invalidate(); }
+  void setSuffix(std::string s) { if (m_suffix == s) return; m_suffix = std::move(s); invalidate(); }
   Callback<float> onChange;
   Callback<float> onCommit;
   Vec2 measure(Vec2) override { return m_desired = constrain({120, theme().controlH}); }
@@ -140,9 +140,9 @@ private:
 class ComboBox : public Widget {
 public:
   explicit ComboBox(std::vector<std::string> items = {}, int sel = 0) : m_items(std::move(items)), m_sel(sel) {}
-  void setItems(std::vector<std::string> v) { m_items = std::move(v); relayout(); }
+  void setItems(std::vector<std::string> v) { if (m_items == v) return; m_items = std::move(v); relayout(); }
   // Items that are shown but cannot be chosen (dimmed in the list; setSelected refuses them).
-  void setDisabledItems(std::vector<bool> d) { m_disabled = std::move(d); invalidate(); }
+  void setDisabledItems(std::vector<bool> d) { if (m_disabled == d) return; m_disabled = std::move(d); invalidate(); }
   bool isItemDisabled(int i) const { return i >= 0 && i < int(m_disabled.size()) && m_disabled[size_t(i)]; }
   void setSelected(int i, bool notify = false);
   int selected() const { return m_sel; }
@@ -165,7 +165,7 @@ private:
 
 class ProgressBar : public Widget {
 public:
-  void setValue(float v) { m_v = std::clamp(v, 0.f, 1.f); invalidate(); }
+  void setValue(float v) { float nv = std::clamp(v, 0.f, 1.f); if (m_v == nv) return; m_v = nv; invalidate(); }
   Vec2 measure(Vec2) override { return m_desired = constrain({80, 6}); }
   void paint(Canvas& c) override;
   bool hitSelf() const override { return false; }

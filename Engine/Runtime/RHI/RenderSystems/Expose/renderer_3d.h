@@ -69,11 +69,13 @@ public:
                                 std::uint32_t width = 0U, std::uint32_t height = 0U,
                                 std::uint32_t colorLayer = 0U, std::uint32_t depthLayer = 0U) override;
     void SetPostProcessSettings(const PostProcessSettings& settings) override;
+    [[nodiscard]] PostProcessSettings GetPostProcessSettings() const noexcept override;
     void SetPreviewEnvironment(const std::optional<Scene::WorldEnvironmentFrame>& frame) override;
     void SetShadowBiasDefaults(float depthBias, float normalBias) noexcept override;
     void SetShadowAtlasTileResolution(std::uint32_t resolution) noexcept override;
     void SetCullingSettings(const CullingSettings& settings) noexcept override;
     void SetMaterialSamplerSettings(bool repeatEnabled, float maxAnisotropy) noexcept override;
+    void SetMaterialSamplerWrap(SamplerWrap wrap, float maxAnisotropy) noexcept override;
     void SetShadingMode(std::int32_t shadingMode) noexcept override;
     void SetScalabilityMode(std::int32_t scalabilityMode) noexcept override;
     void SetRendererProfile(Platform::RendererProfile profile) noexcept override;

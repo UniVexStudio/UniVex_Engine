@@ -1298,6 +1298,7 @@ uniform vec3 uSkyGroundCascadeSplits;
 uniform int uSkyGroundShadowEnabled;
 uniform float uSkyGroundShadowOpacity;
 uniform float uSkyGroundShadowBias;
+uniform float uDepthNdcScale;
 
 // The disc: a body of the light the scene is lit by, not a texture on the sky. Its size is the
 // light's own angular diameter, so a moon and a sun over the same sky differ in this term and
@@ -1862,7 +1863,9 @@ float SkyGroundShadow(vec3 groundPos, float viewDist) {
                : (cascade == 1 ? uSkyGroundLightMatrix1 : uSkyGroundLightMatrix2);
         vec4 lightClip = m * vec4(groundPos, 1.0);
         if (abs(lightClip.w) < 1.0e-5) { return 0.0; }
-        vec3 proj = lightClip.xyz / lightClip.w * 0.5 + 0.5;
+        vec3 proj = lightClip.xyz / lightClip.w;
+        proj.xy = proj.xy * 0.5 + 0.5;
+        proj.z = (uDepthNdcScale > 0.5 && uDepthNdcScale < 1.5) ? proj.z : (proj.z * 0.5 + 0.5);
         if (proj.x <= 0.002 || proj.x >= 0.998 || proj.y <= 0.002 || proj.y >= 0.998 ||
             proj.z <= 0.0 || proj.z >= 1.0) {
             return 0.0;
@@ -2037,14 +2040,12 @@ out vec3 vWorldNormal;
 out vec3 vWorldTangent;
 out float vTangentHandedness;
 out vec2 vTexCoord;
-#if !defined(UVE_COMPATIBILITY)
 // Object-space position, normal, and object-to-world normal basis for triplanar mapping.
 out vec3 vObjectPosition;
 out vec3 vObjectNormal;
 out vec3 vNormalAxisX;
 out vec3 vNormalAxisY;
 out vec3 vNormalAxisZ;
-#endif
 out vec4 vLightSpacePosition;
 #if !defined(UVE_COMPATIBILITY)
 out vec4 vLightSpacePositions[3];
@@ -2110,6 +2111,19 @@ void main() {
     vWorldTangent = mat3(model) * aTangent.xyz;
     vTangentHandedness = aTangent.w;
     vTexCoord = aTexCoord;
+    // Scale-invariant object-space coordinates: triplanar projection moves and rotates with the
+    // mesh while automatically tiling when the mesh is scaled so textures never stretch.
+    vec3 objectScale = vec3(
+        max(length(model[0].xyz), 1.0e-5),
+        max(length(model[1].xyz), 1.0e-5),
+        max(length(model[2].xyz), 1.0e-5)
+    );
+    vObjectPosition = aPosition * objectScale;
+    vObjectNormal = aNormal;
+    mat3 normalMat3 = mat3(normalMatrix);
+    vNormalAxisX = normalMat3[0];
+    vNormalAxisY = normalMat3[1];
+    vNormalAxisZ = normalMat3[2];
 #if defined(UVE_COMPATIBILITY)
     if (uShadowCascadeCount > 0) {
         mat4 lightMatrix = uLightSpaceMatrices[0];
@@ -2125,19 +2139,6 @@ void main() {
         vLightSpacePosition = uLightSpaceMatrix * worldPosition;
     }
 #else
-    // Scale-invariant object-space coordinates: triplanar projection moves and rotates with the
-    // mesh while automatically tiling when the mesh is scaled so textures never stretch.
-    vec3 objectScale = vec3(
-        max(length(model[0].xyz), 1.0e-5),
-        max(length(model[1].xyz), 1.0e-5),
-        max(length(model[2].xyz), 1.0e-5)
-    );
-    vObjectPosition = aPosition * objectScale;
-    vObjectNormal = aNormal;
-    mat3 normalMat3 = mat3(normalMatrix);
-    vNormalAxisX = normalMat3[0];
-    vNormalAxisY = normalMat3[1];
-    vNormalAxisZ = normalMat3[2];
     vLightSpacePosition = uLightSpaceMatrix * worldPosition;
     // Slope-scaled normal offset: surfaces facing the light shift minimally to keep contact
     // shadows grounded without peter-panning, while grazing angles shift by ~1.35 texels to
@@ -2177,13 +2178,11 @@ in vec3 vWorldNormal;
 in vec3 vWorldTangent;
 in float vTangentHandedness;
 in vec2 vTexCoord;
-#if !defined(UVE_COMPATIBILITY)
 in vec3 vObjectPosition;
 in vec3 vObjectNormal;
 in vec3 vNormalAxisX;
 in vec3 vNormalAxisY;
 in vec3 vNormalAxisZ;
-#endif
 in vec4 vLightSpacePosition;
 #if !defined(UVE_COMPATIBILITY)
 in vec4 vLightSpacePositions[3];
@@ -2216,7 +2215,12 @@ struct Light {
 uniform Light uLights[16];
 uniform int uActiveLightCount;
 uniform int uLightShadowSlot[16];
-#if !defined(UVE_MOBILE) && !defined(UVE_COMPATIBILITY) && !defined(UVE_MOBILE_PROFILE)
+#if UVE_MOBILE
+uniform float uDepthNdcScale;
+#else
+uniform float uDepthNdcScale = 0.0;
+#endif
+#if !UVE_MOBILE && !defined(UVE_COMPATIBILITY) && !defined(UVE_MOBILE_PROFILE)
 struct ClusteredGpuLight {
     vec4 positionAndRange;
     vec4 directionAndType;
@@ -2756,13 +2760,18 @@ const vec2 kVogelDisk16[16] = vec2[16](
     vec2(-0.800547, -0.252855), vec2( 0.779871, -0.415022), vec2(-0.357475,  0.848231), vec2(-0.427858, -0.875842)
 );
 
+float ShadowMapDepthFromClipZ(float clipZ) {
+    return (uDepthNdcScale > 0.5 && uDepthNdcScale < 1.5) ? clipZ : (clipZ * 0.5 + 0.5);
+}
+
 float ShadowFactorFromPosition(vec4 lightSpacePosition, vec3 normal, vec3 lightDirection, int cascadeIndex) {
     if (abs(lightSpacePosition.w) <= 0.0001) {
         return 1.0;
     }
 
     vec3 projected = lightSpacePosition.xyz / lightSpacePosition.w;
-    projected = projected * 0.5 + 0.5;
+    projected.xy = projected.xy * 0.5 + 0.5;
+    projected.z = ShadowMapDepthFromClipZ(projected.z);
     if (projected.x <= 0.0 || projected.x >= 1.0 || projected.y <= 0.0 || projected.y >= 1.0 ||
         projected.z <= 0.0 || projected.z >= 1.0) {
         return 1.0;
@@ -2807,7 +2816,7 @@ float ShadowFactorFromPosition(vec4 lightSpacePosition, vec3 normal, vec3 lightD
         float sinA = sin(angle);
         mat2 rotation = mat2(cosA, sinA, -sinA, cosA);
         float radius = 2.0;
-#if !defined(UVE_MOBILE) && !defined(UVE_MOBILE_PROFILE)
+#if !UVE_MOBILE && !defined(UVE_MOBILE_PROFILE)
         if (filterMode == 2) {
             mat4 lightMat = cascadeIndex < 0 ? uLightSpaceMatrix : uLightSpaceMatrices[clamp(cascadeIndex, 0, 2)];
             float xyScale = length(vec3(lightMat[0][0], lightMat[1][0], lightMat[2][0]));
@@ -2832,7 +2841,7 @@ float ShadowFactorFromPosition(vec4 lightSpacePosition, vec3 normal, vec3 lightD
             }
         }
 #endif
-#if defined(UVE_MOBILE) || defined(UVE_MOBILE_PROFILE)
+#if UVE_MOBILE || defined(UVE_MOBILE_PROFILE)
         int tapStep = filterMode >= 2 ? 2 : 4;
 #else
         int tapStep = 1;
@@ -2983,7 +2992,7 @@ float SpotShadowFactor(int lightIndex, vec3 normal, vec3 lightDirection) {
         return 1.0;
     }
 
-    float currentDepth = projectionDepth * 0.5 + 0.5;
+    float currentDepth = ShadowMapDepthFromClipZ(projectionDepth);
     float bias = AtlasShadowDepthBias(uLightShadowDepthRange[lightIndex], projectionDepth,
                                          dot(normal, lightDirection));
     vec2 atlasTexelSize = max(uShadowAtlasTexelSize, vec2(0.0));
@@ -3111,7 +3120,7 @@ float PointShadowFactor(int lightIndex, vec3 normal, vec3 lightPosition, float l
     if (projectionDepth <= 0.0 || projectionDepth >= 1.0) {
         return 1.0;
     }
-    float currentDepth = projectionDepth * 0.5 + 0.5;
+    float currentDepth = ShadowMapDepthFromClipZ(projectionDepth);
     float bias = AtlasShadowDepthBias(depthRange, projectionDepth, dot(normal, -dir));
 
     vec2 atlasTexelSize = max(uShadowAtlasTexelSize, vec2(0.0));
@@ -3151,13 +3160,93 @@ vec4 ComposeOutput(vec3 color, float surfaceOpacity, float indirectWeight) {
     }
     return ComposeFragment(color, surfaceOpacity);
 }
-#if defined(UVE_COMPATIBILITY)
-vec4 ReadMapCompat(sampler2D map, vec2 uv1, vec2 uv2, vec4 transform, vec4 control, vec4 neutral) {
+// One UV set: planar 2D coordinates or normal-weighted triplanar projection.
+struct UvSet {
+    vec2 uv;
+    int triplanar;
+    vec2 uvX;
+    vec2 uvY;
+    vec2 uvZ;
+    vec3 weights;
+    vec3 triNormal;
+};
+UvSet MakeUvSet(vec3 scale, vec3 offset, int triplanar, float sharpness) {
+    UvSet set;
+    set.triplanar = triplanar;
+    set.uv = vTexCoord * scale.xy + offset.xy;
+    set.uvX = set.uv;
+    set.uvY = set.uv;
+    set.uvZ = set.uv;
+    set.weights = vec3(0.0, 1.0, 0.0);
+    set.triNormal = vec3(0.0, 1.0, 0.0);
+    if (triplanar != 0) {
+        vec3 position = triplanar == 2 ? vWorldPosition : vObjectPosition;
+        vec3 n = SafeNormalize(triplanar == 2 ? vWorldNormal : vObjectNormal);
+        set.triNormal = n;
+        vec3 weights = pow(max(abs(n), vec3(1.0e-4)), vec3(max(sharpness, 0.001)));
+        set.weights = weights / max(dot(weights, vec3(1.0)), 1.0e-5);
+        // Per-plane 2D projection with consistent handedness before applying scale and offset.
+        vec2 pX = vec2(n.x < 0.0 ? -position.z : position.z, -position.y);
+        vec2 pY = vec2(position.x, n.y < 0.0 ? -position.z : position.z);
+        vec2 pZ = vec2(n.z < 0.0 ? -position.x : position.x, -position.y);
+        set.uvX = pX * scale.xy + offset.xy;
+        set.uvY = pY * scale.xy + offset.xy;
+        set.uvZ = pZ * scale.xy + offset.xy;
+    }
+    return set;
+}
+vec4 SampleUvSet(sampler2D map, UvSet set) {
+    if (set.triplanar == 0) {
+        return texture(map, set.uv);
+    }
+    // Three axis-aligned planar projections blended by surface normal orientation.
+    return texture(map, set.uvX) * set.weights.x +
+           texture(map, set.uvY) * set.weights.y +
+           texture(map, set.uvZ) * set.weights.z;
+}
+vec3 SampleTriplanarNormal(sampler2D normalMap, UvSet set, vec4 transform, float normalScale, int flipGreen) {
+    vec2 tiling = vec2(1.0) + transform.xy;
+    vec3 tX = texture(normalMap, set.uvX * tiling + transform.zw).xyz * 2.0 - 1.0;
+    vec3 tY = texture(normalMap, set.uvY * tiling + transform.zw).xyz * 2.0 - 1.0;
+    vec3 tZ = texture(normalMap, set.uvZ * tiling + transform.zw).xyz * 2.0 - 1.0;
+    if (flipGreen != 0) {
+        tX.y = -tX.y;
+        tY.y = -tY.y;
+        tZ.y = -tZ.y;
+    }
+    tX.xy *= normalScale;
+    tY.xy *= normalScale;
+    tZ.xy *= normalScale;
+    vec3 n = set.triNormal;
+    float sX = n.x < 0.0 ? -1.0 : 1.0;
+    float sY = n.y < 0.0 ? -1.0 : 1.0;
+    float sZ = n.z < 0.0 ? -1.0 : 1.0;
+    // Whiteout triplanar normal blend preserving the geometric normal on flat normal maps.
+    vec3 nX = vec3(n.x * tX.z, n.y - tX.y, n.z + tX.x * sX);
+    vec3 nY = vec3(n.x + tY.x, n.y * tY.z, n.z + tY.y * sY);
+    vec3 nZ = vec3(n.x + tZ.x * sZ, n.y - tZ.y, n.z * tZ.z);
+    vec3 blended = nX * set.weights.x + nY * set.weights.y + nZ * set.weights.z;
+    if (set.triplanar == 1) {
+        blended = mat3(vNormalAxisX, vNormalAxisY, vNormalAxisZ) * blended;
+    }
+    return SafeNormalize(blended);
+}
+// One map read its own way: its UV set, tiling and offset, then the channel, invert and strength
+// (strength 0 is `neutral`: what the material looks like without the map).
+vec4 ReadMap(sampler2D map, UvSet uv1, UvSet uv2, vec4 transform, vec4 control, vec4 neutral) {
     if (control.z >= 0.999) {
         return neutral;
     }
-    vec2 uv = (control.w > 0.5 ? uv2 : uv1) * (vec2(1.0) + transform.xy) + transform.zw;
-    vec4 value = texture(map, uv);
+    UvSet set = uv1;
+    if (control.w > 0.5) {
+        set = uv2;
+    }
+    vec2 tiling = vec2(1.0) + transform.xy;
+    set.uv = set.uv * tiling + transform.zw;
+    set.uvX = set.uvX * tiling + transform.zw;
+    set.uvY = set.uvY * tiling + transform.zw;
+    set.uvZ = set.uvZ * tiling + transform.zw;
+    vec4 value = SampleUvSet(map, set);
     int channel = int(control.x + 0.5);
     if (channel >= 1) {
         float grey = channel == 1 ? value.r : channel == 2 ? value.g : channel == 3 ? value.b : value.a;
@@ -3168,10 +3257,34 @@ vec4 ReadMapCompat(sampler2D map, vec2 uv1, vec2 uv2, vec4 transform, vec4 contr
     }
     return mix(value, neutral, clamp(control.z, 0.0, 1.0));
 }
+vec3 ApplyNormalMap(vec3 geometricNormal, UvSet uv1, UvSet uv2) {
+    if (uNormalMapControl.z >= 0.999) {
+        return geometricNormal;
+    }
+    UvSet normalSet = uNormalMapControl.w > 0.5 ? uv2 : uv1;
+    if (normalSet.triplanar != 0) {
+        vec3 triNormal = SampleTriplanarNormal(uNormalTexture, normalSet, uNormalMapTransform, uNormalScale, uNormalFlipGreen);
+        return SafeNormalize(mix(triNormal, geometricNormal, clamp(uNormalMapControl.z, 0.0, 1.0)));
+    }
+    vec3 tangent = vWorldTangent - geometricNormal * dot(geometricNormal, vWorldTangent);
+    if (dot(tangent, tangent) <= 0.00000001) {
+        vec3 fallbackAxis = abs(geometricNormal.y) < 0.999 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0);
+        tangent = cross(fallbackAxis, geometricNormal);
+    }
+    tangent = SafeNormalize(tangent);
+    vec3 bitangent = SafeNormalize(cross(geometricNormal, tangent)) * (vTangentHandedness < 0.0 ? -1.0 : 1.0);
+    vec3 tangentSpaceNormal = ReadMap(uNormalTexture, uv1, uv2, uNormalMapTransform, uNormalMapControl, vec4(0.5, 0.5, 1.0, 1.0)).xyz * 2.0 - 1.0;
+    if (uNormalFlipGreen != 0) {
+        tangentSpaceNormal.y = -tangentSpaceNormal.y;
+    }
+    tangentSpaceNormal.xy *= uNormalScale;
+    return SafeNormalize(mat3(tangent, bitangent, geometricNormal) * tangentSpaceNormal);
+}
+#if defined(UVE_COMPATIBILITY)
 void main() {
-    vec2 uv1 = vTexCoord * uUvScale.xy + uUvOffset.xy;
-    vec2 uv2 = vTexCoord * uUv2Scale.xy + uUv2Offset.xy;
-    vec4 albedoSample = ReadMapCompat(uAlbedoTexture, uv1, uv2, uAlbedoMapTransform, uAlbedoMapControl, vec4(1.0));
+    UvSet uv1 = MakeUvSet(vec3(uUvScale.xy, uUvScale.x), uUvOffset, uUv1Triplanar, uUv1TriplanarSharpness);
+    UvSet uv2 = MakeUvSet(uUv2Scale, uUv2Offset, uUv2Triplanar, uUv2TriplanarSharpness);
+    vec4 albedoSample = ReadMap(uAlbedoTexture, uv1, uv2, uAlbedoMapTransform, uAlbedoMapControl, vec4(1.0));
 #if !defined(UVE_EARLY_Z)
     if (uAlphaCutoff > 0.0 && albedoSample.a < uAlphaCutoff) {
         discard;
@@ -3188,26 +3301,12 @@ void main() {
         FragColor = ComposeOutput(mix(albedo * 0.25, vec3(0.05, 0.85, 1.0), 0.75), surfaceOpacity, 0.0);
         return;
     }
-    float ambientOcclusion = mix(1.0, ReadMapCompat(uAOTexture, uv1, uv2, uOcclusionMapTransform, uOcclusionMapControl, vec4(1.0)).r, clamp(uOcclusionStrength, 0.0, 1.0));
+    float ambientOcclusion = mix(1.0, ReadMap(uAOTexture, uv1, uv2, uOcclusionMapTransform, uOcclusionMapControl, vec4(1.0)).r, clamp(uOcclusionStrength, 0.0, 1.0));
     vec3 normal = SafeNormalize(vWorldNormal);
     if (dot(normal, normal) <= kBrdfEpsilon * kBrdfEpsilon) {
         normal = vec3(0.0, 0.0, 1.0);
     }
-    if (uNormalMapControl.z < 0.999) {
-        vec3 tangent = vWorldTangent - normal * dot(normal, vWorldTangent);
-        if (dot(tangent, tangent) <= 0.00000001) {
-            vec3 fallbackAxis = abs(normal.y) < 0.999 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0);
-            tangent = cross(fallbackAxis, normal);
-        }
-        tangent = SafeNormalize(tangent);
-        vec3 bitangent = SafeNormalize(cross(normal, tangent)) * (vTangentHandedness < 0.0 ? -1.0 : 1.0);
-        vec3 tsNormal = ReadMapCompat(uNormalTexture, uv1, uv2, uNormalMapTransform, uNormalMapControl, vec4(0.5, 0.5, 1.0, 1.0)).xyz * 2.0 - 1.0;
-        if (uNormalFlipGreen != 0) {
-            tsNormal.y = -tsNormal.y;
-        }
-        tsNormal.xy *= uNormalScale;
-        normal = SafeNormalize(mat3(tangent, bitangent, normal) * tsNormal);
-    }
+    normal = ApplyNormalMap(normal, uv1, uv2);
     if (uShadingMode == 4) {
         FragColor = ComposeOutput(normal * 0.5 + 0.5, surfaceOpacity, 0.0);
         return;
@@ -3221,7 +3320,7 @@ void main() {
     if (uShadingMode == 3) {
         albedo = vec3(0.82);
     }
-    vec3 mrSample = ReadMapCompat(uMetallicRoughnessTexture, uv1, uv2, uMetallicRoughnessMapTransform, uMetallicRoughnessMapControl, vec4(1.0)).rgb;
+    vec3 mrSample = ReadMap(uMetallicRoughnessTexture, uv1, uv2, uMetallicRoughnessMapTransform, uMetallicRoughnessMapControl, vec4(1.0)).rgb;
     float metallic = uShadingMode == 3 ? 0.0 : clamp(uMetallic * mrSample.b, 0.0, 1.0);
     float roughness = uShadingMode == 3 ? 0.5 : clamp(uRoughness * mrSample.g, 0.06, 1.0);
     float dielectricSpec = clamp(uDielectricSpecular, 0.0, 1.0);
@@ -3235,7 +3334,7 @@ void main() {
                              (baseReflectance * envBrdf.x + vec3(envBrdf.y)) * specEnv) * ambientOcclusion;
     vec3 emissiveLighting =
         uEmissiveColor * max(uEmissiveEnergy, 0.0) *
-        ReadMapCompat(uEmissiveTexture, uv1, uv2, uEmissiveMapTransform, uEmissiveMapControl, vec4(1.0)).rgb;
+        ReadMap(uEmissiveTexture, uv1, uv2, uEmissiveMapTransform, uEmissiveMapControl, vec4(1.0)).rgb;
     vec3 lighting = indirectLighting + emissiveLighting;
 
     int activeLightCount = uActiveLightCount < 0 ? 0 : (uActiveLightCount > 0 ? min(uActiveLightCount, 4) : 4);
@@ -3290,102 +3389,6 @@ void main() {
     FragColor = ComposeOutput(finalColor, surfaceOpacity, indirectWeight);
 }
 #else
-// One UV set: planar 2D coordinates or normal-weighted triplanar projection.
-struct UvSet {
-    vec2 uv;
-    int triplanar;
-    vec2 uvX;
-    vec2 uvY;
-    vec2 uvZ;
-    vec3 weights;
-    vec3 triNormal;
-};
-UvSet MakeUvSet(vec3 scale, vec3 offset, int triplanar, float sharpness) {
-    UvSet set;
-    set.triplanar = triplanar;
-    set.uv = vTexCoord * scale.xy + offset.xy;
-    set.uvX = set.uv;
-    set.uvY = set.uv;
-    set.uvZ = set.uv;
-    set.weights = vec3(0.0, 1.0, 0.0);
-    set.triNormal = vec3(0.0, 1.0, 0.0);
-    if (triplanar != 0) {
-        vec3 position = triplanar == 2 ? vWorldPosition : vObjectPosition;
-        vec3 n = SafeNormalize(triplanar == 2 ? vWorldNormal : vObjectNormal);
-        set.triNormal = n;
-        vec3 weights = pow(max(abs(n), vec3(1.0e-4)), vec3(max(sharpness, 0.001)));
-        set.weights = weights / max(dot(weights, vec3(1.0)), 1.0e-5);
-        // Per-plane 2D projection with consistent handedness before applying scale and offset.
-        vec2 pX = vec2(n.x < 0.0 ? -position.z : position.z, -position.y);
-        vec2 pY = vec2(position.x, n.y < 0.0 ? -position.z : position.z);
-        vec2 pZ = vec2(n.z < 0.0 ? -position.x : position.x, -position.y);
-        set.uvX = pX * scale.xy + offset.xy;
-        set.uvY = pY * scale.xy + offset.xy;
-        set.uvZ = pZ * scale.xy + offset.xy;
-    }
-    return set;
-}
-vec4 SampleUvSet(sampler2D map, UvSet set) {
-    if (set.triplanar == 0) {
-        return texture(map, set.uv);
-    }
-    // Three axis-aligned planar projections blended by surface normal orientation.
-    return texture(map, set.uvX) * set.weights.x +
-           texture(map, set.uvY) * set.weights.y +
-           texture(map, set.uvZ) * set.weights.z;
-}
-vec3 SampleTriplanarNormal(sampler2D normalMap, UvSet set, float normalScale, int flipGreen) {
-    vec3 tX = texture(normalMap, set.uvX).xyz * 2.0 - 1.0;
-    vec3 tY = texture(normalMap, set.uvY).xyz * 2.0 - 1.0;
-    vec3 tZ = texture(normalMap, set.uvZ).xyz * 2.0 - 1.0;
-    if (flipGreen != 0) {
-        tX.y = -tX.y;
-        tY.y = -tY.y;
-        tZ.y = -tZ.y;
-    }
-    tX.xy *= normalScale;
-    tY.xy *= normalScale;
-    tZ.xy *= normalScale;
-    vec3 n = set.triNormal;
-    float sX = n.x < 0.0 ? -1.0 : 1.0;
-    float sY = n.y < 0.0 ? -1.0 : 1.0;
-    float sZ = n.z < 0.0 ? -1.0 : 1.0;
-    // Whiteout triplanar normal blend preserving the geometric normal on flat normal maps.
-    vec3 nX = vec3(n.x * tX.z, n.y - tX.y, n.z + tX.x * sX);
-    vec3 nY = vec3(n.x + tY.x, n.y * tY.z, n.z + tY.y * sY);
-    vec3 nZ = vec3(n.x + tZ.x * sZ, n.y - tZ.y, n.z * tZ.z);
-    vec3 blended = nX * set.weights.x + nY * set.weights.y + nZ * set.weights.z;
-    if (set.triplanar == 1) {
-        blended = mat3(vNormalAxisX, vNormalAxisY, vNormalAxisZ) * blended;
-    }
-    return SafeNormalize(blended);
-}
-// One map read its own way: its UV set, tiling and offset, then the channel, invert and strength
-// (strength 0 is `neutral`: what the material looks like without the map).
-vec4 ReadMap(sampler2D map, UvSet uv1, UvSet uv2, vec4 transform, vec4 control, vec4 neutral) {
-    if (control.z >= 0.999) {
-        return neutral;
-    }
-    UvSet set = uv1;
-    if (control.w > 0.5) {
-        set = uv2;
-    }
-    vec2 tiling = vec2(1.0) + transform.xy;
-    set.uv = set.uv * tiling + transform.zw;
-    set.uvX = set.uvX * tiling + transform.zw;
-    set.uvY = set.uvY * tiling + transform.zw;
-    set.uvZ = set.uvZ * tiling + transform.zw;
-    vec4 value = SampleUvSet(map, set);
-    int channel = int(control.x + 0.5);
-    if (channel >= 1) {
-        float grey = channel == 1 ? value.r : channel == 2 ? value.g : channel == 3 ? value.b : value.a;
-        value = vec4(grey, grey, grey, channel == 4 ? 1.0 : value.a);
-    }
-    if (control.y > 0.5) {
-        value.rgb = vec3(1.0) - value.rgb;
-    }
-    return mix(value, neutral, clamp(control.z, 0.0, 1.0));
-}
 void main() {
     UvSet uv1 = MakeUvSet(vec3(uUvScale.xy, uUvScale.x), uUvOffset, uUv1Triplanar, uUv1TriplanarSharpness);
     UvSet uv2 = MakeUvSet(uUv2Scale, uUv2Offset, uUv2Triplanar, uUv2TriplanarSharpness);
@@ -3417,27 +3420,7 @@ void main() {
     if (dot(geometricNormal, geometricNormal) <= kBrdfEpsilon * kBrdfEpsilon) {
         geometricNormal = vec3(0.0, 0.0, 1.0);
     }
-    vec3 normal = geometricNormal;
-    if (uNormalMapControl.z < 0.999) {
-        if (uv1.triplanar != 0) {
-            normal = SampleTriplanarNormal(uNormalTexture, uv1, uNormalScale, uNormalFlipGreen);
-        } else {
-            vec3 tangent = vWorldTangent - normal * dot(normal, vWorldTangent);
-            if (dot(tangent, tangent) <= 0.00000001) {
-                vec3 fallbackAxis = abs(normal.y) < 0.999 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0);
-                tangent = cross(fallbackAxis, normal);
-            }
-            tangent = SafeNormalize(tangent);
-            vec3 bitangent = SafeNormalize(cross(normal, tangent));
-            bitangent *= vTangentHandedness < 0.0 ? -1.0 : 1.0;
-            vec3 tangentSpaceNormal = ReadMap(uNormalTexture, uv1, uv2, uNormalMapTransform, uNormalMapControl, vec4(0.5, 0.5, 1.0, 1.0)).xyz * 2.0 - 1.0;
-            if (uNormalFlipGreen != 0) {
-                tangentSpaceNormal.y = -tangentSpaceNormal.y;
-            }
-            tangentSpaceNormal.xy *= uNormalScale;
-            normal = SafeNormalize(mat3(tangent, bitangent, normal) * tangentSpaceNormal);
-        }
-    }
+    vec3 normal = ApplyNormalMap(geometricNormal, uv1, uv2);
 
     if (uShadingMode == 4) {
         FragColor = ComposeOutput(normal * 0.5 + 0.5, surfaceOpacity, 0.0);
@@ -3505,7 +3488,7 @@ void main() {
     vec3 baseReflectance = mix(vec3(dielectricF0), albedo, metallic);
     float normalDotView = max(dot(normal, viewDirection), 0.001);
 
-#if !defined(UVE_MOBILE) && !defined(UVE_MOBILE_PROFILE)
+#if !UVE_MOBILE && !defined(UVE_COMPATIBILITY) && !defined(UVE_MOBILE_PROFILE)
     if (uClusteredLightingEnabled != 0) {
         int gridX = max(int(uClusterGridDims.x + 0.5), 1);
         int gridY = max(int(uClusterGridDims.y + 0.5), 1);

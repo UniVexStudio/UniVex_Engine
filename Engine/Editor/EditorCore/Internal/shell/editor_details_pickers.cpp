@@ -39,8 +39,13 @@ namespace {
     return text;
 }
 
+[[nodiscard]] std::string Utf8Generic(const std::filesystem::path& path) {
+    const std::u8string u8 = path.generic_u8string();
+    return std::string(reinterpret_cast<const char*>(u8.data()), u8.size());
+}
+
 [[nodiscard]] bool HasExtension(const std::vector<std::string>& kinds, const std::filesystem::path& path) {
-    const std::string extension = Lower(path.extension().string());
+    const std::string extension = Lower(Utf8Generic(path.extension()));
     return std::any_of(kinds.begin(), kinds.end(), [&](const std::string& kind) { return Lower(kind) == extension; });
 }
 
@@ -184,7 +189,7 @@ void EditorDetails::ShowPicker(const PickerSpec& spec, PickerActions actions, co
             continue;
         }
         if (!HasExtension({".uvtex"}, file.relativePath) && HasExtension({".png", ".jpg", ".jpeg", ".bmp", ".tga"}, file.relativePath) &&
-            published.contains((file.relativePath.parent_path() / file.relativePath.stem()).generic_string())) {
+            published.contains(Utf8Generic(file.relativePath.parent_path() / file.relativePath.stem()))) {
             continue;
         }
         const bool modelSource = Editor::IsModelSourcePath(file.relativePath);
@@ -198,7 +203,7 @@ void EditorDetails::ShowPicker(const PickerSpec& spec, PickerActions actions, co
         const bool isCurrent = !shared->current.empty() &&
                                (shared->current == absolute ||
                                 (modelSource && shared->current == m_editor.GetImportedModelPath(file.relativePath)));
-        prism::MenuItem item = prism::MenuItem::Check(file.relativePath.generic_string(), isCurrent, onTarget([shared, absolute] {
+        prism::MenuItem item = prism::MenuItem::Check(Utf8Generic(file.relativePath), isCurrent, onTarget([shared, absolute] {
             if (shared->file) {
                 shared->file(absolute);
             }

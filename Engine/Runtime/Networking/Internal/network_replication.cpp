@@ -572,13 +572,16 @@ bool NetworkReplicator::SendControl(const std::uint8_t kind,
 }
 
 void NetworkReplicator::ExpireRequests(const std::uint64_t nowMs) {
+    std::vector<NetworkEntityId> timedOut;
     for (auto open = m_openRequests.begin(); open != m_openRequests.end();) {
-        if (nowMs - open->second < m_ownershipTimeoutMs) {
+        if (nowMs < open->second || nowMs - open->second < m_ownershipTimeoutMs) {
             ++open;
             continue;
         }
-        const NetworkEntityId netId = open->first;
+        timedOut.push_back(open->first);
         open = m_openRequests.erase(open);
+    }
+    for (const NetworkEntityId netId : timedOut) {
         ++m_stats.transfersTimedOut;
         Notify(netId, OwnershipTransferEvent::TimedOut);
     }

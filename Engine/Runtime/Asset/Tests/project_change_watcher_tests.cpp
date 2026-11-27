@@ -138,6 +138,19 @@ TEST_F(ProjectChangeWatcherTest, Poll_DefersScanUntilConfiguredInterval) {
     ASSERT_NE(FindChange(snapshot, "tracked.txt", ProjectFileChangeKind::Modified), nullptr);
 }
 
+TEST_F(ProjectChangeWatcherTest, Poll_InitialPollHonorsConfiguredInterval) {
+    WriteFixtureFile(root / "tracked.txt", "before");
+    ProjectChangeWatcher watcher(root, 10.0, 16U);
+
+    // Frame-1 delta well below pollIntervalSeconds must not trigger a synchronous initial scan.
+    EXPECT_FALSE(watcher.Poll(0.016, assetDatabase, derivedArtifactCache));
+    EXPECT_EQ(watcher.GetSnapshot().successfulScanGeneration, 0U);
+
+    // Once the configured interval elapses, the initial baseline scan executes.
+    EXPECT_TRUE(watcher.Poll(10.0, assetDatabase, derivedArtifactCache));
+    EXPECT_EQ(watcher.GetSnapshot().successfulScanGeneration, 1U);
+}
+
 TEST_F(ProjectChangeWatcherTest, PollNow_JournalsCreateModifyAndRemoveEvents) {
     const std::filesystem::path source = root / "tracked.txt";
     ProjectChangeWatcher watcher(root, 60.0, 16U);

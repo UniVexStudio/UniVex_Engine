@@ -348,7 +348,7 @@ void LevelViewport::DrawUIOverlay(const int width, const int height, const float
     glGetIntegerv(GL_FRAMEBUFFER_BINDING, &previousFbo);
     GLint previousViewport[4] = {0, 0, 0, 0};
     glGetIntegerv(GL_VIEWPORT, previousViewport);
-    glBindFramebuffer(GL_FRAMEBUFFER, m_surface.ResolveFbo());
+    glBindFramebuffer(GL_FRAMEBUFFER, m_surface.OutputFbo());
     glViewport(0, 0, width, height);
     glDisable(GL_DEPTH_TEST);
     glDisable(GL_CULL_FACE);

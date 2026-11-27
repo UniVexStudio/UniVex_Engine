@@ -137,8 +137,11 @@ std::vector<ClipKey> MoveClipKeys(Asset::AnimationClipAsset& clip, const std::ve
     landed.reserve(lifted.size());
     for (Lifted& item : lifted) {
         item.sample.timeSeconds = Snap(item.sample.timeSeconds + deltaSeconds, frameRate, clip.durationSeconds);
-        // The track exists: the sample was lifted out of it above.
-        PlaceSample(*FindClipTrackSamples(clip, item.track), item.sample);
+        Samples* const dest = item.track.empty() ? &clip.samples : FindClipTrackSamples(clip, item.track);
+        if (dest == nullptr) {
+            continue;
+        }
+        PlaceSample(*dest, item.sample);
         landed.push_back(ClipKey{item.track, item.sample.timeSeconds});
     }
     return landed;

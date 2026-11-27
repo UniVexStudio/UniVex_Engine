@@ -149,21 +149,30 @@ unsigned int AndroidKeyCharacter(ANativeActivity* const activity, const int acti
         return 0U;
     }
     const jmethodID constructor = env->GetMethodID(type, "<init>", kKeyEventConstructor);
+    if (constructor == nullptr || env->ExceptionCheck()) {
+        env->ExceptionClear();
+        env->DeleteLocalRef(type);
+        return 0U;
+    }
     const jmethodID unicode = env->GetMethodID(type, kUnicodeCharMethod, kUnicodeCharSignature);
-    if (constructor == nullptr || unicode == nullptr) {
+    if (unicode == nullptr || env->ExceptionCheck()) {
         env->ExceptionClear();
         env->DeleteLocalRef(type);
         return 0U;
     }
     const jobject event = env->NewObject(type, constructor, static_cast<jint>(action), static_cast<jint>(keyCode));
     jint character = 0;
-    if (event != nullptr) {
-        character = env->CallIntMethod(event, unicode, static_cast<jint>(metaState));
-        env->DeleteLocalRef(event);
-    }
     if (env->ExceptionCheck()) {
         env->ExceptionClear();
-        character = 0;
+    } else if (event != nullptr) {
+        character = env->CallIntMethod(event, unicode, static_cast<jint>(metaState));
+        if (env->ExceptionCheck()) {
+            env->ExceptionClear();
+            character = 0;
+        }
+    }
+    if (event != nullptr) {
+        env->DeleteLocalRef(event);
     }
     env->DeleteLocalRef(type);
     return character > 0 ? static_cast<unsigned int>(character) : 0U;

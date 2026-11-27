@@ -164,4 +164,28 @@ TEST(AnimationStateMachineTest, ValidateAnimationStateMachine_RejectsUnknownClip
               AnimationStateMachineValidationCode::InvalidExitTime);
 }
 
+TEST(AnimationStateMachineTest, Evaluate_ScalesNormalizedTimeByClipDurationSeconds) {
+    AnimationStateMachine machine;
+    machine.initialStateId = "walk";
+    AnimationClip longClip;
+    longClip.clipId = "walkClip";
+    longClip.durationSeconds = 2.0;
+    longClip.samples = {
+        PoseSample{0.0, TransformPose{{0.0F, 0.0F, 0.0F}, {}, {1.0F, 1.0F, 1.0F}}},
+        PoseSample{2.0, TransformPose{{20.0F, 0.0F, 0.0F}, {}, {1.0F, 1.0F, 1.0F}}},
+    };
+    machine.clips = {longClip};
+    machine.states = {AnimationState{"walk", "walkClip", "", "", 1.0F}};
+
+    ASSERT_TRUE(ValidateAnimationStateMachine(machine).IsValid());
+    AnimationStateMachineEvaluator evaluator(machine);
+    AnimationStateMachineEvaluationResult mid;
+    for (int step = 0; step < 4; ++step) {
+        mid = evaluator.Evaluate(0.25);
+        ASSERT_TRUE(mid.IsSuccess());
+    }
+    EXPECT_NEAR(mid.debug.normalizedTime, 0.5, 1e-6);
+    EXPECT_NEAR(mid.pose.position.x, 10.0F, 1e-4F);
+}
+
 } // namespace UVE::Core

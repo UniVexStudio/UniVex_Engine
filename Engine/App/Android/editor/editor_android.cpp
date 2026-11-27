@@ -42,6 +42,22 @@ extern "C" __attribute__((visibility("default"))) int UveEditorRun(android_app* 
     if (app == nullptr || argc < 1 || argv == nullptr) {
         return kEditorStartFailedExitCode;
     }
+    struct AppCallbackRestore final {
+        android_app* app = nullptr;
+        void* userData = nullptr;
+        void (*onAppCmd)(android_app*, int32_t) = nullptr;
+        int32_t (*onInputEvent)(android_app*, AInputEvent*) = nullptr;
+        explicit AppCallbackRestore(android_app* target) noexcept
+            : app(target),
+              userData(target->userData),
+              onAppCmd(target->onAppCmd),
+              onInputEvent(target->onInputEvent) {}
+        ~AppCallbackRestore() {
+            app->userData = userData;
+            app->onAppCmd = onAppCmd;
+            app->onInputEvent = onInputEvent;
+        }
+    } restoreAppCallbacks{app};
     UVE::AndroidHost::ActivityState activity;
     UVE::AndroidHost::Attach(activity, app);
     // Back closes the editor's menus and dialogs (Escape); leaving the editor is its own command.

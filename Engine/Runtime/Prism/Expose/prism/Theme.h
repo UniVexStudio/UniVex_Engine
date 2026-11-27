@@ -71,6 +71,7 @@ struct ThemeColor {
   ThemeColor(Color c) : fixed(c) {}
   ThemeColor(Color Theme::* r) : role(r) {}
   Color get() const { return role ? theme().*role : fixed; }
+  bool operator==(const ThemeColor&) const = default;
 };
 
 } // namespace prism

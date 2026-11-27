@@ -310,5 +310,29 @@ TEST_F(FileSystemTest, ReadFile_NoMountResolves_ReturnsNulloptAndLogsError) {
     logger.Shutdown();
 }
 
+TEST_F(FileSystemTest, AssetBundleUnpack_CreatesNestedParentDirectories) {
+    const std::filesystem::path source = "uve_file_system_tests_unpack_nested_src.txt";
+    const std::filesystem::path bundlePath = "uve_file_system_tests_unpack_nested.uvbundle";
+    const std::filesystem::path outDir = "uve_file_system_tests_unpack_nested_out";
+    std::filesystem::remove_all(outDir);
+    std::filesystem::remove(bundlePath);
+    WriteFixtureFile(source, "nested bundle bytes");
+
+    AssetBundleEntry entry;
+    entry.guid = AssetGuid{8001};
+    entry.sourcePath = source;
+    entry.virtualName = "sub/dir/file.txt";
+    ASSERT_TRUE(assetBundle.Pack({entry}, bundlePath));
+    ASSERT_TRUE(assetBundle.Unpack(bundlePath, outDir));
+
+    const std::filesystem::path unpacked = outDir / "sub" / "dir" / "file.txt";
+    ASSERT_TRUE(std::filesystem::exists(unpacked));
+    EXPECT_EQ(ReadRealFileAsString(unpacked), "nested bundle bytes");
+
+    std::filesystem::remove_all(outDir);
+    std::filesystem::remove(source);
+    std::filesystem::remove(bundlePath);
+}
+
 } // namespace
 } // namespace UVE::Asset::Tests

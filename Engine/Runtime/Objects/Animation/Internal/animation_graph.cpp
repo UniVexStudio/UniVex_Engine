@@ -143,7 +143,8 @@ public:
     /// `skeleton` null: the graph animates one object, its clips' own object track.
     Evaluator(AnimationGraphComponent& tree, const AnimationClipResolver& clips,
                  const Skeleton3DComponent* const skeleton, const AnimationDriverComponent& mixer)
-        : m_tree(tree), m_clips(clips), m_skeleton(skeleton), m_mixer(mixer) {
+        : m_tree(tree), m_clips(clips), m_skeleton(skeleton), m_mixer(mixer),
+          m_visiting(tree.nodes.size(), 0U), m_resetVisited(tree.nodes.size(), 0U) {
         for (std::size_t index = 0U; index < tree.nodes.size(); ++index) {
             m_indexById.emplace(tree.nodes[index].id, index);
         }
@@ -162,6 +163,16 @@ public:
     /// syncing parent wants this node's clips to be instead of advancing on their own.
     [[nodiscard]] Result Evaluate(const std::size_t index, const float deltaSeconds, const float weight,
                                         const std::optional<float> phase) {
+        if (index >= m_tree.nodes.size() || index >= m_tree.nodeStates.size() ||
+            index >= m_visiting.size() || m_visiting[index] != 0U) {
+            return {};
+        }
+        struct VisitGuard final {
+            std::uint8_t& flag;
+            explicit VisitGuard(std::uint8_t& f) noexcept : flag(f) { flag = 1U; }
+            ~VisitGuard() { flag = 0U; }
+        } guard{m_visiting[index]};
+
         const AnimationGraphNode& node = m_tree.nodes[index];
         AnimationGraphNodeState& state = m_tree.nodeStates[index];
         state.weight = std::clamp(weight, 0.0F, 1.0F);
@@ -206,6 +217,11 @@ public:
     }
 
     void ResetSubtree(const std::size_t index) {
+        if (index >= m_tree.nodes.size() || index >= m_tree.nodeStates.size() ||
+            index >= m_resetVisited.size() || m_resetVisited[index] != 0U) {
+            return;
+        }
+        m_resetVisited[index] = 1U;
         const AnimationGraphNode& node = m_tree.nodes[index];
         AnimationGraphNodeState& state = m_tree.nodeStates[index];
         state = AnimationGraphNodeState{};
@@ -1256,7 +1272,28 @@ private:
         m_tracks;
     std::vector<std::string> m_events;
     std::unordered_map<std::size_t, std::vector<float>> m_masks;
+    std::vector<std::uint8_t> m_visiting;
+    std::vector<std::uint8_t> m_resetVisited;
 };
+
+[[nodiscard]] std::uint64_t ComputeAnimationGraphTopologyHash(const AnimationGraphComponent& tree) noexcept {
+    std::uint64_t hash = 14695981039346656037ULL;
+    const auto mix = [&hash](const std::uint64_t value) noexcept {
+        hash ^= value;
+        hash *= 1099511628211ULL;
+    };
+    mix(static_cast<std::uint64_t>(tree.nodes.size()));
+    for (const AnimationGraphNode& node : tree.nodes) {
+        mix(static_cast<std::uint64_t>(node.id));
+        mix(static_cast<std::uint64_t>(node.kind));
+        mix(static_cast<std::uint64_t>(node.entryState));
+        mix(static_cast<std::uint64_t>(node.inputs.size()));
+        for (const std::uint32_t input : node.inputs) {
+            mix(static_cast<std::uint64_t>(input));
+        }
+    }
+    return hash == 0U ? 1U : hash;
+}
 
 /// Runs one step: shape check, evaluation, and the tree's per-step outputs. The pose, or nothing.
 [[nodiscard]] std::optional<Channels> RunTree(AnimationGraphComponent& tree, const AnimationClipResolver& clips,
@@ -1268,12 +1305,14 @@ private:
     if (!mixer.active || !std::isfinite(deltaSeconds) || deltaSeconds < 0.0F) {
         return std::nullopt;
     }
-    if (tree.nodeStates.size() != tree.nodes.size()) {
+    const std::uint64_t topologyHash = ComputeAnimationGraphTopologyHash(tree);
+    if (tree.nodeStates.size() != tree.nodes.size() || tree.topologyHash != topologyHash) {
         // A new or reshaped graph: checked once here rather than every frame, then started over.
         if (!IsAnimationGraphComponentValid(tree)) {
             return std::nullopt;
         }
         ResetAnimationGraph(tree);
+        tree.topologyHash = topologyHash;
     }
     for (AnimationGraphNodeState& state : tree.nodeStates) {
         state.weight = 0.0F;

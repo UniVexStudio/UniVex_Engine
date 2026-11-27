@@ -106,12 +106,43 @@ AndroidWindowManager::~AndroidWindowManager() {
         if (m_impl->m_surface != EGL_NO_SURFACE) eglDestroySurface(m_impl->m_display, m_impl->m_surface);
         if (m_impl->m_idleSurface != EGL_NO_SURFACE) eglDestroySurface(m_impl->m_display, m_impl->m_idleSurface);
         if (m_impl->m_context != EGL_NO_CONTEXT) eglDestroyContext(m_impl->m_display, m_impl->m_context);
-        eglTerminate(m_impl->m_display);
+        // Never call eglTerminate(EGL_DEFAULT_DISPLAY): EGL_DEFAULT_DISPLAY is process-shared and
+        // terminating it tears down any host/Hub EGL context still active in the same Android process.
     }
     if (m_impl->m_window != nullptr) ANativeWindow_release(m_impl->m_window);
 }
 bool AndroidWindowManager::TryRecoverSurface() noexcept {
-    if (!IsValid() || m_impl->m_display == EGL_NO_DISPLAY || m_impl->m_window == nullptr) return false;
+    if (m_impl->m_display == EGL_NO_DISPLAY || m_impl->m_config == nullptr || m_impl->m_window == nullptr) {
+        return false;
+    }
+    if (m_impl->m_contextLost || m_impl->m_context == EGL_NO_CONTEXT) {
+        eglMakeCurrent(m_impl->m_display, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
+        if (m_impl->m_surface != EGL_NO_SURFACE) {
+            eglDestroySurface(m_impl->m_display, m_impl->m_surface);
+            m_impl->m_surface = EGL_NO_SURFACE;
+        }
+        if (m_impl->m_idleSurface != EGL_NO_SURFACE) {
+            eglDestroySurface(m_impl->m_display, m_impl->m_idleSurface);
+            m_impl->m_idleSurface = EGL_NO_SURFACE;
+        }
+        if (m_impl->m_context != EGL_NO_CONTEXT) {
+            eglDestroyContext(m_impl->m_display, m_impl->m_context);
+            m_impl->m_context = EGL_NO_CONTEXT;
+        }
+        const EGLint contextAttributes[] = {EGL_CONTEXT_CLIENT_VERSION, 3, EGL_NONE};
+        m_impl->m_context = eglCreateContext(m_impl->m_display, m_impl->m_config, EGL_NO_CONTEXT, contextAttributes);
+        if (m_impl->m_context == EGL_NO_CONTEXT) {
+            m_impl->m_contextLost = true;
+            return false;
+        }
+        const EGLint idleAttributes[] = {EGL_WIDTH, 1, EGL_HEIGHT, 1, EGL_NONE};
+        m_impl->m_idleSurface = eglCreatePbufferSurface(m_impl->m_display, m_impl->m_config, idleAttributes);
+        if (m_impl->m_idleSurface == EGL_NO_SURFACE) {
+            m_impl->m_contextLost = true;
+            return false;
+        }
+        m_impl->m_contextLost = false;
+    }
     if (m_impl->m_surface != EGL_NO_SURFACE) return true;
     EGLint format = 0;
     if (eglGetConfigAttrib(m_impl->m_display, m_impl->m_config, EGL_NATIVE_VISUAL_ID, &format) != EGL_TRUE) return false;

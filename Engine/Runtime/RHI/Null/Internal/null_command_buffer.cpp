@@ -196,10 +196,15 @@ void NullCommandBuffer::DrawIndexedIndirect(const BufferHandle buffer,
 }
 
 void NullCommandBuffer::Draw(std::uint32_t vertexCount, std::uint32_t instanceCount) {
+    DrawRange(vertexCount, instanceCount, 0U);
+}
+
+void NullCommandBuffer::DrawRange(std::uint32_t vertexCount, std::uint32_t instanceCount,
+                                  std::uint32_t firstVertex) {
     if (!RequireInsideRenderPass(m_insideRenderPass, "Draw")) {
         return;
     }
-    m_commands.emplace_back(DrawCommand{vertexCount, instanceCount});
+    m_commands.emplace_back(DrawCommand{vertexCount, instanceCount, firstVertex});
 }
 
 void NullCommandBuffer::Dispatch(std::uint32_t groupCountX, std::uint32_t groupCountY,

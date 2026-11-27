@@ -249,7 +249,7 @@ ViewportSurface::QualityConfig ViewportSurface::ResolveQualityConfig(const int /
         case Platform::RendererProfile::ForwardPlus:
         default:
             // Full desktop PBR: native 1.0x, 2x MSAA, FXAA high + CAS, SSAO + Bloom, 2048px shadows.
-            return QualityConfig{1.00F, 2, 2, 0.20F, true, 1U, 2048U, 8.0F, 2, false, true};
+            return QualityConfig{1.00F, 2, 2, 0.20F, true, 1U, 2048U, 8.0F, 2, true, true};
     }
 }
 
@@ -270,7 +270,7 @@ void ViewportSurface::ApplyQualityPreset(const int qualityPreset,
     m_casSharpen = cfg.casSharpen;
     m_gpuOutlineOnly = cfg.gpuOutlineOnly;
 
-    Render::PostProcessSettings post{};
+    Render::PostProcessSettings post = renderer.GetPostProcessSettings();
     post.bloomEnabled = cfg.bloomEnabled;
     post.ssaoEnabled = cfg.ssaoEnabled;
     post.ssaoQuality = cfg.ssaoQuality;
@@ -620,10 +620,13 @@ bool ViewportSurface::EnsureFramebuffers(const int width, const int height) {
     if (width <= 0 || height <= 0) {
         return false;
     }
-    GLint maxSamples = 0;
-    glGetIntegerv(GL_MAX_SAMPLES, &maxSamples);
+    if (m_maxSamplesCache < 0) {
+        GLint maxSamples = 0;
+        glGetIntegerv(GL_MAX_SAMPLES, &maxSamples);
+        m_maxSamplesCache = static_cast<int>(maxSamples);
+    }
     const int targetSamples =
-        m_desiredMsaaSamples > 1 ? std::min(static_cast<int>(maxSamples), m_desiredMsaaSamples) : 0;
+        m_desiredMsaaSamples > 1 ? std::min(m_maxSamplesCache, m_desiredMsaaSamples) : 0;
 
     if (width == m_framebufferWidth && height == m_framebufferHeight && m_resolveFbo != 0U && m_sceneFbo != 0U &&
         targetSamples == m_allocatedMsaaSamples) {
@@ -649,6 +652,7 @@ bool ViewportSurface::EnsureFramebuffers(const int width, const int height) {
         if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
             UVE_ERROR("uve_editor_app: viewport MSAA framebuffer incomplete");
             glBindFramebuffer(GL_FRAMEBUFFER, 0);
+            DestroyFramebuffers();
             return false;
         }
     }
@@ -672,6 +676,7 @@ bool ViewportSurface::EnsureFramebuffers(const int width, const int height) {
     if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
         UVE_ERROR("uve_editor_app: viewport scene framebuffer incomplete");
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        DestroyFramebuffers();
         return false;
     }
 
@@ -686,10 +691,11 @@ bool ViewportSurface::EnsureFramebuffers(const int width, const int height) {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, m_resolveColorTexture, 0);
     const bool complete = glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE;
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
     if (!complete) {
         UVE_ERROR("uve_editor_app: viewport resolve framebuffer incomplete");
+        DestroyFramebuffers();
     }
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
     return complete;
 }
 
@@ -725,6 +731,9 @@ void ViewportSurface::DestroyFramebuffers() {
 }
 
 bool ViewportSurface::EnsureMeshBlitResources() {
+    if (m_meshBlitFailed) {
+        return false;
+    }
     if (m_meshBlitProgram.has_value()) {
         return true;
     }
@@ -732,6 +741,7 @@ bool ViewportSurface::EnsureMeshBlitResources() {
     m_meshBlitProgram = univex::render::ShaderProgram::Build(kFullscreenTriangleVertexShader,
                                                              kMeshBlitFragmentShader, error);
     if (!m_meshBlitProgram.has_value()) {
+        m_meshBlitFailed = true;
         UVE_ERROR("uve_editor_app: viewport mesh blit shader build failed: {}", error);
         return false;
     }

@@ -37,6 +37,7 @@ struct Margin {
   constexpr Margin(float l_, float t_, float r_, float b_) : l(l_), t(t_), r(r_), b(b_) {}
   constexpr float horizontal() const { return l + r; }
   constexpr float vertical() const { return t + b; }
+  constexpr bool operator==(const Margin&) const = default;
 };
 
 struct Rect {

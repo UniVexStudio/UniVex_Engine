@@ -255,7 +255,7 @@ bool ProjectChangeWatcher::Poll(const double deltaTimeSeconds, const IAssetDatab
     }
     std::lock_guard<std::mutex> lock(m_impl->mutex);
     m_impl->accumulatedSeconds += deltaTimeSeconds;
-    if (m_impl->baselineInitialized && m_impl->pollIntervalSeconds > 0.0 &&
+    if (m_impl->pollIntervalSeconds > 0.0 &&
         m_impl->accumulatedSeconds < m_impl->pollIntervalSeconds) {
         return false;
     }

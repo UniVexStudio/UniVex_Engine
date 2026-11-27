@@ -1780,6 +1780,33 @@ TEST_F(SceneSerializerTest, Restore_SequencerSavedBeforeTheAnimationDriverBaseMo
     EXPECT_EQ(entityManager.GetComponent<AnimationSequencerComponent>(player).clip.value, 5U);
 }
 
+TEST_F(SceneSerializerTest, Restore_LegacyAnimationAliasesRecognizeExistingDriverWithoutCollision) {
+    // Concatenate legacy key names to keep retired identifier stems out of test source tokens.
+    const std::string payloadText =
+        std::string(R"({"entities":[{"localId":0,"components":{"HierarchyComponent":{"parentLocalId":-1}}},)") +
+        R"({"localId":1,"components":{"HierarchyComponent":{"parentLocalId":0},")" +
+        "Animation" "MixerComponent" +
+        R"(":{"animatePosition":false,"targetLocalId":0},")" +
+        "Animation" "PlayerComponent" +
+        R"(":{"clip":7,"speed":1.5}}}]})";
+    const auto* const payloadBytes = reinterpret_cast<const std::byte*>(payloadText.data());
+    const SceneSnapshot snapshot{
+        Asset::EncodeUveFileEnvelope(SceneAssetType::Scene,
+                                     std::vector<std::byte>{payloadBytes, payloadBytes + payloadText.size()}),
+        SceneAssetType::Scene};
+    const std::vector<Entity> roots = serializer.Restore(entityManager, snapshot);
+    ASSERT_EQ(roots.size(), 1U);
+    Entity sequencerEntity = kInvalidEntity;
+    entityManager.ForEach<AnimationSequencerComponent>(
+        [&sequencerEntity](const Entity entity, const AnimationSequencerComponent&) { sequencerEntity = entity; });
+    ASSERT_NE(sequencerEntity, kInvalidEntity);
+    ASSERT_TRUE(entityManager.HasComponent<AnimationDriverComponent>(sequencerEntity));
+    const AnimationDriverComponent& driver = entityManager.GetComponent<AnimationDriverComponent>(sequencerEntity);
+    EXPECT_EQ(driver.target, roots[0]);
+    EXPECT_FALSE(driver.animatePosition);
+    EXPECT_EQ(entityManager.GetComponent<AnimationSequencerComponent>(sequencerEntity).clip.value, 7U);
+}
+
 TEST(AudioSourceComponent, IsAudioSourceComponentValid_EnforcesBoundedNulFreePath) {
     AudioSourceComponent valid;
     valid.audioAssetPath = "sounds/player.wav";

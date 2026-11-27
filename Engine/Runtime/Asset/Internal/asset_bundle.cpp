@@ -178,6 +178,16 @@ bool AssetBundle::Unpack(const std::filesystem::path& bundlePath,
                 return false;
             }
             const std::filesystem::path outputPath = outputDirectory / std::string(name);
+            if (const std::filesystem::path parentDir = outputPath.parent_path(); !parentDir.empty()) {
+                std::error_code dirEc;
+                std::filesystem::create_directories(parentDir, dirEc);
+                if (dirEc && !std::filesystem::exists(parentDir)) {
+                    UVE_ERROR("AssetBundle: failed to create parent directory \"{}\": {}",
+                              parentDir.string(), dirEc.message());
+                    writeFailed = true;
+                    return false;
+                }
+            }
             std::ofstream outFile(outputPath, std::ios::binary);
             if (!outFile.is_open()) {
                 UVE_ERROR("AssetBundle: failed to open \"{}\" for writing", outputPath.string());

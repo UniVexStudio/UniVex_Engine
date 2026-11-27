@@ -300,6 +300,8 @@ bool Editor::RevertEntityEditor() {
         m_entityEditSession->simulation.reset();
     }
     const EntityDocumentScope scope(*this);
+    StopAnimationTimelinePreview();
+    m_timeline = AnimationTimelineState{};
     m_componentPropertyPreview.reset();
     ClearDocumentScene();
     const Scene::Entity loadedRoot = LoadEntityIntoDocument(m_entityEditSession->guid);
@@ -340,6 +342,12 @@ void Editor::FinishEntityEditorClose() {
     if (!m_entityEditSession.has_value() || m_entityDocumentActive) {
         return;
     }
+    {
+        const EntityDocumentScope scope(*this);
+        StopAnimationTimelinePreview();
+    }
+    m_timeline = AnimationTimelineState{};
+    m_timelineOwnsKeys = false;
     CloseOpenUVScript();
     m_componentPropertyPreview.reset();
     if (m_entityEditSession->simulation != nullptr) {

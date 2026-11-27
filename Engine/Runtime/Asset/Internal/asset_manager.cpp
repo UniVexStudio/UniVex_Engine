@@ -41,6 +41,11 @@ struct AssetManagerRecord {
     std::filesystem::path reloadPath;
 };
 
+struct RetiredPayload {
+    void* data = nullptr;
+    std::function<void(void*)> destroy;
+};
+
 } // namespace
 
 struct AssetManager::Impl {
@@ -50,6 +55,7 @@ struct AssetManager::Impl {
     mutable std::mutex mutex;
     std::unordered_map<std::type_index, AssetLoaderInfo> loaders;
     std::unordered_map<AssetGuid, AssetManagerRecord> records;
+    std::vector<RetiredPayload> retiredPayloads;
     Threading::JobCounter pendingJobs;
     bool shuttingDown = false;
     std::size_t residentBytes = 0;
@@ -66,13 +72,18 @@ AssetManager::~AssetManager() {
     // this object) is torn down, or a still-running job would dereference a dangling pointer.
     m_impl->pendingJobs.Wait();
     decltype(m_impl->records) records;
+    std::vector<RetiredPayload> retired;
     {
         const std::lock_guard<std::mutex> lock(m_impl->mutex);
         m_impl->shuttingDown = true;
         records.swap(m_impl->records);
+        retired.swap(m_impl->retiredPayloads);
     }
     // Destruction may release dependent AssetHandles back into this manager. Keep the
     // implementation alive and ignore refcount changes during this final ownership drain.
+    for (RetiredPayload& stale : retired) {
+        if (stale.data != nullptr && stale.destroy) stale.destroy(stale.data);
+    }
     for (auto& entry : records) {
         auto& record = entry.second;
         if (m_impl->hotReload != nullptr) m_impl->hotReload->Untrack(entry.first);
@@ -244,6 +255,9 @@ void AssetManager::ExecuteLoad(AssetGuid guid, std::type_index type, std::filesy
                 it->second.residentBytes = newBytes;
                 it->second.sizeKnown = static_cast<bool>(sizeFunc);
                 destroyFunc = it->second.destroy;
+                if (oldData != nullptr && destroyFunc) {
+                    m_impl->retiredPayloads.push_back(RetiredPayload{oldData, destroyFunc});
+                }
                 it->second.data = newData;
                 // Keep Loading until tracking is installed. Otherwise a caller can observe
                 // Ready, change the file, and let the first poll baseline that newer version.
@@ -276,14 +290,10 @@ void AssetManager::ExecuteLoad(AssetGuid guid, std::type_index type, std::filesy
         } catch (...) {
             // Retain the existing successful-payload semantics if an optional hook throws.
             publishReady();
-            if (oldData != nullptr && destroyFunc) destroyFunc(oldData);
             throw;
         }
         publishReady();
     }
-    // Keep destruction outside the mutex and after readiness publication, so dependent-handle
-    // destructors can query the replacement without waiting on this job's own completion.
-    if (oldData != nullptr && destroyFunc) destroyFunc(oldData);
 
     m_impl->eventSystem.QueueEvent(AssetLoadCompletedEvent{guid, success});
 
@@ -326,8 +336,10 @@ void AssetManager::FailResolution(AssetGuid guid, std::string failureReason) {
 
 void AssetManager::CollectGarbage() {
     std::vector<AssetManagerRecord> toDestroy;
+    std::vector<RetiredPayload> retired;
     {
         const std::lock_guard<std::mutex> lock(m_impl->mutex);
+        retired.swap(m_impl->retiredPayloads);
         for (auto it = m_impl->records.begin(); it != m_impl->records.end();) {
             AssetManagerRecord& record = it->second;
             if (record.refCount == 0 && record.state != AssetLoadState::Loading) {
@@ -340,6 +352,11 @@ void AssetManager::CollectGarbage() {
             } else {
                 ++it;
             }
+        }
+    }
+    for (RetiredPayload& stale : retired) {
+        if (stale.data != nullptr && stale.destroy) {
+            stale.destroy(stale.data);
         }
     }
     for (AssetManagerRecord& record : toDestroy) {

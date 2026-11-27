@@ -1047,7 +1047,7 @@ struct Renderer3D::Impl {
     SamplerHandle clampLinearSampler{};
     /// Equirectangular environment/sky sampler (repeat horizontally across longitude, clamp poles).
     SamplerHandle environmentEquirectSampler{};
-    bool materialTextureRepeatEnabled = true;
+    SamplerWrap materialTextureWrap = SamplerWrap::Repeat;
     float materialMaxAnisotropy = 8.0F;
 
     void RebuildMaterialRepeatSampler() {
@@ -1057,8 +1057,7 @@ struct Renderer3D::Impl {
         desc.magFilter = SamplerFilter::Linear;
         desc.minFilter = SamplerFilter::Linear;
         desc.mipMode = SamplerMipMode::Linear;
-        const SamplerWrap wrap =
-            materialTextureRepeatEnabled ? SamplerWrap::Repeat : SamplerWrap::ClampToEdge;
+        const SamplerWrap wrap = materialTextureWrap;
         desc.wrapU = wrap;
         desc.wrapV = wrap;
         desc.wrapW = wrap;
@@ -1545,15 +1544,20 @@ struct Renderer3D::Impl {
     BufferHandle particleVertexBuffer;
     std::vector<ParticleVertex> particleVertexStaging;
 
-    /// GPU instancing state, rebuilt every frame. Two matrix buffers rather than one because the
-    /// shader needs both the model matrix and its inverse-transpose, and computing the latter in
-    /// the vertex shader would mean inverting a matrix once per VERTEX instead of once per object.
-    /// The base-index buffer is a one-int SSBO for the same reason every compute kernel's params
-    /// are: it is the portable way to get a scalar to a shader.
-    BufferHandle instanceTransformBuffer;
-    BufferHandle instanceNormalTransformBuffer;
-    BufferHandle instanceBaseBuffer;
-    std::size_t instanceBufferCapacity = 0U;
+    /// GPU instancing state, rebuilt every frame. Each pass/bucket acquires its own slot from
+    /// `instancePassBuffers` and each instanced batch acquires its own 4-byte slot from
+    /// `instanceBaseBuffers` so deferred-replay backends (Vulkan) never see a later UpdateBuffer
+    /// overwrite an earlier pass or batch before Present() replays the command stream.
+    struct InstancePassBuffers final {
+        BufferHandle transformBuffer = kInvalidBufferHandle;
+        BufferHandle normalTransformBuffer = kInvalidBufferHandle;
+        std::size_t capacity = 0U;
+    };
+    std::vector<InstancePassBuffers> instancePassBuffers;
+    std::size_t nextInstancePassBufferIndex = 0U;
+    std::vector<BufferHandle> instanceBaseBuffers;
+    std::vector<std::int32_t> instanceBaseCachedValues;
+    std::size_t nextInstanceBaseBufferIndex = 0U;
     RenderBatchSet opaqueBatches;
     RenderBatchSet transparentBatches;
     RenderBatchSet primitiveBatches;
@@ -1576,6 +1580,8 @@ struct Renderer3D::Impl {
     FrustumCullIndirect indirectCull;
     std::vector<std::unique_ptr<FrustumCullIndirect>> indirectCullPool;
     std::size_t nextIndirectCullIndex = 0U;
+    std::vector<FrustumCullIndirect*> opaquePreparedIndirectCulls;
+    std::vector<FrustumCullIndirect*> transparentPreparedIndirectCulls;
     std::vector<Math::Aabb> instanceBoundsScratch;
 
     [[nodiscard]] FrustumCullIndirect* AcquireIndirectCull() {
@@ -1823,6 +1829,8 @@ struct Renderer3D::Impl {
     /// never changes after baking, so one upload for the renderer's whole lifetime suffices).
     TextureHandle uiFontAtlasTexture = kInvalidTextureHandle;
     BufferHandle uiVertexBuffer = kInvalidBufferHandle;
+    std::vector<BufferHandle> uiVertexBuffers;
+    std::size_t nextUiVertexBufferIndex = 0U;
     std::vector<UIVertex> uiVertexStaging;
 
     const VfxDrawList* vfxDrawListForFrame = nullptr;
@@ -2866,13 +2874,14 @@ struct Renderer3D::Impl {
     /// Uploads shadow instance transforms. Only the model matrix, transposed - a depth-only pass
     /// has no normals, so the normal-matrix buffer the main pass fills is left untouched here.
     [[nodiscard]] bool UploadShadowInstanceTransforms(
+        const BufferHandle transformBuffer,
         const std::vector<Math::Matrix4x4>& modelMatrices) {
         instanceTransposeStaging.clear();
         instanceTransposeStaging.reserve(modelMatrices.size());
         for (const Math::Matrix4x4& model : modelMatrices) {
             instanceTransposeStaging.push_back(Math::Transpose(model));
         }
-        return renderDevice.UpdateBuffer(instanceTransformBuffer,
+        return renderDevice.UpdateBuffer(transformBuffer,
                                             std::as_bytes(std::span(instanceTransposeStaging)));
     }
 
@@ -2917,10 +2926,14 @@ struct Renderer3D::Impl {
                 // mesh still tells the truth about the merge.
                 *counters.batchesRecorded += batchSet.batches.size();
                 *counters.batchedItems += items.size();
-                if (!batchSet.batches.empty() &&
-                    batchSet.instanceMatrices.size() <= activeMaxInstancesPerFrame &&
-                    EnsureInstanceBufferCapacity(batchSet.instanceMatrices.size()) &&
-                    UploadShadowInstanceTransforms(batchSet.instanceMatrices)) {
+                InstancePassBuffers* const passBuffers =
+                    (!batchSet.batches.empty() &&
+                     batchSet.instanceMatrices.size() <= activeMaxInstancesPerFrame)
+                        ? AcquireInstancePassBuffers(batchSet.instanceMatrices.size(), false)
+                        : nullptr;
+                if (passBuffers != nullptr &&
+                    UploadShadowInstanceTransforms(passBuffers->transformBuffer,
+                                                   batchSet.instanceMatrices)) {
                     instancedShadowProgram->SetMatrix4x4("uLightSpaceMatrix", lightSpaceMatrix);
                     for (const RenderBatch& batch : batchSet.batches) {
                         const MeshGpuResources& meshResources =
@@ -2928,15 +2941,14 @@ struct Renderer3D::Impl {
                         if (!IsValidMeshGpuResources(meshResources)) {
                             continue;
                         }
-                        const auto baseIndex = static_cast<std::int32_t>(batch.firstItem);
-                        const std::span<const std::byte> baseBytes{
-                            reinterpret_cast<const std::byte*>(&baseIndex), sizeof(baseIndex)};
-                        if (!renderDevice.UpdateBuffer(instanceBaseBuffer, baseBytes)) {
+                        const BufferHandle baseBuffer =
+                            AcquireInstanceBaseBuffer(static_cast<std::int32_t>(batch.firstItem));
+                        if (baseBuffer == kInvalidBufferHandle) {
                             continue;
                         }
                         instancedShadowProgram->ApplyTo(commandBuffer);
-                        commandBuffer.BindStorageBuffer(instanceTransformBuffer, kInstanceTransformSlot);
-                        commandBuffer.BindStorageBuffer(instanceBaseBuffer, kInstanceBaseSlot);
+                        commandBuffer.BindStorageBuffer(passBuffers->transformBuffer, kInstanceTransformSlot);
+                        commandBuffer.BindStorageBuffer(baseBuffer, kInstanceBaseSlot);
                         commandBuffer.BindVertexBuffer(meshResources.vertexBuffer);
                         commandBuffer.BindIndexBuffer(meshResources.indexBuffer);
                         commandBuffer.DrawIndexed(
@@ -3815,42 +3827,83 @@ struct Renderer3D::Impl {
         return Math::ToMatrix3x3(worldMatrix);
     }
 
-    /// Grows the three instancing buffers to hold `instanceCount` transforms. Returns false if any
-    /// allocation fails, in which case the caller records per-object instead of instanced.
-    [[nodiscard]] bool EnsureInstanceBufferCapacity(const std::size_t instanceCount) {
-        if (instanceBaseBuffer == kInvalidBufferHandle) {
-            instanceBaseBuffer = renderDevice.CreateBuffer(
-                BufferDesc{sizeof(std::int32_t), BufferUsage::Storage, BufferMemory::Auto,
-                           BufferUpdateFrequency::Dynamic});
-            if (instanceBaseBuffer == kInvalidBufferHandle) {
-                return false;
+    /// Acquires the next per-pass instance transform buffer slot for this frame, growing it to hold
+    /// `instanceCount` transforms (and optionally normal matrices). Each pass gets its own slot so
+    /// deferred-replay backends (Vulkan) never overwrite earlier passes before Present().
+    [[nodiscard]] InstancePassBuffers* AcquireInstancePassBuffers(const std::size_t instanceCount,
+                                                                  const bool needNormals) {
+        if (instanceCount == 0U) {
+            return nullptr;
+        }
+        const std::size_t slotIndex = nextInstancePassBufferIndex++;
+        if (slotIndex >= instancePassBuffers.size()) {
+            instancePassBuffers.resize(slotIndex + 1U);
+        }
+        InstancePassBuffers& slot = instancePassBuffers[slotIndex];
+        const bool needGrow = slot.transformBuffer == kInvalidBufferHandle || slot.capacity < instanceCount;
+        if (needGrow) {
+            DestroyBufferIfValid(renderDevice, slot.transformBuffer);
+            DestroyBufferIfValid(renderDevice, slot.normalTransformBuffer);
+            slot.transformBuffer = kInvalidBufferHandle;
+            slot.normalTransformBuffer = kInvalidBufferHandle;
+            slot.capacity = 0U;
+            const BufferDesc desc{instanceCount * sizeof(Math::Matrix4x4), BufferUsage::Storage,
+                                  BufferMemory::Auto, BufferUpdateFrequency::Dynamic};
+            slot.transformBuffer = renderDevice.CreateBuffer(desc);
+            if (slot.transformBuffer == kInvalidBufferHandle) {
+                return nullptr;
+            }
+            if (needNormals) {
+                slot.normalTransformBuffer = renderDevice.CreateBuffer(desc);
+                if (slot.normalTransformBuffer == kInvalidBufferHandle) {
+                    return nullptr;
+                }
+            }
+            slot.capacity = instanceCount;
+        } else if (needNormals && slot.normalTransformBuffer == kInvalidBufferHandle) {
+            const BufferDesc desc{slot.capacity * sizeof(Math::Matrix4x4), BufferUsage::Storage,
+                                  BufferMemory::Auto, BufferUpdateFrequency::Dynamic};
+            slot.normalTransformBuffer = renderDevice.CreateBuffer(desc);
+            if (slot.normalTransformBuffer == kInvalidBufferHandle) {
+                return nullptr;
             }
         }
-        if (instanceTransformBuffer != kInvalidBufferHandle && instanceBufferCapacity >= instanceCount) {
-            return true;
-        }
-        for (BufferHandle* const buffer : {&instanceTransformBuffer, &instanceNormalTransformBuffer}) {
-            if (*buffer != kInvalidBufferHandle) {
-                renderDevice.DestroyBuffer(*buffer);
-                *buffer = kInvalidBufferHandle;
-            }
-        }
-        instanceBufferCapacity = 0U;
-        const BufferDesc desc{instanceCount * sizeof(Math::Matrix4x4), BufferUsage::Storage,
-                              BufferMemory::Auto, BufferUpdateFrequency::Dynamic};
-        instanceTransformBuffer = renderDevice.CreateBuffer(desc);
-        instanceNormalTransformBuffer = renderDevice.CreateBuffer(desc);
-        if (instanceTransformBuffer == kInvalidBufferHandle ||
-            instanceNormalTransformBuffer == kInvalidBufferHandle) {
-            return false;
-        }
-        instanceBufferCapacity = instanceCount;
-        return true;
+        return &slot;
     }
 
-    /// Uploads one frame's instance transforms, TRANSPOSED - Matrix4x4 is row-major and std430
+    /// Acquires a per-batch 4-byte SSBO holding `baseIndex` for this frame so Vulkan replay never
+    /// sees a subsequent batch's UpdateBuffer overwrite an earlier batch's base index.
+    [[nodiscard]] BufferHandle AcquireInstanceBaseBuffer(const std::int32_t baseIndex) {
+        const std::size_t slotIndex = nextInstanceBaseBufferIndex++;
+        if (slotIndex >= instanceBaseBuffers.size()) {
+            instanceBaseBuffers.resize(slotIndex + 1U, kInvalidBufferHandle);
+            instanceBaseCachedValues.resize(slotIndex + 1U, -1);
+        }
+        BufferHandle& handle = instanceBaseBuffers[slotIndex];
+        if (handle == kInvalidBufferHandle) {
+            handle = renderDevice.CreateBuffer(
+                BufferDesc{sizeof(std::int32_t), BufferUsage::Storage, BufferMemory::Auto,
+                           BufferUpdateFrequency::Dynamic});
+            if (handle == kInvalidBufferHandle) {
+                return kInvalidBufferHandle;
+            }
+            instanceBaseCachedValues[slotIndex] = -1;
+        }
+        if (instanceBaseCachedValues[slotIndex] != baseIndex) {
+            const std::span<const std::byte> baseBytes{reinterpret_cast<const std::byte*>(&baseIndex),
+                                                       sizeof(baseIndex)};
+            if (!renderDevice.UpdateBuffer(handle, baseBytes)) {
+                return kInvalidBufferHandle;
+            }
+            instanceBaseCachedValues[slotIndex] = baseIndex;
+        }
+        return handle;
+    }
+
+    /// Uploads one pass's instance transforms, TRANSPOSED - Matrix4x4 is row-major and std430
     /// mat4 is column-major. Same convention as mesh_skin.glsl, deliberately: one rule, not two.
-    [[nodiscard]] bool UploadInstanceTransforms(const std::vector<Math::Matrix4x4>& modelMatrices) {
+    [[nodiscard]] bool UploadInstanceTransforms(const InstancePassBuffers& passBuffers,
+                                                const std::vector<Math::Matrix4x4>& modelMatrices) {
         instanceNormalMatrixStaging.clear();
         instanceNormalMatrixStaging.reserve(modelMatrices.size());
         instanceTransposeStaging.clear();
@@ -3859,9 +3912,9 @@ struct Renderer3D::Impl {
             instanceTransposeStaging.push_back(Math::Transpose(model));
             instanceNormalMatrixStaging.push_back(Math::Transpose(Math::ToMatrix4x4(ComputeNormalMatrix(model))));
         }
-        return renderDevice.UpdateBuffer(instanceTransformBuffer,
+        return renderDevice.UpdateBuffer(passBuffers.transformBuffer,
                                             std::as_bytes(std::span(instanceTransposeStaging))) &&
-               renderDevice.UpdateBuffer(instanceNormalTransformBuffer,
+               renderDevice.UpdateBuffer(passBuffers.normalTransformBuffer,
                                             std::as_bytes(std::span(instanceNormalMatrixStaging)));
     }
 
@@ -3985,6 +4038,9 @@ struct Renderer3D::Impl {
             program.SetFloat("uShadowBias", frameUniforms.shadowBias);
             program.SetFloat("uShadowNormalBias", frameUniforms.shadowNormalBias);
             program.SetFloat("uShadowOpacity", frameUniforms.shadowOpacity);
+            if (renderDevice.UsesZeroToOneDepthBuffer()) {
+                program.SetFloat("uDepthNdcScale", 1.0F);
+            }
             program.SetInt("uShadingMode", shadingMode);
             program.SetInt("uAlbedoTexture", static_cast<std::int32_t>(kAlbedoTextureSlot));
             program.SetInt("uNormalTexture", static_cast<std::int32_t>(kNormalTextureSlot));
@@ -4155,25 +4211,93 @@ struct Renderer3D::Impl {
     /// The fallback is per BATCH, not per frame: a scene mixing instancing-aware and legacy
     /// materials draws each with whichever path is correct for it, rather than giving up on
     /// instancing entirely because one material is old.
-    [[nodiscard]] std::size_t RecordItemsInstanced(const std::vector<RenderItem>& items,
-                                                      RenderBatchSet& batchSet,
-                                                      const FrameUniforms& frameUniforms,
-                                                      ICommandBuffer& commandBuffer) {
-        BuildRenderBatches(items, batchSet);
+    /// Runs GPU indirect frustum culling BEFORE BeginRenderPass so compute dispatches never
+    /// clobber an active GL graphics program/SSBO binding or trigger a mid-pass Vulkan flush.
+    void PrepareIndirectCullsForBatches(const std::vector<RenderItem>& items,
+                                        const RenderBatchSet& batchSet,
+                                        const FrameUniforms& frameUniforms,
+                                        std::vector<FrustumCullIndirect*>& outPrepared) {
+        outPrepared.assign(batchSet.batches.size(), nullptr);
+        if (!cullingSettings.frustumCullingEnabled || batchSet.batches.empty() ||
+            batchSet.instanceMatrices.size() > activeMaxInstancesPerFrame) {
+            return;
+        }
+        const Math::Frustum cullFrustum =
+            Math::Frustum::FromViewProjection(frameUniforms.viewProjection);
+        for (std::size_t batchIndex = 0U; batchIndex < batchSet.batches.size(); ++batchIndex) {
+            const RenderBatch& batch = batchSet.batches[batchIndex];
+            const RenderItem& representative = items[batch.firstItem];
+            const MaterialGpuResources* const materialResources =
+                ResolveMaterialGpuResources(representative.materialHandle);
+            if (materialResources == nullptr || !materialResources->supportsInstancing) {
+                continue;
+            }
+            const MeshGpuResources& meshResources = ResolveMeshGpuResources(representative);
+            if (!IsValidMeshGpuResources(meshResources)) {
+                continue;
+            }
+            const Asset::MaterialAsset* const material = representative.materialHandle.TryGet();
+            const bool blendedVariant = representative.opacity < 1.0F || representative.overlay;
+            if (material == nullptr || MeshColorProgram(*materialResources, blendedVariant) == nullptr) {
+                continue;
+            }
+            FrustumCullIndirect* const cullIndirect = AcquireIndirectCull();
+            if (cullIndirect == nullptr || !cullIndirect->IsReady()) {
+                continue;
+            }
+            const Asset::MeshAsset* const meshAsset = representative.meshHandle.TryGet();
+            const Math::Aabb localBounds =
+                meshAsset != nullptr ? meshAsset->localBounds : Math::Aabb{};
+            instanceBoundsScratch.resize(batch.itemCount);
+            for (std::size_t i = 0U; i < batch.itemCount; ++i) {
+                instanceBoundsScratch[i] =
+                    localBounds.Transform(items[batch.firstItem + i].worldMatrix);
+            }
+            DrawIndexedIndirectCommand meshParams{};
+            meshParams.indexCount = ResolveItemIndexCount(representative, meshResources);
+            meshParams.instanceCount = 0U;
+            meshParams.firstIndex = ResolveItemFirstIndex(representative);
+            meshParams.vertexOffset = 0;
+            meshParams.firstInstance = 0U;
+            if (cullIndirect->Prepare(instanceBoundsScratch, cullFrustum, meshParams)) {
+                outPrepared[batchIndex] = cullIndirect;
+            }
+        }
+    }
+
+    [[nodiscard]] std::size_t RecordItemsInstanced(
+        const std::vector<RenderItem>& items,
+        const RenderBatchSet& batchSet,
+        const std::vector<FrustumCullIndirect*>& preparedIndirectCulls,
+        const FrameUniforms& frameUniforms,
+        ICommandBuffer& commandBuffer) {
         if (batchSet.batches.empty()) {
             return 0U;
         }
 
-        // One upload for the whole bucket; each batch then reads its own window of it via
-        // uInstanceBaseIndex. Uploading per batch would be the obvious shape and the wrong one -
-        // it trades one buffer update per frame for one per batch.
+        // Skip CPU 3x3 normal-matrix inversion and SSBO upload completely when no batch in this
+        // bucket uses an instancing-aware material.
+        bool anyInstancedBatch = false;
+        for (const RenderBatch& batch : batchSet.batches) {
+            const MaterialGpuResources* const materialResources =
+                ResolveMaterialGpuResources(items[batch.firstItem].materialHandle);
+            if (materialResources != nullptr && materialResources->supportsInstancing) {
+                anyInstancedBatch = true;
+                break;
+            }
+        }
+
+        InstancePassBuffers* const passBuffers =
+            (anyInstancedBatch && batchSet.instanceMatrices.size() <= activeMaxInstancesPerFrame)
+                ? AcquireInstancePassBuffers(batchSet.instanceMatrices.size(), true)
+                : nullptr;
         const bool instancingUsable =
-            batchSet.instanceMatrices.size() <= activeMaxInstancesPerFrame &&
-            EnsureInstanceBufferCapacity(batchSet.instanceMatrices.size()) &&
-            UploadInstanceTransforms(batchSet.instanceMatrices);
+            passBuffers != nullptr &&
+            UploadInstanceTransforms(*passBuffers, batchSet.instanceMatrices);
 
         std::size_t drawCalls = 0U;
-        for (const RenderBatch& batch : batchSet.batches) {
+        for (std::size_t batchIndex = 0U; batchIndex < batchSet.batches.size(); ++batchIndex) {
+            const RenderBatch& batch = batchSet.batches[batchIndex];
             const RenderItem& representative = items[batch.firstItem];
             const MaterialGpuResources* const materialResources =
                 ResolveMaterialGpuResources(representative.materialHandle);
@@ -4201,10 +4325,9 @@ struct Renderer3D::Impl {
                 continue;
             }
 
-            const auto baseIndex = static_cast<std::int32_t>(batch.firstItem);
-            const std::span<const std::byte> baseBytes{reinterpret_cast<const std::byte*>(&baseIndex),
-                                                       sizeof(baseIndex)};
-            if (!renderDevice.UpdateBuffer(instanceBaseBuffer, baseBytes)) {
+            const BufferHandle baseBuffer =
+                AcquireInstanceBaseBuffer(static_cast<std::int32_t>(batch.firstItem));
+            if (baseBuffer == kInvalidBufferHandle) {
                 drawCalls += RecordItemRangeUnbatched(items, batch.firstItem, batch.itemCount,
                                                          frameUniforms, commandBuffer);
                 continue;
@@ -4215,47 +4338,22 @@ struct Renderer3D::Impl {
             program->SetFloat("uSurfaceOpacity", representative.opacity);
             program->ApplyTo(commandBuffer);
             BindMaterialTextures(*materialResources, frameUniforms, commandBuffer);
-            commandBuffer.BindStorageBuffer(instanceTransformBuffer, kInstanceTransformSlot);
-            commandBuffer.BindStorageBuffer(instanceNormalTransformBuffer, kInstanceNormalTransformSlot);
-            commandBuffer.BindStorageBuffer(instanceBaseBuffer, kInstanceBaseSlot);
+            commandBuffer.BindStorageBuffer(passBuffers->transformBuffer, kInstanceTransformSlot);
+            commandBuffer.BindStorageBuffer(passBuffers->normalTransformBuffer, kInstanceNormalTransformSlot);
+            commandBuffer.BindStorageBuffer(baseBuffer, kInstanceBaseSlot);
             commandBuffer.BindVertexBuffer(meshResources.vertexBuffer);
             commandBuffer.BindIndexBuffer(meshResources.indexBuffer);
-            bool indirectRecorded = false;
-            if (cullingSettings.frustumCullingEnabled) {
-                FrustumCullIndirect* const cullIndirect = AcquireIndirectCull();
-                if (cullIndirect != nullptr && cullIndirect->IsReady()) {
-                    const Asset::MeshAsset* const meshAsset = representative.meshHandle.TryGet();
-                    const Math::Aabb localBounds =
-                        meshAsset != nullptr ? meshAsset->localBounds : Math::Aabb{};
-                    instanceBoundsScratch.resize(batch.itemCount);
-                    for (std::size_t i = 0U; i < batch.itemCount; ++i) {
-                        instanceBoundsScratch[i] =
-                            localBounds.Transform(items[batch.firstItem + i].worldMatrix);
-                    }
-                    const Math::Frustum cullFrustum =
-                        Math::Frustum::FromViewProjection(frameUniforms.viewProjection);
-                    DrawIndexedIndirectCommand meshParams{};
-                    // The batch's range, not the buffer's: a surface is a window into the same
-                    // index buffer, and the indirect path must draw that window.
-                    meshParams.indexCount = ResolveItemIndexCount(representative, meshResources);
-                    meshParams.instanceCount = 0U;
-                    meshParams.firstIndex = ResolveItemFirstIndex(representative);
-                    meshParams.vertexOffset = 0;
-                    meshParams.firstInstance = 0U;
-                    if (cullIndirect->Prepare(instanceBoundsScratch, cullFrustum, meshParams)) {
-                        commandBuffer.BindStorageBuffer(cullIndirect->GetVisibleIndexBuffer(),
-                                                           kInstanceVisibleIndexSlot);
-                        commandBuffer.DrawIndexedIndirect(cullIndirect->GetDrawCommandBuffer(), 0U);
-                        indirectRecorded = true;
-                        ++drawCalls;
-                        instancedDrawCallsThisFrame += 1U;
-                        indirectInstancedDrawCallsThisFrame += 1U;
-                        instancedObjectsThisFrame += batch.itemCount;
-                    }
-                }
-            }
-
-            if (!indirectRecorded) {
+            FrustumCullIndirect* const cullIndirect =
+                batchIndex < preparedIndirectCulls.size() ? preparedIndirectCulls[batchIndex] : nullptr;
+            if (cullIndirect != nullptr) {
+                commandBuffer.BindStorageBuffer(cullIndirect->GetVisibleIndexBuffer(),
+                                                   kInstanceVisibleIndexSlot);
+                commandBuffer.DrawIndexedIndirect(cullIndirect->GetDrawCommandBuffer(), 0U);
+                ++drawCalls;
+                instancedDrawCallsThisFrame += 1U;
+                indirectInstancedDrawCallsThisFrame += 1U;
+                instancedObjectsThisFrame += batch.itemCount;
+            } else {
                 commandBuffer.DrawIndexed(ResolveItemIndexCount(representative, meshResources),
                                              static_cast<std::uint32_t>(batch.itemCount),
                                              ResolveItemFirstIndex(representative));
@@ -4884,17 +4982,35 @@ struct Renderer3D::Impl {
         };
 
         BuildPrimitiveBatches(items);
-        bool anyBatchable = false;
+        bool anyBatchableInstanced = false;
         for (const RenderBatch& batch : primitiveBatches.batches) {
-            if (batch.itemCount >= 2U) {
-                anyBatchable = true;
-                break;
+            if (batch.itemCount < 2U) {
+                continue;
+            }
+            const PrimitiveRenderItem& rep = items[batch.firstItem];
+            if (rep.materialGuid == Asset::kInvalidAssetGuid) {
+                if (defaultLitMaterialResources.supportsInstancing) {
+                    anyBatchableInstanced = true;
+                    break;
+                }
+            } else {
+                const auto matIt = primitiveMaterialHandles.find(rep.materialGuid);
+                if (matIt != primitiveMaterialHandles.end() && matIt->second.TryGet() != nullptr) {
+                    const MaterialGpuResources* const matRes = ResolveMaterialGpuResources(matIt->second);
+                    if (matRes != nullptr && matRes->supportsInstancing) {
+                        anyBatchableInstanced = true;
+                        break;
+                    }
+                }
             }
         }
+        InstancePassBuffers* const passBuffers =
+            (anyBatchableInstanced && primitiveBatches.instanceMatrices.size() <= activeMaxInstancesPerFrame)
+                ? AcquireInstancePassBuffers(primitiveBatches.instanceMatrices.size(), true)
+                : nullptr;
         const bool instancingUsable =
-            anyBatchable && primitiveBatches.instanceMatrices.size() <= activeMaxInstancesPerFrame &&
-            EnsureInstanceBufferCapacity(primitiveBatches.instanceMatrices.size()) &&
-            UploadInstanceTransforms(primitiveBatches.instanceMatrices);
+            passBuffers != nullptr &&
+            UploadInstanceTransforms(*passBuffers, primitiveBatches.instanceMatrices);
         for (const RenderBatch& batch : primitiveBatches.batches) {
             if (batch.itemCount < 2U || !instancingUsable) {
                 recordRange(batch.firstItem, batch.itemCount);
@@ -4929,11 +5045,13 @@ struct Renderer3D::Impl {
                 material != nullptr && materialResources != nullptr
                     ? MeshColorProgram(*materialResources, blendedVariant)
                     : nullptr;
-            const auto baseIndex = static_cast<std::int32_t>(batch.firstItem);
-            const std::span<const std::byte> baseBytes{reinterpret_cast<const std::byte*>(&baseIndex),
-                                                       sizeof(baseIndex)};
-            if (program == nullptr || !materialResources->supportsInstancing ||
-                !renderDevice.UpdateBuffer(instanceBaseBuffer, baseBytes)) {
+            if (program == nullptr || !materialResources->supportsInstancing) {
+                recordRange(batch.firstItem, batch.itemCount);
+                continue;
+            }
+            const BufferHandle baseBuffer =
+                AcquireInstanceBaseBuffer(static_cast<std::int32_t>(batch.firstItem));
+            if (baseBuffer == kInvalidBufferHandle) {
                 recordRange(batch.firstItem, batch.itemCount);
                 continue;
             }
@@ -4947,9 +5065,9 @@ struct Renderer3D::Impl {
             program->SetFloat("uSurfaceOpacity", representative.opacity);
             program->ApplyTo(commandBuffer);
             BindMaterialTextures(*materialResources, frameUniforms, commandBuffer);
-            commandBuffer.BindStorageBuffer(instanceTransformBuffer, kInstanceTransformSlot);
-            commandBuffer.BindStorageBuffer(instanceNormalTransformBuffer, kInstanceNormalTransformSlot);
-            commandBuffer.BindStorageBuffer(instanceBaseBuffer, kInstanceBaseSlot);
+            commandBuffer.BindStorageBuffer(passBuffers->transformBuffer, kInstanceTransformSlot);
+            commandBuffer.BindStorageBuffer(passBuffers->normalTransformBuffer, kInstanceNormalTransformSlot);
+            commandBuffer.BindStorageBuffer(baseBuffer, kInstanceBaseSlot);
             commandBuffer.BindVertexBuffer(meshResources.vertexBuffer);
             commandBuffer.BindIndexBuffer(meshResources.indexBuffer);
             const std::uint32_t count =
@@ -4971,6 +5089,25 @@ struct Renderer3D::Impl {
             lastAlbedoColor = Math::Vector3{-1.0F, -1.0F, -1.0F};
         }
         return drawCalls;
+    }
+
+    /// Acquires a per-call UI vertex buffer so multiple UI passes/chunks in the same frame do not
+    /// overwrite earlier UpdateBuffer contents before deferred Vulkan replay.
+    [[nodiscard]] BufferHandle AcquireUiVertexBuffer() {
+        const std::size_t slotIndex = nextUiVertexBufferIndex++;
+        if (slotIndex == 0U) {
+            return uiVertexBuffer;
+        }
+        const std::size_t poolIndex = slotIndex - 1U;
+        if (poolIndex >= uiVertexBuffers.size()) {
+            uiVertexBuffers.resize(poolIndex + 1U, kInvalidBufferHandle);
+        }
+        if (uiVertexBuffers[poolIndex] == kInvalidBufferHandle) {
+            uiVertexBuffers[poolIndex] = renderDevice.CreateBuffer(
+                BufferDesc{sizeof(UIVertex) * kMaximumUIQuads * kUIVerticesPerQuad, BufferUsage::Vertex,
+                           BufferMemory::Auto, BufferUpdateFrequency::Dynamic});
+        }
+        return uiVertexBuffers[poolIndex];
     }
 
     /// Records consecutive UI quads as texture-bound batches. Solid quads sample the white
@@ -5000,37 +5137,45 @@ struct Renderer3D::Impl {
             uiVertexStaging.push_back(makeVertex(x1, y1, quad.u1, quad.v1));
             uiVertexStaging.push_back(makeVertex(x0, y1, quad.u0, quad.v1));
         };
-        const auto drawQuads = [this, &appendQuad, &projection, &commandBuffer](
-                                   const TextureHandle texture,
-                                   const std::vector<UI::UIQuad>& quads) -> bool {
-            uiVertexStaging.clear();
-            for (const UI::UIQuad& quad : quads) {
-                if (uiVertexStaging.size() + kUIVerticesPerQuad > maxVertices) {
-                    break;
-                }
-                appendQuad(quad);
+
+        struct UIVertexRange final {
+            TextureHandle texture = kInvalidTextureHandle;
+            std::uint32_t firstVertex = 0U;
+            std::uint32_t vertexCount = 0U;
+        };
+        std::vector<UIVertexRange> ranges;
+        uiVertexStaging.clear();
+        std::size_t drawCalls = 0U;
+
+        const auto flushChunk = [this, &projection, &commandBuffer, &ranges, &drawCalls]() {
+            if (uiVertexStaging.empty() || ranges.empty()) {
+                uiVertexStaging.clear();
+                ranges.clear();
+                return;
             }
-            if (uiVertexStaging.empty() ||
-                !renderDevice.UpdateBuffer(uiVertexBuffer, std::as_bytes(std::span(uiVertexStaging)))) {
-                return false;
+            const BufferHandle chunkBuffer = AcquireUiVertexBuffer();
+            if (chunkBuffer == kInvalidBufferHandle ||
+                !renderDevice.UpdateBuffer(chunkBuffer, std::as_bytes(std::span(uiVertexStaging)))) {
+                uiVertexStaging.clear();
+                ranges.clear();
+                return;
             }
             uiOverlayProgram->SetMatrix4x4("uProjection", projection);
             uiOverlayProgram->SetInt("uSourceTexture", 0);
             uiOverlayProgram->ApplyTo(commandBuffer);
-            commandBuffer.BindTexture(texture, 0U);
             if (clampLinearSampler != kInvalidSamplerHandle) {
                 commandBuffer.BindSampler(clampLinearSampler, 0U);
             }
-            commandBuffer.BindVertexBuffer(uiVertexBuffer);
-            commandBuffer.Draw(static_cast<std::uint32_t>(uiVertexStaging.size()));
-            return true;
+            commandBuffer.BindVertexBuffer(chunkBuffer);
+            for (const UIVertexRange& range : ranges) {
+                commandBuffer.BindTexture(range.texture, 0U);
+                commandBuffer.DrawRange(range.vertexCount, 1U, range.firstVertex);
+                ++drawCalls;
+            }
+            uiVertexStaging.clear();
+            ranges.clear();
         };
 
-        struct UITextureBatch final {
-            TextureHandle texture = kInvalidTextureHandle;
-            std::vector<UI::UIQuad> quads;
-        };
-        std::vector<UITextureBatch> orderedTextureBatches;
         for (const UI::UIQuad& quad : batch.quads) {
             TextureHandle texture = kInvalidTextureHandle;
             switch (quad.kind) {
@@ -5061,19 +5206,21 @@ struct Renderer3D::Impl {
                 break;
             }
             }
-            if (orderedTextureBatches.empty() || orderedTextureBatches.back().texture != texture ||
-                orderedTextureBatches.back().quads.size() >= kMaximumUIQuads) {
-                orderedTextureBatches.push_back(UITextureBatch{texture, {}});
+            if (uiVertexStaging.size() + kUIVerticesPerQuad > maxVertices) {
+                flushChunk();
             }
-            orderedTextureBatches.back().quads.push_back(quad);
+            const auto firstVertex = static_cast<std::uint32_t>(uiVertexStaging.size());
+            appendQuad(quad);
+            if (!ranges.empty() && ranges.back().texture == texture &&
+                ranges.back().firstVertex + ranges.back().vertexCount == firstVertex) {
+                ranges.back().vertexCount += static_cast<std::uint32_t>(kUIVerticesPerQuad);
+            } else {
+                ranges.push_back(
+                    UIVertexRange{texture, firstVertex, static_cast<std::uint32_t>(kUIVerticesPerQuad)});
+            }
         }
 
-        std::size_t drawCalls = 0U;
-        for (const UITextureBatch& batchForTexture : orderedTextureBatches) {
-            if (drawQuads(batchForTexture.texture, batchForTexture.quads)) {
-                ++drawCalls;
-            }
-        }
+        flushChunk();
         return drawCalls;
     }
 
@@ -5434,9 +5581,16 @@ Renderer3D::~Renderer3D() {
     for (const auto& [guid, textureHandle] : m_impl->textureCache) {
         DestroyTextureIfValid(m_impl->renderDevice, textureHandle);
     }
-    DestroyBufferIfValid(m_impl->renderDevice, m_impl->instanceTransformBuffer);
-    DestroyBufferIfValid(m_impl->renderDevice, m_impl->instanceNormalTransformBuffer);
-    DestroyBufferIfValid(m_impl->renderDevice, m_impl->instanceBaseBuffer);
+    for (const Impl::InstancePassBuffers& slot : m_impl->instancePassBuffers) {
+        DestroyBufferIfValid(m_impl->renderDevice, slot.transformBuffer);
+        DestroyBufferIfValid(m_impl->renderDevice, slot.normalTransformBuffer);
+    }
+    m_impl->instancePassBuffers.clear();
+    for (const BufferHandle baseBuffer : m_impl->instanceBaseBuffers) {
+        DestroyBufferIfValid(m_impl->renderDevice, baseBuffer);
+    }
+    m_impl->instanceBaseBuffers.clear();
+    m_impl->instanceBaseCachedValues.clear();
     DestroyBufferIfValid(m_impl->renderDevice, m_impl->clusteredLightBuffer);
     DestroyBufferIfValid(m_impl->renderDevice, m_impl->clusteredCellBuffer);
     DestroyBufferIfValid(m_impl->renderDevice, m_impl->clusteredIndexBuffer);
@@ -5467,6 +5621,11 @@ Renderer3D::~Renderer3D() {
         DestroyTextureIfValid(m_impl->renderDevice, captureDepth);
     }
     m_impl->reflectionProbeCaptureDepths.clear();
+    for (auto& [viewKey, capture] : m_impl->uiViewCaptures) {
+        static_cast<void>(viewKey);
+        m_impl->DestroyUIViewCapture(capture);
+    }
+    m_impl->uiViewCaptures.clear();
     DestroyTextureIfValid(m_impl->renderDevice, m_impl->fallbackWhiteTexture);
     DestroyTextureIfValid(m_impl->renderDevice, m_impl->fallbackWhiteCubeTexture);
     DestroyTextureIfValid(m_impl->renderDevice, m_impl->fallbackNormalTexture);
@@ -5479,6 +5638,10 @@ Renderer3D::~Renderer3D() {
     DestroySamplerIfValid(m_impl->renderDevice, m_impl->environmentEquirectSampler);
     DestroyBufferIfValid(m_impl->renderDevice, m_impl->particleVertexBuffer);
     DestroyBufferIfValid(m_impl->renderDevice, m_impl->uiVertexBuffer);
+    for (const BufferHandle extraUiBuffer : m_impl->uiVertexBuffers) {
+        DestroyBufferIfValid(m_impl->renderDevice, extraUiBuffer);
+    }
+    m_impl->uiVertexBuffers.clear();
     DestroyTextureIfValid(m_impl->renderDevice, m_impl->uiFontAtlasTexture);
     m_impl->DestroyStudioFloorResources();
 }
@@ -5666,6 +5829,9 @@ void Renderer3D::CaptureUIViews(Scene::IEntityManager& entityManager, const Scen
 
 void Renderer3D::RenderFrame(Scene::IEntityManager& entityManager, Scene::Entity cameraEntity) {
     if (!m_impl->probeCaptureViewActive) {
+        m_impl->nextInstancePassBufferIndex = 0U;
+        m_impl->nextInstanceBaseBufferIndex = 0U;
+        m_impl->nextUiVertexBufferIndex = 0U;
         CaptureUIViews(entityManager, cameraEntity);
     }
     const bool capturingProbe = m_impl->probeCaptureViewActive;
@@ -5927,9 +6093,9 @@ void Renderer3D::RenderFrame(Scene::IEntityManager& entityManager, Scene::Entity
         capturingProbe ? m_impl->probeCaptureVisibilityLayers : 0xFFFFFFFFU;
     m_impl->visibilitySet.frustumTestsDisabled = frustumCullingFrozen;
     const LightData* const earlyShadowCaster = FindShadowCaster(lights);
+    m_impl->meshRenderer.SynchronizeSpatialAcceleration(entityManager, m_impl->assetManager,
+                                                           m_impl->assetDatabase);
     if (!frustumCullingFrozen && earlyShadowCaster == nullptr) {
-        m_impl->meshRenderer.SynchronizeSpatialAcceleration(entityManager, m_impl->assetManager,
-                                                               m_impl->assetDatabase);
         m_impl->meshRenderer.SetActiveCullFrustum(frustum);
     } else {
         m_impl->meshRenderer.ClearActiveCullFrustum();
@@ -6639,17 +6805,30 @@ void Renderer3D::RenderFrame(Scene::IEntityManager& entityManager, Scene::Entity
                 passDesc.clearColor = {horizon.x, horizon.y, horizon.z, 0.0F};
             }
             m_impl->lastFrameDiagnostics.mainPassRecorded = true;
+            m_impl->nextIndirectCullIndex = 0U;
+            BuildRenderBatches(queue.opaqueItems, m_impl->opaqueBatches);
+            m_impl->PrepareIndirectCullsForBatches(queue.opaqueItems, m_impl->opaqueBatches,
+                                                   frameUniforms, m_impl->opaquePreparedIndirectCulls);
+            if (!wboitActive) {
+                BuildRenderBatches(queue.transparentItems, m_impl->transparentBatches);
+                m_impl->PrepareIndirectCullsForBatches(
+                    queue.transparentItems, m_impl->transparentBatches, frameUniforms,
+                    m_impl->transparentPreparedIndirectCulls);
+            } else {
+                m_impl->transparentPreparedIndirectCulls.clear();
+            }
             commandBuffer.BeginRenderPass(passDesc);
             m_impl->BeginFrameUniformScope();
             m_impl->instancedDrawCallsThisFrame = 0U;
             m_impl->instancedObjectsThisFrame = 0U;
             m_impl->indirectInstancedDrawCallsThisFrame = 0U;
-            m_impl->nextIndirectCullIndex = 0U;
             m_impl->lastFrameDiagnostics.meshDrawCallsRecorded += m_impl->RecordItemsInstanced(
-                queue.opaqueItems, m_impl->opaqueBatches, frameUniforms, commandBuffer);
+                queue.opaqueItems, m_impl->opaqueBatches, m_impl->opaquePreparedIndirectCulls,
+                frameUniforms, commandBuffer);
             if (!wboitActive) {
                 m_impl->lastFrameDiagnostics.meshDrawCallsRecorded += m_impl->RecordItemsInstanced(
-                    queue.transparentItems, m_impl->transparentBatches, frameUniforms, commandBuffer);
+                    queue.transparentItems, m_impl->transparentBatches,
+                    m_impl->transparentPreparedIndirectCulls, frameUniforms, commandBuffer);
             }
             m_impl->lastFrameDiagnostics.instancedDrawCallsRecorded = m_impl->instancedDrawCallsThisFrame;
             m_impl->lastFrameDiagnostics.instancedObjectsRecorded = m_impl->instancedObjectsThisFrame;
@@ -6773,6 +6952,9 @@ void Renderer3D::RenderFrame(Scene::IEntityManager& entityManager, Scene::Entity
                         Math::Vector3{cascadeSplits[0], cascadeSplits[1], cascadeSplits[2]});
                     m_impl->proceduralSkyProgram->SetFloat("uSkyGroundShadowOpacity", shadowOpacity);
                     m_impl->proceduralSkyProgram->SetFloat("uSkyGroundShadowBias", shadowBias);
+                    if (m_impl->renderDevice.UsesZeroToOneDepthBuffer()) {
+                        m_impl->proceduralSkyProgram->SetFloat("uDepthNdcScale", 1.0F);
+                    }
                 }
                 m_impl->proceduralSkyProgram->ApplyTo(commandBuffer);
                 if (m_impl->skyTextureEnabled) {
@@ -8109,6 +8291,10 @@ void Renderer3D::SetPostProcessSettings(const PostProcessSettings& settings) {
         std::isfinite(settings.sharpeningAmount) ? std::clamp(settings.sharpeningAmount, 0.0F, 1.0F) : 0.0F;
 }
 
+PostProcessSettings Renderer3D::GetPostProcessSettings() const noexcept {
+    return m_impl->postProcessSettings;
+}
+
 void Renderer3D::SetPreviewEnvironment(const std::optional<Scene::WorldEnvironmentFrame>& frame) {
     // `hasEnvironment` is deliberately forced here rather than trusted from the caller: the whole
     // point of the preview is that it stands in for the environment the scene does not have, and a
@@ -8140,14 +8326,18 @@ void Renderer3D::SetShadowAtlasTileResolution(const std::uint32_t resolution) no
 }
 
 void Renderer3D::SetMaterialSamplerSettings(const bool repeatEnabled, const float maxAnisotropy) noexcept {
+    SetMaterialSamplerWrap(repeatEnabled ? SamplerWrap::Repeat : SamplerWrap::ClampToEdge, maxAnisotropy);
+}
+
+void Renderer3D::SetMaterialSamplerWrap(const SamplerWrap wrapMode, const float maxAnisotropy) noexcept {
     const float sanitizedAnisotropy =
         std::isfinite(maxAnisotropy) ? std::clamp(maxAnisotropy, 1.0F, 16.0F) : 1.0F;
-    if (m_impl->materialTextureRepeatEnabled == repeatEnabled &&
+    if (m_impl->materialTextureWrap == wrapMode &&
         std::abs(m_impl->materialMaxAnisotropy - sanitizedAnisotropy) <= 1.0e-3F &&
         m_impl->materialRepeatSampler != kInvalidSamplerHandle) {
         return;
     }
-    m_impl->materialTextureRepeatEnabled = repeatEnabled;
+    m_impl->materialTextureWrap = wrapMode;
     m_impl->materialMaxAnisotropy = sanitizedAnisotropy;
     m_impl->RebuildMaterialRepeatSampler();
 }

@@ -445,8 +445,11 @@ private:
 
 void ComboBox::setSelected(int i, bool notify) {
   if (isItemDisabled(i)) return;
-  m_sel = i;
-  invalidate();
+  if (m_sel == i && !notify) return;
+  if (m_sel != i) {
+    m_sel = i;
+    invalidate();
+  }
   if (notify && onChange) onChange(i);
 }
 

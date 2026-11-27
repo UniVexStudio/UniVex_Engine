@@ -359,7 +359,7 @@ void TableView::fire() { if (onSelect) onSelect(std::vector<int>(m_sel.begin(), 
 
 bool TableView::onKeyDown(const KeyEvent& e) {
   rebuild();
-  if (m_rows == 0) return false;
+  if (m_rows <= 0) return false;
   int cur = m_anchor < 0 ? -1 : m_anchor;
   int page = std::max(1, int(body().h / m_rowH) - 1);
   int next = cur;

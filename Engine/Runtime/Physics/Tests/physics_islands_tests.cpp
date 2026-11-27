@@ -157,6 +157,19 @@ TEST(PhysicsIslandsTest, AStaticBodyThatTouchesTwoOthersJoinsThem) {
     EXPECT_EQ(partition.islands[0].bodyCount, 3U);
 }
 
+TEST(PhysicsIslandsTest, StaticBodySetKeepsDynamicIslandsIndependent) {
+    const Scene::Entity floor = MakeEntity(100U);
+    const std::vector<CollisionPair> pairs{MakePair(MakeEntity(1U), floor),
+                                              MakePair(floor, MakeEntity(2U))};
+    const std::unordered_set<Scene::Entity> staticBodies{floor};
+    const PhysicsIslandPartition partition = BuildPhysicsIslandPartition(pairs, staticBodies);
+
+    ASSERT_EQ(partition.islands.size(), 2U);
+    EXPECT_EQ(partition.islands[0].pairCount, 1U);
+    EXPECT_EQ(partition.islands[1].pairCount, 1U);
+    ExpectValidPartition(partition, 2U);
+}
+
 TEST(PhysicsIslandsTest, SelfPairsAreIgnoredEntirely) {
     const Scene::Entity body = MakeEntity(7U);
     const std::vector<CollisionPair> pairs{MakePair(body, body)};

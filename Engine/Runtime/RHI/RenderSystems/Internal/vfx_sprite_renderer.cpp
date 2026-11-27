@@ -697,7 +697,7 @@ std::size_t VfxSpriteRenderer::RecordBatchList(const std::vector<PreparedBatchRa
                 static_cast<std::uint32_t>(kVfxSpriteVerticesPerQuad), range.instanceCount);
         } else {
             commandBuffer.BindVertexBuffer(m_fallbackVertexBuffer);
-            commandBuffer.Draw(range.fallbackVertexCount, 1U);
+            commandBuffer.DrawRange(range.fallbackVertexCount, 1U, range.firstFallbackVertex);
         }
 
         ++drawCalls;

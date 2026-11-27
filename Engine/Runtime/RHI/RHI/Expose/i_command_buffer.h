@@ -175,6 +175,13 @@ public:
     /// the buffers it needs are bound.
     virtual void Draw(std::uint32_t vertexCount, std::uint32_t instanceCount = 1) = 0;
 
+    /// Non-indexed draw starting at `firstVertex` inside the bound vertex buffer.
+    virtual void DrawRange(std::uint32_t vertexCount, std::uint32_t instanceCount,
+                           std::uint32_t firstVertex) {
+        static_cast<void>(firstVertex);
+        Draw(vertexCount, instanceCount);
+    }
+
     /// Draws using the currently bound index buffer, taking the draw's PARAMETERS from GPU memory
     /// instead of from these arguments: `buffer` must be an IndirectStorage buffer holding a
     /// DrawIndexedIndirectCommand at `offsetBytes`, and the GPU reads indexCount,
@@ -210,6 +217,11 @@ public:
     /// across draws on the same command buffer (immediate OpenGL / GLES), letting ShaderProgram
     /// flush only uniforms that changed since the last ApplyTo() instead of re-uploading all ~200.
     [[nodiscard]] virtual bool RetainsUniformStatePerPipeline() const noexcept { return false; }
+
+    /// Domain identity for retained per-pipeline uniform state. Backends whose native program
+    /// objects persist uniform values across per-frame command buffers (OpenGL / GLES) return a
+    /// stable per-device ID so ShaderProgram avoids re-uploading ~200 unchanged uniforms every frame.
+    [[nodiscard]] virtual std::uint64_t GetUniformStateEpoch() const noexcept { return m_instanceId; }
 
     /// Monotonic identity unique to this command buffer object (prevents heap-address aliasing
     /// across frames when command buffers are allocated and destroyed each frame).

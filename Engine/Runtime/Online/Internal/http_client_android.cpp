@@ -79,7 +79,11 @@ inline constexpr jint kLocalReferencesPerRequest = 64;
         return {};
     }
     const char* chars = env->GetStringUTFChars(text, nullptr);
-    std::string result = chars != nullptr ? chars : "";
+    if (chars == nullptr) {
+        env->ExceptionClear();
+        return {};
+    }
+    std::string result(chars);
     env->ReleaseStringUTFChars(text, chars);
     return result;
 }
@@ -92,8 +96,21 @@ inline constexpr jint kLocalReferencesPerRequest = 64;
     }
     env->ExceptionClear();
     jclass throwable = env->FindClass("java/lang/Throwable");
-    jmethodID describe = env->GetMethodID(throwable, "toString", "()Ljava/lang/String;");
-    std::string message = ToString(env, static_cast<jstring>(env->CallObjectMethod(thrown, describe)));
+    std::string message;
+    if (throwable != nullptr) {
+        jmethodID describe = env->GetMethodID(throwable, "toString", "()Ljava/lang/String;");
+        if (describe != nullptr) {
+            auto text = static_cast<jstring>(env->CallObjectMethod(thrown, describe));
+            if (!env->ExceptionCheck() && text != nullptr) {
+                message = ToString(env, text);
+            }
+            if (text != nullptr) {
+                env->DeleteLocalRef(text);
+            }
+        }
+        env->DeleteLocalRef(throwable);
+    }
+    env->DeleteLocalRef(thrown);
     env->ExceptionClear();
     return message.empty() ? std::string("The request failed.") : message;
 }
@@ -149,32 +166,54 @@ private:
         }
         const LocalFrame frame(env, kLocalReferencesPerRequest);
         jclass urlClass = env->FindClass("java/net/URL");
-        jclass connectionClass = env->FindClass("java/net/HttpURLConnection");
-        jclass streamClass = env->FindClass("java/io/InputStream");
-        if (urlClass == nullptr || connectionClass == nullptr || streamClass == nullptr) {
+        if (urlClass == nullptr || env->ExceptionCheck()) {
             response.error = TakeException(env);
             return response;
         }
-        jmethodID urlFromString = env->GetMethodID(urlClass, "<init>", "(Ljava/lang/String;)V");
-        jmethodID urlRelative = env->GetMethodID(urlClass, "<init>", "(Ljava/net/URL;Ljava/lang/String;)V");
-        jmethodID urlToString = env->GetMethodID(urlClass, "toString", "()Ljava/lang/String;");
-        jmethodID urlProtocol = env->GetMethodID(urlClass, "getProtocol", "()Ljava/lang/String;");
-        jmethodID urlHost = env->GetMethodID(urlClass, "getHost", "()Ljava/lang/String;");
-        jmethodID openConnection = env->GetMethodID(urlClass, "openConnection", "()Ljava/net/URLConnection;");
-        jmethodID setFollow = env->GetMethodID(connectionClass, "setInstanceFollowRedirects", "(Z)V");
-        jmethodID setConnectTimeout = env->GetMethodID(connectionClass, "setConnectTimeout", "(I)V");
-        jmethodID setReadTimeout = env->GetMethodID(connectionClass, "setReadTimeout", "(I)V");
-        jmethodID setProperty = env->GetMethodID(connectionClass, "setRequestProperty", "(Ljava/lang/String;Ljava/lang/String;)V");
-        jmethodID responseCode = env->GetMethodID(connectionClass, "getResponseCode", "()I");
-        jmethodID headerField = env->GetMethodID(connectionClass, "getHeaderField", "(Ljava/lang/String;)Ljava/lang/String;");
-        jmethodID contentLength = env->GetMethodID(connectionClass, "getContentLengthLong", "()J");
-        jmethodID inputStream = env->GetMethodID(connectionClass, "getInputStream", "()Ljava/io/InputStream;");
-        jmethodID errorStream = env->GetMethodID(connectionClass, "getErrorStream", "()Ljava/io/InputStream;");
-        jmethodID disconnect = env->GetMethodID(connectionClass, "disconnect", "()V");
-        jmethodID read = env->GetMethodID(streamClass, "read", "([B)I");
-        jmethodID close = env->GetMethodID(streamClass, "close", "()V");
-        if (env->ExceptionCheck()) {
+        jclass connectionClass = env->FindClass("java/net/HttpURLConnection");
+        if (connectionClass == nullptr || env->ExceptionCheck()) {
             response.error = TakeException(env);
+            return response;
+        }
+        jclass streamClass = env->FindClass("java/io/InputStream");
+        if (streamClass == nullptr || env->ExceptionCheck()) {
+            response.error = TakeException(env);
+            return response;
+        }
+        const auto getMethod = [env](jclass cls, const char* name, const char* sig) -> jmethodID {
+            if (env->ExceptionCheck()) {
+                return nullptr;
+            }
+            return env->GetMethodID(cls, name, sig);
+        };
+        jmethodID urlFromString = getMethod(urlClass, "<init>", "(Ljava/lang/String;)V");
+        jmethodID urlRelative = getMethod(urlClass, "<init>", "(Ljava/net/URL;Ljava/lang/String;)V");
+        jmethodID urlToString = getMethod(urlClass, "toString", "()Ljava/lang/String;");
+        jmethodID urlProtocol = getMethod(urlClass, "getProtocol", "()Ljava/lang/String;");
+        jmethodID urlHost = getMethod(urlClass, "getHost", "()Ljava/lang/String;");
+        jmethodID openConnection = getMethod(urlClass, "openConnection", "()Ljava/net/URLConnection;");
+        jmethodID setFollow = getMethod(connectionClass, "setInstanceFollowRedirects", "(Z)V");
+        jmethodID setConnectTimeout = getMethod(connectionClass, "setConnectTimeout", "(I)V");
+        jmethodID setReadTimeout = getMethod(connectionClass, "setReadTimeout", "(I)V");
+        jmethodID setProperty = getMethod(connectionClass, "setRequestProperty", "(Ljava/lang/String;Ljava/lang/String;)V");
+        jmethodID responseCode = getMethod(connectionClass, "getResponseCode", "()I");
+        jmethodID headerField = getMethod(connectionClass, "getHeaderField", "(Ljava/lang/String;)Ljava/lang/String;");
+        jmethodID contentLength = getMethod(connectionClass, "getContentLengthLong", "()J");
+        jmethodID inputStream = getMethod(connectionClass, "getInputStream", "()Ljava/io/InputStream;");
+        jmethodID errorStream = getMethod(connectionClass, "getErrorStream", "()Ljava/io/InputStream;");
+        jmethodID disconnect = getMethod(connectionClass, "disconnect", "()V");
+        jmethodID read = getMethod(streamClass, "read", "([B)I");
+        jmethodID close = getMethod(streamClass, "close", "()V");
+        if (env->ExceptionCheck() || urlFromString == nullptr || urlRelative == nullptr ||
+            urlToString == nullptr || urlProtocol == nullptr || urlHost == nullptr ||
+            openConnection == nullptr || setFollow == nullptr || setConnectTimeout == nullptr ||
+            setReadTimeout == nullptr || setProperty == nullptr || responseCode == nullptr ||
+            headerField == nullptr || contentLength == nullptr || inputStream == nullptr ||
+            errorStream == nullptr || disconnect == nullptr || read == nullptr || close == nullptr) {
+            response.error = TakeException(env);
+            if (response.error.empty()) {
+                response.error = "Required Android HTTP JNI method lookup failed.";
+            }
             return response;
         }
 
@@ -184,13 +223,31 @@ private:
         for (int redirect = 0; redirect <= kMaximumRedirects; ++redirect) {
             // Each redirect hop gets its own local reference frame so ART's 64-ref table cannot overflow.
             const LocalFrame hopFrame(env, kLocalReferencesPerRequest);
-            jobject url = env->NewObject(urlClass, urlFromString, env->NewStringUTF(currentUrl.c_str()));
+            jstring urlStr = env->NewStringUTF(currentUrl.c_str());
+            if (urlStr == nullptr || env->ExceptionCheck()) {
+                response.error = TakeException(env);
+                return response;
+            }
+            jobject url = env->NewObject(urlClass, urlFromString, urlStr);
+            env->DeleteLocalRef(urlStr);
             if (env->ExceptionCheck() || url == nullptr) {
                 response.error = TakeException(env);
                 return response;
             }
-            const std::string scheme = ToString(env, static_cast<jstring>(env->CallObjectMethod(url, urlProtocol)));
-            const std::string host = ToString(env, static_cast<jstring>(env->CallObjectMethod(url, urlHost)));
+            auto schemeObj = static_cast<jstring>(env->CallObjectMethod(url, urlProtocol));
+            if (env->ExceptionCheck()) {
+                response.error = TakeException(env);
+                return response;
+            }
+            const std::string scheme = ToString(env, schemeObj);
+            if (schemeObj != nullptr) env->DeleteLocalRef(schemeObj);
+            auto hostObj = static_cast<jstring>(env->CallObjectMethod(url, urlHost));
+            if (env->ExceptionCheck()) {
+                response.error = TakeException(env);
+                return response;
+            }
+            const std::string host = ToString(env, hostObj);
+            if (hostObj != nullptr) env->DeleteLocalRef(hostObj);
             if (scheme != kHttpsScheme) {
                 response.error = "Only https addresses are allowed.";
                 return response;
@@ -199,7 +256,7 @@ private:
                 originalHost = host;
             }
             jobject connection = env->CallObjectMethod(url, openConnection);
-            if (env->ExceptionCheck()) {
+            if (env->ExceptionCheck() || connection == nullptr) {
                 response.error = TakeException(env);
                 return response;
             }
@@ -229,8 +286,18 @@ private:
                 if (host != originalHost && header.name == kAuthorizationHeader) {
                     continue;
                 }
-                env->CallVoidMethod(connection, setProperty, env->NewStringUTF(header.name.c_str()),
-                                    env->NewStringUTF(header.value.c_str()));
+                jstring headerKey = env->NewStringUTF(header.name.c_str());
+                if (headerKey == nullptr || failed()) {
+                    return response;
+                }
+                jstring headerVal = env->NewStringUTF(header.value.c_str());
+                if (headerVal == nullptr || failed()) {
+                    env->DeleteLocalRef(headerKey);
+                    return response;
+                }
+                env->CallVoidMethod(connection, setProperty, headerKey, headerVal);
+                env->DeleteLocalRef(headerVal);
+                env->DeleteLocalRef(headerKey);
                 if (failed()) {
                     return response;
                 }
@@ -239,23 +306,45 @@ private:
             if (env->ExceptionCheck()) {
                 response.error = TakeException(env);
                 env->CallVoidMethod(connection, disconnect);
+                env->ExceptionClear();
                 return response;
             }
             if (IsHttpRedirectionStatus(status)) {
-                const std::string location = ToString(
-                    env, static_cast<jstring>(env->CallObjectMethod(connection, headerField,
-                                                                    env->NewStringUTF(kLocationHeader.data()))));
+                jstring locKey = env->NewStringUTF(kLocationHeader.data());
+                std::string location;
+                if (locKey != nullptr && !env->ExceptionCheck()) {
+                    auto locObj = static_cast<jstring>(env->CallObjectMethod(connection, headerField, locKey));
+                    if (!env->ExceptionCheck() && locObj != nullptr) {
+                        location = ToString(env, locObj);
+                    }
+                    if (locObj != nullptr) env->DeleteLocalRef(locObj);
+                }
+                if (locKey != nullptr) env->DeleteLocalRef(locKey);
+                env->ExceptionClear();
                 env->CallVoidMethod(connection, disconnect);
+                env->ExceptionClear();
                 if (location.empty()) {
                     response.error = "A redirect had no location.";
                     return response;
                 }
-                jobject resolved = env->NewObject(urlClass, urlRelative, url, env->NewStringUTF(location.c_str()));
+                jstring locStr = env->NewStringUTF(location.c_str());
+                if (locStr == nullptr || env->ExceptionCheck()) {
+                    response.error = TakeException(env);
+                    return response;
+                }
+                jobject resolved = env->NewObject(urlClass, urlRelative, url, locStr);
+                env->DeleteLocalRef(locStr);
                 if (env->ExceptionCheck() || resolved == nullptr) {
                     response.error = TakeException(env);
                     return response;
                 }
-                currentUrl = ToString(env, static_cast<jstring>(env->CallObjectMethod(resolved, urlToString)));
+                auto resolvedStr = static_cast<jstring>(env->CallObjectMethod(resolved, urlToString));
+                if (env->ExceptionCheck()) {
+                    response.error = TakeException(env);
+                    return response;
+                }
+                currentUrl = ToString(env, resolvedStr);
+                if (resolvedStr != nullptr) env->DeleteLocalRef(resolvedStr);
                 continue;
             }
 
@@ -269,9 +358,24 @@ private:
                 stream = nullptr;
             }
             const jlong total = env->CallLongMethod(connection, contentLength);
+            if (env->ExceptionCheck()) {
+                env->ExceptionClear();
+            }
             std::uint64_t received = 0U;
             if (stream != nullptr) {
                 jbyteArray buffer = env->NewByteArray(kReadChunkBytes);
+                if (buffer == nullptr || env->ExceptionCheck()) {
+                    response.reached = false;
+                    response.error = TakeException(env);
+                    if (response.error.empty()) {
+                        response.error = "Failed to allocate JNI read buffer.";
+                    }
+                    env->CallVoidMethod(stream, close);
+                    env->ExceptionClear();
+                    env->CallVoidMethod(connection, disconnect);
+                    env->ExceptionClear();
+                    return response;
+                }
                 std::vector<char> chunk(static_cast<std::size_t>(kReadChunkBytes));
                 for (;;) {
                     const jint count = env->CallIntMethod(stream, read, buffer);
@@ -283,7 +387,15 @@ private:
                     if (count == kEndOfStream) {
                         break;
                     }
+                    if (count <= 0 || count > kReadChunkBytes) {
+                        continue;
+                    }
                     env->GetByteArrayRegion(buffer, 0, count, reinterpret_cast<jbyte*>(chunk.data()));
+                    if (env->ExceptionCheck()) {
+                        response.reached = false;
+                        response.error = TakeException(env);
+                        break;
+                    }
                     if (success) {
                         if (!sink(chunk.data(), static_cast<std::size_t>(count))) {
                             break;
@@ -299,10 +411,12 @@ private:
                         response.body.append(chunk.data(), static_cast<std::size_t>(count));
                     }
                 }
+                env->DeleteLocalRef(buffer);
                 env->CallVoidMethod(stream, close);
                 static_cast<void>(TakeException(env));
             }
             env->CallVoidMethod(connection, disconnect);
+            env->ExceptionClear();
             return response;
         }
         response.error = "Too many redirects.";

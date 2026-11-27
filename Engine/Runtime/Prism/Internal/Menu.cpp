@@ -80,7 +80,7 @@ public:
     c.popClip();
     if (scrollable && maxScroll > 0.f) {
       const float trackH = std::max(16.f, m_rect.h - 8.f);
-      const float thumbH = std::clamp(trackH * (m_rect.h / totalH), 18.f, trackH);
+      const float thumbH = std::clamp(trackH * (m_rect.h / totalH), std::min(18.f, trackH), trackH);
       const float thumbY = m_rect.y + 4.f + (trackH - thumbH) * (m_scroll / maxScroll);
       c.fillRoundRect({m_rect.right() - 5.f, thumbY, 3.f, thumbH}, 1.5f, t.textDim);
     }
@@ -136,6 +136,7 @@ public:
 
   bool onKeyDown(const KeyEvent& e) override {
     int n = int(m_items.size());
+    if (n <= 0) return false;
     auto step = [&](int dir) {
       for (int k = 1; k <= n; k++) {
         int j = ((m_hover < 0 ? (dir > 0 ? -1 : 0) : m_hover) + dir * k + n * 2) % n;

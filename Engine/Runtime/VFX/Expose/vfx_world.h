@@ -197,6 +197,7 @@ private:
     std::vector<InstanceSlot> m_slots;
     std::vector<std::uint32_t> m_freeSlotIndices;
     std::vector<VfxColliderVolume> m_sceneColliders;
+    float m_hotReloadPollAccumulator = 0.0F;
     VfxWorldStats m_stats{};
 };
 

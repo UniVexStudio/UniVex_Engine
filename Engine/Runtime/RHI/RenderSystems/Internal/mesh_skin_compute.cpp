@@ -34,7 +34,9 @@ constexpr std::size_t kMatrixFloats = 16U;
 /// GL executes at record time; Vulkan replays in Present(). Reading a result without this
 /// returns pre-dispatch contents on Vulkan - a red CI run proved it during CS6.
 void FlushComputeSubmission(IRenderDevice& device) {
-    device.Present();
+    if (device.GetBackendName().starts_with("Vulkan")) {
+        device.Present();
+    }
 }
 
 } // namespace

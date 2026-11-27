@@ -719,6 +719,22 @@ void SyncHardwareInputState(ActivityState& state, const bool forceSet) {
     }
 }
 
+void CancelActiveTouches(ActivityState& state) {
+    CancelGestureButton(state.touch);
+    const std::int32_t heldMouse = state.touch.mouseButtonMask;
+    if ((heldMouse & AMOTION_EVENT_BUTTON_PRIMARY) != 0) {
+        Window::DispatchAndroidGlfwMouseButton(GLFW_MOUSE_BUTTON_LEFT, false, kCancelOffscreenPos, kCancelOffscreenPos);
+    }
+    if ((heldMouse & AMOTION_EVENT_BUTTON_SECONDARY) != 0) {
+        Window::DispatchAndroidGlfwMouseButton(GLFW_MOUSE_BUTTON_RIGHT, false, kCancelOffscreenPos, kCancelOffscreenPos);
+    }
+    if ((heldMouse & AMOTION_EVENT_BUTTON_TERTIARY) != 0) {
+        Window::DispatchAndroidGlfwMouseButton(GLFW_MOUSE_BUTTON_MIDDLE, false, kCancelOffscreenPos, kCancelOffscreenPos);
+    }
+    state.touch = TouchGesture{};
+    Window::SetAndroidGlfwTouchContacts({});
+}
+
 void HandleCommand(android_app* const app, const int32_t command) {
     auto& state = *static_cast<ActivityState*>(app->userData);
     state.lastInteractionMs = NowMs();
@@ -732,6 +748,7 @@ void HandleCommand(android_app* const app, const int32_t command) {
         }
         break;
     case APP_CMD_TERM_WINDOW:
+        CancelActiveTouches(state);
         // The surface is destroyed once this returns, so stop drawing to it now.
         if (state.windowManager != nullptr) {
             state.windowManager->DetachNativeWindow();
@@ -757,6 +774,7 @@ void HandleCommand(android_app* const app, const int32_t command) {
         break;
     case APP_CMD_PAUSE:
         state.resumed = false;
+        CancelActiveTouches(state);
         break;
     case APP_CMD_GAINED_FOCUS:
     case APP_CMD_LOST_FOCUS:
@@ -765,6 +783,8 @@ void HandleCommand(android_app* const app, const int32_t command) {
             state.safeArea = Window::ReadAndroidSafeArea(app->activity);
             SyncHardwareInputState(state, false);
             SyncStorageEnvironment(app->activity);
+        } else {
+            CancelActiveTouches(state);
         }
         if (state.windowManager != nullptr) {
             state.windowManager->SetFocused(command == APP_CMD_GAINED_FOCUS);

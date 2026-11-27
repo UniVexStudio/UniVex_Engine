@@ -127,6 +127,8 @@ uniform vec4 uMapTransform[5];
 uniform vec4 uMapControl[5];
 uniform vec2 uUv2Scale;
 uniform vec2 uUv2Offset;
+uniform int uUv2Triplanar;
+uniform float uUv2TriplanarSharpness;
 
 uniform vec3 uKeyDirection;
 uniform vec3 uKeyColor;
@@ -202,42 +204,42 @@ struct PreviewUvSet {
     vec3 triNormal;
 };
 
-PreviewUvSet BuildPreviewUvSet() {
+PreviewUvSet BuildPreviewUvSet(vec2 scale, vec2 offset, int triplanar, float sharpness) {
     PreviewUvSet set;
-    set.triplanar = uUv1Triplanar;
-    set.uv = vTexCoord * uUvScale + uUvOffset;
+    set.triplanar = triplanar;
+    set.uv = vTexCoord * scale + offset;
     set.uvX = set.uv;
     set.uvY = set.uv;
     set.uvZ = set.uv;
     set.weights = vec3(0.0, 1.0, 0.0);
     set.triNormal = normalize(vNormal);
-    if (uUv1Triplanar != 0) {
+    if (triplanar != 0) {
         vec3 pos = vWorldPosition;
         vec3 n = set.triNormal;
-        vec3 w = pow(max(abs(n), vec3(1.0e-4)), vec3(max(uUv1TriplanarSharpness, 0.001)));
+        vec3 w = pow(max(abs(n), vec3(1.0e-4)), vec3(max(sharpness, 0.001)));
         set.weights = w / max(dot(w, vec3(1.0)), 1.0e-5);
         vec2 pX = vec2(n.x < 0.0 ? -pos.z : pos.z, -pos.y);
         vec2 pY = vec2(pos.x, n.y < 0.0 ? -pos.z : pos.z);
         vec2 pZ = vec2(n.z < 0.0 ? -pos.x : pos.x, -pos.y);
-        set.uvX = pX * uUvScale + uUvOffset;
-        set.uvY = pY * uUvScale + uUvOffset;
-        set.uvZ = pZ * uUvScale + uUvOffset;
+        set.uvX = pX * scale + offset;
+        set.uvY = pY * scale + offset;
+        set.uvZ = pZ * scale + offset;
     }
     return set;
 }
 
-vec4 ReadMap(sampler2D map, int slot, PreviewUvSet set, vec4 neutral) {
+vec4 ReadMap(sampler2D map, int slot, PreviewUvSet uv1, PreviewUvSet uv2, vec4 neutral) {
     vec4 transform = uMapTransform[slot];
     vec4 control = uMapControl[slot];
+    PreviewUvSet set = control.w > 0.5 ? uv2 : uv1;
     vec2 scale = vec2(1.0) + transform.xy;
     vec4 value;
-    if (control.w <= 0.5 && set.triplanar != 0) {
+    if (set.triplanar != 0) {
         value = texture(map, set.uvX * scale + transform.zw) * set.weights.x +
                 texture(map, set.uvY * scale + transform.zw) * set.weights.y +
                 texture(map, set.uvZ * scale + transform.zw) * set.weights.z;
     } else {
-        vec2 base = control.w > 0.5 ? vTexCoord * uUv2Scale + uUv2Offset : set.uv;
-        value = texture(map, base * scale + transform.zw);
+        value = texture(map, set.uv * scale + transform.zw);
     }
     int channel = int(control.x + 0.5);
     if (channel >= 1) {
@@ -250,10 +252,11 @@ vec4 ReadMap(sampler2D map, int slot, PreviewUvSet set, vec4 neutral) {
     return mix(value, neutral, clamp(control.z, 0.0, 1.0));
 }
 
-vec3 SamplePreviewTriplanarNormal(sampler2D normalMap, PreviewUvSet set) {
-    vec3 tX = texture(normalMap, set.uvX).xyz * 2.0 - 1.0;
-    vec3 tY = texture(normalMap, set.uvY).xyz * 2.0 - 1.0;
-    vec3 tZ = texture(normalMap, set.uvZ).xyz * 2.0 - 1.0;
+vec3 SamplePreviewTriplanarNormal(sampler2D normalMap, PreviewUvSet set, vec4 transform) {
+    vec2 scale = vec2(1.0) + transform.xy;
+    vec3 tX = texture(normalMap, set.uvX * scale + transform.zw).xyz * 2.0 - 1.0;
+    vec3 tY = texture(normalMap, set.uvY * scale + transform.zw).xyz * 2.0 - 1.0;
+    vec3 tZ = texture(normalMap, set.uvZ * scale + transform.zw).xyz * 2.0 - 1.0;
     if (uFlipGreen) {
         tX.y = -tX.y;
         tY.y = -tY.y;
@@ -273,10 +276,11 @@ vec3 SamplePreviewTriplanarNormal(sampler2D normalMap, PreviewUvSet set) {
 }
 
 void main() {
-    PreviewUvSet uvSet = BuildPreviewUvSet();
+    PreviewUvSet uv1 = BuildPreviewUvSet(uUvScale, uUvOffset, uUv1Triplanar, uUv1TriplanarSharpness);
+    PreviewUvSet uv2 = BuildPreviewUvSet(uUv2Scale, uUv2Offset, uUv2Triplanar, uUv2TriplanarSharpness);
     vec4 albedoSample = vec4(1.0);
     if (uHasAlbedoTexture) {
-        albedoSample = ReadMap(uAlbedoTexture, 0, uvSet, vec4(1.0));
+        albedoSample = ReadMap(uAlbedoTexture, 0, uv1, uv2, vec4(1.0));
     }
     if (uAlphaCutoff > 0.0 && albedoSample.a < uAlphaCutoff) {
         discard;
@@ -290,9 +294,11 @@ void main() {
     }
 
     vec3 shadingNormal = normalize(vNormal);
-    if (uHasNormalTexture) {
-        if (uvSet.triplanar != 0) {
-            shadingNormal = SamplePreviewTriplanarNormal(uNormalTexture, uvSet);
+    if (uHasNormalTexture && uMapControl[1].z < 0.999) {
+        PreviewUvSet normalSet = uMapControl[1].w > 0.5 ? uv2 : uv1;
+        if (normalSet.triplanar != 0) {
+            vec3 triNormal = SamplePreviewTriplanarNormal(uNormalTexture, normalSet, uMapTransform[1]);
+            shadingNormal = normalize(mix(triNormal, shadingNormal, clamp(uMapControl[1].z, 0.0, 1.0)));
         } else {
             vec3 tangent = vTangent - shadingNormal * dot(shadingNormal, vTangent);
             if (dot(tangent, tangent) <= 1.0e-8) {
@@ -301,7 +307,7 @@ void main() {
             }
             tangent = normalize(tangent);
             vec3 bitangent = normalize(cross(shadingNormal, tangent));
-            vec3 tangentSpaceNormal = ReadMap(uNormalTexture, 1, uvSet, vec4(0.5, 0.5, 1.0, 1.0)).xyz * 2.0 - 1.0;
+            vec3 tangentSpaceNormal = ReadMap(uNormalTexture, 1, uv1, uv2, vec4(0.5, 0.5, 1.0, 1.0)).xyz * 2.0 - 1.0;
             if (uFlipGreen) {
                 tangentSpaceNormal.y = -tangentSpaceNormal.y;
             }
@@ -320,7 +326,7 @@ void main() {
     float metallic = uMetallic;
     float roughness = uRoughness;
     if (uHasMetallicRoughnessTexture) {
-        vec3 metallicRoughness = ReadMap(uMetallicRoughnessTexture, 2, uvSet, vec4(1.0)).rgb;
+        vec3 metallicRoughness = ReadMap(uMetallicRoughnessTexture, 2, uv1, uv2, vec4(1.0)).rgb;
         metallic *= metallicRoughness.b;
         roughness *= metallicRoughness.g;
     }
@@ -331,7 +337,7 @@ void main() {
 
     float occlusion = 1.0;
     if (uHasAOTexture) {
-        occlusion = mix(1.0, ReadMap(uAOTexture, 3, uvSet, vec4(1.0)).r, clamp(uOcclusionStrength, 0.0, 1.0));
+        occlusion = mix(1.0, ReadMap(uAOTexture, 3, uv1, uv2, vec4(1.0)).r, clamp(uOcclusionStrength, 0.0, 1.0));
     }
 
     float dielectricSpec = clamp(uDielectricSpecular, 0.0, 1.0);
@@ -359,7 +365,7 @@ void main() {
     color += diffuseAmbient + specularAmbient;
 
     if (uHasEmissiveTexture) {
-        color += ReadMap(uEmissiveTexture, 4, uvSet, vec4(1.0)).rgb * uEmissiveColor * uEmissiveEnergy;
+        color += ReadMap(uEmissiveTexture, 4, uv1, uv2, vec4(1.0)).rgb * uEmissiveColor * uEmissiveEnergy;
     } else {
         color += uEmissiveColor * uEmissiveEnergy;
     }
@@ -419,6 +425,8 @@ enum class PreviewUniform : std::size_t {
     MapControl,
     Uv2Scale,
     Uv2Offset,
+    Uv2Triplanar,
+    Uv2TriplanarSharpness,
     Count,
 };
 
@@ -434,7 +442,7 @@ constexpr std::array<const char*, kPreviewUniformCount> kPreviewUniformNames{
     "uAlbedoTexture",        "uNormalTexture",    "uMetallicRoughnessTexture", "uAOTexture", "uEmissiveTexture",
     "uKeyDirection",         "uKeyColor",         "uFillDirection",     "uFillColor",        "uRimDirection",
     "uRimColor",             "uSkyAmbient",       "uGroundAmbient",     "uMapTransform",     "uMapControl",
-    "uUv2Scale",             "uUv2Offset",
+    "uUv2Scale",             "uUv2Offset",        "uUv2Triplanar",      "uUv2TriplanarSharpness",
 };
 
 void SetGlCapability(const GLenum capability, const GLboolean enabled) noexcept {
@@ -1109,6 +1117,9 @@ std::uintptr_t MaterialThumbnailRenderer::RenderThumbnail(const Asset::MaterialA
         const float uv2Offset[2] = {material.uv2Offset.x, material.uv2Offset.y};
         SetVector2(gl, PreviewUniform::Uv2Scale, uv2Scale);
         SetVector2(gl, PreviewUniform::Uv2Offset, uv2Offset);
+        SetInt(gl, PreviewUniform::Uv2Triplanar,
+               material.uv2WorldTriplanar ? 2 : (material.uv2Triplanar ? 1 : 0));
+        SetFloat(gl, PreviewUniform::Uv2TriplanarSharpness, material.uv2TriplanarSharpness);
         constexpr std::array<Asset::MaterialMap, 5> kPreviewMaps{
             Asset::MaterialMap::Albedo, Asset::MaterialMap::Normal, Asset::MaterialMap::MetallicRoughness,
             Asset::MaterialMap::Occlusion, Asset::MaterialMap::Emissive};

@@ -52,11 +52,11 @@ public:
   Rect rect() const { return m_rect; }
   Slot slot;
 
-  void setFixedSize(float w, float h) { m_fixedW = w; m_fixedH = h; relayout(); }
-  void setFixedWidth(float w) { m_fixedW = w; relayout(); }
-  void setFixedHeight(float h) { m_fixedH = h; relayout(); }
-  void setMinSize(float w, float h) { m_minW = w; m_minH = h; relayout(); }
-  void setMaxSize(float w, float h) { m_maxW = w; m_maxH = h; relayout(); }
+  void setFixedSize(float w, float h) { if (m_fixedW == w && m_fixedH == h) return; m_fixedW = w; m_fixedH = h; relayout(); }
+  void setFixedWidth(float w) { if (m_fixedW == w) return; m_fixedW = w; relayout(); }
+  void setFixedHeight(float h) { if (m_fixedH == h) return; m_fixedH = h; relayout(); }
+  void setMinSize(float w, float h) { if (m_minW == w && m_minH == h) return; m_minW = w; m_minH = h; relayout(); }
+  void setMaxSize(float w, float h) { if (m_maxW == w && m_maxH == h) return; m_maxW = w; m_maxH = h; relayout(); }
 
   // ---- state
   bool visible() const { return m_visible; }

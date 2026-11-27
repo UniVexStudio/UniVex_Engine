@@ -68,6 +68,7 @@ uniform vec3 uSkyGroundCascadeSplits;
 uniform int uSkyGroundShadowEnabled;
 uniform float uSkyGroundShadowOpacity;
 uniform float uSkyGroundShadowBias;
+uniform float uDepthNdcScale;
 
 // The disc: a body of the light the scene is lit by, not a texture on the sky. Its size is the
 // light's own angular diameter, so a moon and a sun over the same sky differ in this term and
@@ -632,7 +633,9 @@ float SkyGroundShadow(vec3 groundPos, float viewDist) {
                : (cascade == 1 ? uSkyGroundLightMatrix1 : uSkyGroundLightMatrix2);
         vec4 lightClip = m * vec4(groundPos, 1.0);
         if (abs(lightClip.w) < 1.0e-5) { return 0.0; }
-        vec3 proj = lightClip.xyz / lightClip.w * 0.5 + 0.5;
+        vec3 proj = lightClip.xyz / lightClip.w;
+        proj.xy = proj.xy * 0.5 + 0.5;
+        proj.z = (uDepthNdcScale > 0.5 && uDepthNdcScale < 1.5) ? proj.z : (proj.z * 0.5 + 0.5);
         if (proj.x <= 0.002 || proj.x >= 0.998 || proj.y <= 0.002 || proj.y >= 0.998 ||
             proj.z <= 0.0 || proj.z >= 1.0) {
             return 0.0;

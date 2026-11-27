@@ -376,10 +376,16 @@ void VfxWorld::ClearSceneColliders() noexcept {
 }
 
 void VfxWorld::Tick(const float dt, const VfxFrameView& frameView) {
-    (void)PollHotReload();
-
     if (!std::isfinite(dt) || dt < 0.0F) {
         return;
+    }
+    if (!m_assetCache.empty()) {
+        constexpr float kHotReloadPollIntervalSeconds = 0.5F;
+        m_hotReloadPollAccumulator += dt;
+        if (m_hotReloadPollAccumulator >= kHotReloadPollIntervalSeconds) {
+            m_hotReloadPollAccumulator = 0.0F;
+            (void)PollHotReload();
+        }
     }
 
     std::size_t liveParticlesBeforeTick = 0U;

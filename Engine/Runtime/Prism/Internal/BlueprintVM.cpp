@@ -141,8 +141,9 @@ BpValue BlueprintVM::input(int n, int pin, int depth) {
 
 // Value of an output pin. Executed nodes latch their outputs; pure nodes are evaluated on demand.
 BpValue BlueprintVM::output(int n, int pin, int depth) {
-  if (depth > 512 || m_aborted) { m_aborted = true; return {}; }
+  if (depth > 512 || m_aborted || n < 0 || size_t(n) >= m_p.nodes.size()) { m_aborted = true; return {}; }
   const BlueprintNode& nd = m_p.nodes[size_t(n)];
+  const bool pinValid = pin >= 0 && size_t(pin) < nd.outputs.size();
   auto latched = m_outVals.find({n, pin});
   bool impure = nd.category == BlueprintNodeCategory::Event || std::any_of(nd.inputs.begin(), nd.inputs.end(), [](auto& q) { return q.type == PT::Exec; });
   if (impure) return latched != m_outVals.end() ? latched->second : BpValue{};
@@ -150,11 +151,12 @@ BpValue BlueprintVM::output(int n, int pin, int depth) {
   auto A = [&](int i) { return input(n, i, depth); };
   if (nd.style == BlueprintNodeStyle::Reroute) return A(0);
   if (nd.category == BlueprintNodeCategory::Variable) {            // getter: title (or pin) names the variable
-    const std::string& name = nd.outputs.empty() ? t : (nd.outputs[size_t(pin)].name.empty() ? t : nd.outputs[size_t(pin)].name);
+    const std::string& name = !pinValid ? t : (nd.outputs[size_t(pin)].name.empty() ? t : nd.outputs[size_t(pin)].name);
     auto it = m_vars.find(name);
     if (it != m_vars.end()) return it->second;
     it = m_vars.find(t);
-    return it != m_vars.end() ? it->second : BpValue::parse(nd.outputs[size_t(pin)].type, "");
+    if (it != m_vars.end()) return it->second;
+    return pinValid ? BpValue::parse(nd.outputs[size_t(pin)].type, "") : BpValue{};
   }
   if (t == "+") return BpValue::number(A(0).number() + A(1).number());
   if (t == "-") return BpValue::number(A(0).number() - A(1).number());
@@ -162,7 +164,13 @@ BpValue BlueprintVM::output(int n, int pin, int depth) {
   if (t == "\xC3\xB7" || t == "/") { double d = A(1).number(); return BpValue::number(d == 0 ? 0 : A(0).number() / d); }   // divide by zero yields 0, never a crash
   if (t == ">") return BpValue::boolean(A(0).number() > A(1).number());
   if (t == "<") return BpValue::boolean(A(0).number() < A(1).number());
-  if (t == "==") { BpValue a = A(0), b = A(1); return BpValue::boolean(a.kind == BpValue::String || b.kind == BpValue::String ? a.text() == b.text() : a.number() == b.number()); }
+  if (t == "==") {
+    BpValue a = A(0), b = A(1);
+    if (a.kind == BpValue::Vector && b.kind == BpValue::Vector) {
+      return BpValue::boolean(a.v[0] == b.v[0] && a.v[1] == b.v[1] && a.v[2] == b.v[2]);
+    }
+    return BpValue::boolean(a.kind == BpValue::String || b.kind == BpValue::String ? a.text() == b.text() : a.number() == b.number());
+  }
   if (t == "AND") return BpValue::boolean(A(0).truthy() && A(1).truthy());
   if (t == "OR") return BpValue::boolean(A(0).truthy() || A(1).truthy());
   if (t == "NOT") return BpValue::boolean(!A(0).truthy());
@@ -180,13 +188,17 @@ BpValue BlueprintVM::output(int n, int pin, int depth) {
     return r;
   }
   m_unhandled.insert(t);
-  return BpValue::parse(nd.outputs[size_t(pin)].type, "");
+  return pinValid ? BpValue::parse(nd.outputs[size_t(pin)].type, "") : BpValue{};
 }
 
 void BlueprintVM::exec(int n) {
-  if (m_aborted) return;
+  if (m_aborted || n < 0 || size_t(n) >= m_p.nodes.size()) return;
   if (++m_steps > maxSteps || m_depth > 2000) { m_aborted = true; return; }
-  m_depth++;
+  struct DepthGuard final {
+    int& depth;
+    explicit DepthGuard(int& d) noexcept : depth(d) { ++depth; }
+    ~DepthGuard() { --depth; }
+  } depthGuard{m_depth};
   const BlueprintNode& nd = m_p.nodes[size_t(n)];
   m_trace.push_back(nd.id);
   const std::string& t = nd.title;
@@ -205,11 +217,14 @@ void BlueprintVM::exec(int n) {
   } else if (t == "For Loop") {
     long first = long(IN("First Index").number()), last = long(IN("Last Index").number());
     int idx = pinByName(nd.outputs, "Index");
-    for (long i = first; i <= last && !m_aborted; i++) {
+    for (long i = first; i <= last && !m_aborted; ) {
+      if (++m_steps > maxSteps) { m_aborted = true; break; }
       m_outVals[{n, idx}] = BpValue::number(double(i));
       followNamed(n, "Loop Body");
+      if (i == last) break;
+      ++i;
     }
-    followNamed(n, "Completed");
+    if (!m_aborted) followNamed(n, "Completed");
   } else if (t == "Do Once") {
     if (m_doneOnce.insert(n).second) follow(n, firstExecOut(n));
   } else if (t == "Is Valid") {
@@ -233,7 +248,6 @@ void BlueprintVM::exec(int n) {
     if (t != "Delay") m_unhandled.insert(t);
     follow(n, firstExecOut(n));
   }
-  m_depth--;
 }
 
 bool BlueprintVM::fireNode(int nodeId, const std::vector<BpValue>& args) {
@@ -244,7 +258,6 @@ bool BlueprintVM::fireNode(int nodeId, const std::vector<BpValue>& args) {
   size_t a = 0;
   for (int i = 0; i < int(nd.outputs.size()); i++)
     if (nd.outputs[size_t(i)].type != PT::Exec) m_outVals[{n, i}] = a < args.size() ? args[a++] : BpValue::parse(nd.outputs[size_t(i)].type, "");
-  m_depth = 0;
   exec(n);
   return true;
 }

@@ -26,10 +26,14 @@ std::size_t Archetype::GetEntityCount() const noexcept {
 }
 
 Archetype::Location Archetype::ReserveEntity(Entity entity) {
-    if (m_chunks.empty() || m_chunks.back()->IsFull()) {
-        m_chunks.push_back(
-            std::make_unique<ArchetypeChunk>(m_allocator, m_signature.GetTypes(), m_typeInfos));
+    for (std::size_t chunkIndex = 0U; chunkIndex < m_chunks.size(); ++chunkIndex) {
+        if (!m_chunks[chunkIndex]->IsFull()) {
+            const std::size_t row = m_chunks[chunkIndex]->ReserveRow(entity);
+            return Location{chunkIndex, row};
+        }
     }
+    m_chunks.push_back(
+        std::make_unique<ArchetypeChunk>(m_allocator, m_signature.GetTypes(), m_typeInfos));
     const std::size_t chunkIndex = m_chunks.size() - 1;
     const std::size_t row = m_chunks[chunkIndex]->ReserveRow(entity);
     return Location{chunkIndex, row};
@@ -44,7 +48,11 @@ Entity Archetype::DestroyEntityAt(Location location) {
     }
     ArchetypeChunk& chunk = *m_chunks[location.chunkIndex];
     chunk.DestroyAllColumns(location.row);
-    return chunk.VacateRow(location.row);
+    const Entity swapped = chunk.VacateRow(location.row);
+    while (!m_chunks.empty() && m_chunks.back()->GetCount() == 0U) {
+        m_chunks.pop_back();
+    }
+    return swapped;
 }
 
 Entity Archetype::VacateWithoutDestroy(Location location) {
@@ -54,7 +62,11 @@ Entity Archetype::VacateWithoutDestroy(Location location) {
                    location.chunkIndex, m_chunks.size());
         return kInvalidEntity;
     }
-    return m_chunks[location.chunkIndex]->VacateRow(location.row);
+    const Entity swapped = m_chunks[location.chunkIndex]->VacateRow(location.row);
+    while (!m_chunks.empty() && m_chunks.back()->GetCount() == 0U) {
+        m_chunks.pop_back();
+    }
+    return swapped;
 }
 
 ArchetypeChunk& Archetype::GetChunk(std::size_t chunkIndex) {

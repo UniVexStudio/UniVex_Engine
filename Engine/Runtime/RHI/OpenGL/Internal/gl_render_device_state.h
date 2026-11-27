@@ -4,6 +4,7 @@
 #pragma once
 
 #include <array>
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
@@ -45,6 +46,11 @@ struct TransparentStringEqual {
 /// (which are opaque synthetic uint32_t counters, exactly like NullRenderDevice's own handles)
 /// to the real GL object names they map to.
 struct GlDeviceState {
+    static std::uint64_t AllocateUniformDomainId() noexcept {
+        static std::atomic<std::uint64_t> nextId{1U};
+        return nextId.fetch_add(1U, std::memory_order_relaxed);
+    }
+    std::uint64_t uniformStateDomainId = AllocateUniformDomainId();
     Window::IWindowManager* windowManager;
     GlFunctions gl;
     std::unordered_map<std::uint32_t, GLsync> fences;

@@ -43,6 +43,13 @@ void Union(std::vector<std::uint32_t>& parents, std::vector<std::uint32_t>& size
 } // namespace
 
 PhysicsIslandPartition BuildPhysicsIslandPartition(const std::vector<CollisionPair>& pairs) {
+    static const std::unordered_set<Scene::Entity> kNoStaticBodies;
+    return BuildPhysicsIslandPartition(pairs, kNoStaticBodies);
+}
+
+PhysicsIslandPartition BuildPhysicsIslandPartition(
+    const std::vector<CollisionPair>& pairs,
+    const std::unordered_set<Scene::Entity>& staticBodies) {
     PhysicsIslandPartition partition;
     if (pairs.empty()) {
         return partition;
@@ -75,13 +82,20 @@ PhysicsIslandPartition BuildPhysicsIslandPartition(const std::vector<CollisionPa
         return partition;
     }
 
+    const auto isStatic = [&staticBodies](const Scene::Entity entity) noexcept {
+        return !staticBodies.empty() && staticBodies.contains(entity);
+    };
+
     std::vector<std::uint32_t> parents(bodyIndices.size());
     std::vector<std::uint32_t> sizes(bodyIndices.size(), 1U);
     for (std::uint32_t index = 0U; index < parents.size(); ++index) {
         parents[index] = index;
     }
     for (const std::uint32_t pairIndex : resolvable) {
-        Union(parents, sizes, bodyIndices[pairs[pairIndex].first], bodyIndices[pairs[pairIndex].second]);
+        const CollisionPair& pair = pairs[pairIndex];
+        if (!isStatic(pair.first) && !isStatic(pair.second)) {
+            Union(parents, sizes, bodyIndices[pair.first], bodyIndices[pair.second]);
+        }
     }
 
     // Island ids are assigned from the FINAL roots, in first-appearance order. Assigning them
@@ -91,7 +105,10 @@ PhysicsIslandPartition BuildPhysicsIslandPartition(const std::vector<CollisionPa
     std::vector<std::uint32_t> islandBodyCounts;
     std::vector<std::uint32_t> pairIsland(resolvable.size(), 0U);
     for (std::size_t index = 0U; index < resolvable.size(); ++index) {
-        const std::uint32_t root = FindRoot(parents, bodyIndices[pairs[resolvable[index]].first]);
+        const CollisionPair& pair = pairs[resolvable[index]];
+        const Scene::Entity owner =
+            !isStatic(pair.first) ? pair.first : (!isStatic(pair.second) ? pair.second : pair.first);
+        const std::uint32_t root = FindRoot(parents, bodyIndices[owner]);
         const auto inserted = islandOfRoot.try_emplace(root, static_cast<std::uint32_t>(islandBodyCounts.size()));
         if (inserted.second) {
             islandBodyCounts.push_back(0U);
@@ -99,11 +116,24 @@ PhysicsIslandPartition BuildPhysicsIslandPartition(const std::vector<CollisionPa
         pairIsland[index] = inserted.first->second;
     }
 
-    // One body counts towards exactly one island - the one its final root names.
-    for (std::uint32_t body = 0U; body < parents.size(); ++body) {
-        const auto found = islandOfRoot.find(FindRoot(parents, body));
-        if (found != islandOfRoot.end()) {
-            ++islandBodyCounts[found->second];
+    if (staticBodies.empty()) {
+        // One body counts towards exactly one island - the one its final root names.
+        for (std::uint32_t body = 0U; body < parents.size(); ++body) {
+            const auto found = islandOfRoot.find(FindRoot(parents, body));
+            if (found != islandOfRoot.end()) {
+                ++islandBodyCounts[found->second];
+            }
+        }
+    } else {
+        std::vector<std::unordered_set<std::uint32_t>> islandBodies(islandBodyCounts.size());
+        for (std::size_t index = 0U; index < resolvable.size(); ++index) {
+            const CollisionPair& pair = pairs[resolvable[index]];
+            auto& bodiesInIsland = islandBodies[pairIsland[index]];
+            bodiesInIsland.insert(bodyIndices[pair.first]);
+            bodiesInIsland.insert(bodyIndices[pair.second]);
+        }
+        for (std::size_t island = 0U; island < islandBodyCounts.size(); ++island) {
+            islandBodyCounts[island] = static_cast<std::uint32_t>(islandBodies[island].size());
         }
     }
 

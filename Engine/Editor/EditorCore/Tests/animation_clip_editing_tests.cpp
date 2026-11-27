@@ -139,5 +139,24 @@ TEST(AnimationClipEditingTest, AddsMovesRenamesAndRemovesEventsKeepingThemInOrde
     EXPECT_FALSE(RemoveClipEvent(clip, 3U));
 }
 
+TEST(AnimationClipEditingTest, MovesAllRootTrackSamplesWithoutNullDereference) {
+    Asset::AnimationClipAsset clip;
+    clip.clipId = "root_slide";
+    clip.durationSeconds = 1.0;
+    Asset::AnimationAssetSample s0;
+    s0.timeSeconds = 0.0;
+    s0.pose.position = Math::Vector3{0.0F, 0.0F, 0.0F};
+    Asset::AnimationAssetSample s1;
+    s1.timeSeconds = 0.5;
+    s1.pose.position = Math::Vector3{1.0F, 0.0F, 0.0F};
+    clip.samples = {s0, s1};
+
+    const std::vector<ClipKey> landed = MoveClipKeys(clip, {{"", 0.0}, {"", 0.5}}, 0.2, 10.0);
+    ASSERT_EQ(landed.size(), 2U);
+    ASSERT_EQ(clip.samples.size(), 2U);
+    EXPECT_NEAR(clip.samples[0].timeSeconds, 0.2, 1e-9);
+    EXPECT_NEAR(clip.samples[1].timeSeconds, 0.7, 1e-9);
+}
+
 } // namespace
 } // namespace UVE::Editor

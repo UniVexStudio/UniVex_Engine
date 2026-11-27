@@ -584,6 +584,37 @@ TEST(AnimationGraphTest, ValidationCatchesMalformedGraphsButAllowsEmptySlots) {
     EXPECT_FALSE(IsAnimationGraphComponentValid(tree)); // two parameters with one name
 }
 
+TEST(AnimationSequencerTest, SampleAnimationTrackOnEmptyVectorReturnsIdentityPose) {
+    const std::vector<Asset::AnimationAssetSample> empty;
+    const Core::TransformPose pose = SampleAnimationTrack(empty, 0.5);
+    EXPECT_EQ(pose.position, (Math::Vector3{0.0F, 0.0F, 0.0F}));
+    EXPECT_EQ(pose.scale, (Math::Vector3{1.0F, 1.0F, 1.0F}));
+}
+
+TEST(AnimationGraphTest, CyclicGraphTerminatesSafelyAndSameSizeRewireInvalidatesCache) {
+    GraphFixture fixture;
+    // 1. Cyclic graph evaluated directly must terminate cleanly without stack overflow.
+    AnimationGraphComponent cyclic;
+    cyclic.nodes = {GraphFixture::Node(1U, Kind::Output, {2U}),
+                    GraphFixture::Node(2U, Kind::TimeScale, {3U}),
+                    GraphFixture::Node(3U, Kind::TimeScale, {2U})};
+    TransformComponent target;
+    AnimationDriverComponent driver;
+    EXPECT_FALSE(StepAnimationGraph(cyclic, fixture.Resolver(), 0.1F, target, driver));
+
+    // 2. Rewiring inputs while keeping nodes.size() identical must invalidate topology cache.
+    const Asset::AssetGuid clipA = fixture.AddClip(10.0F);
+    const Asset::AssetGuid clipB = fixture.AddClip(40.0F);
+    AnimationGraphComponent tree;
+    tree.nodes = {GraphFixture::Node(1U, Kind::Output, {2U}),
+                  GraphFixture::ClipNode(2U, clipA),
+                  GraphFixture::ClipNode(3U, clipB)};
+    EXPECT_NEAR(fixture.Step(tree, 0.5F), 5.0F, 1e-4F);
+    // Rewire Output from node 2 to node 3 with identical nodes.size() == 3.
+    tree.nodes[0].inputs = {3U};
+    EXPECT_NEAR(fixture.Step(tree, 0.5F), 20.0F, 1e-4F);
+}
+
 // ---- Skeletal clips ---------------------------------------------------------------------------
 
 /// Two bones at rest one metre apart; a one-second clip that raises "Hips" by `lift` and has no

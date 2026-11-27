@@ -101,6 +101,9 @@ void SetError(std::string* error, std::string text) {
 
 [[nodiscard]] Asset::AnimationAssetPose SampleTrack(const Asset::AnimationAssetBoneTrack& track, const double time) {
     const std::vector<Asset::AnimationAssetSample>& samples = track.samples;
+    if (samples.empty()) {
+        return {};
+    }
     if (samples.size() == 1U || time <= samples.front().timeSeconds) {
         return samples.front().pose;
     }
@@ -151,8 +154,9 @@ void PruneAddedBones(ConformedRig& out, const HumanoidReference& reference, cons
     const std::size_t count = out.skeleton.bones.size();
     std::vector<bool> drop(count, false);
     for (std::size_t index = 0U; index < count; ++index) {
-        const std::int32_t ref = out.referenceOfBone[index];
-        if (!out.added[index] || ref < 0) {
+        const std::int32_t ref = index < out.referenceOfBone.size() ? out.referenceOfBone[index] : -1;
+        if (index >= out.added.size() || !out.added[index] || ref < 0 ||
+            static_cast<std::size_t>(ref) >= reference.info.size()) {
             continue;
         }
         const HumanoidBoneInfo& info = reference.info[static_cast<std::size_t>(ref)];
@@ -165,7 +169,10 @@ void PruneAddedBones(ConformedRig& out, const HumanoidReference& reference, cons
         if (drop[index]) {
             continue;
         }
-        for (std::int32_t above = out.skeleton.bones[index].parent; above >= 0; above = out.skeleton.bones[static_cast<std::size_t>(above)].parent) {
+        std::size_t hops = 0U;
+        for (std::int32_t above = out.skeleton.bones[index].parent;
+             above >= 0 && static_cast<std::size_t>(above) < count && hops < count;
+             above = out.skeleton.bones[static_cast<std::size_t>(above)].parent, ++hops) {
             drop[static_cast<std::size_t>(above)] = false;
         }
     }
@@ -186,7 +193,9 @@ void PruneAddedBones(ConformedRig& out, const HumanoidReference& reference, cons
                 continue;
             }
             RetargetBone bone = skeleton.bones[index];
-            bone.parent = bone.parent < 0 ? -1 : newIndex[static_cast<std::size_t>(bone.parent)];
+            bone.parent = (bone.parent >= 0 && static_cast<std::size_t>(bone.parent) < count)
+                              ? newIndex[static_cast<std::size_t>(bone.parent)]
+                              : -1;
             kept.bones.push_back(std::move(bone));
         }
         skeleton = std::move(kept);
@@ -199,14 +208,14 @@ void PruneAddedBones(ConformedRig& out, const HumanoidReference& reference, cons
     std::vector<bool> added;
     for (std::size_t index = 0U; index < count; ++index) {
         if (!drop[index]) {
-            referenceOfBone.push_back(out.referenceOfBone[index]);
-            added.push_back(out.added[index]);
+            referenceOfBone.push_back(index < out.referenceOfBone.size() ? out.referenceOfBone[index] : -1);
+            added.push_back(index < out.added.size() ? out.added[index] : false);
         }
     }
     out.referenceOfBone = std::move(referenceOfBone);
     out.added = std::move(added);
     for (std::int32_t& at : out.boneOfRigBone) {
-        at = at < 0 ? -1 : newIndex[static_cast<std::size_t>(at)];
+        at = (at >= 0 && static_cast<std::size_t>(at) < count) ? newIndex[static_cast<std::size_t>(at)] : -1;
     }
 }
 
@@ -547,7 +556,12 @@ bool ConformMesh(Asset::MeshAsset& mesh, const ConformedRig& conformed, std::str
                     SetError(error, "a vertex names a joint the mesh does not have");
                     return false;
                 }
-                influence.joints[slot] = static_cast<std::uint32_t>(conformed.boneOfRigBone[joint]);
+                const std::int32_t mapped = conformed.boneOfRigBone[joint];
+                if (mapped < 0 || static_cast<std::size_t>(mapped) >= conformed.skeleton.bones.size()) {
+                    SetError(error, "a vertex references an unmapped conformed bone");
+                    return false;
+                }
+                influence.joints[slot] = static_cast<std::uint32_t>(mapped);
             }
             if (!upright) {
                 Asset::MeshVertex& vertex = result.vertices[vertexIndex];
@@ -567,12 +581,21 @@ bool ConformMesh(Asset::MeshAsset& mesh, const ConformedRig& conformed, std::str
         const Math::Quaternion* first = nullptr;
         for (std::size_t slot = 0U; slot < Asset::kMaxJointInfluences; ++slot) {
             const std::uint32_t joint = influence.joints[slot];
-            if (joint >= conformed.moveOfRigBone.size()) {
+            if (joint >= conformed.moveOfRigBone.size() || joint >= conformed.boneOfRigBone.size()) {
                 SetError(error, "a vertex names a joint the mesh does not have");
                 return false;
             }
             const float weight = influence.weights[slot];
-            influence.joints[slot] = static_cast<std::uint32_t>(conformed.boneOfRigBone[joint]);
+            const std::int32_t mapped = conformed.boneOfRigBone[joint];
+            if (mapped < 0 || static_cast<std::size_t>(mapped) >= conformed.skeleton.bones.size()) {
+                if (weight > 0.0F) {
+                    SetError(error, "a vertex references an unmapped conformed bone");
+                    return false;
+                }
+                influence.joints[slot] = 0U;
+                continue;
+            }
+            influence.joints[slot] = static_cast<std::uint32_t>(mapped);
             if (weight <= 0.0F) {
                 continue;
             }
@@ -660,6 +683,9 @@ MeshDistortion MeasureMeshDistortion(const Asset::MeshAsset& before, const Asset
     std::size_t edges = 0U;
     std::size_t changed = 0U;
     const auto measure = [&](const std::uint32_t a, const std::uint32_t b) {
+        if (a >= before.vertices.size() || b >= before.vertices.size()) {
+            return;
+        }
         const float was = Math::Length(before.vertices[a].position - before.vertices[b].position);
         const float now = Math::Length(after.vertices[a].position - after.vertices[b].position);
         if (!(was > 1e-9F)) {
@@ -714,7 +740,8 @@ std::optional<Asset::AnimationClipAsset> ConformClip(const Asset::AnimationClipA
         if (track.samples.empty()) {
             continue;
         }
-        if (const std::int32_t bone = FindBone(rig, track.bone); bone >= 0) {
+        if (const std::int32_t bone = FindBone(rig, track.bone);
+            bone >= 0 && static_cast<std::size_t>(bone) < trackOfRigBone.size()) {
             trackOfRigBone[static_cast<std::size_t>(bone)] = &track;
         }
     }
@@ -728,7 +755,11 @@ std::optional<Asset::AnimationClipAsset> ConformClip(const Asset::AnimationClipA
     std::vector<std::int32_t> rigOfBone(count, -1);
     std::vector<Math::Quaternion> toNewFrame(count);
     for (std::size_t bone = 0U; bone < rig.bones.size(); ++bone) {
-        const auto index = static_cast<std::size_t>(conformed.boneOfRigBone[bone]);
+        const std::int32_t mapped = conformed.boneOfRigBone[bone];
+        if (mapped < 0 || static_cast<std::size_t>(mapped) >= count) {
+            continue;
+        }
+        const auto index = static_cast<std::size_t>(mapped);
         rigOfBone[index] = static_cast<std::int32_t>(bone);
         toNewFrame[index] = Normalized(Math::Multiply(
             Math::Multiply(Inverse(rigRest[bone].rotation), Inverse(conformed.moveOfRigBone[bone].rotation)),
@@ -743,9 +774,12 @@ std::optional<Asset::AnimationClipAsset> ConformClip(const Asset::AnimationClipA
     }
     std::vector<std::int32_t> follows(count, -1);
     for (std::size_t index = 0U; index < count && index < conformed.referenceOfBone.size(); ++index) {
-        if (const std::int32_t ref = conformed.referenceOfBone[index]; ref >= 0) {
+        if (const std::int32_t ref = conformed.referenceOfBone[index];
+            ref >= 0 && static_cast<std::size_t>(ref) < reference.info.size()) {
             const std::int32_t followed = reference.info[static_cast<std::size_t>(ref)].follows;
-            follows[index] = followed < 0 ? -1 : boneOfReference[static_cast<std::size_t>(followed)];
+            follows[index] = (followed >= 0 && static_cast<std::size_t>(followed) < boneOfReference.size())
+                                 ? boneOfReference[static_cast<std::size_t>(followed)]
+                                 : -1;
         }
     }
 
@@ -777,18 +811,19 @@ std::optional<Asset::AnimationClipAsset> ConformClip(const Asset::AnimationClipA
                     continue;
                 }
                 const std::int32_t parent = skeleton.bones[index].parent;
-                if (const std::int32_t bone = rigOfBone[index]; bone >= 0) {
+                if (const std::int32_t bone = rigOfBone[index];
+                    bone >= 0 && static_cast<std::size_t>(bone) < source.size()) {
                     const WorldTransform& from = source[static_cast<std::size_t>(bone)];
                     world[index].position = Math::RotateVector(conformed.orientation, from.position);
                     world[index].rotation = Normalized(
                         Math::Multiply(conformed.orientation, Math::Multiply(from.rotation, toNewFrame[index])));
-                } else if (follows[index] >= 0) {
+                } else if (follows[index] >= 0 && static_cast<std::size_t>(follows[index]) < count) {
                     if (!done[static_cast<std::size_t>(follows[index])]) {
                         continue;
                     }
                     world[index].position = world[static_cast<std::size_t>(follows[index])].position;
                     world[index].rotation = world[static_cast<std::size_t>(follows[index])].rotation;
-                } else if (parent >= 0) {
+                } else if (parent >= 0 && static_cast<std::size_t>(parent) < count) {
                     if (!done[static_cast<std::size_t>(parent)]) {
                         continue;
                     }

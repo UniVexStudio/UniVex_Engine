@@ -43,6 +43,26 @@ TEST(AnimationClipTest, TrySampleAnimationClip_InterpolatesAndLoopsDeterministic
     EXPECT_EQ(looped.position, (Math::Vector3{2.5F, 0.5F, 0.0F}));
 }
 
+TEST(AnimationClipTest, TrySampleAnimationClip_OppositeHemisphereQuaternionsTakeShortestPath) {
+    AnimationClip clip;
+    clip.clipId = "quat_shortest";
+    clip.durationSeconds = 1.0;
+    const Math::Quaternion q0{0.0F, 0.0F, 0.0F, 1.0F};
+    // -q0 represents the exact same orientation in the opposite quaternion hemisphere.
+    const Math::Quaternion q1{0.0F, 0.0F, 0.0F, -1.0F};
+    clip.samples = {
+        PoseSample{0.0, TransformPose{{0.0F, 0.0F, 0.0F}, q0, {1.0F, 1.0F, 1.0F}}},
+        PoseSample{1.0, TransformPose{{0.0F, 0.0F, 0.0F}, q1, {1.0F, 1.0F, 1.0F}}},
+    };
+    TransformPose midpoint;
+    ASSERT_TRUE(TrySampleAnimationClip(clip, 0.5, false, midpoint));
+    // Midpoint must remain the identity orientation (|w| == 1), never degenerate zero or a 180-deg flip.
+    EXPECT_NEAR(std::abs(midpoint.rotation.w), 1.0F, 1e-5F);
+    EXPECT_NEAR(midpoint.rotation.x, 0.0F, 1e-5F);
+    EXPECT_NEAR(midpoint.rotation.y, 0.0F, 1e-5F);
+    EXPECT_NEAR(midpoint.rotation.z, 0.0F, 1e-5F);
+}
+
 TEST(AnimationClipTest, CollectAnimationEvents_ReturnsEventsAcrossLoopBoundaryInOrder) {
     const AnimationClip clip = MakeClip();
     const std::vector<AnimationEvent> events = CollectAnimationEvents(clip, 0.7, 1.2, true);
