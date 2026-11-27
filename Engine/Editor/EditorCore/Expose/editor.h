@@ -29,6 +29,7 @@
 #include <variant>
 #include <vector>
 
+#include "skeleton_3d.h"
 #include "blueprint_asset.h"
 #include "i_asset_database.h"
 #include "i_asset_import_queue.h"
@@ -3161,6 +3162,9 @@ private:
         std::chrono::steady_clock::time_point checkedAt{};
     };
     std::map<std::string, MeshThumbnailEntry> m_meshThumbnailCache;
+    /// The last animation pose shown on a model in the Entity Editor, by bone name, keyed by the
+    /// model's file name. Entity and character thumbnails stand in it instead of the rest pose.
+    std::map<std::string, std::unordered_map<std::string, Scene::SkeletonBonePose>> m_thumbnailPoses;
     /// Bumped whenever a mesh picture is drawn again or the pictures are dropped: views that copy
     /// pictures by texture id copy again (an id can be reused for a new picture).
     std::uint64_t m_meshThumbnailGeneration = 0U;

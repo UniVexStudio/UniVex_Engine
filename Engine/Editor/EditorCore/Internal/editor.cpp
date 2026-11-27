@@ -6453,7 +6453,8 @@ namespace {
 /// and lists its bones in that pose. A pose that would fling the skin off the model (another unit
 /// scale, say) is not used: the mesh then shows as bound, and its bones with it.
 void PoseMeshForThumbnail(Asset::MeshAsset& mesh, const std::filesystem::path& skeletonFile,
-                             std::vector<MeshThumbnailBone>& outBones) {
+                             std::vector<MeshThumbnailBone>& outBones,
+                             const std::unordered_map<std::string, Scene::SkeletonBonePose>* animated = nullptr) {
     outBones.clear();
     const std::size_t count = mesh.joints.size();
     if (count == 0U) {
@@ -6484,6 +6485,12 @@ void PoseMeshForThumbnail(Asset::MeshAsset& mesh, const std::filesystem::path& s
             if (const auto found = byName.find(mesh.joints[joint].name); found != byName.end()) {
                 const Asset::SkeletonJoint& rest = skeleton.joints[found->second];
                 poseLocals[joint] = Math::Matrix4x4::ComposeTrs(rest.position, rest.rotation, rest.scale);
+                if (animated != nullptr) {
+                    if (const auto shown = animated->find(mesh.joints[joint].name); shown != animated->end()) {
+                        poseLocals[joint] = Math::Matrix4x4::ComposeTrs(shown->second.position, shown->second.rotation,
+                                                                           shown->second.scale);
+                    }
+                }
                 ++matched;
             }
         }
@@ -6631,7 +6638,8 @@ std::uintptr_t Editor::GetMeshThumbnail(const std::filesystem::path& relativePat
             std::filesystem::path skeletonFile = file;
             skeletonFile.replace_extension(".uvskel");
             std::vector<MeshThumbnailBone> unused;
-            PoseMeshForThumbnail(model, skeletonFile, unused);
+            const auto shown = m_thumbnailPoses.find(file.filename().generic_string());
+            PoseMeshForThumbnail(model, skeletonFile, unused, shown != m_thumbnailPoses.end() ? &shown->second : nullptr);
             remember(skeletonFile);
         };
         EntityThumbnailScene scene;

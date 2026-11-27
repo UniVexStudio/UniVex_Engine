@@ -231,7 +231,10 @@ PreviewUvSet BuildPreviewUvSet(vec2 scale, vec2 offset, int triplanar, float sha
 vec4 ReadMap(sampler2D map, int slot, PreviewUvSet uv1, PreviewUvSet uv2, vec4 neutral) {
     vec4 transform = uMapTransform[slot];
     vec4 control = uMapControl[slot];
-    PreviewUvSet set = control.w > 0.5 ? uv2 : uv1;
+    PreviewUvSet set = uv1;
+    if (control.w > 0.5) {
+        set = uv2;
+    }
     vec2 scale = vec2(1.0) + transform.xy;
     vec4 value;
     if (set.triplanar != 0) {
@@ -295,7 +298,10 @@ void main() {
 
     vec3 shadingNormal = normalize(vNormal);
     if (uHasNormalTexture && uMapControl[1].z < 0.999) {
-        PreviewUvSet normalSet = uMapControl[1].w > 0.5 ? uv2 : uv1;
+        PreviewUvSet normalSet = uv1;
+        if (uMapControl[1].w > 0.5) {
+            normalSet = uv2;
+        }
         if (normalSet.triplanar != 0) {
             vec3 triNormal = SamplePreviewTriplanarNormal(uNormalTexture, normalSet, uMapTransform[1]);
             shadingNormal = normalize(mix(triNormal, shadingNormal, clamp(uMapControl[1].z, 0.0, 1.0)));

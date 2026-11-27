@@ -809,12 +809,18 @@ std::uintptr_t MeshThumbnailRenderer::RenderThumbnail(const Asset::MeshAsset& me
             gl.table.glUniform2fv(gl.uvOffsetUniform, 1, look.uvOffset.data());
             gl.table.glUniform1i(gl.unshadedUniform, look.unshaded ? 1 : 0);
 
-            bindMap(GL_TEXTURE0, gl.hasAlbedoTextureUniform, textureOf(look.albedo, /*forceLinear=*/false));
-            bindMap(GL_TEXTURE1, gl.hasNormalTextureUniform, textureOf(look.normal, /*forceLinear=*/true));
-            bindMap(GL_TEXTURE2, gl.hasMetallicRoughnessTextureUniform,
-                    textureOf(look.metallicRoughness, /*forceLinear=*/true));
-            bindMap(GL_TEXTURE3, gl.hasAOTextureUniform, textureOf(look.ao, /*forceLinear=*/true));
-            bindMap(GL_TEXTURE4, gl.hasEmissiveTextureUniform, textureOf(look.emissive, /*forceLinear=*/false));
+            // Upload every map first: textureOf binds GL_TEXTURE0 while uploading, which would otherwise
+            // clobber the albedo unit (a normal map then rendered as the surface colour).
+            const GLuint albedoId = textureOf(look.albedo, /*forceLinear=*/false);
+            const GLuint normalId = textureOf(look.normal, /*forceLinear=*/true);
+            const GLuint metallicRoughnessId = textureOf(look.metallicRoughness, /*forceLinear=*/true);
+            const GLuint aoId = textureOf(look.ao, /*forceLinear=*/true);
+            const GLuint emissiveId = textureOf(look.emissive, /*forceLinear=*/false);
+            bindMap(GL_TEXTURE0, gl.hasAlbedoTextureUniform, albedoId);
+            bindMap(GL_TEXTURE1, gl.hasNormalTextureUniform, normalId);
+            bindMap(GL_TEXTURE2, gl.hasMetallicRoughnessTextureUniform, metallicRoughnessId);
+            bindMap(GL_TEXTURE3, gl.hasAOTextureUniform, aoId);
+            bindMap(GL_TEXTURE4, gl.hasEmissiveTextureUniform, emissiveId);
 
             glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(surface.indexCount), GL_UNSIGNED_INT,
                            reinterpret_cast<const void*>(static_cast<std::uintptr_t>(surface.firstIndex) * sizeof(std::uint32_t)));

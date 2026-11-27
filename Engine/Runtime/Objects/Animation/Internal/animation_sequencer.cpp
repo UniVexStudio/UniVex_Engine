@@ -484,8 +484,10 @@ bool StepSkeletalAnimationSequencer(AnimationSequencerComponent& player, const A
                     player.rootMotionDelta = Math::Vector3{travel.x * weight, 0.0F, travel.z * weight};
                 }
                 SkeletonBonePose& root = current[*rootIndex];
-                root.position.x = first.x;
-                root.position.z = first.z;
+                // Anchored to the skeleton's rest ground position, not the clip's own first frame, so
+                // clips that start at different offsets never shift the character.
+                root.position.x = skeleton.bones[*rootIndex].localPosition.x;
+                root.position.z = skeleton.bones[*rootIndex].localPosition.z;
             }
         }
     }
@@ -523,7 +525,17 @@ std::optional<std::size_t> ResolveRootMotionBone(const Skeleton3DComponent& skel
     }
     // Bones are parents first, so the first one that travels is the highest in the rig.
     constexpr float kMinimumTravelMetres = 0.01F;
+    // Only the root and its direct children (hips/pelvis) can carry locomotion; limbs that sway on
+    // an idle clip must never be picked.
+    const auto isLocomotionCandidate = [&skeleton](const std::size_t index) {
+        const std::int32_t parent = skeleton.bones[index].parentIndex;
+        return parent < 0 || (parent < static_cast<std::int32_t>(skeleton.bones.size()) &&
+                              skeleton.bones[static_cast<std::size_t>(parent)].parentIndex < 0);
+    };
     for (std::size_t index = 0U; index < skeleton.bones.size(); ++index) {
+        if (!isLocomotionCandidate(index)) {
+            continue;
+        }
         const Asset::AnimationAssetBoneTrack* const track = trackOf(skeleton.bones[index].name);
         if (track == nullptr) {
             continue;
@@ -580,8 +592,9 @@ bool PoseSkeletonAtTime(const Asset::AnimationClipAsset& clip, const double time
             const std::string& rootName = skeleton.bones[*rootIndex].name;
             if (const auto* track = FindTrackForBone(tracks, rootName); track != nullptr && !track->samples.empty()) {
                 const Math::Vector3 first = conformed.Position(track->bone, SampleTrack(track->samples, 0.0).position, Math::Vector3{});
-                pose[*rootIndex].position.x = first.x;
-                pose[*rootIndex].position.z = first.z;
+                static_cast<void>(first);
+                pose[*rootIndex].position.x = skeleton.bones[*rootIndex].localPosition.x;
+                pose[*rootIndex].position.z = skeleton.bones[*rootIndex].localPosition.z;
             }
         }
     }

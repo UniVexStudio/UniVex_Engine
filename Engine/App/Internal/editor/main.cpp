@@ -44,6 +44,7 @@
 #include "editor_viewport_host.h"
 #include "application_runtime.h"
 #include "editor_main.h"
+#include "editor_host.h"
 #include "process_launcher.h"
 
 namespace {
@@ -197,6 +198,15 @@ struct EditorLaunchOptions final {
                 return options;
             }
             options.projectRegistry = argv[++index];
+            continue;
+        }
+        if (argument == "--ui-scale" && index + 1 < argc) {
+            const std::string_view text{argv[++index]};
+            float zoom = 0.0F;
+            const auto [end, parseError] = std::from_chars(text.data(), text.data() + text.size(), zoom);
+            if (parseError == std::errc{} && end == text.data() + text.size() && zoom > 0.0F) {
+                UVE::Editor::SetUserInterfaceScale(zoom);
+            }
             continue;
         }
         if (argument == kVersionOption) {

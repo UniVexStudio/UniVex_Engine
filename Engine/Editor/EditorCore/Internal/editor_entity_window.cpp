@@ -246,6 +246,28 @@ bool Editor::SaveEntityEditor() {
     if (!m_entityEditSession.has_value()) {
         return false;
     }
+    // Remember the pose being shown: the entity's thumbnail stands in it once saved.
+    {
+        const EntityDocumentScope poseScope(*this);
+        bool posed = false;
+        m_services->GetEntityManager().ForEach<Scene::Skeleton3DComponent>(
+            [&](const Scene::Entity, Scene::Skeleton3DComponent& skeleton) {
+                if (skeleton.pose.size() != skeleton.bones.size() || skeleton.bones.empty() ||
+                    skeleton.skeletonAssetPath.empty()) {
+                    return;
+                }
+                auto& shown = m_thumbnailPoses[std::filesystem::path{skeleton.skeletonAssetPath}.filename().generic_string()];
+                shown.clear();
+                for (std::size_t bone = 0U; bone < skeleton.bones.size(); ++bone) {
+                    shown[skeleton.bones[bone].name] = skeleton.pose[bone];
+                }
+                posed = true;
+            });
+        if (posed) {
+            m_meshThumbnailCache.clear();
+            ++m_meshThumbnailGeneration;
+        }
+    }
     // The entity is saved in its own pose, never the pose the Sequencer is previewing on it (the
     // preview writes it again next frame).
     RestoreAnimationTimelineObject();

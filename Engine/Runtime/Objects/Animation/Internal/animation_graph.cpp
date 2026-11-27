@@ -412,8 +412,8 @@ private:
                     if (!firstStep) {
                         result.rootMotion = Math::Vector3{travel.x, 0.0F, travel.z};
                     }
-                    pose[*root].position.x = first.x;
-                    pose[*root].position.z = first.z;
+                    pose[*root].position.x = m_skeleton->bones[*root].localPosition.x;
+                    pose[*root].position.z = m_skeleton->bones[*root].localPosition.z;
                 }
             }
         }

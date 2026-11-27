@@ -158,7 +158,7 @@ in vec4 vLightSpacePosition;
 #if !defined(UVE_COMPATIBILITY)
 in vec4 vLightSpacePositions[3];
 #endif
-#if defined(UVE_EARLY_Z)
+#if defined(UVE_EARLY_Z) && (!defined(GL_ES) || __VERSION__ >= 310)
 // Alpha cutout is compiled out of this variant, so the depth test can run before the shader:
 // opaque draws then reject hidden fragments instead of shading them.
 layout(early_fragment_tests) in;
@@ -1232,7 +1232,10 @@ vec3 ApplyNormalMap(vec3 geometricNormal, UvSet uv1, UvSet uv2) {
     if (uNormalMapControl.z >= 0.999) {
         return geometricNormal;
     }
-    UvSet normalSet = uNormalMapControl.w > 0.5 ? uv2 : uv1;
+    UvSet normalSet = uv1;
+    if (uNormalMapControl.w > 0.5) {
+        normalSet = uv2;
+    }
     if (normalSet.triplanar != 0) {
         vec3 triNormal = SampleTriplanarNormal(uNormalTexture, normalSet, uNormalMapTransform, uNormalScale, uNormalFlipGreen);
         return SafeNormalize(mix(triNormal, geometricNormal, clamp(uNormalMapControl.z, 0.0, 1.0)));

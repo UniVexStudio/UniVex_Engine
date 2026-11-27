@@ -172,7 +172,7 @@ void ReleaseGestureButton(TouchGesture& touch) {
 /// and without sending a bogus offscreen cursor move that would slam a captured Splitter or Slider.
 void CancelGestureButton(TouchGesture& touch) {
     if (touch.button >= 0) {
-        Window::DispatchAndroidGlfwMouseButton(touch.button, false, kCancelOffscreenPos, kCancelOffscreenPos);
+        Window::DispatchAndroidGlfwMouseButtonRelease(touch.button);
         touch.button = -1;
     }
 }
