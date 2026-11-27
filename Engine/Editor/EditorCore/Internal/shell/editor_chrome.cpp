@@ -389,7 +389,8 @@ prism::Ref<prism::Widget> BuildToolWindowTitleBar(std::string title, const prism
         *outRow = row;
     }
     auto sized = prism::make<prism::SizeBox>();
-    sized->setHeightOverride(singleSurface ? kCompactTitleRow + 2.0F : kTitleRow + 4.0F);
+    (void)singleSurface;
+    sized->setHeightOverride(kTitleRow + 4.0F);
     sized->setContent(row);
     auto bar = prism::make<prism::Border>();
     bar->setBackground(prism::ThemeColor(&prism::Theme::header));
@@ -399,8 +400,8 @@ prism::Ref<prism::Widget> BuildToolWindowTitleBar(std::string title, const prism
 }
 
 prism::Ref<prism::Widget> BuildEditorHeader(EditorHeaderDesc desc) {
-    const bool singleSurface = prism::Application::exists() && prism::Application::get().platform().singleSurface();
-    if (singleSurface) {
+    // Unified PC 2-row header across desktop and mobile (MenuBar on Row 1, DocumentTab on Row 2).
+    if (false) {
         // Mobile header:
         // - Clean plain "Menu" button (no arrow/chevron)
         // - When toolbarRow is present, LogoBox spans BOTH Row 1 (Menu + DocumentTab + Buttons) AND

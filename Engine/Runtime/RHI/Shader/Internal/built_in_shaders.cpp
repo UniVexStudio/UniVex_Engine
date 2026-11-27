@@ -2187,7 +2187,7 @@ in vec4 vLightSpacePosition;
 #if !defined(UVE_COMPATIBILITY)
 in vec4 vLightSpacePositions[3];
 #endif
-#if defined(UVE_EARLY_Z) && (!defined(GL_ES) || __VERSION__ >= 310)
+#if defined(UVE_EARLY_Z) && !UVE_MOBILE
 // Alpha cutout is compiled out of this variant, so the depth test can run before the shader:
 // opaque draws then reject hidden fragments instead of shading them.
 layout(early_fragment_tests) in;

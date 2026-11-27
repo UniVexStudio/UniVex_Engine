@@ -3,6 +3,7 @@
 #include "prism/ColorPicker.h"
 #include "prism/Application.h"
 #include "prism/Menu.h"
+#include "prism/Docking.h"
 #include <cstring>
 #include <cctype>
 #include <ctime>
@@ -919,7 +920,9 @@ void showDialog(const std::string& title, Ref<Widget> content, std::vector<Dialo
   const float maxDialogH = ws.y > 0.f ? std::max(140.f, ws.y - 16.f) : 640.f;
   const float maxBodyH = std::max(64.f, maxDialogH - barH - footH);
 
-  auto root = make<Border>();
+  auto root = make<ResizablePopupFrame>();
+  root->resizable = true;
+  root->minSize = {std::min(effectiveW, 240.f), 140.f};
   root->setBackground(ThemeColor(&Theme::panel));
   root->setBorder(ThemeColor(&Theme::borderStrong));
   root->setRadius(6);
@@ -950,7 +953,6 @@ void showDialog(const std::string& title, Ref<Widget> content, std::vector<Dialo
   auto scroll = make<DialogBodyScroll>();
   scroll->maxH = maxBodyH;
   scroll->setContent(body);
-  scroll->setMaxSize(effectiveW, maxBodyH);
   col->add(scroll, {.fill = 1.f});
 
   auto foot = make<Border>();

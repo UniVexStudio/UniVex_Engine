@@ -91,19 +91,12 @@ struct GlBackend::Impl {
     if (!px || width <= 0 || height <= 0) return h;
     const size_t n = size_t(width) * size_t(height);
     const auto mix64 = [&](uint64_t v) { h = (h ^ v) * 1099511628211ULL; };
-    if (n <= 4096U) {
-      size_t k = 0;
-      for (; k + 1 < n; k += 2) {
-        mix64(uint64_t(px[k]) | (uint64_t(px[k + 1]) << 32));
-      }
-      if (k < n) mix64(px[k]);
-      return h;
+    // Full-buffer 64-bit word hash (~8x faster than byte FNV-1a and never misses sparse overlay pixels).
+    size_t k = 0;
+    for (; k + 1U < n; k += 2U) {
+      mix64(uint64_t(px[k]) | (uint64_t(px[k + 1U]) << 32));
     }
-    // Large buffers (thumbnails, overlays): hash head, tail, and ~1024 evenly strided pairs.
-    for (size_t k = 0; k < 64U; k += 2) mix64(uint64_t(px[k]) | (uint64_t(px[k + 1]) << 32));
-    const size_t stride = std::max<size_t>(2U, ((n - 128U) / 1024U) & ~size_t(1U));
-    for (size_t k = 64U; k + 65U < n; k += stride) mix64(uint64_t(px[k]) | (uint64_t(px[k + 1]) << 32));
-    for (size_t k = n - 64U; k + 1U < n; k += 2) mix64(uint64_t(px[k]) | (uint64_t(px[k + 1]) << 32));
+    if (k < n) mix64(px[k]);
     return h;
   }
 

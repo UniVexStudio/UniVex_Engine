@@ -95,57 +95,142 @@ public:
   void setShadeHandler(std::function<void()> f) { m_shade = std::move(f); }
 };
 
-// Bottom-right grip: drag to resize the window.
-class ResizeGrip : public Widget {
-public:
-  Widget* window = nullptr;
-  Vec2 minSize{240, 140};
-  Vec2 measure(Vec2 avail) override { return m_desired = constrain(Vec2(avail.x, 10.0f)); }
-  void paint(Canvas& c) override {
-    const Theme& t = theme();
-    c.fillRect(m_rect, t.header);
-    for (int i = 0; i < 3; i++) {
-      float o = 3.0f + 3.0f * float(i);
-      c.line(Vec2(m_rect.right() - o, m_rect.bottom() - 2.0f), Vec2(m_rect.right() - 2.0f, m_rect.bottom() - o), t.textDisabled, 1.0f);
-    }
-  }
-  bool onMouseDown(const MouseEvent& e) override {
-    if (e.button != MouseButton::Left || !window) return false;
-    m_start = e.pos;
-    m_size = Vec2(window->rect().w, window->rect().h);
-    // Lock current top-left anchor so resizing never re-centers or flips a floating window.
-    if (Application::exists()) {
-      Application::get().movePopup(window, Vec2(window->rect().x, window->rect().y));
-    }
-    m_drag = true;
-    return true;
-  }
-  bool onMouseMove(const MouseEvent& e) override {
-    if (!m_drag || !window) return false;
-    Vec2 s = m_size + (e.pos - m_start);
-    if (Application::exists()) {
-      const Vec2 ws = Application::get().windowSize();
-      const float maxW = std::max(minSize.x, ws.x - window->rect().x - 4.0f);
-      const float maxH = std::max(minSize.y, ws.y - window->rect().y - 4.0f);
-      s.x = std::min(s.x, maxW);
-      s.y = std::min(s.y, maxH);
-    }
-    window->setFixedWidth(std::max(minSize.x, s.x));
-    window->setFixedHeight(std::max(minSize.y, s.y));
-    return true;
-  }
-  bool onMouseUp(const MouseEvent&) override {
-    const bool was = m_drag;
-    m_drag = false;
-    return was;
-  }
-  Cursor cursor() const override { return Cursor::SizeAll; }
-private:
-  Vec2 m_start, m_size;
-  bool m_drag = false;
-};
-
 } // namespace
+
+uint8_t ResizablePopupFrame::hitEdges(Vec2 p) const {
+  if (!resizable || m_rect.w <= 0.f || m_rect.h <= 0.f) return 0;
+  const bool touch = Application::exists() && Application::get().platform().singleSurface();
+  const float edge = touch ? 14.f : 6.f;
+  const float corner = edge * 1.5f;
+  if (!m_rect.contains(p)) return 0;
+  const float dl = p.x - m_rect.x;
+  const float dr = m_rect.right() - p.x;
+  const float dt = p.y - m_rect.y;
+  const float db = m_rect.bottom() - p.y;
+  uint8_t e = 0;
+  if (dl <= edge) e |= 1;
+  else if (dr <= edge) e |= 2;
+  if (dt <= edge) e |= 4;
+  else if (db <= edge) e |= 8;
+  // Widen corner hit zones so diagonal grabs feel effortless.
+  if (e != 0) {
+    if ((e & (4 | 8)) != 0) {
+      if (dl <= corner) e |= 1;
+      else if (dr <= corner) e |= 2;
+    }
+    if ((e & (1 | 2)) != 0) {
+      if (dt <= corner) e |= 4;
+      else if (db <= corner) e |= 8;
+    }
+  }
+  return e;
+}
+
+Reply ResizablePopupFrame::onPreviewMouseDown(const MouseEvent& e) {
+  if (e.button != MouseButton::Left || !resizable) return Reply::unhandled();
+  const uint8_t edges = hitEdges(e.pos);
+  if (edges == 0) return Reply::unhandled();
+  m_edges = edges;
+  m_hoverEdges = edges;
+  m_dragStart = e.pos;
+  m_startRect = m_rect;
+  invalidate();
+  return Reply::handled().captureMouse(this);
+}
+
+Reply ResizablePopupFrame::onPreviewMouseMove(const MouseEvent& e) {
+  if (m_edges != 0) return Reply::unhandled();
+  const uint8_t hovered = hitEdges(e.pos);
+  if (hovered != m_hoverEdges) {
+    m_hoverEdges = hovered;
+    invalidate();
+  }
+  return Reply::unhandled();
+}
+
+bool ResizablePopupFrame::onMouseMove(const MouseEvent& e) {
+  if (m_edges == 0) {
+    const uint8_t hovered = hitEdges(e.pos);
+    if (hovered != m_hoverEdges) {
+      m_hoverEdges = hovered;
+      invalidate();
+    }
+    return false;
+  }
+  const float dx = e.pos.x - m_dragStart.x;
+  const float dy = e.pos.y - m_dragStart.y;
+  Rect r = m_startRect;
+  const Vec2 ws = Application::exists() ? Application::get().windowSize() : Vec2{1920.f, 1080.f};
+  const float maxW = std::max(minSize.x, ws.x - 8.f);
+  const float maxH = std::max(minSize.y, ws.y - 8.f);
+  if ((m_edges & 1) != 0) {
+    const float nw = std::clamp(m_startRect.w - dx, minSize.x, maxW);
+    r.x = m_startRect.right() - nw;
+    r.w = nw;
+  }
+  if ((m_edges & 2) != 0) {
+    r.w = std::clamp(m_startRect.w + dx, minSize.x, std::max(minSize.x, ws.x - r.x - 4.f));
+  }
+  if ((m_edges & 4) != 0) {
+    const float nh = std::clamp(m_startRect.h - dy, minSize.y, maxH);
+    r.y = m_startRect.bottom() - nh;
+    r.h = nh;
+  }
+  if ((m_edges & 8) != 0) {
+    r.h = std::clamp(m_startRect.h + dy, minSize.y, std::max(minSize.y, ws.y - r.y - 4.f));
+  }
+  if (Application::exists()) {
+    Application::get().setPopupRect(this, r);
+  }
+  return true;
+}
+
+bool ResizablePopupFrame::onMouseUp(const MouseEvent&) {
+  const bool was = m_edges != 0;
+  m_edges = 0;
+  if (was) invalidate();
+  return was;
+}
+
+void ResizablePopupFrame::onMouseLeave() {
+  if (m_edges == 0 && m_hoverEdges != 0) {
+    m_hoverEdges = 0;
+    invalidate();
+  }
+}
+
+Cursor ResizablePopupFrame::cursor() const {
+  const uint8_t e = m_edges != 0 ? m_edges : m_hoverEdges;
+  if (e == 0) return Cursor::Arrow;
+  const bool l = (e & 1) != 0, r = (e & 2) != 0, t = (e & 4) != 0, b = (e & 8) != 0;
+  if ((l && t) || (r && b)) return Cursor::SizeNWSE;
+  if ((r && t) || (l && b)) return Cursor::SizeNESW;
+  if (l || r) return Cursor::SizeWE;
+  if (t || b) return Cursor::SizeNS;
+  return Cursor::Arrow;
+}
+
+void ResizablePopupFrame::paint(Canvas& c) {
+  Border::paint(c);
+  if (!resizable) return;
+  const Theme& t = theme();
+  const uint8_t active = m_edges != 0 ? m_edges : m_hoverEdges;
+  // Subtle diagonal corner grip in the bottom-right corner.
+  const Color gripColor = ((active & (2 | 8)) == (2 | 8)) ? t.accent : t.textDisabled.withAlpha(160);
+  for (int i = 0; i < 3; ++i) {
+    const float o = 4.0f + 3.0f * float(i);
+    c.line(Vec2(m_rect.right() - o, m_rect.bottom() - 2.0f),
+           Vec2(m_rect.right() - 2.0f, m_rect.bottom() - o), gripColor, 1.0f);
+  }
+  // Crisp hover/active edge accent bar.
+  if (active != 0) {
+    const Color accent = m_edges != 0 ? t.accent : t.accent.withAlpha(150);
+    if ((active & 1) != 0) c.fillRect({m_rect.x, m_rect.y + 3.f, 2.f, std::max(0.f, m_rect.h - 6.f)}, accent);
+    if ((active & 2) != 0) c.fillRect({m_rect.right() - 2.f, m_rect.y + 3.f, 2.f, std::max(0.f, m_rect.h - 6.f)}, accent);
+    if ((active & 4) != 0) c.fillRect({m_rect.x + 3.f, m_rect.y, std::max(0.f, m_rect.w - 6.f), 2.f}, accent);
+    if ((active & 8) != 0) c.fillRect({m_rect.x + 3.f, m_rect.bottom() - 2.f, std::max(0.f, m_rect.w - 6.f), 2.f}, accent);
+  }
+}
 
 Ref<Widget> makeWindowTitleBar(const std::string& title, Icon icon, bool shadeable, Widget* window,
                                std::function<void()> onClose, std::function<void()> onShade) {
@@ -158,44 +243,39 @@ Ref<Widget> makeWindowTitleBar(const std::string& title, Icon icon, bool shadeab
 
 Ref<Widget> showFloatingWindow(Ref<Widget> content, FloatingWindowOptions o) {
   const Theme& t = theme();
-  auto root = make<Border>();
+  auto root = make<ResizablePopupFrame>();
+  root->resizable = o.resizable;
+  root->minSize = o.minSize;
   root->setBackground(t.panel);
   root->setBorder(t.borderStrong, Margin(1));
   root->setRadius(5);
   root->setFixedWidth(o.size.x);
   root->setFixedHeight(o.size.y);
 
-  std::weak_ptr<Widget> wr = root;
+  std::weak_ptr<ResizablePopupFrame> wr = root;
   auto close = [wr] { if (auto r = wr.lock()) Application::get().closePopup(r.get()); };
 
   auto col = vbox();
   auto shaded = std::make_shared<bool>(false);
   auto savedH = std::make_shared<float>(o.size.y);
+  const bool wasResizable = o.resizable;
   Ref<Widget> contentRef = content;
-  Ref<ResizeGrip> grip;
   auto bar = make<WindowTitleBar>(o.title, o.icon, o.shadeable, close,
       [wr](Vec2 p) { if (auto r = wr.lock()) Application::get().movePopup(r.get(), p); }, nullptr);
   bar->window = root.get();
   col->add(bar);
   col->add(std::move(content), {.fill = 1});
-  if (o.resizable) {
-    grip = make<ResizeGrip>();
-    grip->window = root.get();
-    grip->minSize = o.minSize;
-    col->add(grip);
-  }
   // shade toggle needs the finished widgets, so wire it after construction
   std::weak_ptr<WindowTitleBar> wb = bar;
-  std::weak_ptr<ResizeGrip> wg = grip;
-  bar->setShadeHandler([wr, wb, wg, shaded, savedH, contentRef] {
+  bar->setShadeHandler([wr, wb, shaded, savedH, wasResizable, contentRef] {
     auto r = wr.lock();
     auto b = wb.lock();
     if (!r || !b) return;
     *shaded = !*shaded;
     b->shaded = *shaded;
     if (*shaded) *savedH = r->rect().h;
+    r->resizable = !*shaded && wasResizable;
     contentRef->setVisible(!*shaded);
-    if (auto g = wg.lock()) g->setVisible(!*shaded);
     r->setFixedHeight(*shaded ? WindowTitleBar::kH + 2.0f : *savedH);
     Application::get().invalidateLayout();
   });
