@@ -35,8 +35,12 @@ struct Object final {
 /// Components that describe the tree or the editor, not the object: the tree is compared
 /// through the paths; an instance tag is stripped when the entity is opened.
 [[nodiscard]] bool IsStructural(const std::string& type) {
-    return type == "HierarchyComponent" || type == "PrefabInstanceComponent" ||
-           type == "EditorInternalEntityComponent";
+    std::string_view base = type;
+    if (base.size() > 3U && base.ends_with("UVE")) {
+        base.remove_suffix(3U);
+    }
+    return base == "HierarchyComponent" || base == "PrefabInstanceComponent" ||
+           base == "EditorInternalEntityComponent";
 }
 
 [[nodiscard]] std::string ValueText(const Json& value) {
@@ -74,11 +78,16 @@ struct Object final {
         if (entity.contains("components") && entity["components"].is_object()) {
             node.components = &entity["components"];
             const Json& c = *node.components;
-            if (c.contains("HierarchyComponent") && c["HierarchyComponent"].is_object()) {
-                node.parent = c["HierarchyComponent"].value("parentLocalId", static_cast<std::int64_t>(-1));
+            const auto findComp = [&c](const char* key) -> const Json* {
+                if (const auto it = c.find(key); it != c.end() && it->is_object()) return &(*it);
+                if (const auto it = c.find(std::string(key) + "UVE"); it != c.end() && it->is_object()) return &(*it);
+                return nullptr;
+            };
+            if (const Json* const h = findComp("HierarchyComponent")) {
+                node.parent = h->value("parentLocalId", static_cast<std::int64_t>(-1));
             }
-            if (c.contains("NameComponent") && c["NameComponent"].is_object()) {
-                node.name = c["NameComponent"].value("name", std::string());
+            if (const Json* const n = findComp("NameComponent")) {
+                node.name = n->value("name", std::string());
             }
         }
         if (node.name.empty()) {

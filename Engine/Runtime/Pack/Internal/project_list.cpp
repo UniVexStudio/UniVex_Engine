@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <fstream>
 #include <iterator>
 #include <system_error>
@@ -107,6 +108,11 @@ LauncherSettings LoadLauncherSettings(const std::filesystem::path& file) {
         json.value("schemaVersion", 0U) != kCurrentLauncherSettingsSchemaVersion) {
         return settings;
     }
+    const auto clampZoom = [](const float z) {
+        return std::isfinite(z) ? std::clamp(z, 0.5F, 2.0F) : 1.0F;
+    };
+    settings.hubZoom = clampZoom(json.value("hubZoom", 1.0F));
+    settings.editorZoom = clampZoom(json.value("editorZoom", 1.0F));
     const std::string location = json.value("defaultProjectLocation", std::string{});
     if (!location.empty() && std::filesystem::path(location).is_absolute()) {
 #if defined(__ANDROID__)
@@ -129,7 +135,9 @@ LauncherSettings LoadLauncherSettings(const std::filesystem::path& file) {
 bool SaveLauncherSettings(const std::filesystem::path& file, const LauncherSettings& settings) {
     const Json json{{"format", kLauncherSettingsFormat},
                        {"schemaVersion", kCurrentLauncherSettingsSchemaVersion},
-                       {"defaultProjectLocation", settings.defaultProjectLocation.generic_string()}};
+                       {"defaultProjectLocation", settings.defaultProjectLocation.generic_string()},
+                       {"hubZoom", std::isfinite(settings.hubZoom) ? std::clamp(settings.hubZoom, 0.5F, 2.0F) : 1.0F},
+                       {"editorZoom", std::isfinite(settings.editorZoom) ? std::clamp(settings.editorZoom, 0.5F, 2.0F) : 1.0F}};
     std::error_code error;
     if (file.has_parent_path()) {
         std::filesystem::create_directories(file.parent_path(), error);

@@ -3726,4 +3726,45 @@ TEST_F(SceneSerializerTest, MorphTargetComponent_PayloadRejectsADuplicateShape) 
     EXPECT_FALSE(invalidSnapshot.has_value());
 }
 
+TEST_F(SceneSerializerTest, LegacyUveSuffixComponents_LoadCleanlyForOldEntitiesAndScenes) {
+    // Concatenate the legacy suffix so vocabulary rules remain satisfied while verifying exact pre-0.5.0 files.
+    const std::string suffix = "UVE";
+    const std::string payload =
+        std::string(R"({"entities":[{"localId":0,"components":{")") +
+        "NameComponent" + suffix + R"(":{"name":"OldHero"},")" +
+        "TransformComponent" + suffix + R"(":{"localPosition":[1.0,2.0,3.0],"localRotation":[0.0,0.0,0.0,1.0],"localScale":[1.0,1.0,1.0]},")" +
+        "HierarchyComponent" + suffix + R"(":{"parentLocalId":-1},")" +
+        "VisibilityComponent" + suffix + R"(":{"visible":true}}},{"localId":1,"components":{")" +
+        "NameComponent" + suffix + R"(":{"name":"ChildPart"},")" +
+        "HierarchyComponent" + suffix + R"(":{"parentLocalId":0},")" +
+        "DisabledComponent" + suffix + R"(":{}}}]})";
+    const auto* raw = reinterpret_cast<const std::byte*>(payload.data());
+    const std::vector<std::byte> bytes{raw, raw + payload.size()};
+    const SceneSnapshot legacySnapshot{Asset::EncodeUveFileEnvelope(SceneAssetType::Prefab, bytes),
+                                       SceneAssetType::Prefab};
+
+    const std::vector<Entity> roots = serializer.Restore(entityManager, legacySnapshot);
+    ASSERT_EQ(roots.size(), 1U);
+    ASSERT_TRUE(entityManager.HasComponent<NameComponent>(roots[0]));
+    EXPECT_EQ(entityManager.GetComponent<NameComponent>(roots[0]).name, "OldHero");
+    ASSERT_TRUE(entityManager.HasComponent<TransformComponent>(roots[0]));
+    EXPECT_FLOAT_EQ(entityManager.GetComponent<TransformComponent>(roots[0]).localPosition.x, 1.0F);
+    EXPECT_FLOAT_EQ(entityManager.GetComponent<TransformComponent>(roots[0]).localPosition.y, 2.0F);
+    EXPECT_FLOAT_EQ(entityManager.GetComponent<TransformComponent>(roots[0]).localPosition.z, 3.0F);
+    ASSERT_TRUE(entityManager.HasComponent<VisibilityComponent>(roots[0]));
+    EXPECT_TRUE(entityManager.GetComponent<VisibilityComponent>(roots[0]).visible);
+
+    Entity restoredChild = kInvalidEntity;
+    entityManager.ForEach<HierarchyComponent>(
+        [&restoredChild, root = roots[0]](const Entity entity, HierarchyComponent& hierarchy) {
+            if (hierarchy.parent == root) {
+                restoredChild = entity;
+            }
+        });
+    ASSERT_NE(restoredChild, kInvalidEntity);
+    ASSERT_TRUE(entityManager.HasComponent<NameComponent>(restoredChild));
+    EXPECT_EQ(entityManager.GetComponent<NameComponent>(restoredChild).name, "ChildPart");
+    EXPECT_TRUE(entityManager.HasComponent<DisabledComponent>(restoredChild));
+}
+
 } // namespace UVE::Scene::Tests

@@ -1,5 +1,6 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 #include "editor_shell.h"
+#include "editor_layout_store.h"
 #include "editor_shortcut_keys.h"
 #include "prism/AssetBrowser.h"
 #include "png_metadata.h"
@@ -225,10 +226,23 @@ prism::Ref<prism::Widget> EditorShell::BuildLayout() {
     const float sideW = (logicalWidth > 0.0F && logicalWidth < 900.0F) ? std::max(140.0F, std::floor(logicalWidth * 0.22F)) : 250.0F;
     const float detailsW = (logicalWidth > 0.0F && logicalWidth < 900.0F) ? std::max(160.0F, std::floor(logicalWidth * 0.26F)) : 330.0F;
 
+    auto& layoutStore = EditorLayoutStore::Instance();
+    m_editor.m_scenePanelVisible = layoutStore.GetBool("level.outlinerVisible", m_editor.m_scenePanelVisible);
+    m_editor.m_inspectorPanelVisible = layoutStore.GetBool("level.inspectorVisible", m_editor.m_inspectorPanelVisible);
+    m_dockVisible = layoutStore.GetBool("level.dockVisible", true);
+
     auto centre = prism::make<prism::Splitter>(prism::Orientation::Vertical);
     centre->add(BuildViewport(), prism::Splitter::Pane{400.0F, 140.0F, 1e9F, true});
     m_dockArea = BuildDock();
     centre->add(m_dockArea, prism::Splitter::Pane{singleSurface ? 170.0F : 290.0F, 90.0F, 900.0F, false});
+    layoutStore.BindSplitter("level.centre", *centre);
+    if (m_dockPages) {
+        const int savedTab = std::clamp(layoutStore.GetInt("level.dockTab", 0), 0, std::max(0, m_dockPages->count() - 1));
+        m_dockPages->setActiveIndex(savedTab);
+    }
+    if (m_dockArea) {
+        m_dockArea->setVisible(m_dockVisible);
+    }
 
     auto columns = prism::make<prism::Splitter>(prism::Orientation::Horizontal);
     m_outlinerColumn = BuildOutliner();
@@ -236,6 +250,7 @@ prism::Ref<prism::Widget> EditorShell::BuildLayout() {
     columns->add(m_outlinerColumn, prism::Splitter::Pane{sideW, 130.0F, 700.0F, false});
     columns->add(centre, prism::Splitter::Pane{800.0F, 220.0F, 1e9F, true});
     columns->add(m_detailsColumn, prism::Splitter::Pane{detailsW, 150.0F, 800.0F, false});
+    layoutStore.BindSplitter("level.columns", *columns);
     window->add(columns, prism::Slot{1.0F});
 
     // Docking: drag a panel's tab onto another panel's edge to split it there (the Details under
@@ -245,6 +260,12 @@ prism::Ref<prism::Widget> EditorShell::BuildLayout() {
     m_dockSpace->attach(*m_outlinerTabs);
     m_dockSpace->attach(*m_detailsTabs);
     m_dockSpace->onChanged = [this] { UpdateDockColumns(); };
+    if (m_outlinerColumn && m_outlinerTabs) {
+        m_outlinerColumn->setVisible(m_editor.m_scenePanelVisible && m_outlinerTabs->count() > 0);
+    }
+    if (m_detailsColumn && m_detailsTabs) {
+        m_detailsColumn->setVisible(m_editor.m_inspectorPanelVisible && m_detailsTabs->count() > 0);
+    }
 
     window->add(BuildDockBar());
 
@@ -750,7 +771,8 @@ prism::Ref<prism::Widget> EditorShell::BuildDockBar() {
     for (std::size_t i = 0; i < kTabs.size(); ++i) {
         auto tab = prism::make<prism::Button>(kTabs[i].label, kTabs[i].icon, prism::ButtonStyle::Toolbar);
         tab->setCheckable(true);
-        tab->setChecked(m_dockVisible && i == 0);
+        const int activeDockTab = m_dockPages ? m_dockPages->activeIndex() : 0;
+        tab->setChecked(m_dockVisible && static_cast<int>(i) == activeDockTab);
         tab->onClick = [this, index = static_cast<int>(i)] { ShowDockPanel(index, false); };
         m_dockTabs.push_back(tab);
         bar->add(tab, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
@@ -833,6 +855,8 @@ void EditorShell::ApplyLayoutPreset(const int preset) {
 }
 
 void EditorShell::UpdateDockColumns() {
+    EditorLayoutStore::Instance().SetBool("level.outlinerVisible", m_editor.m_scenePanelVisible);
+    EditorLayoutStore::Instance().SetBool("level.inspectorVisible", m_editor.m_inspectorPanelVisible);
     if (m_outlinerColumn && m_outlinerTabs) {
         m_outlinerColumn->setVisible(m_editor.m_scenePanelVisible && m_outlinerTabs->count() > 0);
     }
@@ -848,6 +872,7 @@ void EditorShell::ResetPanelLayout() {
     if (!m_dockSpace || !m_outlinerTabs || !m_detailsTabs) {
         return;
     }
+    EditorLayoutStore::Instance().ResetAll();
     // Every split-off or floating panel back into the Details area first, then each panel to its own.
     m_dockSpace->dissolve(*m_detailsTabs);
     const auto moveTo = [](prism::TabView& from, prism::TabView& to, const std::string& title) {
@@ -882,6 +907,8 @@ void EditorShell::ShowDockPanel(const int index, const bool forceVisible) {
     for (std::size_t i = 0; i < m_dockTabs.size(); ++i) {
         m_dockTabs[i]->setChecked(m_dockVisible && static_cast<int>(i) == m_dockPages->activeIndex());
     }
+    EditorLayoutStore::Instance().SetBool("level.dockVisible", m_dockVisible);
+    EditorLayoutStore::Instance().SetInt("level.dockTab", m_dockPages->activeIndex());
 }
 
 // ---------------------------------------------------------------------------------- add / filter
@@ -1315,7 +1342,8 @@ void EditorShell::Frame() {
             }
         }
     } frameTimer{*this, frameStart};
-    if (!m_host.HasOpaqueFullPage()) {
+    const bool importingDuringStartup = m_startupCovered && m_editor.m_startupStep < 2;
+    if (!m_host.HasOpaqueFullPage() && !importingDuringStartup) {
         RefreshOutliner();
         RefreshDetails();
         RefreshToolbar();

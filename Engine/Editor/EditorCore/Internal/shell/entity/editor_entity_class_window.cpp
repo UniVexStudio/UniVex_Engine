@@ -1,5 +1,6 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 #include "editor_entity_class_window.h"
+#include "editor_layout_store.h"
 
 #include "editor.h"
 #include "editor_content_catalogue.h"
@@ -381,6 +382,7 @@ prism::Ref<prism::Widget> EditorEntityClassWindow::Build() {
     auto body = prism::make<prism::Splitter>(prism::Orientation::Horizontal);
     body->add(Panel(listScroll), prism::Splitter::Pane{300.0F, 180.0F, 500.0F, false});
     body->add(Panel(detailScroll), prism::Splitter::Pane{480.0F, 240.0F, 1e9F, true});
+    EditorLayoutStore::Instance().BindSplitter("entityClass.body", *body);
     window->add(body, prism::Slot{1.0F});
 
     auto buttons = prism::hbox(6.0F);

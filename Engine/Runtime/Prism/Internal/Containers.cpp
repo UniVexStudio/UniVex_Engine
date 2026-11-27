@@ -313,10 +313,37 @@ bool Splitter::onMouseMove(const MouseEvent& e) {
   return true;
 }
 
+std::vector<float> Splitter::paneSizes() const {
+  std::vector<float> out;
+  out.reserve(m_panes.size());
+  for (const Pane& p : m_panes) out.push_back(p.size);
+  return out;
+}
+
+void Splitter::setPaneSizes(const std::vector<float>& sizes) {
+  const size_t n = std::min(sizes.size(), m_panes.size());
+  bool changed = false;
+  for (size_t i = 0; i < n; ++i) {
+    if (!std::isfinite(sizes[i])) continue;
+    const float clamped = std::clamp(sizes[i], m_panes[i].minSize, m_panes[i].maxSize);
+    if (std::abs(m_panes[i].size - clamped) > 0.5f) {
+      m_panes[i].size = clamped;
+      changed = true;
+    }
+  }
+  if (changed) {
+    relayout();
+    invalidate();
+  }
+}
+
 bool Splitter::onMouseUp(const MouseEvent&) {
   const bool was = m_drag >= 0;
   endDrag();
-  if (was) invalidate();
+  if (was) {
+    invalidate();
+    if (onChange) onChange();
+  }
   return was;
 }
 

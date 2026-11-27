@@ -27,12 +27,14 @@
 #include "project_launcher.h"
 #include "project_template.h"
 #include "project_registry.h"
+#include "project_list.h"
 #include "engine_install.h"
 #include "quaternion.h"
 #include "scalar.h"
 #include "prism/Containers.h"
 #include "prism/Controls.h"
 #include "prism/Views.h"
+#include "prism/Application.h"
 #include "logging_macros.h"
 #include "editor_bridge_stdio.h"
 #include "editor.h"
@@ -93,6 +95,7 @@ struct EditorLaunchOptions final {
     std::filesystem::path projectRegistry;
     /// Upgrade an older project to this engine without the confirmation dialog.
     bool upgradeProject = false;
+    bool uiScaleExplicit = false;
     bool printVersion = false;
     /// Set when the command line cannot be acted on; the editor reports it and exits.
     std::optional<std::string> error;
@@ -206,6 +209,7 @@ struct EditorLaunchOptions final {
             const auto [end, parseError] = std::from_chars(text.data(), text.data() + text.size(), zoom);
             if (parseError == std::errc{} && end == text.data() + text.size() && zoom > 0.0F) {
                 UVE::Editor::SetUserInterfaceScale(zoom);
+                options.uiScaleExplicit = true;
             }
             continue;
         }
@@ -474,17 +478,24 @@ int UVE::App::RunEditor(const int argc, char** argv, const EditorPlatform& platf
                 editor.SetSafeAreaCallback(platform.safeArea);
             }
         }
+        if (!options.uiScaleExplicit) {
+            if (const std::optional<std::filesystem::path> reg = UVE::Pack::DefaultProjectRegistryFile(); reg.has_value()) {
+                const UVE::Pack::LauncherSettings launcherSettings =
+                    UVE::Pack::LoadLauncherSettings(reg->parent_path() / UVE::Pack::kLauncherSettingsFileName);
+                UVE::Editor::SetUserInterfaceScale(launcherSettings.editorZoom);
+            }
+        }
         editor.Init();
         if (project.has_value() &&
             project->compatibility.verdict == UVE::Pack::ProjectCompatibilityVerdict::NewerCompatible) {
             UVE_WARNING("uve_editor: {}", project->compatibility.message);
         }
 
+        std::optional<std::filesystem::path> registryFile;
         if (project.has_value()) {
             std::string registryError;
-            const std::optional<std::filesystem::path> registryFile =
-                options.projectRegistry.empty() ? UVE::Pack::DefaultProjectRegistryFile(&registryError)
-                                                : std::optional<std::filesystem::path>(options.projectRegistry);
+            registryFile = options.projectRegistry.empty() ? UVE::Pack::DefaultProjectRegistryFile(&registryError)
+                                                           : std::optional<std::filesystem::path>(options.projectRegistry);
             if (!registryFile.has_value()) {
                 UVE_WARNING("uve_editor: the recent-projects list is unavailable: {}", registryError);
             } else if (const UVE::Pack::ProjectRegistryResult recorded =
@@ -496,11 +507,55 @@ int UVE::App::RunEditor(const int argc, char** argv, const EditorPlatform& platf
         }
 
         bool upgradeAccepted = options.upgradeProject;
+        bool upgradePersisted = false;
         bool closeRequested = false;
+        const auto persistProjectUpgradeNow = [&]() {
+            if (!project.has_value() || upgradePersisted ||
+                !UVE::Pack::ShouldRecordEngineVersion(project->compatibility.verdict, upgradeAccepted)) {
+                return;
+            }
+            const UVE::Core::Version engineVersion = UVE::Core::EngineCore::GetEngineVersion();
+            const UVE::Platform::EditorProjectPackageResult recorded =
+                UVE::Pack::RecordProjectEngineVersion(project->projectFile, engineVersion);
+            if (!recorded.IsAccepted()) {
+                UVE_WARNING("uve_editor: could not record the engine version in {}: {}",
+                            project->projectFile.string(), recorded.message);
+                return;
+            }
+            upgradePersisted = true;
+            project->package.engineVersion = UVE::Platform::EditorProjectVersion{
+                engineVersion.major, engineVersion.minor, engineVersion.patch, engineVersion.build};
+            // Keep the Hub's project registry in sync immediately so Hub shows "Ready" instead of stale "Upgrade".
+            if (registryFile.has_value()) {
+                static_cast<void>(
+                    UVE::Pack::RecordProjectOpened(*registryFile, project->projectFile, project->package));
+            }
+        };
+
         if (project.has_value() && project->compatibility.NeedsUpgradeConfirmation() && !upgradeAccepted &&
             editor.IsPrismUiActive()) {
             ShowProjectUpgradeDialog(*project, upgradeAccepted, closeRequested);
+            engine.SetPostRenderCallback([&editor] { editor.RenderOverlay(); });
+            int promptFrames = 0;
+            while (!upgradeAccepted && !closeRequested && prism::Application::exists() &&
+                   prism::Application::get().hasBlockingPopup() &&
+                   !engine.GetServices().GetWindowManager().IsCloseRequested() &&
+                   (!options.frameLimit.has_value() || promptFrames < *options.frameLimit)) {
+                if (platform.beforeFrame && !platform.beforeFrame(engine)) {
+                    closeRequested = true;
+                    break;
+                }
+                engine.TickFrame();
+                ++promptFrames;
+            }
+            engine.SetPostRenderCallback({});
+            if (closeRequested || engine.GetServices().GetWindowManager().IsCloseRequested()) {
+                editor.Shutdown();
+                engine.Shutdown();
+                return 0;
+            }
         }
+        persistProjectUpgradeNow();
 
         if (std::filesystem::exists(options.scenePath)) {
             static_cast<void>(editor.LoadScene());
@@ -647,15 +702,7 @@ int UVE::App::RunEditor(const int argc, char** argv, const EditorPlatform& platf
         // destructor deletes real GL objects (framebuffers/textures) that must still be valid.
         viewportHost.reset();
         editor.Shutdown();
-        if (project.has_value() &&
-            UVE::Pack::ShouldRecordEngineVersion(project->compatibility.verdict, upgradeAccepted)) {
-            const UVE::Platform::EditorProjectPackageResult recorded = UVE::Pack::RecordProjectEngineVersion(
-                project->projectFile, UVE::Core::EngineCore::GetEngineVersion());
-            if (!recorded.IsAccepted()) {
-                UVE_WARNING("uve_editor: could not record the engine version in {}: {}",
-                            project->projectFile.string(), recorded.message);
-            }
-        }
+        persistProjectUpgradeNow();
         engine.Shutdown();
         return 0;
     } catch (const std::exception& exception) {

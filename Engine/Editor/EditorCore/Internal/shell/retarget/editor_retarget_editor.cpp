@@ -1,5 +1,6 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 #include "editor_retarget_editor.h"
+#include "editor_layout_store.h"
 
 #include "editor.h"
 #include "editor_chrome.h"
@@ -215,6 +216,7 @@ prism::Ref<prism::Widget> EditorRetargetWindow::Build() {
     left->add(Panel(sourceBox), prism::Splitter::Pane{470.0F, 220.0F, 1e9F, true});
     left->add(Panel(m_animations), prism::Splitter::Pane{120.0F, 60.0F, 1e9F, false});
     left->add(Panel(m_kept), prism::Splitter::Pane{130.0F, 60.0F, 1e9F, false});
+    EditorLayoutStore::Instance().BindSplitter("retarget.left", *left);
 
     // Centre: the character alone, in the preview's own world (the level is not touched).
     m_viewport = prism::make<prism::EngineView>();
@@ -295,6 +297,7 @@ prism::Ref<prism::Widget> EditorRetargetWindow::Build() {
     columns->add(left, prism::Splitter::Pane{330.0F, 220.0F, 700.0F, false});
     columns->add(m_viewport, prism::Splitter::Pane{640.0F, 300.0F, 1e9F, true});
     columns->add(Panel(right), prism::Splitter::Pane{420.0F, 260.0F, 900.0F, false});
+    EditorLayoutStore::Instance().BindSplitter("retarget.columns", *columns);
     window->add(columns, prism::Slot{1.0F});
 
     // Footer: what happened, or how far Generate is.

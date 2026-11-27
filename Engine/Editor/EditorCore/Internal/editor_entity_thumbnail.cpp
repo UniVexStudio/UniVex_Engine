@@ -38,6 +38,8 @@ struct EntityNode final {
     Asset::AssetGuid primitiveMaterial{};
     Asset::AssetGuid mesh{};
     Asset::AssetGuid meshMaterial{};
+    std::string surfaceMaterialOverridePath;
+    std::vector<std::string> surfaceMaterialOverridePaths;
 };
 
 [[nodiscard]] Math::Vector3 Vector3Of(const nlohmann::json& value, const Math::Vector3 fallback) {
@@ -112,6 +114,16 @@ bool BuildEntityThumbnailScene(const std::filesystem::path& entityFile, Asset::I
     }
     std::unordered_map<std::int64_t, EntityNode> nodes;
     std::vector<std::int64_t> order;
+    const auto findComp = [](const nlohmann::json& components, const char* name) -> const nlohmann::json* {
+        if (const auto it = components.find(name); it != components.end() && it->is_object()) {
+            return &(*it);
+        }
+        const std::string legacy = std::string(name) + "UVE";
+        if (const auto it = components.find(legacy); it != components.end() && it->is_object()) {
+            return &(*it);
+        }
+        return nullptr;
+    };
     for (const nlohmann::json& entity : document["entities"]) {
         if (!entity.is_object() || !entity.contains("components") || !entity["components"].is_object()) {
             continue;
@@ -119,10 +131,10 @@ bool BuildEntityThumbnailScene(const std::filesystem::path& entityFile, Asset::I
         const std::int64_t id = entity.value("localId", std::int64_t{-1});
         const nlohmann::json& components = entity["components"];
         EntityNode node;
-        if (const auto h = components.find("HierarchyComponent"); h != components.end() && h->is_object()) {
+        if (const nlohmann::json* const h = findComp(components, "HierarchyComponent")) {
             node.parent = h->value("parentLocalId", std::int64_t{-1});
         }
-        if (const auto t = components.find("TransformComponent"); t != components.end() && t->is_object()) {
+        if (const nlohmann::json* const t = findComp(components, "TransformComponent")) {
             node.position = Vector3Of(t->value("localPosition", nlohmann::json{}), Math::Vector3{});
             node.scale = Vector3Of(t->value("localScale", nlohmann::json{}), Math::Vector3{1.0F, 1.0F, 1.0F});
             const nlohmann::json r = t->value("localRotation", nlohmann::json{});
@@ -130,19 +142,27 @@ bool BuildEntityThumbnailScene(const std::filesystem::path& entityFile, Asset::I
                 node.rotation = Math::Quaternion{r[0].get<float>(), r[1].get<float>(), r[2].get<float>(), r[3].get<float>()};
             }
         }
-        if (const auto n = components.find("NameComponent"); n != components.end() && n->is_object()) {
+        if (const nlohmann::json* const n = findComp(components, "NameComponent")) {
             node.name = n->value("name", std::string{});
         }
-        node.camera = components.contains("CameraComponent");
-        if (const auto p = components.find("PrimitiveMeshComponent"); p != components.end() && p->is_object()) {
+        node.camera = findComp(components, "CameraComponent") != nullptr;
+        if (const nlohmann::json* const p = findComp(components, "PrimitiveMeshComponent")) {
             node.primitive = true;
             node.kind = static_cast<Scene::PrimitiveMeshKind>(std::clamp(p->value("kind", 0), 0, 4));
             node.colour = Vector3Of(p->value("baseColor", nlohmann::json{}), Math::Vector3{1.0F, 1.0F, 1.0F});
             node.primitiveMaterial = GuidOf(*p, "materialGuid");
         }
-        if (const auto m = components.find("MeshComponent"); m != components.end() && m->is_object()) {
+        if (const nlohmann::json* const m = findComp(components, "MeshComponent")) {
             node.mesh = GuidOf(*m, "meshGuid");
             node.meshMaterial = GuidOf(*m, "materialGuid");
+        }
+        if (const nlohmann::json* const s = findComp(components, "SurfaceInstanceComponent")) {
+            node.surfaceMaterialOverridePath = s->value("materialOverridePath", std::string{});
+            if (const auto arr = s->find("surfaceMaterialOverridePaths"); arr != s->end() && arr->is_array()) {
+                for (const auto& item : *arr) {
+                    node.surfaceMaterialOverridePaths.push_back(item.is_string() ? item.get<std::string>() : std::string{});
+                }
+            }
         }
         nodes.emplace(id, std::move(node));
         order.push_back(id);
@@ -204,15 +224,48 @@ bool BuildEntityThumbnailScene(const std::filesystem::path& entityFile, Asset::I
             if (poseMesh) {
                 poseMesh(mesh, file);
             }
+            const auto resolveOverrideGuid = [&](const std::string& rawPath) -> Asset::AssetGuid {
+                if (rawPath.empty()) {
+                    return Asset::AssetGuid{};
+                }
+                const std::filesystem::path candidate{rawPath};
+                std::error_code ec;
+                if (candidate.is_absolute() && std::filesystem::is_regular_file(candidate, ec)) {
+                    if (const Asset::AssetGuid g = database.Register(candidate); g != Asset::kInvalidAssetGuid) {
+                        return g;
+                    }
+                }
+                std::filesystem::path dir = entityFile.parent_path();
+                for (int depth = 0; depth < 8 && !dir.empty(); ++depth) {
+                    const std::filesystem::path probe = dir / candidate;
+                    ec.clear();
+                    if (std::filesystem::is_regular_file(probe, ec)) {
+                        if (const Asset::AssetGuid g = database.Register(probe); g != Asset::kInvalidAssetGuid) {
+                            return g;
+                        }
+                    }
+                    const std::filesystem::path next = dir.parent_path();
+                    if (next == dir) break;
+                    dir = next;
+                }
+                return Asset::AssetGuid{};
+            };
+            const Asset::AssetGuid globalOverride = resolveOverrideGuid(node.surfaceMaterialOverridePath);
             std::vector<MeshThumbnailLook> looks(std::max<std::size_t>(1U, mesh.materialGuids.size()));
-            for (std::size_t slot = 0U; slot < mesh.materialGuids.size() && lookOf; ++slot) {
-                const Asset::AssetGuid material = node.meshMaterial != Asset::AssetGuid{} ? node.meshMaterial : mesh.materialGuids[slot];
+            for (std::size_t slot = 0U; slot < looks.size() && lookOf; ++slot) {
+                Asset::AssetGuid material = globalOverride;
+                if (material == Asset::AssetGuid{} && slot < node.surfaceMaterialOverridePaths.size()) {
+                    material = resolveOverrideGuid(node.surfaceMaterialOverridePaths[slot]);
+                }
+                if (material == Asset::AssetGuid{} && node.meshMaterial != Asset::AssetGuid{}) {
+                    material = node.meshMaterial;
+                }
+                if (material == Asset::AssetGuid{} && slot < mesh.materialGuids.size()) {
+                    material = mesh.materialGuids[slot];
+                }
                 if (material != Asset::AssetGuid{}) {
                     looks[slot] = lookOf(material);
                 }
-            }
-            if (mesh.materialGuids.empty() && node.meshMaterial != Asset::AssetGuid{} && lookOf) {
-                looks[0] = lookOf(node.meshMaterial);
             }
             Append(out, mesh, m, looks);
         }

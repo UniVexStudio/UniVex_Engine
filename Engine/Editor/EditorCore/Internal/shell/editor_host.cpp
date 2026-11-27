@@ -1,5 +1,6 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 #include "editor_host.h"
+#include "editor_layout_store.h"
 
 #include "prism/Canvas.h"
 #include "prism/GlBackend.h"
@@ -26,6 +27,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <map>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -202,6 +204,7 @@ struct EditorHost::Window final {
     /// A page on the main surface (single-surface platforms) rather than an OS window of its own.
     bool page = false;
     bool pageHidden = false;
+    std::string layoutKey;
     bool pageFloating = false;
     prism::Rect pageBounds{};
     bool pageDragging = false;
@@ -287,8 +290,11 @@ public:
         }
     }
     ~Platform() override {
+        std::vector<GLFWcursor*> destroyed;
+        destroyed.reserve(m_cursors.size());
         for (GLFWcursor* cursor : m_cursors) {
-            if (cursor != nullptr) {
+            if (cursor != nullptr && std::find(destroyed.begin(), destroyed.end(), cursor) == destroyed.end()) {
+                destroyed.push_back(cursor);
                 glfwDestroyCursor(cursor);
             }
         }
@@ -340,7 +346,20 @@ public:
         if (w->page) {
             w->pageFloating = !w->pageFloating;
             w->pageDragging = false;
+            w->pageResizeEdges = 0;
             m_host.ApplyPageLayout(*w);
+            if (!w->layoutKey.empty()) {
+                SavedWindowBounds b = EditorLayoutStore::Instance().GetWindowBounds(w->layoutKey).value_or(SavedWindowBounds{});
+                b.pageFloating = w->pageFloating;
+                if (w->pageBounds.w > 1.0F && w->pageBounds.h > 1.0F) {
+                    b.pageX = w->pageBounds.x;
+                    b.pageY = w->pageBounds.y;
+                    b.pageW = w->pageBounds.w;
+                    b.pageH = w->pageBounds.h;
+                    b.hasPageBounds = true;
+                }
+                EditorLayoutStore::Instance().SetWindowBounds(w->layoutKey, b);
+            }
             if (m_host.m_app != nullptr) {
                 m_host.m_app->invalidate();
             }
@@ -1079,6 +1098,10 @@ int EditorHost::OpenWindow(prism::Ref<prism::Widget> root, const std::string& ti
     if (!m_ready || root == nullptr) {
         return 0;
     }
+    const std::size_t sep = title.find(" - ");
+    const std::string layoutKey = sep != std::string::npos ? title.substr(0U, sep) : title;
+    const std::optional<SavedWindowBounds> saved =
+        !layoutKey.empty() ? EditorLayoutStore::Instance().GetWindowBounds(layoutKey) : std::nullopt;
     if (m_singleSurface) {
         // A page over the main window: the same surface and context, the full screen, and the main
         // window's input while it is on top.
@@ -1086,6 +1109,13 @@ int EditorHost::OpenWindow(prism::Ref<prism::Widget> root, const std::string& ti
         w->host = this;
         w->window = m_main->window;
         w->page = true;
+        w->layoutKey = layoutKey;
+        if (saved.has_value()) {
+            w->pageFloating = saved->pageFloating;
+            if (saved->hasPageBounds && saved->pageW > 1.0F && saved->pageH > 1.0F) {
+                w->pageBounds = prism::Rect{saved->pageX, saved->pageY, saved->pageW, saved->pageH};
+            }
+        }
         w->fbWidth = m_main->fbWidth;
         w->fbHeight = m_main->fbHeight;
         w->uiScale = m_main->uiScale;
@@ -1112,7 +1142,11 @@ int EditorHost::OpenWindow(prism::Ref<prism::Widget> root, const std::string& ti
         w->frameStartMouse = m_main->mouse;
         w->lastFrameTime = glfwGetTime();
         m_app->windowResize(id, w->uiWidth, w->uiHeight);
+        Window* const added = w.get();
         m_windows.emplace(id, std::move(w));
+        if (added->pageFloating) {
+            ApplyPageLayout(*added);
+        }
         ShowPage(id);
         return id;
     }
@@ -1126,7 +1160,9 @@ int EditorHost::OpenWindow(prism::Ref<prism::Widget> root, const std::string& ti
     glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, glfwGetWindowAttrib(main, GLFW_OPENGL_FORWARD_COMPAT));
     glfwWindowHint(GLFW_DECORATED, GLFW_FALSE);   // PRISM draws the title bar
     glfwWindowHint(GLFW_VISIBLE, GLFW_TRUE);
-    GLFWwindow* const window = glfwCreateWindow(std::max(320, width), std::max(240, height), title.c_str(), nullptr, main);
+    const int initW = (saved.has_value() && saved->width >= 420) ? saved->width : std::max(420, width);
+    const int initH = (saved.has_value() && saved->height >= 300) ? saved->height : std::max(300, height);
+    GLFWwindow* const window = glfwCreateWindow(initW, initH, title.c_str(), nullptr, main);
     glfwDefaultWindowHints();
     glfwMakeContextCurrent(main);
     if (window == nullptr) {
@@ -1136,31 +1172,36 @@ int EditorHost::OpenWindow(prism::Ref<prism::Widget> root, const std::string& ti
     auto w = std::make_unique<Window>();
     w->host = this;
     w->window = window;
+    w->layoutKey = layoutKey;
     glfwGetFramebufferSize(window, &w->fbWidth, &w->fbHeight);
     w->fbWidth = std::max(1, w->fbWidth);
     w->fbHeight = std::max(1, w->fbHeight);
-    w->uiScale = 1.0F;
-    w->uiWidth = w->fbWidth;
-    w->uiHeight = w->fbHeight;
+    w->uiScale = ComputeUiScale(window, w->fbWidth, w->fbHeight, false);
+    w->uiWidth = std::max(1, static_cast<int>(std::lround(static_cast<float>(w->fbWidth) / w->uiScale)));
+    w->uiHeight = std::max(1, static_cast<int>(std::lround(static_cast<float>(w->fbHeight) / w->uiScale)));
     std::string error;
     w->backend = prism::GlBackend::create(&GlLoader, {}, /*blitToScreen*/ false, &error);
     if (w->backend == nullptr) {
         glfwDestroyWindow(window);
         return 0;
     }
+    w->backend->setPixelScale(w->uiScale);
     w->backend->resize(w->fbWidth, w->fbHeight);
 
-    // Placed beside the main window, offset like a new document window.
-    int mainX = 0;
-    int mainY = 0;
-    glfwGetWindowPos(main, &mainX, &mainY);
-    glfwSetWindowPos(window, mainX + 60, mainY + 60);
-    glfwSetWindowSizeLimits(window, 640, 400, GLFW_DONT_CARE, GLFW_DONT_CARE);
+    if (saved.has_value() && saved->hasPosition) {
+        glfwSetWindowPos(window, saved->x, saved->y);
+    } else {
+        int mainX = 0;
+        int mainY = 0;
+        glfwGetWindowPos(main, &mainX, &mainY);
+        glfwSetWindowPos(window, mainX + 60, mainY + 60);
+    }
+    glfwSetWindowSizeLimits(window, 420, 300, GLFW_DONT_CARE, GLFW_DONT_CARE);
 
     prism::OsWindowDesc desc{};
     desc.title = title;
-    desc.width = w->fbWidth;
-    desc.height = w->fbHeight;
+    desc.width = w->uiWidth;
+    desc.height = w->uiHeight;
     const int id = m_app->openWindow(std::move(root), desc);
     if (id == 0) {
         glfwDestroyWindow(window);
@@ -1177,7 +1218,7 @@ int EditorHost::OpenWindow(prism::Ref<prism::Widget> root, const std::string& ti
     glfwSetWindowCloseCallback(window, &SecondaryClose);
     glfwSetWindowFocusCallback(window, &SecondaryFocus);
     w->lastFrameTime = glfwGetTime();
-    m_app->windowResize(id, w->fbWidth, w->fbHeight);
+    m_app->windowResize(id, w->uiWidth, w->uiHeight);
     m_windows.emplace(id, std::move(w));
     return id;
 }
@@ -1188,6 +1229,25 @@ void EditorHost::CloseWindow(const int id) {
         return;
     }
     std::unique_ptr<Window> w = std::move(it->second);
+    if (!w->layoutKey.empty()) {
+        SavedWindowBounds b = EditorLayoutStore::Instance().GetWindowBounds(w->layoutKey).value_or(SavedWindowBounds{});
+        if (w->page) {
+            b.pageFloating = w->pageFloating;
+            if (w->pageBounds.w > 1.0F && w->pageBounds.h > 1.0F) {
+                b.pageX = w->pageBounds.x;
+                b.pageY = w->pageBounds.y;
+                b.pageW = w->pageBounds.w;
+                b.pageH = w->pageBounds.h;
+                b.hasPageBounds = true;
+            }
+        } else if (w->window != nullptr && glfwGetWindowAttrib(w->window, GLFW_MAXIMIZED) == 0 &&
+                   glfwGetWindowAttrib(w->window, GLFW_ICONIFIED) == 0) {
+            glfwGetWindowSize(w->window, &b.width, &b.height);
+            glfwGetWindowPos(w->window, &b.x, &b.y);
+            b.hasPosition = true;
+        }
+        EditorLayoutStore::Instance().SetWindowBounds(w->layoutKey, b);
+    }
     m_windows.erase(it);
     m_app->closeWindow(id);
     m_platform->ForgetWindow(id);
@@ -1986,6 +2046,7 @@ void EditorHost::OnMouseButton(Window& w, const int button, const int action, co
             w.released[i] = true;
         }
         const bool wasResize = w.dragMode == Window::DragMode::Resize;
+        const bool wasMove = w.dragMode == Window::DragMode::Move;
         const bool wasPageDrag = w.pageDragging;
         const bool wasPageResize = w.pageResizeEdges != 0;
         if (button == GLFW_MOUSE_BUTTON_LEFT) {
@@ -1995,6 +2056,24 @@ void EditorHost::OnMouseButton(Window& w, const int button, const int action, co
         }
         if (wasPageResize) {
             ApplyPageLayout(w);
+        }
+        if ((wasPageResize || wasPageDrag || wasResize || wasMove) && !w.layoutKey.empty()) {
+            SavedWindowBounds b = EditorLayoutStore::Instance().GetWindowBounds(w.layoutKey).value_or(SavedWindowBounds{});
+            if (w.page) {
+                b.pageFloating = w.pageFloating;
+                if (w.pageBounds.w > 1.0F && w.pageBounds.h > 1.0F) {
+                    b.pageX = w.pageBounds.x;
+                    b.pageY = w.pageBounds.y;
+                    b.pageW = w.pageBounds.w;
+                    b.pageH = w.pageBounds.h;
+                    b.hasPageBounds = true;
+                }
+            } else if (w.window != nullptr && glfwGetWindowAttrib(w.window, GLFW_MAXIMIZED) == 0) {
+                glfwGetWindowSize(w.window, &b.width, &b.height);
+                glfwGetWindowPos(w.window, &b.x, &b.y);
+                b.hasPosition = true;
+            }
+            EditorLayoutStore::Instance().SetWindowBounds(w.layoutKey, b);
         }
         if (!wasResize && !wasPageDrag && !wasPageResize && prismButton != prism::MouseButton::None) {
             prism::Vec2 dragLocal{};

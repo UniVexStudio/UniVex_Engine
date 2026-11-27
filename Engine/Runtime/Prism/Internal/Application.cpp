@@ -259,7 +259,7 @@ void Application::setPopupRect(const Widget* w, Rect r) {
       p.opt.anchor = Rect{r.x, r.y, 0.f, 0.f};
       p.widget->setFixedWidth(r.w);
       p.widget->setFixedHeight(r.h);
-      p.widget->setMaxSize(0.f, 0.f);
+      p.widget->setMaxSize(1e9f, 1e9f);
       p.widget->arrange(r);
       invalidateLayout();
       invalidate();

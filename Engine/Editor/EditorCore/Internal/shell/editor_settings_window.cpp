@@ -1,5 +1,6 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 #include "editor_settings_window.h"
+#include "editor_layout_store.h"
 
 #include "editor.h"
 #include "editor_chrome.h"
@@ -367,6 +368,7 @@ prism::Ref<prism::Widget> EditorSettingsWindow::Build() {
     auto body = prism::make<prism::Splitter>(prism::Orientation::Horizontal);
     body->add(Panel(m_tree), prism::Splitter::Pane{220.0F, 160.0F, 400.0F, false});
     body->add(Panel(scroll), prism::Splitter::Pane{680.0F, 320.0F, 1e9F, true});
+    EditorLayoutStore::Instance().BindSplitter("settings.body", *body);
     window->add(body, prism::Slot{1.0F});
 
     auto buttons = prism::hbox(6.0F);

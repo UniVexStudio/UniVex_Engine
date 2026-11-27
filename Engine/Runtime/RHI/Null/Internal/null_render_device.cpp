@@ -454,6 +454,10 @@ void NullRenderDevice::Present() {
     ++m_impl->presentCallCount;
 }
 
+std::uint64_t NullRenderDevice::GetPresentEpoch() const noexcept {
+    return m_impl->presentCallCount;
+}
+
 bool NullRenderDevice::IsUsable() const noexcept {
     return true;
 }

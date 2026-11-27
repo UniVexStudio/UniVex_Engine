@@ -60,6 +60,8 @@ inline constexpr std::string_view kDefaultProjectsDirectoryName = "UniVex Projec
 
 struct LauncherSettings final {
     std::filesystem::path defaultProjectLocation;
+    float hubZoom = 1.0F;
+    float editorZoom = 1.0F;
 };
 
 /// Reads `file`; a missing or unreadable file yields the defaults, with `defaultProjectLocation`

@@ -277,9 +277,12 @@ std::optional<std::filesystem::path> Editor::RenameContentAsset(const std::files
                 const std::string newName = target->stem().string();
                 for (auto& entityObj : payloadJson["entities"]) {
                     bool isRoot = true;
-                    if (entityObj.contains("components") && entityObj["components"].contains("HierarchyComponent")) {
-                        const auto& h = entityObj["components"]["HierarchyComponent"];
-                        if (h.contains("parentLocalId") && h["parentLocalId"].get<std::int64_t>() >= 0) {
+                    if (entityObj.contains("components") && entityObj["components"].is_object()) {
+                        const auto& comps = entityObj["components"];
+                        const auto hIt = comps.contains("HierarchyComponent") ? comps.find("HierarchyComponent")
+                                                                              : comps.find("HierarchyComponentUVE");
+                        if (hIt != comps.end() && hIt->is_object() && hIt->contains("parentLocalId") &&
+                            (*hIt)["parentLocalId"].get<std::int64_t>() >= 0) {
                             isRoot = false;
                         }
                     }
@@ -287,10 +290,14 @@ std::optional<std::filesystem::path> Editor::RenameContentAsset(const std::files
                         if (!entityObj.contains("components") || !entityObj["components"].is_object()) {
                             entityObj["components"] = nlohmann::json::object();
                         }
-                        if (!entityObj["components"].contains("NameComponent") || !entityObj["components"]["NameComponent"].is_object()) {
-                            entityObj["components"]["NameComponent"] = nlohmann::json::object();
+                        const char* nameKey = entityObj["components"].contains("NameComponentUVE") &&
+                                                      !entityObj["components"].contains("NameComponent")
+                                                  ? "NameComponentUVE"
+                                                  : "NameComponent";
+                        if (!entityObj["components"].contains(nameKey) || !entityObj["components"][nameKey].is_object()) {
+                            entityObj["components"][nameKey] = nlohmann::json::object();
                         }
-                        entityObj["components"]["NameComponent"]["name"] = newName;
+                        entityObj["components"][nameKey]["name"] = newName;
                         break;
                     }
                 }

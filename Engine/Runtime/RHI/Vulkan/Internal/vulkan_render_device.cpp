@@ -7161,6 +7161,7 @@ void VulkanRenderDevice::ReplayRecordedCommands(const std::vector<RecordedComman
 }
 
 void VulkanRenderDevice::Present() {
+    ++m_presentEpoch;
     Impl& impl = *m_impl;
     if (!impl.usable) {
         return;

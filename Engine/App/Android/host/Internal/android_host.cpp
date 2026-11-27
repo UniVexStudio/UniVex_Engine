@@ -723,13 +723,13 @@ void CancelActiveTouches(ActivityState& state) {
     CancelGestureButton(state.touch);
     const std::int32_t heldMouse = state.touch.mouseButtonMask;
     if ((heldMouse & AMOTION_EVENT_BUTTON_PRIMARY) != 0) {
-        Window::DispatchAndroidGlfwMouseButton(GLFW_MOUSE_BUTTON_LEFT, false, kCancelOffscreenPos, kCancelOffscreenPos);
+        Window::DispatchAndroidGlfwMouseButtonRelease(GLFW_MOUSE_BUTTON_LEFT);
     }
     if ((heldMouse & AMOTION_EVENT_BUTTON_SECONDARY) != 0) {
-        Window::DispatchAndroidGlfwMouseButton(GLFW_MOUSE_BUTTON_RIGHT, false, kCancelOffscreenPos, kCancelOffscreenPos);
+        Window::DispatchAndroidGlfwMouseButtonRelease(GLFW_MOUSE_BUTTON_RIGHT);
     }
     if ((heldMouse & AMOTION_EVENT_BUTTON_TERTIARY) != 0) {
-        Window::DispatchAndroidGlfwMouseButton(GLFW_MOUSE_BUTTON_MIDDLE, false, kCancelOffscreenPos, kCancelOffscreenPos);
+        Window::DispatchAndroidGlfwMouseButtonRelease(GLFW_MOUSE_BUTTON_MIDDLE);
     }
     state.touch = TouchGesture{};
     Window::SetAndroidGlfwTouchContacts({});

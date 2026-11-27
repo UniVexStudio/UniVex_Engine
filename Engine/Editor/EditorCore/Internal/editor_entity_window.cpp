@@ -720,12 +720,23 @@ std::vector<Editor::EntityFindRow> Editor::FindInEntityEditor(const std::string_
         for (const nlohmann::json& item : doc["entities"]) {
             // The captured object itself (its descendants are listed as themselves).
             const nlohmann::json& components = item.contains("components") ? item["components"] : nlohmann::json::object();
-            if (!components.is_object() || !components.contains("HierarchyComponent") ||
-                components["HierarchyComponent"].value("parentLocalId", static_cast<std::int64_t>(0)) >= 0) {
+            const nlohmann::json* hierarchyJson = nullptr;
+            if (components.is_object()) {
+                if (const auto h = components.find("HierarchyComponent"); h != components.end() && h->is_object()) {
+                    hierarchyJson = &(*h);
+                } else if (const auto hl = components.find("HierarchyComponentUVE"); hl != components.end() && hl->is_object()) {
+                    hierarchyJson = &(*hl);
+                }
+            }
+            if (hierarchyJson == nullptr ||
+                hierarchyJson->value("parentLocalId", static_cast<std::int64_t>(0)) >= 0) {
                 continue;
             }
             for (auto c = components.begin(); c != components.end(); ++c) {
                 std::string component = c.key();
+                if (component.size() > 3U && component.ends_with("UVE")) {
+                    component.resize(component.size() - 3U);
+                }
                 if (component == "HierarchyComponent" || component == "NameComponent") {
                     continue;
                 }

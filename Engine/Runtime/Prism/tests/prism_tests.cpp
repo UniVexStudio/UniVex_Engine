@@ -3730,6 +3730,49 @@ int main(int argc, char** argv) {
   testGoldenImages(app, assets);
   testFuzzLoaders(app, assets);
   testSubmenuReverseCloseAndSequencerToolbarClamp(app);
+  {
+    SECTION("resizable_dialog_clickability_and_splitter_sizes");
+    bool upgradeClicked = false;
+    auto body = vbox(6.0f);
+    body->add(make<Label>("Upgrade project to 0.5.0?"));
+    showDialog("Upgrade Project", body,
+               {{"Close", false, {}}, {"Upgrade", true, [&upgradeClicked] { upgradeClicked = true; }}},
+               460.0f);
+    app.tick();
+    app.render();
+    Widget* dlg = app.topPopup();
+    CHECK(dlg != nullptr);
+    if (dlg) {
+      CHECK(dlg->rect().w >= 240.0f);
+      CHECK(dlg->rect().h >= 80.0f);
+      // Calling setPopupRect must NOT collapse the popup to 0x0 (maxSize must stay unconstrained).
+      Rect resized{dlg->rect().x, dlg->rect().y, dlg->rect().w + 40.0f, dlg->rect().h + 30.0f};
+      app.setPopupRect(dlg, resized);
+      app.tick();
+      app.render();
+      CHECK(dlg->rect().w >= 280.0f);
+      CHECK(dlg->rect().h >= 110.0f);
+      // Clicking the primary "Upgrade" button at the bottom-right of the dialog must invoke its action,
+      // not get stolen by ResizablePopupFrame.
+      Vec2 btnPt{dlg->rect().right() - 48.0f, dlg->rect().bottom() - 22.0f};
+      app.injectMouseMove(btnPt);
+      app.injectMouseButton(btnPt, MouseButton::Left, true);
+      app.injectMouseButton(btnPt, MouseButton::Left, false);
+      app.tick();
+      CHECK(upgradeClicked);
+    }
+    app.closeAllPopups();
+    // Splitter paneSizes / setPaneSizes round-trip & clamping.
+    auto sp = make<Splitter>(Orientation::Horizontal);
+    sp->add(make<Spacer>(), Splitter::Pane{250.0f, 120.0f, 600.0f, false});
+    sp->add(make<Spacer>(), Splitter::Pane{600.0f, 200.0f, 1e9f, true});
+    sp->setPaneSizes({340.0f, 500.0f});
+    auto sizes = sp->paneSizes();
+    CHECK(sizes.size() == 2U);
+    CHECK(sizes[0] > 339.0f && sizes[0] < 341.0f);
+    sp->setPaneSizes({20.0f, 500.0f});
+    CHECK(sp->paneSizes()[0] >= 120.0f);
+  }
   std::printf("%d checks, %d failed\n", g_run, g_fail);
   return g_fail ? 1 : 0;
 }

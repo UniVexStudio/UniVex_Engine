@@ -2208,8 +2208,13 @@ template <typename T, typename FromJsonFunc, typename ValidateFunc>
         // marker component followed. A document written before this carries the left-hand name.
         {"OutlinerViewportComponent", "OutlinerViewport3DComponent"},
     };
-    const auto it = kLegacyNames.find(name);
-    return it != kLegacyNames.end() ? it->second : name;
+    // Files saved before the suffix-removal pass store component names ending in "UVE".
+    std::string_view base = name;
+    if (base.size() > 3U && base.ends_with("UVE")) {
+        base.remove_suffix(3U);
+    }
+    const auto it = kLegacyNames.find(base);
+    return it != kLegacyNames.end() ? it->second : base;
 }
 
 // --- Metadata-driven (de)serialization ------------------------------------------------------
@@ -3657,14 +3662,15 @@ void RollbackRestoredEntities(IEntityManager& entityManager, std::vector<Entity>
                 return std::nullopt;
             }
             for (const auto& [componentName, componentJson] : components.items()) {
-                if (componentName == "DisabledComponent") {
+                const std::string_view canonicalKey = CanonicalComponentName(componentName);
+                if (canonicalKey == "DisabledComponent") {
                     if (!componentJson.is_object()) {
                         UVE_ERROR("SceneSerializer: malformed disabled-component data in \"{}\"", sourceDescription);
                         return std::nullopt;
                     }
                     continue;
                 }
-                if (componentName == "VisibilityComponent") {
+                if (canonicalKey == "VisibilityComponent") {
                     // Validated here and restored by the entity-aware path below, never through
                     // the registration table: it carries an entity reference, and only this
                     // function knows which file-local id maps to which restored entity.
@@ -3690,7 +3696,7 @@ void RollbackRestoredEntities(IEntityManager& entityManager, std::vector<Entity>
                     }
                     continue;
                 }
-                if (componentName == "HierarchyComponent") {
+                if (canonicalKey == "HierarchyComponent") {
                     if (!componentJson.is_object() || !componentJson.contains("parentLocalId") ||
                         !componentJson.at("parentLocalId").is_number_integer()) {
                         UVE_ERROR("SceneSerializer: malformed hierarchy data in \"{}\"", sourceDescription);
@@ -3754,15 +3760,23 @@ void RollbackRestoredEntities(IEntityManager& entityManager, std::vector<Entity>
         return std::nullopt;
     }
 
+    const auto findHierarchyComponent = [](const nlohmann::json& components) -> const nlohmann::json* {
+        for (const auto& [k, v] : components.items()) {
+            if (CanonicalComponentName(k) == "HierarchyComponent") {
+                return &v;
+            }
+        }
+        return nullptr;
+    };
+
     if (expectedRootCount.has_value()) {
         std::size_t rootCount = 0U;
         for (const auto& [unusedLocalId, entityJson] : orderedEntities) {
             static_cast<void>(unusedLocalId);
             const auto& components = entityJson.at("components");
             bool hasKnownParent = false;
-            if (components.contains("HierarchyComponent")) {
-                const std::int64_t parentLocalId =
-                    components.at("HierarchyComponent").at("parentLocalId").get<std::int64_t>();
+            if (const nlohmann::json* const hierarchy = findHierarchyComponent(components)) {
+                const std::int64_t parentLocalId = hierarchy->at("parentLocalId").get<std::int64_t>();
                 hasKnownParent = parentLocalId >= 0 &&
                                  static_cast<std::uint64_t>(parentLocalId) <=
                                      std::numeric_limits<std::uint32_t>::max() &&
@@ -3795,11 +3809,11 @@ void RollbackRestoredEntities(IEntityManager& entityManager, std::vector<Entity>
                 break;
             }
             const auto& components = entityIt->second.at("components");
-            if (!components.contains("HierarchyComponent")) {
+            const nlohmann::json* const hierarchy = findHierarchyComponent(components);
+            if (!hierarchy) {
                 break;
             }
-            const std::int64_t parentLocalId =
-                components.at("HierarchyComponent").at("parentLocalId").get<std::int64_t>();
+            const std::int64_t parentLocalId = hierarchy->at("parentLocalId").get<std::int64_t>();
             if (parentLocalId < 0 ||
                 static_cast<std::uint64_t>(parentLocalId) > std::numeric_limits<std::uint32_t>::max()) {
                 break;
@@ -3836,15 +3850,21 @@ void RollbackRestoredEntities(IEntityManager& entityManager, std::vector<Entity>
             // "AnimationTree", so a saved driver was always visited first. Renaming those two to
             // AnimationSequencer and AnimationGraph moved AnimationGraph AHEAD of the driver, and a
             // graph then synthesized a throwaway driver that the real one collided with.
-            const bool documentHasMixer =
-                componentsJson.contains("AnimationDriverComponent") ||
-                componentsJson.contains("AnimationMixerComponent");
+            bool documentHasMixer = false;
+            for (const auto& [k, unusedVal] : componentsJson.items()) {
+                static_cast<void>(unusedVal);
+                if (CanonicalComponentName(k) == "AnimationDriverComponent") {
+                    documentHasMixer = true;
+                    break;
+                }
+            }
             for (const auto& [componentName, componentJson] : componentsJson.items()) {
-                if (componentName == "DisabledComponent") {
+                const std::string_view canonicalKey = CanonicalComponentName(componentName);
+                if (canonicalKey == "DisabledComponent") {
                     entityManager.AddComponent<DisabledComponent>(entity);
                     continue;
                 }
-                if (componentName == "VisibilityComponent") {
+                if (canonicalKey == "VisibilityComponent") {
                     VisibilityComponent visibility;
                     // Absent in documents written before the flag existed, and visible is what
                     // they meant.
@@ -3939,7 +3959,7 @@ void RollbackRestoredEntities(IEntityManager& entityManager, std::vector<Entity>
                     entityManager.AddComponent<CinematicComponent>(entity, std::move(cinematic));
                     continue;
                 }
-                if (componentName == "HierarchyComponent") {
+                if (canonicalKey == "HierarchyComponent") {
                     const std::int64_t parentLocalId = componentJson.at("parentLocalId").get<std::int64_t>();
                     Entity parent = kInvalidEntity;
                     if (parentLocalId >= 0) {

@@ -1,5 +1,6 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 #include "editor_entity_editor.h"
+#include "editor_layout_store.h"
 #include "editor_object_menu.h"
 
 #include "editor.h"
@@ -356,6 +357,8 @@ prism::Ref<prism::Widget> EditorEntityEditor::Build() {
     m_graphDetailsShown = false;
     left->add(m_componentsPanel, prism::Splitter::Pane{260.0F, 120.0F, 1e9F, false});
     left->add(m_detailsPanel, prism::Splitter::Pane{400.0F, 160.0F, 1e9F, true});
+    auto& layoutStore = EditorLayoutStore::Instance();
+    layoutStore.BindSplitter(m_widgetMode ? "widget.left" : "entity.left", *left);
 
     auto columns = prism::make<prism::Splitter>(prism::Orientation::Horizontal);
     columns->add(left, prism::Splitter::Pane{340.0F, 240.0F, 900.0F, false});
@@ -366,16 +369,23 @@ prism::Ref<prism::Widget> EditorEntityEditor::Build() {
     m_centreStack->setActiveIndex(0);
     m_blueprintMode = false;
     columns->add(m_centreStack, prism::Splitter::Pane{860.0F, 320.0F, 1e9F, true});
+    layoutStore.BindSplitter(m_widgetMode ? "widget.columns" : "entity.columns", *columns);
     window->add(columns, prism::Slot{1.0F});
     m_dockBar = BuildDockBar();
     window->add(m_dockBar);
-    if (m_widgetMode && m_dockArea) {
-        // The Designer takes the whole centre; the dock opens from its bar.
-        m_dockVisible = false;
-        m_dockArea->setVisible(false);
-        for (const auto& tab : m_dockTabs) {
-            tab->setChecked(false);
-        }
+    // Only use default dock visibility on first open; restore the user's last panel state thereafter.
+    m_dockVisible = layoutStore.GetBool(m_widgetMode ? "widget.dockVisible" : "entity.dockVisible", !m_widgetMode);
+    if (m_dockPages) {
+        const int savedTab = std::clamp(
+            layoutStore.GetInt(m_widgetMode ? "widget.dockTab" : "entity.dockTab", kConsolePage),
+            0, std::max(0, m_dockPages->count() - 1));
+        m_dockPages->setActiveIndex(savedTab);
+    }
+    if (m_dockArea) {
+        m_dockArea->setVisible(m_dockVisible);
+    }
+    for (std::size_t i = 0; i < m_dockTabs.size(); ++i) {
+        m_dockTabs[i]->setChecked(m_dockVisible && m_dockPages && static_cast<int>(i) == m_dockPages->activeIndex());
     }
 
     auto frame = prism::make<ContentKeys>();
@@ -787,6 +797,7 @@ prism::Ref<prism::Widget> EditorEntityEditor::BuildCentre() {
     auto centre = prism::make<prism::Splitter>(prism::Orientation::Vertical);
     centre->add(view, prism::Splitter::Pane{400.0F, 160.0F, 1e9F, true});
     centre->add(m_dockArea, prism::Splitter::Pane{290.0F, 110.0F, 900.0F, false});
+    EditorLayoutStore::Instance().BindSplitter(m_widgetMode ? "widget.centre" : "entity.centre", *centre);
     m_viewArea = view;
     m_centreSplit = centre;
     m_dockFull = false;
@@ -1037,6 +1048,8 @@ void EditorEntityEditor::ShowDockPanel(const int index, const bool forceVisible)
     for (std::size_t i = 0; i < m_dockTabs.size(); ++i) {
         m_dockTabs[i]->setChecked(m_dockVisible && static_cast<int>(i) == m_dockPages->activeIndex());
     }
+    EditorLayoutStore::Instance().SetBool(m_widgetMode ? "widget.dockVisible" : "entity.dockVisible", m_dockVisible);
+    EditorLayoutStore::Instance().SetInt(m_widgetMode ? "widget.dockTab" : "entity.dockTab", m_dockPages->activeIndex());
 }
 
 void EditorEntityEditor::SyncAnimationTabs() {

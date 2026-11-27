@@ -1,5 +1,6 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 #include "editor_input_map_window.h"
+#include "editor_layout_store.h"
 
 #include "editor.h"
 #include "editor_chrome.h"
@@ -409,6 +410,7 @@ prism::Ref<prism::Widget> EditorInputMapWindow::Build() {
     auto body = prism::make<prism::Splitter>(prism::Orientation::Horizontal);
     body->add(Panel(left), prism::Splitter::Pane{280.0F, 200.0F, 480.0F, false});
     body->add(Panel(scroll), prism::Splitter::Pane{580.0F, 320.0F, 1e9F, true});
+    EditorLayoutStore::Instance().BindSplitter("inputMap.body", *body);
     window->add(body, prism::Slot{1.0F});
 
     auto buttons = prism::hbox(6.0F);
