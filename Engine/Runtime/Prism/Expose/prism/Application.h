@@ -125,6 +125,7 @@ public:
   // True for the window's root and for each open popup's own widget.
   bool isPopupRoot(const Widget* w) const;
   void movePopup(const Widget* w, Vec2 topLeft);   // reposition a popup (floating windows); clamped on screen
+  void setPopupRect(const Widget* w, Rect r);      // reposition and resize a popup atomically; clamped on screen
   void closeAllPopups();
   bool hasPopup() const { return !m_popups.empty(); }
   // A popup that takes the whole window's input while it is open: a modal one, or one that closes on an outside

@@ -245,6 +245,28 @@ void Application::movePopup(const Widget* w, Vec2 topLeft) {
     }
 }
 
+void Application::setPopupRect(const Widget* w, Rect r) {
+  for (auto& p : m_popups)
+    if (p.widget.get() == w) {
+      const Vec2 ws = windowSize();
+      const float maxW = std::max(120.f, ws.x - 8.f);
+      const float maxH = std::max(60.f, ws.y - 8.f);
+      r.w = std::clamp(std::floor(r.w), 80.f, maxW);
+      r.h = std::clamp(std::floor(r.h), 40.f, maxH);
+      r.x = std::clamp(std::floor(r.x), 4.f - r.w + 80.f, std::max(4.f, ws.x - 80.f));
+      r.y = std::clamp(std::floor(r.y), 0.f, std::max(0.f, ws.y - 32.f));
+      p.opt.placement = PopupPlacement::AtPoint;
+      p.opt.anchor = Rect{r.x, r.y, 0.f, 0.f};
+      p.widget->setFixedWidth(r.w);
+      p.widget->setFixedHeight(r.h);
+      p.widget->setMaxSize(0.f, 0.f);
+      p.widget->arrange(r);
+      invalidateLayout();
+      invalidate();
+      return;
+    }
+}
+
 void Application::closePopup(const Widget* w) {
   for (size_t i = 0; i < m_popups.size(); i++)
     if (m_popups[i].widget.get() == w) {

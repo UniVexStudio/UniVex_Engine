@@ -106,7 +106,7 @@ struct Color {
 enum class HAlign { Left, Center, Right, Fill };
 enum class VAlign { Top, Center, Bottom, Fill };
 enum class Orientation { Horizontal, Vertical };
-enum class Cursor { Arrow, IBeam, SizeWE, SizeNS, SizeAll, Hand };
+enum class Cursor { Arrow, IBeam, SizeWE, SizeNS, SizeNWSE, SizeNESW, SizeAll, Hand };
 enum class MouseButton : uint8_t { None = 0, Left = 1, Middle = 2, Right = 3 };
 
 enum Mod : uint8_t { ModNone = 0, ModShift = 1, ModCtrl = 2, ModAlt = 4 };

@@ -222,23 +222,20 @@ prism::Ref<prism::Widget> EditorShell::BuildLayout() {
 
     const bool singleSurface = m_host.App().platform().singleSurface();
     const float logicalWidth = m_host.App().windowSize().x;
-    const bool narrowLandscape = singleSurface && logicalWidth > 0.0F && logicalWidth < 760.0F;
+    const float sideW = (logicalWidth > 0.0F && logicalWidth < 900.0F) ? std::max(140.0F, std::floor(logicalWidth * 0.22F)) : 250.0F;
+    const float detailsW = (logicalWidth > 0.0F && logicalWidth < 900.0F) ? std::max(160.0F, std::floor(logicalWidth * 0.26F)) : 330.0F;
 
     auto centre = prism::make<prism::Splitter>(prism::Orientation::Vertical);
-    centre->add(BuildViewport(), prism::Splitter::Pane{400.0F, singleSurface ? 120.0F : 160.0F, 1e9F, true});
+    centre->add(BuildViewport(), prism::Splitter::Pane{400.0F, 140.0F, 1e9F, true});
     m_dockArea = BuildDock();
-    centre->add(m_dockArea, prism::Splitter::Pane{singleSurface ? 150.0F : 290.0F, singleSurface ? 90.0F : 110.0F, 900.0F, false});
-    if (singleSurface) {
-        m_dockVisible = false;
-        m_dockArea->setVisible(false);
-    }
+    centre->add(m_dockArea, prism::Splitter::Pane{singleSurface ? 170.0F : 290.0F, 90.0F, 900.0F, false});
 
     auto columns = prism::make<prism::Splitter>(prism::Orientation::Horizontal);
     m_outlinerColumn = BuildOutliner();
     m_detailsColumn = BuildDetails();
-    columns->add(m_outlinerColumn, prism::Splitter::Pane{singleSurface ? 190.0F : 250.0F, singleSurface ? 150.0F : 170.0F, 700.0F, false});
-    columns->add(centre, prism::Splitter::Pane{800.0F, singleSurface ? 240.0F : 320.0F, 1e9F, true});
-    columns->add(m_detailsColumn, prism::Splitter::Pane{singleSurface ? 230.0F : 330.0F, singleSurface ? 180.0F : 220.0F, 800.0F, false});
+    columns->add(m_outlinerColumn, prism::Splitter::Pane{sideW, 130.0F, 700.0F, false});
+    columns->add(centre, prism::Splitter::Pane{800.0F, 220.0F, 1e9F, true});
+    columns->add(m_detailsColumn, prism::Splitter::Pane{detailsW, 150.0F, 800.0F, false});
     window->add(columns, prism::Slot{1.0F});
 
     // Docking: drag a panel's tab onto another panel's edge to split it there (the Details under
@@ -248,11 +245,6 @@ prism::Ref<prism::Widget> EditorShell::BuildLayout() {
     m_dockSpace->attach(*m_outlinerTabs);
     m_dockSpace->attach(*m_detailsTabs);
     m_dockSpace->onChanged = [this] { UpdateDockColumns(); };
-    if (narrowLandscape) {
-        m_editor.m_scenePanelVisible = false;
-        m_editor.m_inspectorPanelVisible = false;
-        UpdateDockColumns();
-    }
 
     window->add(BuildDockBar());
 
@@ -492,7 +484,8 @@ prism::Ref<prism::Widget> EditorShell::BuildToolbarRow() {
         m_editor.m_viewportOverlayState.gizmoMode = kModes[static_cast<std::size_t>(std::clamp(index, 0, 3))];
     };
     auto modeBox = prism::make<prism::SizeBox>();
-    modeBox->setWidthOverride(singleSurface ? 98.0F : 136.0F);
+    (void)singleSurface;
+    modeBox->setWidthOverride(136.0F);
     modeBox->setContent(m_selectionMode);
     row->add(modeBox, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
     row->add(HSeparator());
@@ -572,7 +565,7 @@ prism::Ref<prism::Widget> EditorShell::BuildToolbarRow() {
     row->add(m_rendererProfileButton, prism::Slot{0.0F, {}, prism::HAlign::Right, prism::VAlign::Center});
 
     auto sized = prism::make<prism::SizeBox>();
-    sized->setHeightOverride(singleSurface ? 22.0F : 25.0F);
+    sized->setHeightOverride(25.0F);
     sized->setContent(row);
 
     auto border = prism::make<prism::Border>();
@@ -764,7 +757,8 @@ prism::Ref<prism::Widget> EditorShell::BuildDockBar() {
     }
     bar->add(prism::make<prism::Spacer>(), prism::Slot{1.0F});
     auto sized = prism::make<prism::SizeBox>();
-    sized->setHeightOverride(singleSurface ? 20.0F : 22.0F);
+    (void)singleSurface;
+    sized->setHeightOverride(22.0F);
     sized->setContent(bar);
     auto border = prism::make<prism::Border>();
     border->setBackground(prism::ThemeColor(&prism::Theme::statusBar));

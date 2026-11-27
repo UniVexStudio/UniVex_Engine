@@ -1478,15 +1478,11 @@ std::uint32_t GlRenderDevice::GetNativeTextureId(const TextureHandle texture) co
 namespace UVE::Render {
 namespace {
 RenderOperationResult FinishDeviceOperation() {
-#if !defined(NDEBUG)
     const GLenum error = glGetError();
     if (error == GL_NO_ERROR)
         return RenderOperationResult::Success;
     UVE_ERROR("GL device operation failed (error {})", static_cast<unsigned>(error));
     return RenderOperationResult::SystemError;
-#else
-    return RenderOperationResult::Success;
-#endif
 }
 } // namespace
 RenderDeviceCapabilities GlRenderDevice::GetCapabilities() const noexcept {

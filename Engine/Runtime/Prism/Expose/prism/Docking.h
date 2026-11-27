@@ -25,6 +25,28 @@ constexpr float kWindowTitleBarH = 30.0f;
 Ref<Widget> makeWindowTitleBar(const std::string& title, Icon icon, bool shadeable, Widget* window,
                                std::function<void()> onClose, std::function<void()> onShade = nullptr);
 
+// 8-way edge/corner resizable popup frame with directional cursors, hover/active edge accent, and corner grip.
+class ResizablePopupFrame : public Border {
+public:
+  bool resizable = true;
+  Vec2 minSize{220.f, 120.f};
+
+  Reply onPreviewMouseDown(const MouseEvent& e) override;
+  Reply onPreviewMouseMove(const MouseEvent& e) override;
+  bool onMouseMove(const MouseEvent& e) override;
+  bool onMouseUp(const MouseEvent& e) override;
+  void onMouseLeave() override;
+  Cursor cursor() const override;
+  void paint(Canvas& c) override;
+
+private:
+  uint8_t hitEdges(Vec2 p) const;
+  uint8_t m_edges = 0;       // bit 0=L, 1=R, 2=T, 3=B while dragging
+  uint8_t m_hoverEdges = 0;  // hovered edge bits
+  Vec2 m_dragStart{};
+  Rect m_startRect{};
+};
+
 // Shows `content` in a draggable, resizable, non-modal window. Returns its root (pass it to closeFloatingWindow).
 Ref<Widget> showFloatingWindow(Ref<Widget> content, FloatingWindowOptions opt);
 void closeFloatingWindow(Widget* root);

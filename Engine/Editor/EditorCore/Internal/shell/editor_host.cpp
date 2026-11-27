@@ -206,6 +206,9 @@ struct EditorHost::Window final {
     prism::Rect pageBounds{};
     bool pageDragging = false;
     prism::Vec2 pageDragGrab{};
+    int pageResizeEdges = 0; // bit 0=L, 1=R, 2=T, 3=B while resizing a floating page
+    prism::Vec2 pageResizeStart{};
+    prism::Rect pageResizeStartBounds{};
     std::uint64_t paintedGen = ~0ULL;
     std::chrono::steady_clock::time_point paintedAt{};
     int dragOverWindow = -1;  ///< the other window a PRISM drag from this one is over (-1: none)
@@ -266,12 +269,22 @@ public:
         m_cursors[static_cast<int>(prism::Cursor::IBeam)] = glfwCreateStandardCursor(GLFW_IBEAM_CURSOR);
         m_cursors[static_cast<int>(prism::Cursor::SizeWE)] = glfwCreateStandardCursor(GLFW_HRESIZE_CURSOR);
         m_cursors[static_cast<int>(prism::Cursor::SizeNS)] = glfwCreateStandardCursor(GLFW_VRESIZE_CURSOR);
+#if defined(GLFW_RESIZE_NWSE_CURSOR) && defined(GLFW_RESIZE_NESW_CURSOR)
+        m_cursors[static_cast<int>(prism::Cursor::SizeNWSE)] = glfwCreateStandardCursor(GLFW_RESIZE_NWSE_CURSOR);
+        m_cursors[static_cast<int>(prism::Cursor::SizeNESW)] = glfwCreateStandardCursor(GLFW_RESIZE_NESW_CURSOR);
+#endif
 #if defined(GLFW_RESIZE_ALL_CURSOR)
         m_cursors[static_cast<int>(prism::Cursor::SizeAll)] = glfwCreateStandardCursor(GLFW_RESIZE_ALL_CURSOR);
 #else
         m_cursors[static_cast<int>(prism::Cursor::SizeAll)] = glfwCreateStandardCursor(GLFW_CROSSHAIR_CURSOR);
 #endif
         m_cursors[static_cast<int>(prism::Cursor::Hand)] = glfwCreateStandardCursor(GLFW_HAND_CURSOR);
+        if (m_cursors[static_cast<int>(prism::Cursor::SizeNWSE)] == nullptr) {
+            m_cursors[static_cast<int>(prism::Cursor::SizeNWSE)] = m_cursors[static_cast<int>(prism::Cursor::SizeAll)];
+        }
+        if (m_cursors[static_cast<int>(prism::Cursor::SizeNESW)] == nullptr) {
+            m_cursors[static_cast<int>(prism::Cursor::SizeNESW)] = m_cursors[static_cast<int>(prism::Cursor::SizeAll)];
+        }
     }
     ~Platform() override {
         for (GLFWcursor* cursor : m_cursors) {
@@ -360,18 +373,18 @@ public:
             case ViewCursor::ResizeAll: mapped = prism::Cursor::SizeAll; break;
             case ViewCursor::ResizeNS: mapped = prism::Cursor::SizeNS; break;
             case ViewCursor::ResizeEW: mapped = prism::Cursor::SizeWE; break;
-            case ViewCursor::ResizeNWSE: mapped = prism::Cursor::SizeAll; break;
-            case ViewCursor::ResizeNESW: mapped = prism::Cursor::SizeAll; break;
+            case ViewCursor::ResizeNWSE: mapped = prism::Cursor::SizeNWSE; break;
+            case ViewCursor::ResizeNESW: mapped = prism::Cursor::SizeNESW; break;
         }
         ApplyCursor(window, m_cursors[static_cast<int>(mapped)]);
     }
     void SetResizeCursor(const int window, const int edges) {
-        const bool horizontal = (edges & 3) != 0;
-        const bool vertical = (edges & 12) != 0;
+        const bool l = (edges & 1) != 0, r = (edges & 2) != 0, t = (edges & 4) != 0, b = (edges & 8) != 0;
         prism::Cursor c = prism::Cursor::Arrow;
-        if (horizontal && vertical) { c = prism::Cursor::SizeAll; }
-        else if (horizontal) { c = prism::Cursor::SizeWE; }
-        else if (vertical) { c = prism::Cursor::SizeNS; }
+        if ((l && t) || (r && b)) { c = prism::Cursor::SizeNWSE; }
+        else if ((r && t) || (l && b)) { c = prism::Cursor::SizeNESW; }
+        else if (l || r) { c = prism::Cursor::SizeWE; }
+        else if (t || b) { c = prism::Cursor::SizeNS; }
         ApplyCursor(window, m_cursors[static_cast<int>(c)]);
     }
     void ForgetWindow(const int window) {
@@ -394,7 +407,7 @@ private:
 
     EditorHost& m_host;
     GLFWwindow* m_window = nullptr;
-    std::array<GLFWcursor*, 6> m_cursors{};
+    std::array<GLFWcursor*, 8> m_cursors{};
     std::map<int, GLFWcursor*> m_applied;
     std::map<int, prism::Cursor> m_uiCursor;
     bool m_textInput = false;
@@ -734,10 +747,10 @@ struct EditorHost::Chain final {
         if (page->pageFloating && g_activeHost->m_main != nullptr) {
             const prism::Vec2 mp = g_activeHost->ToUi(*g_activeHost->m_main, x, y);
             const bool held = page->down[0] || page->down[1] || page->down[2];
-            const bool inside = page->pageBounds.contains(mp);
+            const bool inside = page->pageBounds.inflated(8.0F).contains(mp);
             const bool popup = g_activeHost->m_app != nullptr &&
                                g_activeHost->m_app->windowHasBlockingPopup(page->id);
-            if (!page->pageDragging && !held && !inside && !popup) {
+            if (!page->pageDragging && page->pageResizeEdges == 0 && !held && !inside && !popup) {
                 return false;
             }
         }
@@ -955,26 +968,16 @@ bool EditorHost::Initialize(GLFWwindow* const window, const std::filesystem::pat
     }
 
     {
+        // Desktop and mobile share the same PC visual metrics; touch ergonomics remain active underneath.
         prism::Theme& t = prism::themeMutable();
-        if (m_singleSurface) {
-            t.controlH = 20.0F;
-            t.rowH = 19.0F;
-            t.menuBarH = 20.0F;
-            t.toolbarH = 22.0F;
-            t.tabH = 20.0F;
-            t.statusH = 19.0F;
-            t.pad = 5.0F;
-            t.gap = 3.0F;
-        } else {
-            t.controlH = 22.0F;
-            t.rowH = 20.0F;
-            t.menuBarH = 20.0F;
-            t.toolbarH = 24.0F;
-            t.tabH = 22.0F;
-            t.statusH = 20.0F;
-            t.pad = 6.0F;
-            t.gap = 4.0F;
-        }
+        t.controlH = 22.0F;
+        t.rowH = 20.0F;
+        t.menuBarH = 20.0F;
+        t.toolbarH = 24.0F;
+        t.tabH = 22.0F;
+        t.statusH = 20.0F;
+        t.pad = 6.0F;
+        t.gap = 4.0F;
     }
 
     LoadBrandMark(assetDir / kBrandMarkFile);
@@ -1764,6 +1767,38 @@ void EditorHost::SetKeyHook(std::function<bool(int key, int action)> hook) {
 }
 
 void EditorHost::OnCursorPos(Window& w, const double x, const double y) {
+    if (w.page && w.pageFloating && w.pageResizeEdges != 0 && m_main != nullptr) {
+        const prism::Vec2 mp = ToUi(*m_main, x, y);
+        const float dx = mp.x - w.pageResizeStart.x;
+        const float dy = mp.y - w.pageResizeStart.y;
+        const float maxW = std::max(280.0F, static_cast<float>(m_main->uiWidth) - 8.0F);
+        const float maxH = std::max(200.0F, static_cast<float>(m_main->uiHeight) - 8.0F);
+        const float minW = std::min(280.0F, maxW);
+        const float minH = std::min(200.0F, maxH);
+        prism::Rect r = w.pageResizeStartBounds;
+        if ((w.pageResizeEdges & 1) != 0) {
+            const float nw = std::clamp(std::floor(w.pageResizeStartBounds.w - dx), minW, maxW);
+            r.x = std::clamp(w.pageResizeStartBounds.right() - nw, 4.0F, std::max(4.0F, static_cast<float>(m_main->uiWidth) - minW - 4.0F));
+            r.w = w.pageResizeStartBounds.right() - r.x;
+        }
+        if ((w.pageResizeEdges & 2) != 0) {
+            r.w = std::clamp(std::floor(w.pageResizeStartBounds.w + dx), minW, std::max(minW, static_cast<float>(m_main->uiWidth) - r.x - 4.0F));
+        }
+        if ((w.pageResizeEdges & 4) != 0) {
+            const float nh = std::clamp(std::floor(w.pageResizeStartBounds.h - dy), minH, maxH);
+            r.y = std::clamp(w.pageResizeStartBounds.bottom() - nh, 4.0F, std::max(4.0F, static_cast<float>(m_main->uiHeight) - minH - 4.0F));
+            r.h = w.pageResizeStartBounds.bottom() - r.y;
+        }
+        if ((w.pageResizeEdges & 8) != 0) {
+            r.h = std::clamp(std::floor(w.pageResizeStartBounds.h + dy), minH, std::max(minH, static_cast<float>(m_main->uiHeight) - r.y - 4.0F));
+        }
+        w.pageBounds = r;
+        w.mouse = prism::Vec2{mp.x - w.pageBounds.x, mp.y - w.pageBounds.y};
+        if (m_app != nullptr) {
+            m_app->invalidate();
+        }
+        return;
+    }
     if (w.page && w.pageFloating && w.pageDragging && m_main != nullptr) {
         const prism::Vec2 mp = ToUi(*m_main, x, y);
         const float maxX = std::max(4.0F, static_cast<float>(m_main->uiWidth) - w.pageBounds.w - 4.0F);
@@ -1792,8 +1827,8 @@ void EditorHost::OnCursorPos(Window& w, const double x, const double y) {
     // Edge-resize affordance on an undecorated, restored desktop window.
     int edges = 0;
     if (!w.page && glfwGetWindowAttrib(w.window, GLFW_DECORATED) == 0 && glfwGetWindowAttrib(w.window, GLFW_MAXIMIZED) == 0) {
-        const float width = static_cast<float>(w.fbWidth);
-        const float height = static_cast<float>(w.fbHeight);
+        const float width = static_cast<float>(w.uiWidth);
+        const float height = static_cast<float>(w.uiHeight);
         if (w.mouse.x < kResizeBorder) { edges |= 1; }
         if (w.mouse.x >= width - kResizeBorder) { edges |= 2; }
         if (w.mouse.y < kResizeBorder) { edges |= 4; }
@@ -1849,10 +1884,29 @@ void EditorHost::OnMouseButton(Window& w, const int button, const int action, co
             w.dragDistance[i] = 0.0F;
         }
 
-        if (w.page && w.pageFloating && button == GLFW_MOUSE_BUTTON_LEFT && w.CaptionContains(w.mouse) &&
-            w.clickCount == 1) {
-            w.pageDragging = true;
-            w.pageDragGrab = w.mouse;
+        if (w.page && w.pageFloating && button == GLFW_MOUSE_BUTTON_LEFT && m_main != nullptr) {
+            constexpr float kPageResizeIn = 8.0F;
+            constexpr float kPageResizeOut = 8.0F;
+            const float pw = w.pageBounds.w;
+            const float ph = w.pageBounds.h;
+            int pEdges = 0;
+            if (w.mouse.x >= -kPageResizeOut && w.mouse.x <= pw + kPageResizeOut &&
+                w.mouse.y >= -kPageResizeOut && w.mouse.y <= ph + kPageResizeOut) {
+                if (w.mouse.x < kPageResizeIn) { pEdges |= 1; }
+                else if (w.mouse.x >= pw - kPageResizeIn) { pEdges |= 2; }
+                if (w.mouse.y < kPageResizeIn) { pEdges |= 4; }
+                else if (w.mouse.y >= ph - kPageResizeIn) { pEdges |= 8; }
+            }
+            if (pEdges != 0) {
+                w.pageResizeEdges = pEdges;
+                w.pageResizeStart = prism::Vec2{w.pageBounds.x + w.mouse.x, w.pageBounds.y + w.mouse.y};
+                w.pageResizeStartBounds = w.pageBounds;
+                return;
+            }
+            if (w.CaptionContains(w.mouse) && w.clickCount == 1) {
+                w.pageDragging = true;
+                w.pageDragGrab = w.mouse;
+            }
         }
 
         // Window chrome: edge resize, or a move from the title strip (single click only; a
@@ -1861,8 +1915,8 @@ void EditorHost::OnMouseButton(Window& w, const int button, const int action, co
             const bool maximized = glfwGetWindowAttrib(w.window, GLFW_MAXIMIZED) != 0;
             int edges = 0;
             if (!maximized) {
-                const float width = static_cast<float>(w.fbWidth);
-                const float height = static_cast<float>(w.fbHeight);
+                const float width = static_cast<float>(w.uiWidth);
+                const float height = static_cast<float>(w.uiHeight);
                 if (w.mouse.x < kResizeBorder) { edges |= 1; }
                 if (w.mouse.x >= width - kResizeBorder) { edges |= 2; }
                 if (w.mouse.y < kResizeBorder) { edges |= 4; }
@@ -1892,7 +1946,7 @@ void EditorHost::OnMouseButton(Window& w, const int button, const int action, co
                 int fullW = 0;
                 int fullH = 0;
                 glfwGetWindowSize(w.window, &fullW, &fullH);
-                const float along = fullW > 0 ? w.mouse.x / static_cast<float>(fullW) : 0.5F;
+                const float along = w.uiWidth > 0 ? w.mouse.x / static_cast<float>(w.uiWidth) : 0.5F;
                 double sx = 0.0;
                 double sy = 0.0;
                 glfwGetCursorPos(w.window, &sx, &sy);
@@ -1904,7 +1958,7 @@ void EditorHost::OnMouseButton(Window& w, const int button, const int action, co
                 int restoredH = 0;
                 glfwGetWindowSize(w.window, &restoredW, &restoredH);
                 const int newX = static_cast<int>(wx + sx - along * static_cast<float>(restoredW));
-                const int newY = static_cast<int>(wy + sy - w.mouse.y);
+                const int newY = static_cast<int>(wy + sy - w.mouse.y * w.uiScale);
                 glfwSetWindowPos(w.window, newX, newY);
             }
             if (edges != 0 || (inCaption && w.clickCount == 1)) {
@@ -1933,11 +1987,16 @@ void EditorHost::OnMouseButton(Window& w, const int button, const int action, co
         }
         const bool wasResize = w.dragMode == Window::DragMode::Resize;
         const bool wasPageDrag = w.pageDragging;
+        const bool wasPageResize = w.pageResizeEdges != 0;
         if (button == GLFW_MOUSE_BUTTON_LEFT) {
             w.dragMode = Window::DragMode::None;
             w.pageDragging = false;
+            w.pageResizeEdges = 0;
         }
-        if (!wasResize && !wasPageDrag && prismButton != prism::MouseButton::None) {
+        if (wasPageResize) {
+            ApplyPageLayout(w);
+        }
+        if (!wasResize && !wasPageDrag && !wasPageResize && prismButton != prism::MouseButton::None) {
             prism::Vec2 dragLocal{};
             if (Window* const target = DragTarget(w, dragLocal)) {
                 // The drop lands in the window under the pointer; the press's own window then sees
@@ -1973,8 +2032,8 @@ void EditorHost::UpdateWindowDrag(Window& w) {
     int y = w.dragStartWinY;
     int width = w.dragStartWinW;
     int height = w.dragStartWinH;
-    constexpr int kMinW = 640;
-    constexpr int kMinH = 400;
+    constexpr int kMinW = 420;
+    constexpr int kMinH = 300;
     if ((w.resizeEdges & 1) != 0) { const int nw = std::max(kMinW, width - dx); x += width - nw; width = nw; }
     if ((w.resizeEdges & 2) != 0) { width = std::max(kMinW, width + dx); }
     if ((w.resizeEdges & 4) != 0) { const int nh = std::max(kMinH, height - dy); y += height - nh; height = nh; }
