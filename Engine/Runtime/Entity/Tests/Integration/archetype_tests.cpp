@@ -38,6 +38,31 @@ TEST_F(ArchetypeTest, ReserveEntity_GrowsCountAndReturnsLocations) {
     EXPECT_EQ(archetype.GetEntityCount(), 1U);
 }
 
+TEST_F(ArchetypeTest, ReserveAndDestroy_ReusesVacatedChunksAndTrimsTrailingEmptyChunks) {
+    std::vector<Archetype::Location> firstWave;
+    firstWave.reserve(kChunkCapacity + 4U);
+    for (std::size_t i = 0U; i < kChunkCapacity + 4U; ++i) {
+        Entity e;
+        e.index = static_cast<std::uint32_t>(i + 1U);
+        firstWave.push_back(archetype.ReserveEntity(e));
+    }
+    ASSERT_EQ(firstWave.back().chunkIndex, 1U);
+
+    // Vacate rows in chunk 0; subsequent reservations must reuse chunk 0 instead of allocating chunk 2.
+    static_cast<void>(archetype.DestroyEntityAt(Archetype::Location{0U, 0U}));
+    const Archetype::Location reused = archetype.ReserveEntity(Entity{9999U, 0U});
+    EXPECT_EQ(reused.chunkIndex, 0U);
+
+    // Empty the trailing chunk; live chunk count drops to 1 and further churn stays within chunk 0.
+    for (std::size_t i = 0U; i < 4U; ++i) {
+        static_cast<void>(archetype.DestroyEntityAt(Archetype::Location{1U, 0U}));
+    }
+    std::size_t occupiedChunks = 0U;
+    archetype.ForEachChunk([&occupiedChunks](ArchetypeChunk&, std::size_t) { ++occupiedChunks; });
+    EXPECT_EQ(occupiedChunks, 1U);
+    EXPECT_EQ(archetype.GetEntityCount(), kChunkCapacity);
+}
+
 #if UVE_DEBUG
 TEST_F(ArchetypeTest, DestroyEntityAt_OutOfRangeChunkIndexAsserts) {
     EXPECT_DEATH({ static_cast<void>(archetype.DestroyEntityAt(Archetype::Location{5, 0})); }, "");

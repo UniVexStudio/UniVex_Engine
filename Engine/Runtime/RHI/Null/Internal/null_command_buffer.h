@@ -66,6 +66,8 @@ public:
                       std::uint32_t firstIndex) override;
   void DrawIndexedIndirect(BufferHandle buffer, std::uint64_t offsetBytes) override;
   void Draw(std::uint32_t vertexCount, std::uint32_t instanceCount) override;
+  void DrawRange(std::uint32_t vertexCount, std::uint32_t instanceCount,
+                 std::uint32_t firstVertex) override;
   void Dispatch(std::uint32_t groupCountX, std::uint32_t groupCountY, std::uint32_t groupCountZ) override;
 
   /// Every call recorded so far, in issue order.

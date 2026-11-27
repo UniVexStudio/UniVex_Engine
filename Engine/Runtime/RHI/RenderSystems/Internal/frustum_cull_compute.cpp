@@ -50,7 +50,9 @@ constexpr std::size_t kFrustumPlaneCount = 6U;
 /// CS4 and CS5 saw. Calling Present() is what drains the queue, and it is harmless on GL (a
 /// buffer swap). CS3's readback then supplies the device synchronization on top.
 void FlushComputeSubmission(IRenderDevice& device) {
-    device.Present();
+    if (device.GetBackendName().starts_with("Vulkan")) {
+        device.Present();
+    }
 }
 
 } // namespace

@@ -391,6 +391,7 @@ void GlCommandBuffer::BeginRenderPass(const RenderPassDesc& renderPassDesc) {
                     return;
                 }
                 if (extraIt->second.desc.type != TextureType::Texture2D &&
+                    extraIt->second.desc.type != TextureType::Cubemap &&
                     m_state->gl.glFramebufferTextureLayer == nullptr) {
                     UVE_ERROR("GlCommandBuffer: layered render targets need "
                               "glFramebufferTextureLayer (GL 3.2+)");
@@ -471,18 +472,24 @@ void GlCommandBuffer::BeginRenderPass(const RenderPassDesc& renderPassDesc) {
                 }
             }
             if (colorIt != m_state->textures.end()) {
-                // Tier 2.3: arrays/cubes attach one layer (cube faces ARE layers 0..5).
-                const bool colorIsLayered =
-                    colorIt->second.desc.type != TextureType::Texture2D;
-                if (colorIsLayered && m_state->gl.glFramebufferTextureLayer == nullptr) {
-                    // No layered attach on this context (pre-3.2): skip the attachment so the
-                    // status check below tears the FBO down through the standard path.
-                    UVE_ERROR("GlCommandBuffer: layered render targets need "
-                              "glFramebufferTextureLayer (GL 3.2+)");
-                } else if (colorIsLayered) {
-                    m_state->gl.glFramebufferTextureLayer(
-                        GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, colorIt->second.glTexture, 0,
-                        static_cast<GLint>(renderPassDesc.colorLayer));
+                // Cubemap faces must attach via glFramebufferTexture2D with the face target;
+                // glFramebufferTextureLayer is invalid on GL_TEXTURE_CUBE_MAP in GL/GLES3.
+                if (colorIt->second.desc.type == TextureType::Cubemap) {
+                    const GLenum faceTarget = static_cast<GLenum>(
+                        GL_TEXTURE_CUBE_MAP_POSITIVE_X + renderPassDesc.colorLayer);
+                    m_state->gl.glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+                                                       faceTarget, colorIt->second.glTexture, 0);
+                } else if (colorIt->second.desc.type != TextureType::Texture2D) {
+                    if (m_state->gl.glFramebufferTextureLayer == nullptr) {
+                        // No layered attach on this context (pre-3.2): skip the attachment so the
+                        // status check below tears the FBO down through the standard path.
+                        UVE_ERROR("GlCommandBuffer: layered render targets need "
+                                  "glFramebufferTextureLayer (GL 3.2+)");
+                    } else {
+                        m_state->gl.glFramebufferTextureLayer(
+                            GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, colorIt->second.glTexture, 0,
+                            static_cast<GLint>(renderPassDesc.colorLayer));
+                    }
                 } else {
                     m_state->gl.glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
                                                        GL_TEXTURE_2D, colorIt->second.glTexture, 0);
@@ -494,7 +501,12 @@ void GlCommandBuffer::BeginRenderPass(const RenderPassDesc& renderPassDesc) {
                         m_state->textures.find(extraHandles[i]); // validated known above
                     const GLenum extraPoint =
                         static_cast<GLenum>(GL_COLOR_ATTACHMENT0 + 1U + i);
-                    if (extraIt->second.desc.type != TextureType::Texture2D) {
+                    if (extraIt->second.desc.type == TextureType::Cubemap) {
+                        const GLenum faceTarget =
+                            static_cast<GLenum>(GL_TEXTURE_CUBE_MAP_POSITIVE_X + extraLayers[i]);
+                        m_state->gl.glFramebufferTexture2D(GL_FRAMEBUFFER, extraPoint, faceTarget,
+                                                           extraIt->second.glTexture, 0);
+                    } else if (extraIt->second.desc.type != TextureType::Texture2D) {
                         m_state->gl.glFramebufferTextureLayer(
                             GL_FRAMEBUFFER, extraPoint, extraIt->second.glTexture, 0,
                             static_cast<GLint>(extraLayers[i]));
@@ -530,15 +542,20 @@ void GlCommandBuffer::BeginRenderPass(const RenderPassDesc& renderPassDesc) {
                 const GLenum depthAttachmentPoint =
                     IsDepthStencilFormat(depthIt->second.desc.format) ? GL_DEPTH_STENCIL_ATTACHMENT
                                                                           : GL_DEPTH_ATTACHMENT;
-                const bool depthIsLayered =
-                    depthIt->second.desc.type != TextureType::Texture2D;
-                if (depthIsLayered && m_state->gl.glFramebufferTextureLayer == nullptr) {
-                    UVE_ERROR("GlCommandBuffer: layered render targets need "
-                              "glFramebufferTextureLayer (GL 3.2+)");
-                } else if (depthIsLayered) {
-                    m_state->gl.glFramebufferTextureLayer(
-                        GL_FRAMEBUFFER, depthAttachmentPoint, depthIt->second.glTexture, 0,
-                        static_cast<GLint>(renderPassDesc.depthLayer));
+                if (depthIt->second.desc.type == TextureType::Cubemap) {
+                    const GLenum faceTarget = static_cast<GLenum>(
+                        GL_TEXTURE_CUBE_MAP_POSITIVE_X + renderPassDesc.depthLayer);
+                    m_state->gl.glFramebufferTexture2D(GL_FRAMEBUFFER, depthAttachmentPoint,
+                                                       faceTarget, depthIt->second.glTexture, 0);
+                } else if (depthIt->second.desc.type != TextureType::Texture2D) {
+                    if (m_state->gl.glFramebufferTextureLayer == nullptr) {
+                        UVE_ERROR("GlCommandBuffer: layered render targets need "
+                                  "glFramebufferTextureLayer (GL 3.2+)");
+                    } else {
+                        m_state->gl.glFramebufferTextureLayer(
+                            GL_FRAMEBUFFER, depthAttachmentPoint, depthIt->second.glTexture, 0,
+                            static_cast<GLint>(renderPassDesc.depthLayer));
+                    }
                 } else {
                     m_state->gl.glFramebufferTexture2D(GL_FRAMEBUFFER, depthAttachmentPoint,
                                                        GL_TEXTURE_2D, depthIt->second.glTexture, 0);
@@ -619,14 +636,11 @@ void GlCommandBuffer::BeginRenderPass(const RenderPassDesc& renderPassDesc) {
         // clear must restore the write mask first or its clear becomes a silent no-op and all
         // same-depth geometry in subsequent frames can fail GL_LESS.
         glDepthMask(GL_TRUE);
-#if defined(__ANDROID__)
-        glClearDepthf(renderPassDesc.clearDepth);
-#else
+        m_currentPipeline = kInvalidPipelineHandle;
 #if defined(__ANDROID__)
         glClearDepthf(renderPassDesc.clearDepth);
 #else
         glClearDepth(static_cast<GLdouble>(renderPassDesc.clearDepth));
-#endif
 #endif
         clearMask |= GL_DEPTH_BUFFER_BIT;
         const auto clearDepthIt = m_state->textures.find(renderPassDesc.depthAttachment.value);
@@ -1383,6 +1397,11 @@ void GlCommandBuffer::DrawIndexedIndirect(const BufferHandle buffer,
 }
 
 void GlCommandBuffer::Draw(std::uint32_t vertexCount, std::uint32_t instanceCount) {
+    DrawRange(vertexCount, instanceCount, 0U);
+}
+
+void GlCommandBuffer::DrawRange(std::uint32_t vertexCount, std::uint32_t instanceCount,
+                                std::uint32_t firstVertex) {
     if (!RequireInsideRenderPass(m_insideRenderPass, "Draw")) {
         return;
     }
@@ -1396,36 +1415,41 @@ void GlCommandBuffer::Draw(std::uint32_t vertexCount, std::uint32_t instanceCoun
             UVE_ERROR("GlCommandBuffer: Draw has no valid bound vertex buffer");
             return;
         }
+        const std::uint64_t rangeEnd =
+            static_cast<std::uint64_t>(firstVertex) + static_cast<std::uint64_t>(vertexCount);
         if (m_currentVertexStride > 0U &&
-            static_cast<std::uint64_t>(vertexCount) >
+            rangeEnd >
                 vertexBufferIt->second.sizeBytes / static_cast<std::uint64_t>(m_currentVertexStride)) {
-            UVE_ERROR("GlCommandBuffer: Draw vertexCount exceeds the bound vertex buffer");
+            UVE_ERROR("GlCommandBuffer: Draw range [{}, {}) exceeds the bound vertex buffer",
+                      firstVertex, rangeEnd);
             return;
         }
     }
     if (vertexCount == 0U || instanceCount == 0U) {
         return;
     }
-    if (vertexCount > static_cast<std::uint32_t>(std::numeric_limits<GLsizei>::max()) ||
+    if (firstVertex > static_cast<std::uint32_t>(std::numeric_limits<GLint>::max()) ||
+        vertexCount > static_cast<std::uint32_t>(std::numeric_limits<GLsizei>::max()) ||
         instanceCount > static_cast<std::uint32_t>(std::numeric_limits<GLsizei>::max())) {
-        UVE_ERROR("GlCommandBuffer: Draw count exceeds the GLsizei range");
+        UVE_ERROR("GlCommandBuffer: Draw count or offset exceeds the GL range");
         return;
     }
     const auto* const drawPipelineRecord = FindCurrentPipeline();
     const GLenum drawMode = drawPipelineRecord != nullptr
                                 ? ToGlDrawMode(drawPipelineRecord->topology)
                                 : GL_TRIANGLES;
+    const auto glFirst = static_cast<GLint>(firstVertex);
     if (instanceCount > 1U) {
         if (m_state->gl.glDrawArraysInstanced != nullptr) {
-            m_state->gl.glDrawArraysInstanced(drawMode, 0, static_cast<GLsizei>(vertexCount),
+            m_state->gl.glDrawArraysInstanced(drawMode, glFirst, static_cast<GLsizei>(vertexCount),
                                               static_cast<GLsizei>(instanceCount));
         } else {
             UVE_WARNING("GlCommandBuffer: Draw instanceCount > 1 requires glDrawArraysInstanced "
                         "- drawing once");
-            glDrawArrays(drawMode, 0, static_cast<GLsizei>(vertexCount));
+            glDrawArrays(drawMode, glFirst, static_cast<GLsizei>(vertexCount));
         }
     } else {
-        glDrawArrays(drawMode, 0, static_cast<GLsizei>(vertexCount));
+        glDrawArrays(drawMode, glFirst, static_cast<GLsizei>(vertexCount));
     }
     UVE_GL_CHECK_ERROR_UVE("Draw");
 }
@@ -1497,8 +1521,12 @@ RenderOperationResult GlCommandBuffer::MemoryBarrier(MemoryBarrierMask mask) {
     if ((bits & 32U) != 0U)
         native |= GL_FRAMEBUFFER_BARRIER_BIT;
     m_state->gl.glMemoryBarrier(native);
+#if !defined(NDEBUG)
     return glGetError() == GL_NO_ERROR ? RenderOperationResult::Success
                                        : RenderOperationResult::SystemError;
+#else
+    return RenderOperationResult::Success;
+#endif
 #endif
 }
 } // namespace UVE::Render

@@ -1333,23 +1333,26 @@ void EngineCore::SyncParticleRuntime() {
     }
 
     std::vector<Scene::Entity> authoredEmitters;
+    std::unordered_set<Scene::Entity> authoredEmitterSet;
     const bool simulationPaused = m_simulationExecutionMode == SimulationExecutionMode::Paused;
+    const Scene::ParticleRuntimeSnapshot initialSnapshot = m_particleRuntime->GetSnapshot();
+    std::unordered_map<Scene::Entity, std::uint32_t> existingBudgets;
+    existingBudgets.reserve(initialSnapshot.instances.size());
+    for (const Scene::ParticleRuntimeInstanceSnapshot& instance : initialSnapshot.instances) {
+        existingBudgets.emplace(instance.entity, instance.maxParticles);
+    }
     m_entityManager->ForEach<Scene::ParticleEmitterComponent>(
-        [this, &authoredEmitters, simulationPaused](const Scene::Entity entity,
-                                                    const Scene::ParticleEmitterComponent& component) {
+        [this, &authoredEmitters, &authoredEmitterSet, &existingBudgets, simulationPaused](
+            const Scene::Entity entity, const Scene::ParticleEmitterComponent& component) {
             if (!component.systemAssetPath.empty()) {
                 return;
             }
             authoredEmitters.push_back(entity);
-            const Scene::ParticleRuntimeSnapshot currentSnapshot = m_particleRuntime->GetSnapshot();
-            bool budgetMatches = false;
-            for (const Scene::ParticleRuntimeInstanceSnapshot& instance : currentSnapshot.instances) {
-                if (instance.entity == entity) {
-                    budgetMatches = instance.maxParticles == component.maxParticles;
-                    break;
-                }
-            }
-            if (!m_particleRuntime->HasInstance(entity)) {
+            authoredEmitterSet.insert(entity);
+            const auto existingIt = existingBudgets.find(entity);
+            const bool exists = existingIt != existingBudgets.end();
+            const bool budgetMatches = exists && existingIt->second == component.maxParticles;
+            if (!exists) {
                 static_cast<void>(m_particleRuntime->AttachDetailed(entity, component));
             } else if (!budgetMatches) {
                 static_cast<void>(m_particleRuntime->DetachDetailed(entity));
@@ -1368,10 +1371,8 @@ void EngineCore::SyncParticleRuntime() {
                 entity, modes.has_value() && modes->threadGroup == Scene::ThreadGroupMode::SubThread));
         });
 
-    const Scene::ParticleRuntimeSnapshot runtimeSnapshot = m_particleRuntime->GetSnapshot();
-    for (const Scene::ParticleRuntimeInstanceSnapshot& instance : runtimeSnapshot.instances) {
-        if (!m_entityManager->IsAlive(instance.entity) ||
-            std::find(authoredEmitters.begin(), authoredEmitters.end(), instance.entity) == authoredEmitters.end()) {
+    for (const Scene::ParticleRuntimeInstanceSnapshot& instance : initialSnapshot.instances) {
+        if (!m_entityManager->IsAlive(instance.entity) || !authoredEmitterSet.contains(instance.entity)) {
             static_cast<void>(m_particleRuntime->DetachDetailed(instance.entity));
             m_particleEmitRemainder.erase(instance.entity);
         }
@@ -1379,57 +1380,57 @@ void EngineCore::SyncParticleRuntime() {
 
     const float deltaSeconds = static_cast<float>(m_timer->GetDeltaTime());
     if (deltaSeconds > 0.0F) {
-        const Scene::ParticleRuntimeSnapshot emitSnapshot = m_particleRuntime->GetSnapshot();
-        for (const Scene::Entity entity : authoredEmitters) {
-            if (!m_entityManager->IsAlive(entity) ||
-                !m_entityManager->HasComponent<Scene::ParticleEmitterComponent>(entity)) {
-                m_particleEmitRemainder.erase(entity);
-                continue;
-            }
-            const Scene::ParticleEmitterComponent& component =
-                m_entityManager->GetComponent<Scene::ParticleEmitterComponent>(entity);
-            if (!Scene::IsParticleEmitterComponentValid(component)) {
-                m_particleEmitRemainder.erase(entity);
-                continue;
-            }
-            const bool ticking =
-                Scene::IsTicking(ResolvedTickMode(*m_sceneGraph, entity), simulationPaused);
-            if (!ticking || !Scene::ParticleEmitter3D::IsEmitting(component)) {
-                m_particleEmitRemainder.erase(entity);
-                continue;
-            }
-            if (!m_entityManager->HasComponent<Scene::WorldTransformComponent>(entity)) {
-                m_particleEmitRemainder.erase(entity);
-                continue;
-            }
-            const Scene::WorldTransformComponent& worldTransform =
-                m_entityManager->GetComponent<Scene::WorldTransformComponent>(entity);
-            if (worldTransform.dirty || !Math::IsFinite(worldTransform.worldPosition)) {
-                continue;
-            }
-
-            std::uint32_t liveParticles = 0U;
-            bool enabled = false;
+        if (!authoredEmitters.empty()) {
+            const Scene::ParticleRuntimeSnapshot emitSnapshot = m_particleRuntime->GetSnapshot();
+            std::unordered_map<Scene::Entity, const Scene::ParticleRuntimeInstanceSnapshot*> emitMap;
+            emitMap.reserve(emitSnapshot.instances.size());
             for (const Scene::ParticleRuntimeInstanceSnapshot& instance : emitSnapshot.instances) {
-                if (instance.entity == entity) {
-                    liveParticles = instance.liveParticles;
-                    enabled = instance.enabled;
-                    break;
+                emitMap.emplace(instance.entity, &instance);
+            }
+            for (const Scene::Entity entity : authoredEmitters) {
+                if (!m_entityManager->IsAlive(entity) ||
+                    !m_entityManager->HasComponent<Scene::ParticleEmitterComponent>(entity)) {
+                    m_particleEmitRemainder.erase(entity);
+                    continue;
                 }
-            }
-            if (!enabled) {
-                m_particleEmitRemainder.erase(entity);
-                continue;
-            }
+                const Scene::ParticleEmitterComponent& component =
+                    m_entityManager->GetComponent<Scene::ParticleEmitterComponent>(entity);
+                if (!Scene::IsParticleEmitterComponentValid(component)) {
+                    m_particleEmitRemainder.erase(entity);
+                    continue;
+                }
+                const bool ticking =
+                    Scene::IsTicking(ResolvedTickMode(*m_sceneGraph, entity), simulationPaused);
+                if (!ticking || !Scene::ParticleEmitter3D::IsEmitting(component)) {
+                    m_particleEmitRemainder.erase(entity);
+                    continue;
+                }
+                if (!m_entityManager->HasComponent<Scene::WorldTransformComponent>(entity)) {
+                    m_particleEmitRemainder.erase(entity);
+                    continue;
+                }
+                const Scene::WorldTransformComponent& worldTransform =
+                    m_entityManager->GetComponent<Scene::WorldTransformComponent>(entity);
+                if (worldTransform.dirty || !Math::IsFinite(worldTransform.worldPosition)) {
+                    continue;
+                }
 
-            const std::uint32_t count = Scene::ParticleEmitter3D::AccumulateSpawnCount(
-                component, deltaSeconds, m_particleEmitRemainder[entity], liveParticles);
-            if (count == 0U) {
-                continue;
+                const auto instIt = emitMap.find(entity);
+                if (instIt == emitMap.end() || !instIt->second->enabled) {
+                    m_particleEmitRemainder.erase(entity);
+                    continue;
+                }
+                const std::uint32_t liveParticles = instIt->second->liveParticles;
+
+                const std::uint32_t count = Scene::ParticleEmitter3D::AccumulateSpawnCount(
+                    component, deltaSeconds, m_particleEmitRemainder[entity], liveParticles);
+                if (count == 0U) {
+                    continue;
+                }
+                static_cast<void>(m_particleRuntime->EmitDetailed(
+                    entity, Scene::ParticleEmission{count, worldTransform.worldPosition, Math::Vector3{},
+                                                       component.lifetimeSeconds}));
             }
-            static_cast<void>(m_particleRuntime->EmitDetailed(
-                entity, Scene::ParticleEmission{count, worldTransform.worldPosition, Math::Vector3{},
-                                                   component.lifetimeSeconds}));
         }
         static_cast<void>(m_particleRuntime->SimulateDetailed(deltaSeconds, m_config.gravity, m_threadPool.get()));
     }
@@ -2404,6 +2405,17 @@ void EngineCore::FillScriptServices() {
         const std::vector<Scene::Entity> roots =
             m_sceneSerializer->Restore(*m_entityManager, Scene::SceneSnapshot{std::move(*bytes), Scene::SceneAssetType::Prefab});
         if (roots.size() != 1U) {
+            std::vector<Scene::Entity> toDestroy = roots;
+            for (std::size_t idx = 0U; idx < toDestroy.size(); ++idx) {
+                for (const Scene::Entity child : m_sceneGraph->GetChildren(*m_entityManager, toDestroy[idx])) {
+                    toDestroy.push_back(child);
+                }
+            }
+            for (auto it = toDestroy.rbegin(); it != toDestroy.rend(); ++it) {
+                if (m_entityManager->IsAlive(*it)) {
+                    m_entityManager->DestroyEntity(*it);
+                }
+            }
             return Scene::kInvalidEntity;
         }
         const Scene::Entity root = roots.front();
@@ -2732,6 +2744,17 @@ Scene::Entity EngineCore::CreateWidget(const std::string& path) {
     const std::vector<Scene::Entity> roots =
         m_sceneSerializer->Restore(*m_entityManager, Scene::SceneSnapshot{std::move(*bytes), Scene::SceneAssetType::Prefab});
     if (roots.size() != 1U) {
+        std::vector<Scene::Entity> toDestroy = roots;
+        for (std::size_t idx = 0U; idx < toDestroy.size(); ++idx) {
+            for (const Scene::Entity child : m_sceneGraph->GetChildren(*m_entityManager, toDestroy[idx])) {
+                toDestroy.push_back(child);
+            }
+        }
+        for (auto it = toDestroy.rbegin(); it != toDestroy.rend(); ++it) {
+            if (m_entityManager->IsAlive(*it)) {
+                m_entityManager->DestroyEntity(*it);
+            }
+        }
         return Scene::kInvalidEntity;
     }
     const Scene::Entity root = roots.front();
@@ -3203,32 +3226,43 @@ void EngineCore::SyncAnimation(const float deltaSeconds, const bool physicsStep)
                     montageFrames.push_back(std::move(frame));
                 }
             }
+            const std::string endedPlayingName = player.playingName;
             for (const Scene::MontageEvent& event : events) {
                 switch (event.kind) {
                     case Scene::MontageEvent::Kind::Notify: raiseMontageEvent(entity, "montage_notify", event.name); break;
                     case Scene::MontageEvent::Kind::NotifyBegin: raiseMontageEvent(entity, "montage_notify_begin", event.name); break;
                     case Scene::MontageEvent::Kind::NotifyEnd: raiseMontageEvent(entity, "montage_notify_end", event.name); break;
-                    case Scene::MontageEvent::Kind::Ended: raiseMontageEvent(entity, "montage_ended", player.playingName); break;
+                    case Scene::MontageEvent::Kind::Ended: raiseMontageEvent(entity, "montage_ended", endedPlayingName); break;
                 }
             }
-            if (!player.IsPlaying() && player.playing != Asset::kInvalidAssetGuid) {
+            if (!m_entityManager->IsAlive(entity) ||
+                !m_entityManager->HasComponent<Scene::MontageSequencerComponent>(entity)) {
+                continue;
+            }
+            Scene::MontageSequencerComponent& livePlayer =
+                m_entityManager->GetComponent<Scene::MontageSequencerComponent>(entity);
+            if (!livePlayer.IsPlaying() && livePlayer.playing != Asset::kInvalidAssetGuid) {
                 // Ended: an undriven skeleton goes back to its rest pose (after the drivers, below).
-                if (skeletonEntity != Scene::kInvalidEntity) {
+                if (skeletonEntity != Scene::kInvalidEntity && m_entityManager->IsAlive(skeletonEntity)) {
                     MontageFrame frame;
                     frame.player = entity;
                     frame.skeleton = skeletonEntity;
                     frame.ended = true;
                     montageFrames.push_back(std::move(frame));
                 }
-                player.playing = Asset::kInvalidAssetGuid;
-                player.playingName.clear();
-                player.curveValues.clear();
+                livePlayer.playing = Asset::kInvalidAssetGuid;
+                livePlayer.playingName.clear();
+                livePlayer.curveValues.clear();
             }
         }
     }
 
     for (const Scene::Entity entity :
          CollectFixedStepOrder<Scene::AnimationSequencerComponent>(*m_entityManager, *m_sceneGraph)) {
+        if (!m_entityManager->IsAlive(entity) ||
+            !m_entityManager->HasComponent<Scene::AnimationSequencerComponent>(entity)) {
+            continue;
+        }
         Scene::AnimationSequencerComponent& player =
             m_entityManager->GetComponent<Scene::AnimationSequencerComponent>(entity);
         const Scene::AnimationDriverComponent mixer = mixerOf(entity);
@@ -3266,9 +3300,12 @@ void EngineCore::SyncAnimation(const float deltaSeconds, const bool physicsStep)
                 posedSkeletons.push_back(skeletonEntity);
                 poseObjectTracks(entity, mixer.target, *clip, static_cast<double>(player.currentTimeSeconds));
             }
-            raiseAnimationEvents(entity, mixer.target, player.firedEvents);
-            if (posed && mixer.rootMotion == Scene::AnimationRootMotionMode::ApplyToTarget) {
-                applyRootMotion(entity, mixer.target, skeletonEntity, player.rootMotionDelta, animDeltaSeconds);
+            const std::vector<std::string> firedEvents = player.firedEvents;
+            const Math::Vector3 rootMotionDelta = player.rootMotionDelta;
+            raiseAnimationEvents(entity, mixer.target, firedEvents);
+            if (posed && mixer.rootMotion == Scene::AnimationRootMotionMode::ApplyToTarget &&
+                m_entityManager->IsAlive(entity) && m_entityManager->IsAlive(skeletonEntity)) {
+                applyRootMotion(entity, mixer.target, skeletonEntity, rootMotionDelta, animDeltaSeconds);
             }
             continue;
         }
@@ -3287,11 +3324,16 @@ void EngineCore::SyncAnimation(const float deltaSeconds, const bool physicsStep)
         if (Scene::StepAnimationSequencer(player, *clip, animDeltaSeconds * mixer.speedScale, *target, mixer)) {
             poseObjectTracks(entity, mixer.target, *clip, static_cast<double>(player.currentTimeSeconds));
         }
-        raiseAnimationEvents(entity, mixer.target, player.firedEvents);
+        const std::vector<std::string> firedEvents = player.firedEvents;
+        raiseAnimationEvents(entity, mixer.target, firedEvents);
     }
 
     for (const Scene::Entity entity :
          CollectFixedStepOrder<Scene::AnimationGraphComponent>(*m_entityManager, *m_sceneGraph)) {
+        if (!m_entityManager->IsAlive(entity) ||
+            !m_entityManager->HasComponent<Scene::AnimationGraphComponent>(entity)) {
+            continue;
+        }
         const Scene::AnimationDriverComponent mixer = mixerOf(entity);
         if (mixer.processCallback != callback) {
             continue;
@@ -3337,9 +3379,12 @@ void EngineCore::SyncAnimation(const float deltaSeconds, const bool physicsStep)
             if (posed) {
                 posedSkeletons.push_back(skeletonEntity);
             }
-            raiseAnimationEvents(entity, mixer.target, tree.firedEvents);
-            if (posed && mixer.rootMotion == Scene::AnimationRootMotionMode::ApplyToTarget) {
-                applyRootMotion(entity, mixer.target, skeletonEntity, tree.rootMotionDelta, animDeltaSeconds);
+            const std::vector<std::string> firedEvents = tree.firedEvents;
+            const Math::Vector3 rootMotionDelta = tree.rootMotionDelta;
+            raiseAnimationEvents(entity, mixer.target, firedEvents);
+            if (posed && mixer.rootMotion == Scene::AnimationRootMotionMode::ApplyToTarget &&
+                m_entityManager->IsAlive(entity) && m_entityManager->IsAlive(skeletonEntity)) {
+                applyRootMotion(entity, mixer.target, skeletonEntity, rootMotionDelta, animDeltaSeconds);
             }
             continue;
         }
@@ -3347,7 +3392,8 @@ void EngineCore::SyncAnimation(const float deltaSeconds, const bool physicsStep)
         if (target != nullptr) {
             static_cast<void>(
                 Scene::StepAnimationGraph(tree, clipFor, animDeltaSeconds * mixer.speedScale, *target, mixer));
-            raiseAnimationEvents(entity, mixer.target, tree.firedEvents);
+            const std::vector<std::string> firedEvents = tree.firedEvents;
+            raiseAnimationEvents(entity, mixer.target, firedEvents);
         }
     }
 
@@ -3478,6 +3524,27 @@ void EngineCore::SyncAnimation(const float deltaSeconds, const bool physicsStep)
                             referenced.insert(libClip.value);
                         }
                     }
+                }
+            });
+        m_entityManager->ForEach<Scene::MontageSequencerComponent>(
+            [&referenced, this](const Scene::Entity, const Scene::MontageSequencerComponent& player) {
+                const auto markMontage = [&referenced, this](const Asset::AssetGuid guid) {
+                    if (guid == Asset::kInvalidAssetGuid) {
+                        return;
+                    }
+                    const auto it = m_animationMontages.find(guid.value);
+                    if (it == m_animationMontages.end() || !it->second.montage.has_value()) {
+                        return;
+                    }
+                    for (const Asset::MontageSegment& segment : it->second.montage->segments) {
+                        if (segment.clip != Asset::kInvalidAssetGuid) {
+                            referenced.insert(segment.clip.value);
+                        }
+                    }
+                };
+                markMontage(player.playing);
+                for (std::size_t i = 0U; i < 8U; ++i) {
+                    markMontage(player.MontageAt(i));
                 }
             });
         std::erase_if(m_animationClips, [&referenced](const auto& entry) { return !referenced.contains(entry.first); });
@@ -4549,6 +4616,9 @@ void EngineCore::SyncVisibilityRegion3DObjects() {
     // overlapping regions the drawable stamps the NEAREST one's center; ties resolve in the
     // iteration order the ECS hands regions over, which is ascending entity id - deterministic
     // for content that does not overlap rooms halfway.
+    if (regions.empty()) {
+        return;
+    }
     std::vector<Scene::Entity> drawables;
     m_entityManager->ForEach<Scene::WorldTransformComponent>(
         [this, &drawables](const Scene::Entity entity, const Scene::WorldTransformComponent&) {
@@ -5498,8 +5568,14 @@ void ApplyEngineConfigToRenderer3D(const EngineConfig& config, Render::IRenderer
     cullingSettings.frustumCullingEnabled = config.frustumCullingMode == FrustumCullingMode::Enabled;
     cullingSettings.gpuOcclusionCullingEnabled = config.gpuOcclusionCullingEnabled;
     renderer.SetCullingSettings(cullingSettings);
-    renderer.SetMaterialSamplerSettings(
-        config.defaultTextureRepeatMode != 0,
+    Render::SamplerWrap materialWrap = Render::SamplerWrap::Repeat;
+    if (config.defaultTextureRepeatMode == 0) {
+        materialWrap = Render::SamplerWrap::ClampToEdge;
+    } else if (config.defaultTextureRepeatMode == 2) {
+        materialWrap = Render::SamplerWrap::MirroredRepeat;
+    }
+    renderer.SetMaterialSamplerWrap(
+        materialWrap,
         static_cast<float>(std::clamp<std::int64_t>(config.defaultAnisotropyLevel, 1, 16)));
     if (config.requestedRendererProfile != Platform::RendererProfile::ForwardPlus ||
         renderer.GetRendererProfileResolution().requested != config.requestedRendererProfile) {

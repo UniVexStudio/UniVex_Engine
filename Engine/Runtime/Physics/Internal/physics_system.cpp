@@ -10,6 +10,7 @@
 #include <limits>
 #include <optional>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include "engine_assert.h"
@@ -150,7 +151,31 @@ void PhysicsSystem::ResolveCollisionPairs(Scene::IEntityManager& entityManager,
         return;
     }
 
-    const PhysicsIslandPartition partition = BuildPhysicsIslandPartition(pairs);
+    const auto inverseMassOf = [&entityManager](Scene::Entity entity) {
+        if (!entityManager.HasComponent<Scene::Rigid3DComponent>(entity)) {
+            return Scene::Static3D::InverseMass();
+        }
+        // An object the simulation may not move - a kinematically driven one, a PhysicsObject3D
+        // kept as a static obstacle, or one taken out of the world - has no inverse mass to give
+        // way with, exactly like a static collider.
+        if (!Scene::IsPhysicsObjectSimulated(entityManager, entity)) {
+            return 0.0F;
+        }
+        return Scene::Rigid3D::InverseMass(
+            entityManager.GetComponent<Scene::Rigid3DComponent>(entity));
+    };
+
+    std::unordered_set<Scene::Entity> staticBodies;
+    for (const CollisionPair& pair : pairs) {
+        if (Scene::GetPhysicsObjectYieldWeight(entityManager, pair.first, inverseMassOf(pair.first)) <= 0.0F) {
+            staticBodies.insert(pair.first);
+        }
+        if (Scene::GetPhysicsObjectYieldWeight(entityManager, pair.second, inverseMassOf(pair.second)) <= 0.0F) {
+            staticBodies.insert(pair.second);
+        }
+    }
+
+    const PhysicsIslandPartition partition = BuildPhysicsIslandPartition(pairs, staticBodies);
     if (partition.IsEmpty()) {
         return;
     }
@@ -178,20 +203,6 @@ void PhysicsSystem::ResolveCollisionPairs(Scene::IEntityManager& entityManager,
             bodies.push_back(body);
         }
         return inserted.first->second;
-    };
-
-    const auto inverseMassOf = [&entityManager](Scene::Entity entity) {
-        if (!entityManager.HasComponent<Scene::Rigid3DComponent>(entity)) {
-            return Scene::Static3D::InverseMass();
-        }
-        // An object the simulation may not move - a kinematically driven one, a PhysicsObject3D
-        // kept as a static obstacle, or one taken out of the world - has no inverse mass to give
-        // way with, exactly like a static collider.
-        if (!Scene::IsPhysicsObjectSimulated(entityManager, entity)) {
-            return 0.0F;
-        }
-        return Scene::Rigid3D::InverseMass(
-            entityManager.GetComponent<Scene::Rigid3DComponent>(entity));
     };
 
     // Slot-indexed, in island order: slot `i` is pair `partition.pairOrder[i]`. Building the

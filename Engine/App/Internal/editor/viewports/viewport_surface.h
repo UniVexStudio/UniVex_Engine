@@ -99,6 +99,9 @@ void main() {
     [[nodiscard]] GLuint ActiveDrawFbo() const noexcept { return m_msaaFbo != 0U ? m_msaaFbo : m_sceneFbo; }
     [[nodiscard]] GLuint MsaaFbo() const noexcept { return ActiveDrawFbo(); }
     [[nodiscard]] GLuint ResolveFbo() const noexcept { return m_resolveFbo; }
+    [[nodiscard]] GLuint OutputFbo() const noexcept {
+        return (m_msaaFbo == 0U && m_fxaaQuality == 0 && m_casSharpen <= 0.001F) ? m_sceneFbo : m_resolveFbo;
+    }
     [[nodiscard]] GLuint ResolveColorTexture() const noexcept { return m_resolveColorTexture; }
     [[nodiscard]] GLuint FullscreenVao();
 
@@ -162,6 +165,7 @@ private:
     int m_framebufferWidth = 0;
     int m_framebufferHeight = 0;
     int m_allocatedMsaaSamples = -1;
+    int m_maxSamplesCache = -1;
 
     int m_desiredMsaaSamples = 0;
     int m_fxaaQuality = 0;
@@ -187,6 +191,7 @@ private:
 
     std::optional<univex::render::ShaderProgram> m_meshBlitProgram;
     MeshBlitUniforms m_meshBlitUniforms{};
+    bool m_meshBlitFailed = false;
     std::optional<univex::render::ShaderProgram> m_postAaProgram;
     PostAaUniforms m_postAaUniforms{};
     bool m_postAaFailed = false;

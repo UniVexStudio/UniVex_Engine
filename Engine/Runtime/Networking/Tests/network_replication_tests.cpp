@@ -1303,5 +1303,22 @@ TEST(NetworkReplicationTest, Property_UnregisterPropertyStopsBothWays) {
     EXPECT_FALSE(harness.a.UnregisterProperty(7U, 3U));
 }
 
+TEST(NetworkReplicationTest, Ownership_EarlierClockUpdateDoesNotUnderflowTimeout) {
+    ReplicationHarness harness = MakeReplicators();
+    ASSERT_TRUE(RegisterOwnerProxy(harness, 7U));
+    std::vector<TransferEvent> logB;
+    harness.b.SetOwnershipTransferHandler(
+        [&logB](const NetworkEntityId netId, const OwnershipTransferEvent event) {
+            logB.push_back(TransferEvent{netId, event});
+        });
+    ASSERT_TRUE(harness.Establish(2000U));
+
+    // Request recorded at t = 2000 ms; calling Update with an earlier timestamp must not underflow.
+    ASSERT_TRUE(harness.b.RequestOwnership(7U, 2000U));
+    harness.b.Update(1500U);
+    EXPECT_TRUE(logB.empty());
+    EXPECT_EQ(harness.b.Stats().transfersTimedOut, 0U);
+}
+
 } // namespace
 } // namespace UVE::Network::Tests

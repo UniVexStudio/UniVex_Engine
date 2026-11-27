@@ -8,6 +8,7 @@
 #include <limits>
 #include <utility>
 
+#include "hierarchy_component.h"
 #include "rigid_3d_component.h"
 #include "transform_component.h"
 #include "world_transform_component.h"
@@ -250,7 +251,22 @@ PhysicsConstraintSolveResult PhysicsConstraintSystem::Solve(
     }
 
     std::array<bool, kMaximumConstraints> reportedSkipped{};
+    bool hasParentedConstraintEntity = false;
+    for (std::size_t orderIndex = 0U; orderIndex < orderedCount; ++orderIndex) {
+        const auto [firstEntity, secondEntity] = getEntities(slots_[orderedIndices[orderIndex]]);
+        const auto isParented = [&entityManager](const Scene::Entity entity) noexcept {
+            return entityManager.IsAlive(entity) &&
+                   entityManager.HasComponent<Scene::HierarchyComponent>(entity) &&
+                   entityManager.GetComponent<Scene::HierarchyComponent>(entity).parent !=
+                       Scene::kInvalidEntity;
+        };
+        if (isParented(firstEntity) || isParented(secondEntity)) {
+            hasParentedConstraintEntity = true;
+            break;
+        }
+    }
     sceneGraph.Update(entityManager);
+    bool anyConstraintChanged = false;
     for (std::size_t iteration = 0U; iteration < iterationLimit; ++iteration) {
         bool changed = false;
         for (std::size_t orderIndex = 0U; orderIndex < orderedCount; ++orderIndex) {
@@ -272,10 +288,12 @@ PhysicsConstraintSolveResult PhysicsConstraintSystem::Solve(
                 continue;
             }
 
-            const Scene::WorldTransformComponent& firstWorld =
-                entityManager.GetComponent<Scene::WorldTransformComponent>(firstEntity);
-            const Scene::WorldTransformComponent& secondWorld =
-                entityManager.GetComponent<Scene::WorldTransformComponent>(secondEntity);
+            const Math::Vector3 firstWorldPos = hasParentedConstraintEntity
+                ? entityManager.GetComponent<Scene::WorldTransformComponent>(firstEntity).worldPosition
+                : entityManager.GetComponent<Scene::TransformComponent>(firstEntity).localPosition;
+            const Math::Vector3 secondWorldPos = hasParentedConstraintEntity
+                ? entityManager.GetComponent<Scene::WorldTransformComponent>(secondEntity).worldPosition
+                : entityManager.GetComponent<Scene::TransformComponent>(secondEntity).localPosition;
             const auto getAnchorOffsets = [](const Slot& s) noexcept {
                 switch (s.kind) {
                     case Kind::Distance:
@@ -290,8 +308,8 @@ PhysicsConstraintSolveResult PhysicsConstraintSystem::Solve(
                 return std::pair<Math::Vector3, Math::Vector3>{Math::Vector3{}, Math::Vector3{}};
             };
             const auto [firstAnchorOffset, secondAnchorOffset] = getAnchorOffsets(slot);
-            const Math::Vector3 firstAnchor = firstWorld.worldPosition + firstAnchorOffset;
-            const Math::Vector3 secondAnchor = secondWorld.worldPosition + secondAnchorOffset;
+            const Math::Vector3 firstAnchor = firstWorldPos + firstAnchorOffset;
+            const Math::Vector3 secondAnchor = secondWorldPos + secondAnchorOffset;
             const Math::Vector3 delta = secondAnchor - firstAnchor;
             if (!Math::IsFinite(delta)) {
                 if (!reportedSkipped[index]) {
@@ -353,12 +371,21 @@ PhysicsConstraintSolveResult PhysicsConstraintSystem::Solve(
             ApplyLocalDelta(entityManager, sceneGraph, secondEntity, secondDelta);
             ++result.solvedConstraintCount;
             changed = true;
-            sceneGraph.Update(entityManager);
+            anyConstraintChanged = true;
+            if (hasParentedConstraintEntity) {
+                sceneGraph.Update(entityManager);
+            }
         }
         result.iterations = iteration + 1U;
         if (!changed) {
+            if (anyConstraintChanged && !hasParentedConstraintEntity) {
+                sceneGraph.Update(entityManager);
+            }
             return result;
         }
+    }
+    if (anyConstraintChanged && !hasParentedConstraintEntity) {
+        sceneGraph.Update(entityManager);
     }
     result.iterationCapReached = true;
     return result;

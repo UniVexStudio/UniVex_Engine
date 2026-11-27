@@ -30,7 +30,9 @@ public:
     float labels = 0;
     for (const Entry& e : m_entries) labels = std::max(labels, std::ceil(theme().ui->width(e.item.label)));
     const float maxW = Application::exists() ? std::max(180.f, Application::get().windowSize().x - 16.f) : 380.f;
-    m_width = std::clamp(labels + (compact ? 96.f : 136.f), compact ? 200.f : 250.f, std::min(compact ? 320.f : 400.f, maxW));
+    const float hiW = std::min(compact ? 320.f : 400.f, maxW);
+    const float loW = std::min(compact ? 200.f : 250.f, hiW);
+    m_width = std::clamp(labels + (compact ? 96.f : 136.f), loW, hiW);
     m_input = make<TextInput>("", std::move(placeholder));
     m_input->setLeadingIcon(Icon::Search);
     m_input->setClearable(true);
@@ -118,7 +120,7 @@ public:
     c.popClip();
     if (maxScroll > 0.f) {
       const float trackH = std::max(16.f, list.h - 4.f);
-      const float thumbH = std::clamp(trackH * (list.h / totalH), 18.f, trackH);
+      const float thumbH = std::clamp(trackH * (list.h / totalH), std::min(18.f, trackH), trackH);
       const float thumbY = list.y + 2.f + (trackH - thumbH) * (m_scroll / maxScroll);
       c.fillRoundRect({m_rect.right() - 5.f, thumbY, 3.f, thumbH}, 1.5f, t.textDim);
     }

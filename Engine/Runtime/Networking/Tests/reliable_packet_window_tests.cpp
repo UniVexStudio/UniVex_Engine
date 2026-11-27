@@ -283,6 +283,12 @@ TEST(ReliablePacketWindowTest, CumulativeAcknowledgementClearsFullThirtyTwoEntry
     EXPECT_TRUE(ApplyReliableAcknowledgements(header, pending, 100U));
     EXPECT_EQ(pending, 0U);
 }
+TEST(ReliablePacketWindowTest, CumulativeAcknowledgementBeyondThirtyTwoClearsAllPendingBits) {
+    std::uint32_t pending = 0xFFFFFFFFU;
+    const ReliablePacketHeader header{150U, 140U, 0U};
+    EXPECT_TRUE(ApplyReliableAcknowledgements(header, pending, 100U));
+    EXPECT_EQ(pending, 0U);
+}
 TEST(ReliablePacketWindowTest, SelectiveAcknowledgementClearsForwardSlots) {
     std::uint32_t pending = 0xFFFFFFFFU;
     const ReliablePacketHeader header{200U, 200U, (1U << 1U) | (1U << 4U)};

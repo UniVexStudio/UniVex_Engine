@@ -21,6 +21,7 @@ namespace {
 struct EntityRecord {
     std::uint32_t generation = 0;
     bool alive = false;
+    bool destroying = false;
     Detail::Archetype* archetype = nullptr;
     std::size_t chunkIndex = 0;
     std::size_t row = 0;
@@ -85,10 +86,17 @@ void EntityManager::DestroyEntity(Entity entity) {
         UVE_ASSERT(IsAlive(entity));
         return;
     }
-    EntityRecord& record = m_impl->records[entity.index];
+    if (m_impl->records[entity.index].destroying) {
+        return;
+    }
+    m_impl->records[entity.index].destroying = true;
 
     m_impl->eventSystem.Publish(EntityDestroyedEvent{entity});
 
+    if (!IsAlive(entity)) {
+        return;
+    }
+    EntityRecord& record = m_impl->records[entity.index];
     const Detail::Archetype::Location location{record.chunkIndex, record.row};
     const Entity movedEntity = record.archetype->DestroyEntityAt(location);
     if (movedEntity != kInvalidEntity) {
@@ -96,6 +104,7 @@ void EntityManager::DestroyEntity(Entity entity) {
     }
 
     record.alive = false;
+    record.destroying = false;
     record.archetype = nullptr;
     ++record.generation;
     m_impl->freeIndices.push_back(entity.index);

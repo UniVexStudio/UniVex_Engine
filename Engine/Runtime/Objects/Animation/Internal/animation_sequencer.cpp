@@ -165,6 +165,9 @@ namespace {
 /// first and last sample. `samples` is never empty.
 [[nodiscard]] Core::TransformPose SampleTrack(const std::vector<Asset::AnimationAssetSample>& samples,
                                                     const double timeSeconds) noexcept {
+    if (samples.empty()) {
+        return Core::TransformPose{};
+    }
     const auto upper = std::upper_bound(samples.begin(), samples.end(), timeSeconds,
                                         [](const double value, const Asset::AnimationAssetSample& sample) {
                                             return value < sample.timeSeconds;

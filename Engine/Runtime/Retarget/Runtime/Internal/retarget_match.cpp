@@ -106,8 +106,14 @@ void Count(HumanoidMatch& match) {
 }
 
 [[nodiscard]] bool IsAncestor(const RetargetSkeleton& skeleton, std::int32_t bone, const std::int32_t ancestor) {
-    for (bone = bone >= 0 ? skeleton.bones[static_cast<std::size_t>(bone)].parent : -1; bone >= 0;
-         bone = skeleton.bones[static_cast<std::size_t>(bone)].parent) {
+    const std::size_t count = skeleton.bones.size();
+    if (bone < 0 || static_cast<std::size_t>(bone) >= count) {
+        return false;
+    }
+    std::size_t hops = 0U;
+    for (bone = skeleton.bones[static_cast<std::size_t>(bone)].parent;
+         bone >= 0 && static_cast<std::size_t>(bone) < count && hops < count;
+         bone = skeleton.bones[static_cast<std::size_t>(bone)].parent, ++hops) {
         if (bone == ancestor) {
             return true;
         }
@@ -150,7 +156,8 @@ HumanoidMatch MatchHumanoidNames(const std::vector<std::string>& names, const Hu
     match.referenceOfBone = PairByName(names, reference);
     match.joints.assign(reference.info.size(), JointReport{-1, JointStatus::Missing, "not in this rig"});
     for (std::size_t bone = 0U; bone < names.size(); ++bone) {
-        if (const std::int32_t ref = match.referenceOfBone[bone]; ref >= 0) {
+        if (const std::int32_t ref = match.referenceOfBone[bone];
+            ref >= 0 && static_cast<std::size_t>(ref) < match.joints.size()) {
             match.joints[static_cast<std::size_t>(ref)] = JointReport{static_cast<std::int32_t>(bone), JointStatus::Good, {}};
         }
     }
@@ -168,6 +175,10 @@ HumanoidMatch MatchHumanoid(const RetargetSkeleton& rig, const HumanoidReference
 }
 
 HumanoidMatch CheckHumanoidMatch(const RetargetSkeleton& rig, const HumanoidReference& reference, HumanoidMatch match) {
+    const std::size_t refCount = std::min(reference.info.size(), reference.skeleton.bones.size());
+    if (match.joints.size() < refCount) {
+        match.joints.resize(refCount, JointReport{-1, JointStatus::Missing, "not in this rig"});
+    }
     // Pairs made elsewhere (the Rig Brain) start Good; the checks below judge them like any other.
     for (std::size_t bone = 0U; bone < match.referenceOfBone.size() && bone < rig.bones.size(); ++bone) {
         if (const std::int32_t ref = match.referenceOfBone[bone]; ref >= 0 && static_cast<std::size_t>(ref) < match.joints.size()) {
@@ -194,18 +205,30 @@ HumanoidMatch CheckHumanoidMatch(const RetargetSkeleton& rig, const HumanoidRefe
     const float rigHeight = MeasureHipsHeight(folded, upright);
     match.heightScale = rigHeight > 0.0F && reference.hipsHeight > 0.0F ? rigHeight / reference.hipsHeight : 1.0F;
 
-    const auto nameOf = [&](const std::int32_t bone) { return rig.bones[static_cast<std::size_t>(bone)].name; };
-    for (std::size_t ref = 0U; ref < reference.info.size(); ++ref) {
+    const auto validRigBone = [&](const std::int32_t bone) noexcept {
+        return bone >= 0 && static_cast<std::size_t>(bone) < rig.bones.size() &&
+               static_cast<std::size_t>(bone) < world.size();
+    };
+    const auto nameOf = [&](const std::int32_t bone) -> const std::string& {
+        static const std::string kEmpty;
+        return validRigBone(bone) ? rig.bones[static_cast<std::size_t>(bone)].name : kEmpty;
+    };
+    for (std::size_t ref = 0U; ref < refCount; ++ref) {
         JointReport& joint = match.joints[ref];
-        if (joint.bone < 0) {
+        if (!validRigBone(joint.bone)) {
             continue;
         }
         // In the hierarchy: under the bone standing for its nearest found reference ancestor.
         std::int32_t above = reference.skeleton.bones[ref].parent;
-        while (above >= 0 && match.joints[static_cast<std::size_t>(above)].bone < 0) {
+        std::size_t hops = 0U;
+        while (above >= 0 && static_cast<std::size_t>(above) < refCount && hops < refCount &&
+               !validRigBone(match.joints[static_cast<std::size_t>(above)].bone)) {
             above = reference.skeleton.bones[static_cast<std::size_t>(above)].parent;
+            ++hops;
         }
-        if (above >= 0 && !IsAncestor(folded, joint.bone, match.joints[static_cast<std::size_t>(above)].bone)) {
+        if (above >= 0 && static_cast<std::size_t>(above) < refCount &&
+            validRigBone(match.joints[static_cast<std::size_t>(above)].bone) &&
+            !IsAncestor(folded, joint.bone, match.joints[static_cast<std::size_t>(above)].bone)) {
             joint.status = JointStatus::Broken;
             joint.reason = "not under " + nameOf(match.joints[static_cast<std::size_t>(above)].bone) + " as " +
                            reference.skeleton.bones[static_cast<std::size_t>(above)].name + " is";
@@ -213,7 +236,10 @@ HumanoidMatch CheckHumanoidMatch(const RetargetSkeleton& rig, const HumanoidRefe
         }
         // Its length: to the bone it points at, against the reference's scaled to this rig.
         const std::int32_t aim = reference.info[ref].aim;
-        if (aim < 0 || match.joints[static_cast<std::size_t>(aim)].bone < 0) {
+        if (aim < 0 || static_cast<std::size_t>(aim) >= refCount ||
+            static_cast<std::size_t>(aim) >= referenceWorld.size() ||
+            ref >= referenceWorld.size() ||
+            !validRigBone(match.joints[static_cast<std::size_t>(aim)].bone)) {
             continue;
         }
         const float length = Math::Length(world[static_cast<std::size_t>(match.joints[static_cast<std::size_t>(aim)].bone)].position -
@@ -232,7 +258,7 @@ HumanoidMatch CheckHumanoidMatch(const RetargetSkeleton& rig, const HumanoidRefe
         }
     }
     // Left and right should match: a side much longer than the other is flagged on both.
-    for (std::size_t ref = 0U; ref < reference.info.size(); ++ref) {
+    for (std::size_t ref = 0U; ref < refCount; ++ref) {
         const std::string& key = reference.info[ref].key;
         if (key.rfind("L|", 0U) != 0U || reference.info[ref].aim < 0) {
             continue;
@@ -244,9 +270,14 @@ HumanoidMatch CheckHumanoidMatch(const RetargetSkeleton& rig, const HumanoidRefe
             continue;
         }
         const auto right = static_cast<std::size_t>(mirror - reference.info.begin());
+        if (right >= refCount) {
+            continue;
+        }
         const auto lengthOf = [&](const std::size_t bone) {
             const std::int32_t aim = reference.info[bone].aim;
-            if (match.joints[bone].bone < 0 || aim < 0 || match.joints[static_cast<std::size_t>(aim)].bone < 0) {
+            if (!validRigBone(match.joints[bone].bone) || aim < 0 ||
+                static_cast<std::size_t>(aim) >= refCount ||
+                !validRigBone(match.joints[static_cast<std::size_t>(aim)].bone)) {
                 return -1.0F;
             }
             return Math::Length(world[static_cast<std::size_t>(match.joints[static_cast<std::size_t>(aim)].bone)].position -

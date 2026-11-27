@@ -115,9 +115,15 @@ AnimationStateMachineEvaluationResult AnimationStateMachineEvaluator::Evaluate(
         result.debug = m_debug;
         return result;
     }
+    const AnimationClip* currentClip = FindClip(m_machine, current->clipId);
+    const double currentDuration =
+        (currentClip != nullptr && currentClip->durationSeconds > 0.0) ? currentClip->durationSeconds : 1.0;
     const double clampedDelta = std::min(deltaSeconds, 0.25);
-    m_debug.normalizedTime += clampedDelta * static_cast<double>(current->speed);
+    m_debug.normalizedTime += (clampedDelta * static_cast<double>(current->speed)) / currentDuration;
     m_debug.normalizedTime = std::fmod(m_debug.normalizedTime, 1.0);
+    if (m_debug.normalizedTime < 0.0) {
+        m_debug.normalizedTime += 1.0;
+    }
 
     const bool transitionWasActiveAtFrameStart = m_debug.transitioning;
     if (!m_debug.transitioning) {
@@ -202,11 +208,17 @@ AnimationStateMachineEvaluationResult AnimationStateMachineEvaluator::Evaluate(
         const float alpha = static_cast<float>(m_debug.transitionAlpha);
         result.pose.position = currentPose.position * (1.0F - alpha) + targetPose.position * alpha;
         result.pose.scale = currentPose.scale * (1.0F - alpha) + targetPose.scale * alpha;
+        Math::Quaternion targetRot = targetPose.rotation;
+        const float dot = currentPose.rotation.x * targetRot.x + currentPose.rotation.y * targetRot.y +
+                          currentPose.rotation.z * targetRot.z + currentPose.rotation.w * targetRot.w;
+        if (dot < 0.0F) {
+            targetRot = Math::Quaternion{-targetRot.x, -targetRot.y, -targetRot.z, -targetRot.w};
+        }
         result.pose.rotation = Math::Quaternion{
-            currentPose.rotation.x * (1.0F - alpha) + targetPose.rotation.x * alpha,
-            currentPose.rotation.y * (1.0F - alpha) + targetPose.rotation.y * alpha,
-            currentPose.rotation.z * (1.0F - alpha) + targetPose.rotation.z * alpha,
-            currentPose.rotation.w * (1.0F - alpha) + targetPose.rotation.w * alpha,
+            currentPose.rotation.x * (1.0F - alpha) + targetRot.x * alpha,
+            currentPose.rotation.y * (1.0F - alpha) + targetRot.y * alpha,
+            currentPose.rotation.z * (1.0F - alpha) + targetRot.z * alpha,
+            currentPose.rotation.w * (1.0F - alpha) + targetRot.w * alpha,
         };
         TransformPose normalized;
         if (!TryNormalizeTransformPose(result.pose, normalized)) {
@@ -277,10 +289,14 @@ const AnimationTransition* AnimationStateMachineEvaluator::SelectTransition(
 }
 
 bool AnimationStateMachineEvaluator::SampleState(const AnimationState& state,
-                                                       const double timeSeconds,
+                                                       const double normalizedTime,
                                                        TransformPose& outPose) const noexcept {
     const AnimationClip* clip = FindClip(m_machine, state.clipId);
-    return clip != nullptr && TrySampleAnimationClip(*clip, timeSeconds, true, outPose);
+    if (clip == nullptr) {
+        return false;
+    }
+    const double sampleTimeSeconds = normalizedTime * clip->durationSeconds;
+    return TrySampleAnimationClip(*clip, sampleTimeSeconds, true, outPose);
 }
 
 } // namespace UVE::Core

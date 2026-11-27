@@ -326,6 +326,12 @@ void NetworkRpc::FailDownCalls() {
 }
 
 void NetworkRpc::ExpireCalls(const std::uint64_t nowMs) {
+    struct ExpiredCall final {
+        RpcCallId callId = 0U;
+        RpcResponseCallback callback;
+        std::string method;
+    };
+    std::vector<ExpiredCall> expired;
     for (auto it = m_pending.begin(); it != m_pending.end();) {
         PendingCall& pending = it->second;
         // Deadlines count from the first Update after the call - the call itself takes no
@@ -335,16 +341,18 @@ void NetworkRpc::ExpireCalls(const std::uint64_t nowMs) {
             pending.deadlineMs = nowMs + pending.timeoutMs;
         }
         if (pending.timeoutMs != 0U && nowMs >= pending.deadlineMs) {
-            const RpcCallId callId = it->first;
-            RpcResponseCallback callback = std::move(pending.callback);
-            std::string method = std::move(pending.method);
+            expired.push_back(ExpiredCall{it->first, std::move(pending.callback), std::move(pending.method)});
             it = m_pending.erase(it);
-            ++m_stats.callsTimedOut;
-            RpcOutcome outcome{false, Blueprint::Value{}, "call to '" + method + "' timed out"};
-            RetainResult(callId, outcome);
-            callback(callId, outcome);
         } else {
             ++it;
+        }
+    }
+    for (ExpiredCall& item : expired) {
+        ++m_stats.callsTimedOut;
+        RpcOutcome outcome{false, Blueprint::Value{}, "call to '" + item.method + "' timed out"};
+        RetainResult(item.callId, outcome);
+        if (item.callback) {
+            item.callback(item.callId, outcome);
         }
     }
 }

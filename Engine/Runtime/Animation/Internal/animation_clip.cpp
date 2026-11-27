@@ -32,11 +32,17 @@ namespace {
     const float factor = static_cast<float>(std::clamp(alpha, 0.0, 1.0));
     result.position = left.position * (1.0F - factor) + right.position * factor;
     result.scale = left.scale * (1.0F - factor) + right.scale * factor;
+    Math::Quaternion rightRotation = right.rotation;
+    const float dot = left.rotation.x * rightRotation.x + left.rotation.y * rightRotation.y +
+                      left.rotation.z * rightRotation.z + left.rotation.w * rightRotation.w;
+    if (dot < 0.0F) {
+        rightRotation = Math::Quaternion{-rightRotation.x, -rightRotation.y, -rightRotation.z, -rightRotation.w};
+    }
     result.rotation = Math::Quaternion{
-        left.rotation.x * (1.0F - factor) + right.rotation.x * factor,
-        left.rotation.y * (1.0F - factor) + right.rotation.y * factor,
-        left.rotation.z * (1.0F - factor) + right.rotation.z * factor,
-        left.rotation.w * (1.0F - factor) + right.rotation.w * factor,
+        left.rotation.x * (1.0F - factor) + rightRotation.x * factor,
+        left.rotation.y * (1.0F - factor) + rightRotation.y * factor,
+        left.rotation.z * (1.0F - factor) + rightRotation.z * factor,
+        left.rotation.w * (1.0F - factor) + rightRotation.w * factor,
     };
     TransformPose normalized;
     return TryNormalizeTransformPose(result, normalized) ? normalized : left;

@@ -475,6 +475,10 @@ public:
         static_cast<void>(settings);
     }
 
+    [[nodiscard]] virtual PostProcessSettings GetPostProcessSettings() const noexcept {
+        return PostProcessSettings{};
+    }
+
     /// Editor-only preview environment, the counterpart of Scene::PreviewLightingFrame.
     ///
     /// Applied by the concrete renderer only when the scene itself resolves to NO WorldEnvironment,
@@ -545,6 +549,12 @@ public:
     virtual void SetMaterialSamplerSettings(bool repeatEnabled, float maxAnisotropy) noexcept {
         static_cast<void>(repeatEnabled);
         static_cast<void>(maxAnisotropy);
+    }
+
+    /// Configures material texture wrap mode (ClampToEdge, Repeat, or MirroredRepeat) and maximum
+    /// anisotropic filtering level used for standard surface textures.
+    virtual void SetMaterialSamplerWrap(SamplerWrap wrap, float maxAnisotropy) noexcept {
+        SetMaterialSamplerSettings(wrap != SamplerWrap::ClampToEdge, maxAnisotropy);
     }
 
     /// Points the renderer at UI::UIRuntime's latest draw batch/font atlas, drawn by a

@@ -87,12 +87,23 @@ struct GlBackend::Impl {
   const char* glslHeader = kDesktopGlslHeader;
 
   static uint64_t hashPixels(const uint32_t* px, int width, int height) {
-    uint64_t h = 1469598103934665603ULL;
+    uint64_t h = 1469598103934665603ULL ^ (uint64_t(uint32_t(width)) << 32) ^ uint64_t(uint32_t(height));
     if (!px || width <= 0 || height <= 0) return h;
     const size_t n = size_t(width) * size_t(height);
-    for (size_t k = 0; k < n; ++k) {
-      h = (h ^ px[k]) * 1099511628211ULL;
+    const auto mix64 = [&](uint64_t v) { h = (h ^ v) * 1099511628211ULL; };
+    if (n <= 4096U) {
+      size_t k = 0;
+      for (; k + 1 < n; k += 2) {
+        mix64(uint64_t(px[k]) | (uint64_t(px[k + 1]) << 32));
+      }
+      if (k < n) mix64(px[k]);
+      return h;
     }
+    // Large buffers (thumbnails, overlays): hash head, tail, and ~1024 evenly strided pairs.
+    for (size_t k = 0; k < 64U; k += 2) mix64(uint64_t(px[k]) | (uint64_t(px[k + 1]) << 32));
+    const size_t stride = std::max<size_t>(2U, ((n - 128U) / 1024U) & ~size_t(1U));
+    for (size_t k = 64U; k + 65U < n; k += stride) mix64(uint64_t(px[k]) | (uint64_t(px[k + 1]) << 32));
+    for (size_t k = n - 64U; k + 1U < n; k += 2) mix64(uint64_t(px[k]) | (uint64_t(px[k + 1]) << 32));
     return h;
   }
 

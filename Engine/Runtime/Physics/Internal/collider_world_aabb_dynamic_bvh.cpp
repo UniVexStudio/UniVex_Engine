@@ -6,7 +6,9 @@
 #include <array>
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <numeric>
+#include <unordered_set>
 #include <utility>
 
 namespace UVE::Physics::Detail {
@@ -33,12 +35,15 @@ DynamicAabbBvh::DynamicAabbBvh(std::vector<ColliderWorldAabb> colliders)
         m_isValid = false;
         return;
     }
-    for (std::size_t firstIndex = 0U; firstIndex < m_colliders.size(); ++firstIndex) {
-        for (std::size_t secondIndex = firstIndex + 1U; secondIndex < m_colliders.size(); ++secondIndex) {
-            if (m_colliders[firstIndex].entity == m_colliders[secondIndex].entity) {
-                m_isValid = false;
-                return;
-            }
+    std::unordered_set<std::uint64_t> seenEntities;
+    seenEntities.reserve(m_colliders.size());
+    for (const ColliderWorldAabb& collider : m_colliders) {
+        const std::uint64_t key =
+            (static_cast<std::uint64_t>(collider.entity.generation) << 32U) |
+            static_cast<std::uint64_t>(collider.entity.index);
+        if (!seenEntities.insert(key).second) {
+            m_isValid = false;
+            return;
         }
     }
     std::iota(m_indices.begin(), m_indices.end(), 0U);
@@ -82,7 +87,9 @@ std::size_t DynamicAabbBvh::BuildObject(const std::size_t begin, const std::size
         const Math::Vector3 center = m_colliders[cacheIndex].worldAabb.GetCenter();
         return splitAxis == 0U ? center.x : (splitAxis == 1U ? center.y : center.z);
     };
-    std::stable_sort(m_indices.begin() + static_cast<std::ptrdiff_t>(begin),
+    const std::size_t middle = begin + (end - begin) / 2U;
+    std::nth_element(m_indices.begin() + static_cast<std::ptrdiff_t>(begin),
+                     m_indices.begin() + static_cast<std::ptrdiff_t>(middle),
                      m_indices.begin() + static_cast<std::ptrdiff_t>(end),
                      [&](const std::size_t lhs, const std::size_t rhs) {
                          const float leftCenter = CenterOnAxis(lhs);
@@ -91,7 +98,6 @@ std::size_t DynamicAabbBvh::BuildObject(const std::size_t begin, const std::size
                                 (leftCenter == rightCenter && lhs < rhs);
                      });
 
-    const std::size_t middle = begin + (end - begin) / 2U;
     const std::size_t left = BuildObject(begin, middle, objectIndex);
     const std::size_t right = BuildObject(middle, end, objectIndex);
     m_objects[objectIndex].left = left;

@@ -2495,6 +2495,63 @@ static void testBlueprintVM(Application& app) {
   CHECK(bg->running() && bg->runLog().size() == 1 && bg->runLog()[0] == "big" && bg->runIssues().empty());
   bg->stopRun();
   app.closeAllPopups();
+
+  // Regression: For Loop with huge bounds and unconnected body must still charge maxSteps and abort.
+  {
+    std::vector<BlueprintNode> bigLoop{libNode("Event BeginPlay", 1), libNode("For Loop", 2)};
+    bigLoop[1].inputs[1].defaultValue = "0";
+    bigLoop[1].inputs[2].defaultValue = "1000000000";
+    BlueprintVM vLoop(compileBlueprint(bigLoop, {W(1, 0, 2, 0)}));
+    vLoop.maxSteps = 50;
+    vLoop.fireAll();
+    CHECK(vLoop.aborted());
+  }
+
+  // Regression: Vector == Vector compares all 3 components (x, y, z), not just x.
+  {
+    BlueprintNode eq;
+    eq.id = 3;
+    eq.title = "==";
+    eq.category = BlueprintNodeCategory::PureMath;
+    eq.inputs = {{"A", BlueprintPinType::Vector, BlueprintPinKind::Input, "1,2,3"},
+                 {"B", BlueprintPinType::Vector, BlueprintPinKind::Input, "1,2,4"}};
+    eq.outputs = {{"Result", BlueprintPinType::Bool, BlueprintPinKind::Output, ""}};
+    std::vector<BlueprintNode> vecDiff{libNode("Event BeginPlay", 1), libNode("Print String", 2), eq};
+    BlueprintVM vDiff(compileBlueprint(vecDiff, {W(1, 0, 2, 0), W(3, 0, 2, 1)}));
+    vDiff.fireAll();
+    CHECK(vDiff.log().size() == 1 && vDiff.log()[0] == "false");
+
+    eq.inputs[1].defaultValue = "1,2,3";
+    std::vector<BlueprintNode> vecSame{libNode("Event BeginPlay", 1), libNode("Print String", 2), eq};
+    BlueprintVM vSame(compileBlueprint(vecSame, {W(1, 0, 2, 0), W(3, 0, 2, 1)}));
+    vSame.fireAll();
+    CHECK(vSame.log().size() == 1 && vSame.log()[0] == "true");
+  }
+
+  // Regression: nested fireNode from a native preserves recursion depth and aborts cleanly.
+  {
+    std::vector<BlueprintNode> rec{libNode("Event BeginPlay", 1), libNode("Destroy Actor", 2)};
+    BlueprintVM vRec(compileBlueprint(rec, {W(1, 0, 2, 0)}));
+    vRec.maxSteps = 100000;
+    vRec.registerNative("Destroy Actor", [&](BpCall&) { vRec.fireNode(1); });
+    vRec.fireAll();
+    CHECK(vRec.aborted());
+  }
+
+  // Regression: empty Menu and TableView key navigation and narrow SearchMenu do not crash.
+  {
+    TableView tv;
+    KeyEvent down{};
+    down.key = Key::Down;
+    CHECK(!tv.onKeyDown(down));
+    std::vector<MenuItem> emptyItems;
+    showContextMenu(std::move(emptyItems), Vec2{10.0f, 10.0f});
+    app.tick();
+    app.injectKey(Key::Down, true);
+    app.closeAllPopups();
+    app.tick();
+    CHECK(true);
+  }
 }
 
 static void testGizmo(Application& app) {

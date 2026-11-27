@@ -8,7 +8,10 @@
 #include <optional>
 #include <vector>
 
+#include "abstract_physics_objects_3d.h"
 #include "area_component.h"
+#include "collider_3d.h"
+#include "collider_component.h"
 #include "world_transform_component.h"
 #include "aabb.h"
 #include "vector3.h"
@@ -90,13 +93,33 @@ AreaOverlapQueryResult AreaOverlapSystem::Query(
     Scene::IEntityManager& entityManager, const std::size_t maximumResults,
     const AreaOverlapParticipation participation) {
     const AreaWorldAabbCache areaCache = BuildAreaWorldAabbCache(entityManager, participation);
+    AreaOverlapQueryResult result;
+    result.inspectedAreas = areaCache.areas.size();
+    result.truncated = areaCache.truncated;
+    if (areaCache.areas.empty()) {
+        std::size_t colliderCount = 0U;
+        entityManager.ForEach<Scene::WorldTransformComponent, Scene::ColliderComponent>(
+            [&entityManager, &colliderCount](const Scene::Entity entity,
+                                             const Scene::WorldTransformComponent& worldTransform,
+                                             const Scene::ColliderComponent& collider) {
+                if (colliderCount >= Detail::DynamicAabbBvh::kMaximumProxies) {
+                    return;
+                }
+                if (!Scene::IsPhysicsObjectInWorld(entityManager, entity) ||
+                    !Scene::Collider3D::IsParticipating(collider) ||
+                    !Math::IsFinite(worldTransform.worldPosition) ||
+                    !Math::IsFinite(worldTransform.worldScale)) {
+                    return;
+                }
+                ++colliderCount;
+            });
+        result.inspectedColliders = colliderCount;
+        return result;
+    }
     const std::vector<Detail::ColliderWorldAabb> colliders = Detail::BuildColliderWorldAabbCache(entityManager);
 
     const std::size_t resultCap = std::min(maximumResults, kMaximumAreaOverlapResults);
-    AreaOverlapQueryResult result;
-    result.inspectedAreas = areaCache.areas.size();
     result.inspectedColliders = colliders.size();
-    result.truncated = areaCache.truncated;
     result.overlaps.reserve(std::min(resultCap, colliders.size()));
     const auto appendOverlap = [&result, resultCap](const AreaOverlapPair& overlap) {
         if (result.overlaps.size() >= resultCap) {

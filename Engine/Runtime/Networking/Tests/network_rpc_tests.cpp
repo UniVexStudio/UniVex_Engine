@@ -318,6 +318,44 @@ TEST(NetworkRpcTest, Timeout_OverdueCallFails) {
     EXPECT_FALSE(harness.a.Cancel(callId));
 }
 
+TEST(NetworkRpcTest, Timeout_CallbackMutatingPendingCallsRemainsSafe) {
+    RpcHarness harness = MakeRpc();
+    ASSERT_TRUE(harness.b.RegisterMethod("never", EchoHandler()));
+    ASSERT_TRUE(harness.Establish(1000U));
+
+    RpcCallId secondId = kInvalidRpcCallId;
+    RpcCallId spawnedInCallback = kInvalidRpcCallId;
+    int callbacksFired = 0;
+
+    const RpcCallId firstId = harness.a.Call(
+        "never", {},
+        [&](const RpcCallId, const RpcOutcome& outcome) {
+            ++callbacksFired;
+            EXPECT_FALSE(outcome.ok);
+            // Mutate m_pending from inside the timeout callback (cancel sibling + issue new call).
+            if (secondId != kInvalidRpcCallId) {
+                static_cast<void>(harness.a.Cancel(secondId));
+            }
+            spawnedInCallback = harness.a.Call("never", {}, harness.FileA(), 500U);
+        },
+        100U);
+    secondId = harness.a.Call(
+        "never", {},
+        [&](const RpcCallId, const RpcOutcome& outcome) {
+            ++callbacksFired;
+            EXPECT_FALSE(outcome.ok);
+        },
+        100U);
+    ASSERT_NE(firstId, kInvalidRpcCallId);
+    ASSERT_NE(secondId, kInvalidRpcCallId);
+
+    harness.a.Update(1000U);
+    harness.a.Update(1100U);
+    EXPECT_EQ(callbacksFired, 2);
+    EXPECT_NE(spawnedInCallback, kInvalidRpcCallId);
+    EXPECT_TRUE(harness.a.Cancel(spawnedInCallback));
+}
+
 TEST(NetworkRpcTest, Timeout_ZeroNeverExpires) {
     // Sessions with disabled timeouts: only the RPC deadline could end this call, and there
     // is none.

@@ -91,6 +91,30 @@ TEST(LightClusterGridTest, ExtractsMoreThanSixteenDynamicLightsUpToClusterCap) {
     EXPECT_EQ(extracted.size(), 40U);
 }
 
+TEST(LightClusterGridTest, DistantPointLightBeyondOwnRangeFromCameraIsNotDropped) {
+    Memory::MemoryManager memoryManager;
+    Events::EventSystem eventSystem;
+    Scene::EntityManager em{memoryManager.GetDefaultAllocator(), eventSystem};
+
+    const Scene::Entity e = em.CreateEntity();
+    Scene::WorldTransformComponent wt{};
+    wt.worldPosition = Math::Vector3{0.0F, 0.0F, -50.0F};
+    wt.dirty = false;
+    em.AddComponent<Scene::WorldTransformComponent>(e, wt);
+
+    Scene::LightComponent lc{};
+    lc.type = Scene::LightType::Point;
+    lc.intensity = 4.0F;
+    lc.range = 5.0F; // range < distance(camera, light), yet still illuminates geometry near z = -50
+    em.AddComponent<Scene::LightComponent>(e, lc);
+
+    const std::vector<LightData> extracted =
+        ExtractClusteredLightsForView(em, Math::Vector3{0.0F, 0.0F, 0.0F}, 16U);
+    ASSERT_EQ(extracted.size(), 1U);
+    EXPECT_FLOAT_EQ(extracted[0].position.z, -50.0F);
+    EXPECT_FLOAT_EQ(extracted[0].range, 5.0F);
+}
+
 TEST(TaaMathTest, HaltonJitterStaysWithinHalfPixelAndAppliesToProjection) {
     const Math::Matrix4x4 proj =
         Math::Matrix4x4::Perspective(Math::DegToRad(60.0F), 16.0F / 9.0F, 0.1F, 100.0F);

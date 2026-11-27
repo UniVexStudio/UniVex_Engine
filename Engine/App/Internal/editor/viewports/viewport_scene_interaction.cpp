@@ -1343,6 +1343,9 @@ void ViewportSceneInteraction::UpdateViewportBookmarkHotkeys(const Editor::Edito
 bool ViewportSceneInteraction::EnsureHostDepth(ViewportSurface& surface,
                                                      const int width,
                                                      const int height) {
+    if (m_hostDepthFailed) {
+        return false;
+    }
     if (!m_hostDepthProgram.has_value()) {
         std::string error;
         m_hostDepthProgram = univex::render::ShaderProgram::Build(
@@ -1350,9 +1353,10 @@ bool ViewportSceneInteraction::EnsureHostDepth(ViewportSurface& surface,
         if (!m_hostDepthProgram.has_value()) {
             UVE_ERROR("uve_editor_app: viewport depth export shader build failed: {}", error);
             m_hostDepthFailed = true;
+            return false;
         }
     }
-    if (m_hostDepthFailed || !m_hostDepthProgram.has_value() || surface.FullscreenVao() == 0U) {
+    if (surface.FullscreenVao() == 0U) {
         return false;
     }
 #if defined(UNIVEX_GL_ES)

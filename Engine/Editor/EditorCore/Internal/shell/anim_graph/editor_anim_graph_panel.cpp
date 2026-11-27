@@ -719,7 +719,7 @@ void EditorAnimGraphPanel::RefreshLiveValues(const Graph& graph) {
         }
         m_shownLogLines = state.previewLog.size();
     }
-    if (m_canvas) {
+    if (m_canvas && state.previewing && !state.previewPaused) {
         m_canvas->invalidate();
     }
 }

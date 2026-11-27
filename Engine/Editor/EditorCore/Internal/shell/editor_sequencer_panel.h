@@ -83,6 +83,18 @@ private:
     std::string m_shownClock;
     std::string m_shownInfo;
     std::string m_shownStatus;
+    bool m_compactToolbar = false;
+    std::shared_ptr<bool> m_alive = std::make_shared<bool>(true);
+    const void* m_lastKeysClip = nullptr;
+    double m_lastKeysTime = -1.0;
+    bool m_lastKeysCurves = false;
+    bool m_lastKeysPlaying = false;
+    bool m_lastKeysDirty = false;
+    std::size_t m_lastKeysSelection = 0U;
+    int m_lastKeysEvent = -1;
+    std::string m_lastKeysFilter;
+    std::string m_lastKeysError;
+    Scene::Entity m_lastKeysPlayer = Scene::kInvalidEntity;
 };
 
 } // namespace UVE::Editor

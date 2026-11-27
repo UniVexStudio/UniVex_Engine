@@ -105,7 +105,7 @@ void ShaderProgram::ApplyTo(ICommandBuffer& commandBuffer) const {
     };
 
     const bool retainsState = commandBuffer.RetainsUniformStatePerPipeline();
-    const std::uint64_t bufferId = commandBuffer.GetInstanceId();
+    const std::uint64_t bufferId = commandBuffer.GetUniformStateEpoch();
     if (retainsState && m_lastSyncedPipeline == m_pipeline && m_lastSyncedBufferId == bufferId && bufferId != 0U) {
         for (const std::size_t index : m_dirtyUniformIndices) {
             PendingUniformEntry& entry = m_uniformEntries[index];

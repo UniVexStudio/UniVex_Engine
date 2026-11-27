@@ -4,6 +4,7 @@
 #pragma once
 
 #include <cstdint>
+#include <unordered_set>
 #include <vector>
 
 #include "collision_pair.h"
@@ -71,5 +72,10 @@ struct PhysicsIslandPartition final {
 /// `pairOrder`, because resolving a self-pair is meaningless.
 [[nodiscard]] PhysicsIslandPartition BuildPhysicsIslandPartition(
     const std::vector<CollisionPair>& pairs);
+
+/// Overload that keeps static/immovable bodies from bridging otherwise independent dynamic islands.
+[[nodiscard]] PhysicsIslandPartition BuildPhysicsIslandPartition(
+    const std::vector<CollisionPair>& pairs,
+    const std::unordered_set<Scene::Entity>& staticBodies);
 
 } // namespace UVE::Physics

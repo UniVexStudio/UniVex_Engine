@@ -486,5 +486,37 @@ TEST_F(EntityManagerTest, ForEach_NonTrivialComponents_AreVisitedIntact) {
     EXPECT_EQ(visits, static_cast<std::size_t>(kEntityCount));
 }
 
+TEST_F(EntityManagerTest, DestroyEntity_ReentrantDestroyAndCreateInListenerRemainsSafe) {
+    const Entity target = entityManager.CreateEntity();
+    entityManager.AddComponent<PositionComponent>(target).value = 42;
+
+    int listenerCalls = 0;
+    std::vector<Entity> spawnedInListener;
+    eventSystem.Subscribe<EntityDestroyedEvent>([&](const EntityDestroyedEvent& event) {
+        if (event.entity != target) {
+            return;
+        }
+        ++listenerCalls;
+        // Re-entrantly destroying the same entity must be a no-op.
+        entityManager.DestroyEntity(target);
+        // Creating many entities forces m_records vector reallocation while DestroyEntity is active.
+        for (int i = 0; i < 64; ++i) {
+            const Entity e = entityManager.CreateEntity();
+            entityManager.AddComponent<PositionComponent>(e).value = i;
+            spawnedInListener.push_back(e);
+        }
+    });
+
+    entityManager.DestroyEntity(target);
+    EXPECT_EQ(listenerCalls, 1);
+    EXPECT_FALSE(entityManager.IsAlive(target));
+    ASSERT_EQ(spawnedInListener.size(), 64U);
+    for (int i = 0; i < 64; ++i) {
+        const Entity e = spawnedInListener[static_cast<std::size_t>(i)];
+        EXPECT_TRUE(entityManager.IsAlive(e));
+        EXPECT_EQ(entityManager.GetComponent<PositionComponent>(e).value, i);
+    }
+}
+
 } // namespace
 } // namespace UVE::Scene::Tests

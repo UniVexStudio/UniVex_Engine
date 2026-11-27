@@ -273,6 +273,7 @@ struct TextureSlotRef {
     // GENERAL (a valid — if unoptimal — sampling layout, so cached sampled descriptors of
     // the same texture get invalidated and rewritten with the GENERAL layout too).
     bool isStorageImage = false;
+    bool isCubemap = false;
 };
 
 /// One reflected STORAGE_BUFFER binding (M2f): slot semantics mirror the texture slots — the
@@ -938,6 +939,7 @@ struct VulkanRenderDevice::Impl {
     };
     std::unordered_map<std::uint32_t, TextureRecord> textures;
     std::uint32_t fallbackTextureValue = 0U; // 1x1 opaque-white; used for unbound/destroyed slots
+    std::uint32_t fallbackCubemapValue = 0U; // 1x1x6 opaque-white cube; used for unbound samplerCube slots
 
     /// Tier 2.2: standalone sampler objects bound per texture slot (BindSampler). Shares the
     /// one nextHandleValue domain with every other kind (0 stays never-live, like textures).
@@ -2733,6 +2735,7 @@ void VulkanRenderDevice::Impl::DestroyAllResources() {
     }
     textures.clear();
     fallbackTextureValue = 0U;
+    fallbackCubemapValue = 0U;
     fallbackStorageImageValue = 0U; // M5b: reaped with the textures map above
     // M2d offscreen scratch depth targets (extent-keyed; independent of the swapchain).
     for (auto& [key, scratch] : offscreenDepthScratch) {
@@ -2847,6 +2850,22 @@ bool VulkanRenderDevice::CreateFallbackTexture() {
         return false;
     }
     m_impl->fallbackTextureValue = fallbackHandle.value;
+    TextureDesc fallbackCubeDesc{};
+    fallbackCubeDesc.type = TextureType::Cubemap;
+    fallbackCubeDesc.width = 1U;
+    fallbackCubeDesc.height = 1U;
+    fallbackCubeDesc.arrayLayers = 6U;
+    fallbackCubeDesc.format = TextureFormat::RGBA8Unorm;
+    fallbackCubeDesc.mipLevels = 1U;
+    std::array<std::byte, 6U * 4U> whiteCubePixels{};
+    whiteCubePixels.fill(std::byte{255});
+    const TextureHandle fallbackCubeHandle =
+        CreateTexture(fallbackCubeDesc, std::span<const std::byte>(whiteCubePixels));
+    if (fallbackCubeHandle == kInvalidTextureHandle) {
+        UVE_WARNING("VulkanRenderDevice: fallback cubemap creation failed");
+        return false;
+    }
+    m_impl->fallbackCubemapValue = fallbackCubeHandle.value;
     // M5b: the storage-image sink is a SEPARATE 1x1 black image — imageStore into the shared
     // white sampling fallback would corrupt its "unbound slots sample white" invariant. It is
     // an ordinary texture entry (teardown reaps it with the textures map); its transition to
@@ -3021,7 +3040,11 @@ public:
         m_commands.emplace_back(DrawIndexedCommand{indexCount, instanceCount, firstIndex});
     }
     void Draw(const std::uint32_t vertexCount, const std::uint32_t instanceCount) override {
-        m_commands.emplace_back(DrawCommand{vertexCount, instanceCount});
+        DrawRange(vertexCount, instanceCount, 0U);
+    }
+    void DrawRange(const std::uint32_t vertexCount, const std::uint32_t instanceCount,
+                   const std::uint32_t firstVertex) override {
+        m_commands.emplace_back(DrawCommand{vertexCount, instanceCount, firstVertex});
     }
     void DrawIndexedIndirect(const BufferHandle buffer, const std::uint64_t offsetBytes) override {
         m_commands.emplace_back(DrawIndexedIndirectCommandRecord{buffer, offsetBytes});
@@ -4536,11 +4559,13 @@ PipelineHandle VulkanRenderDevice::CreatePipeline(const PipelineDesc& desc,
                 const bool isStorageImage =
                     binding->descriptor_type == SPV_REFLECT_DESCRIPTOR_TYPE_STORAGE_IMAGE;
                 if (isCombinedSampler || isSampledImage || isStorageImage) {
+                    const bool isCubemap = binding->image.dim == SpvDimCube;
                     TextureSlotRef& slot = textureSlotsByBinding[setBindingKey];
                     if (slot.stageFlags != 0U &&
                         (slot.name != (binding->name != nullptr ? binding->name : "") ||
                          slot.separateSampler != isSampledImage ||
-                         slot.isStorageImage != isStorageImage)) {
+                         slot.isStorageImage != isStorageImage ||
+                         slot.isCubemap != isCubemap)) {
                         reflectionError = "the same texture binding carries different names or "
                                           "descriptor kinds (combined vs separate vs storage) "
                                           "across stages";
@@ -4552,6 +4577,7 @@ PipelineHandle VulkanRenderDevice::CreatePipeline(const PipelineDesc& desc,
                     slot.name = binding->name != nullptr ? binding->name : "";
                     slot.separateSampler = isSampledImage;
                     slot.isStorageImage = isStorageImage;
+                    slot.isCubemap = isCubemap;
                     slot.stageFlags |= stageModule.flag;
                     continue;
                 }
@@ -5573,6 +5599,25 @@ void VulkanRenderDevice::DestroyPipeline(const PipelineHandle pipeline) {
     found->second.pipelineVariants.clear();
     impl.vk.vkDestroyPipeline(impl.device, found->second.pipeline, nullptr);
     impl.vk.vkDestroyPipelineLayout(impl.device, found->second.layout, nullptr);
+    if (impl.descriptorPool != VK_NULL_HANDLE && impl.vk.vkFreeDescriptorSets != nullptr) {
+        for (std::uint32_t s = 0U; s < found->second.descriptorSetLayoutCount; ++s) {
+            if (found->second.descriptorSets[s] != VK_NULL_HANDLE) {
+                (void)impl.vk.vkFreeDescriptorSets(impl.device, impl.descriptorPool, 1U,
+                                                   &found->second.descriptorSets[s]);
+                found->second.descriptorSets[s] = VK_NULL_HANDLE;
+            }
+        }
+        for (auto& [cacheKey, cachedSets] : found->second.cachedTextureSets) {
+            (void)cacheKey;
+            for (std::uint32_t s = 0U; s < found->second.descriptorSetLayoutCount; ++s) {
+                if (cachedSets[s] != VK_NULL_HANDLE) {
+                    (void)impl.vk.vkFreeDescriptorSets(impl.device, impl.descriptorPool, 1U,
+                                                       &cachedSets[s]);
+                }
+            }
+        }
+        found->second.cachedTextureSets.clear();
+    }
     for (const VkDescriptorSetLayout setLayout : found->second.descriptorSetLayouts) {
         if (setLayout != VK_NULL_HANDLE) {
             impl.vk.vkDestroyDescriptorSetLayout(impl.device, setLayout, nullptr);
@@ -5978,8 +6023,11 @@ void VulkanRenderDevice::ReplayRecordedCommands(const std::vector<RecordedComman
                 // write-throwaway) — imageStore into the shared white sampling fallback would
                 // corrupt its "unbound slots sample white" invariant.
                 const bool storageImageSlot = record.textureSlots[slotIndex].isStorageImage;
+                const bool cubemapSlot = !storageImageSlot && record.textureSlots[slotIndex].isCubemap;
+                const std::uint32_t sampledFallback =
+                    cubemapSlot ? impl.fallbackCubemapValue : impl.fallbackTextureValue;
                 std::uint32_t value = storageImageSlot ? impl.fallbackStorageImageValue
-                                                       : impl.fallbackTextureValue;
+                                                       : sampledFallback;
                 const auto bound = currentTextureValues.find(static_cast<std::uint32_t>(slotIndex));
                 if (bound != currentTextureValues.end() &&
                     impl.textures.find(bound->second) != impl.textures.end()) {
@@ -5987,7 +6035,11 @@ void VulkanRenderDevice::ReplayRecordedCommands(const std::vector<RecordedComman
                 }
                 Impl::TextureRecord& slotRecord = impl.textures.at(value);
                 const TextureUsage slotUsage = GetEffectiveTextureUsage(slotRecord.desc);
-                if (storageImageSlot && !HasTextureUsage(slotUsage, TextureUsage::Storage)) {
+                if (!storageImageSlot &&
+                    ((cubemapSlot && slotRecord.desc.type != TextureType::Cubemap) ||
+                     (!cubemapSlot && slotRecord.desc.type == TextureType::Cubemap))) {
+                    value = sampledFallback;
+                } else if (storageImageSlot && !HasTextureUsage(slotUsage, TextureUsage::Storage)) {
                     impl.WarnOnce(
                         VulkanRenderDevice::Impl::kWarnedTextureUsageStorage,
                         "BindTexture: a texture created without TextureUsage::Storage was bound "
@@ -5998,7 +6050,7 @@ void VulkanRenderDevice::ReplayRecordedCommands(const std::vector<RecordedComman
                         VulkanRenderDevice::Impl::kWarnedTextureUsageSampled,
                         "BindTexture: a texture created without TextureUsage::Sampled was bound "
                         "to a sampler slot; the 1x1 white fallback is sampled instead");
-                    value = impl.fallbackTextureValue;
+                    value = sampledFallback;
                 } else if (storageImageSlot && IsTextureFormatCompressed(slotRecord.desc.format)) {
                     impl.WarnOnce(
                         VulkanRenderDevice::Impl::kWarnedStorageImageCompressed,
@@ -6038,7 +6090,7 @@ void VulkanRenderDevice::ReplayRecordedCommands(const std::vector<RecordedComman
                             "BindTexture: a Depth32Float texture was bound on a device without "
                             "core dynamic rendering; depth-texture sampling needs the M2e dynamic "
                             "arm — the 1x1 white fallback is sampled instead");
-                        value = impl.fallbackTextureValue;
+                        value = sampledFallback;
                     }
                 } else if (impl.framePassState.passOpen && !impl.framePassState.openPassIsSwapchain &&
                            (&slotRecord == impl.framePassState.openOffscreenDepthRecord ||
@@ -6055,7 +6107,7 @@ void VulkanRenderDevice::ReplayRecordedCommands(const std::vector<RecordedComman
                         "fallback (1x1 white for sampling, black sink for storage writes) is "
                         "used for this draw");
                     value = storageImageSlot ? impl.fallbackStorageImageValue
-                                             : impl.fallbackTextureValue;
+                                             : sampledFallback;
                 }
                 tupleValues.push_back(value);
                 tupleRecords.push_back(&impl.textures.at(value));
@@ -7061,7 +7113,8 @@ void VulkanRenderDevice::ReplayRecordedCommands(const std::vector<RecordedComman
                         "submit replay: Draw/DrawIndexed reached replay with a COMPUTE "
                         "pipeline bound; the draw is skipped (bind a graphics pipeline first)");
                 } else if (flushStateForActivePipeline()) {
-                    impl.vk.vkCmdDraw(impl.commandBuffer, op.vertexCount, op.instanceCount, 0U, 0U);
+                    impl.vk.vkCmdDraw(impl.commandBuffer, op.vertexCount, op.instanceCount,
+                                      op.firstVertex, 0U);
                 }
             } else if constexpr (std::is_same_v<OpT, DrawIndexedCommand>) {
                 if (activePipelineIsCompute()) {

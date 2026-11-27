@@ -3836,7 +3836,9 @@ void RollbackRestoredEntities(IEntityManager& entityManager, std::vector<Entity>
             // "AnimationTree", so a saved driver was always visited first. Renaming those two to
             // AnimationSequencer and AnimationGraph moved AnimationGraph AHEAD of the driver, and a
             // graph then synthesized a throwaway driver that the real one collided with.
-            const bool documentHasMixer = componentsJson.contains("AnimationDriverComponent");
+            const bool documentHasMixer =
+                componentsJson.contains("AnimationDriverComponent") ||
+                componentsJson.contains("AnimationMixerComponent");
             for (const auto& [componentName, componentJson] : componentsJson.items()) {
                 if (componentName == "DisabledComponent") {
                     entityManager.AddComponent<DisabledComponent>(entity);
@@ -3957,10 +3959,10 @@ void RollbackRestoredEntities(IEntityManager& entityManager, std::vector<Entity>
                     throw std::runtime_error("unknown scene component: " + componentName);
                 }
                 registrationIt->second.fromJson(entityManager, entity, componentJson);
-                hasTransform = hasTransform || componentName == "TransformComponent";
-                const bool isMixer = componentName == "AnimationDriverComponent";
+                hasTransform = hasTransform || canonicalName == "TransformComponent";
+                const bool isMixer = canonicalName == "AnimationDriverComponent";
                 const bool isMixerChild =
-                    componentName == "AnimationSequencerComponent" || componentName == "AnimationGraphComponent";
+                    canonicalName == "AnimationSequencerComponent" || canonicalName == "AnimationGraphComponent";
                 if (isMixer || isMixerChild) {
                     // A target the file does not contain stays unset, which means "the parent".
                     Entity target = kInvalidEntity;

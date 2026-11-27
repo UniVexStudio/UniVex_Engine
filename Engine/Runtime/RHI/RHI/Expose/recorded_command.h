@@ -63,6 +63,7 @@ struct DrawIndexedCommand {
 struct DrawCommand {
     std::uint32_t vertexCount = 0;
     std::uint32_t instanceCount = 1;
+    std::uint32_t firstVertex = 0;
 };
 /// CS7: one indexed indirect draw. The buffer must be an IndirectStorage buffer holding at least
 /// one DrawIndexedIndirectCommand at `offsetBytes`; the GPU reads the parameters from there at

@@ -123,8 +123,8 @@ void Application::layoutIfNeeded() {
 void Application::arrangePopup(Popup& p) {
   Vec2 ws = windowSize();
   Vec2 ds = p.widget->measure(ws);
-  ds.x = std::min(ds.x, ws.x - 8);
-  ds.y = std::min(ds.y, ws.y - 8);
+  ds.x = std::min(ds.x, std::max(1.f, ws.x - 8));
+  ds.y = std::min(ds.y, std::max(1.f, ws.y - 8));
   Rect a = p.opt.anchor;
   Vec2 pos;
   switch (p.opt.placement) {
@@ -233,8 +233,10 @@ void Application::movePopup(const Widget* w, Vec2 topLeft) {
     if (p.widget.get() == w) {
       Vec2 ws = windowSize();
       Rect r = p.widget->rect();
-      topLeft.x = std::clamp(topLeft.x, 0.f - r.w + 80.f, ws.x - 80.f);
-      topLeft.y = std::clamp(topLeft.y, 0.f, ws.y - 32.f);
+      const float minX = 0.f - r.w + 80.f, maxX = std::max(minX, ws.x - 80.f);
+      const float maxY = std::max(0.f, ws.y - 32.f);
+      topLeft.x = std::clamp(topLeft.x, minX, maxX);
+      topLeft.y = std::clamp(topLeft.y, 0.f, maxY);
       p.opt.placement = PopupPlacement::AtPoint;
       p.opt.anchor = Rect{topLeft.x, topLeft.y, 0, 0};
       p.widget->arrange({std::floor(topLeft.x), std::floor(topLeft.y), r.w, r.h});
@@ -846,8 +848,10 @@ void Application::windowMouseButton(int id, Vec2 p, MouseButton b, bool down, in
     for (int other : std::vector<int>(m_zOrder)) {
       if (other == id) continue;
       inWindow(other, [&] {
+        std::vector<Ref<Widget>> toClose;
         for (size_t i = m_popups.size(); i-- > 0;)
-          if (m_popups[i].opt.dismissOnOutside && !m_popups[i].opt.modal) closePopup(m_popups[i].widget.get());
+          if (m_popups[i].opt.dismissOnOutside && !m_popups[i].opt.modal) toClose.push_back(m_popups[i].widget);
+        for (const Ref<Widget>& w : toClose) closePopup(w.get());
       });
     }
   }

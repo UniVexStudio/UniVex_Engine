@@ -125,9 +125,6 @@ std::vector<LightData> ExtractClusteredLightsForView(Scene::IEntityManager& enti
                 score = 1.0e9F + data.intensity;
             } else {
                 const float dist = Math::Length(data.position - viewPosition);
-                if (data.range > 0.0F && dist > data.range) {
-                    return;
-                }
                 const float safeDistSq = std::max(dist * dist, 0.25F);
                 score = data.intensity / safeDistSq;
             }

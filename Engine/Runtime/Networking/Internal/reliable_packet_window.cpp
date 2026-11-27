@@ -483,10 +483,9 @@ bool ApplyReliableAcknowledgements(
     }
     bool changed = false;
     const std::uint32_t cumulativeDistance = header.acknowledgedSequence - oldestPendingSequence;
-    if (cumulativeDistance < kHalfSequenceSpace &&
-        cumulativeDistance < kReliablePacketMaximumSelectiveAckBits) {
+    if (cumulativeDistance < kHalfSequenceSpace) {
         const std::uint32_t cumulativeMask =
-            cumulativeDistance == kReliablePacketMaximumSelectiveAckBits - 1U
+            cumulativeDistance >= kReliablePacketMaximumSelectiveAckBits - 1U
                 ? std::numeric_limits<std::uint32_t>::max()
                 : (1U << (cumulativeDistance + 1U)) - 1U;
         const std::uint32_t before = pendingSequenceMask;
