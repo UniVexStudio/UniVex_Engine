@@ -47,17 +47,42 @@ namespace {
 /// Writes `document` to `path`, logging a detailed Error (path + reason) on failure — the same
 /// contract ConfigManager's save path uses.
 [[nodiscard]] bool SaveDocumentToFile(const nlohmann::json& document, const std::filesystem::path& path) {
-    std::ofstream file(path);
-    if (!file.is_open()) {
-        UVE_ERROR("AssetDatabase: failed to open \"{}\" for writing: {}", path.string(),
-                   std::strerror(errno));
-        return false;
+    std::filesystem::path tempPath = path;
+    tempPath += ".uvdb.tmp";
+    {
+        std::ofstream file(tempPath, std::ios::binary | std::ios::trunc);
+        if (!file.is_open()) {
+            UVE_ERROR("AssetDatabase: failed to open \"{}\" for writing: {}", tempPath.string(),
+                      std::strerror(errno));
+            return false;
+        }
+        file << document.dump(4);
+        file.flush();
+        if (!file.good()) {
+            UVE_ERROR("AssetDatabase: failed to write registry to \"{}\": stream error after write",
+                      tempPath.string());
+            std::error_code rmErr;
+            std::filesystem::remove(tempPath, rmErr);
+            return false;
+        }
     }
-    file << document.dump(4);
-    if (!file.good()) {
-        UVE_ERROR("AssetDatabase: failed to write registry to \"{}\": stream error after write",
-                   path.string());
-        return false;
+    std::error_code ec;
+    std::filesystem::rename(tempPath, path, ec);
+    if (ec) {
+        ec.clear();
+        std::filesystem::remove(path, ec);
+        ec.clear();
+        std::filesystem::rename(tempPath, path, ec);
+        if (ec) {
+            ec.clear();
+            std::filesystem::copy_file(tempPath, path, std::filesystem::copy_options::overwrite_existing, ec);
+            std::error_code rmErr;
+            std::filesystem::remove(tempPath, rmErr);
+            if (ec) {
+                UVE_ERROR("AssetDatabase: failed to publish registry to \"{}\": {}", path.string(), ec.message());
+                return false;
+            }
+        }
     }
     return true;
 }

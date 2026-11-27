@@ -102,7 +102,9 @@ private:
     try {
         const nlohmann::json json = nlohmann::json::parse(text);
         GameStateMetadata metadata;
-        metadata.savedAtUnixSeconds = json.at("savedAtUnixSeconds").get<std::int64_t>();
+        metadata.savedAtUnixSeconds = json.contains("savedAtUnixSeconds")
+                                          ? json.at("savedAtUnixSeconds").get<std::int64_t>()
+                                          : json.at("savedAtUnixSecondsUVE").get<std::int64_t>();
         metadata.engineVersionMajor = json.at("engineVersionMajor").get<std::uint32_t>();
         metadata.engineVersionMinor = json.at("engineVersionMinor").get<std::uint32_t>();
         metadata.engineVersionPatch = json.at("engineVersionPatch").get<std::uint32_t>();

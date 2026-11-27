@@ -1,5 +1,6 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 #include "editor_montage_editor.h"
+#include "editor_layout_store.h"
 #include "editor_fit_width.h"
 
 #include "editor.h"
@@ -296,6 +297,7 @@ prism::Ref<prism::Widget> EditorMontageEditor::Build() {
     auto centre = prism::make<prism::Splitter>(prism::Orientation::Vertical);
     centre->add(m_viewport, prism::Splitter::Pane{480.0F, 160.0F, 1e9F, true});
     centre->add(Panel(timelineScroll), prism::Splitter::Pane{230.0F, 120.0F, 1e9F, false});
+    EditorLayoutStore::Instance().BindSplitter("montage.centre", *centre);
 
     m_details = prism::make<prism::ScrollBox>();
     m_sections = prism::make<prism::ScrollBox>();
@@ -363,6 +365,7 @@ prism::Ref<prism::Widget> EditorMontageEditor::Build() {
     auto notifiesPage = prism::make<prism::Splitter>(prism::Orientation::Vertical);
     notifiesPage->add(m_notifyList, prism::Splitter::Pane{300.0F, 100.0F, 1e9F, true});
     notifiesPage->add(m_curveList, prism::Splitter::Pane{220.0F, 100.0F, 1e9F, false});
+    EditorLayoutStore::Instance().BindSplitter("montage.notifies", *notifiesPage);
 
     auto tabs = prism::make<prism::TabView>();
     tabs->addTab("Inspector", prism::Icon::Properties, Panel(m_details));
@@ -373,6 +376,7 @@ prism::Ref<prism::Widget> EditorMontageEditor::Build() {
     auto columns = prism::make<prism::Splitter>(prism::Orientation::Horizontal);
     columns->add(centre, prism::Splitter::Pane{900.0F, 400.0F, 1e9F, true});
     columns->add(tabs, prism::Splitter::Pane{360.0F, 260.0F, 800.0F, false});
+    EditorLayoutStore::Instance().BindSplitter("montage.columns", *columns);
     window->add(columns, prism::Slot{1.0F});
 
     auto frame = prism::make<prism::Border>();

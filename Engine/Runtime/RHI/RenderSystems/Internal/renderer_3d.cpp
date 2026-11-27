@@ -1554,6 +1554,7 @@ struct Renderer3D::Impl {
         std::size_t capacity = 0U;
     };
     std::vector<InstancePassBuffers> instancePassBuffers;
+    std::uint64_t lastPoolResetPresentEpoch = ~std::uint64_t{0U};
     std::size_t nextInstancePassBufferIndex = 0U;
     std::vector<BufferHandle> instanceBaseBuffers;
     std::vector<std::int32_t> instanceBaseCachedValues;
@@ -5829,9 +5830,13 @@ void Renderer3D::CaptureUIViews(Scene::IEntityManager& entityManager, const Scen
 
 void Renderer3D::RenderFrame(Scene::IEntityManager& entityManager, Scene::Entity cameraEntity) {
     if (!m_impl->probeCaptureViewActive) {
-        m_impl->nextInstancePassBufferIndex = 0U;
-        m_impl->nextInstanceBaseBufferIndex = 0U;
-        m_impl->nextUiVertexBufferIndex = 0U;
+        const std::uint64_t presentEpoch = m_impl->renderDevice.GetPresentEpoch();
+        if (presentEpoch != m_impl->lastPoolResetPresentEpoch) {
+            m_impl->lastPoolResetPresentEpoch = presentEpoch;
+            m_impl->nextInstancePassBufferIndex = 0U;
+            m_impl->nextInstanceBaseBufferIndex = 0U;
+            m_impl->nextUiVertexBufferIndex = 0U;
+        }
         CaptureUIViews(entityManager, cameraEntity);
     }
     const bool capturingProbe = m_impl->probeCaptureViewActive;

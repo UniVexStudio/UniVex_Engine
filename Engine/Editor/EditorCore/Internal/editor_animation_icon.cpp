@@ -431,8 +431,13 @@ struct AnimationIconWorker final {
                 jobs.pop_front();
                 insertAt = insertAt > 0U ? insertAt - 1U : 0U;
             }
-            Editor::AnimationIcon icon = MakeIcon(job.path, job.written);
-            WriteCache(job.cacheFile, icon);
+            Editor::AnimationIcon icon;
+            try {
+                icon = MakeIcon(job.path, job.written);
+                WriteCache(job.cacheFile, icon);
+            } catch (...) {
+                icon = Editor::AnimationIcon{};
+            }
             const std::scoped_lock lock(mutex);
             pending.erase(job.key);
             done.emplace_back(job.key, std::move(icon));

@@ -1,5 +1,6 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 #include "editor_tools_windows.h"
+#include "editor_layout_store.h"
 
 #include "editor.h"
 #include "editor_audio_mixer.h"
@@ -292,6 +293,7 @@ prism::Ref<prism::Widget> EditorNetworkCaptureWindow::Build() {
     auto body = prism::make<prism::Splitter>(prism::Orientation::Vertical);
     body->add(Panel(list), prism::Splitter::Pane{240.0F, 100.0F, 1e9F, true});
     body->add(Panel(detail), prism::Splitter::Pane{220.0F, 100.0F, 1e9F, false});
+    EditorLayoutStore::Instance().BindSplitter("networkCapture.body", *body);
     window->add(body, prism::Slot{1.0F});
     return window;
 }

@@ -316,6 +316,7 @@ public:
     /// a minimized (zero-size) framebuffer skips rendering for the frame entirely — a documented
     /// no-op, never an error, mirroring the GL device's minimization contract.
     void Present() override;
+    [[nodiscard]] std::uint64_t GetPresentEpoch() const noexcept override { return m_presentEpoch; }
 
     [[nodiscard]] bool IsUsable() const noexcept override;
     [[nodiscard]] std::string_view GetBackendName() const noexcept override;
@@ -359,6 +360,7 @@ private:
 
     struct Impl;
     std::unique_ptr<Impl> m_impl;
+    std::uint64_t m_presentEpoch = 0U;
 };
 
 } // namespace UVE::Render

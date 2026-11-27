@@ -24,6 +24,9 @@
 #include "editor_entity_label.h"
 #include "editor_text_search.h"
 #include <algorithm>
+#if defined(__ANDROID__) || defined(__GLIBC__)
+#include <malloc.h>
+#endif
 #include <chrono>
 #include <unordered_map>
 #include <unordered_set>
@@ -233,6 +236,7 @@ bool DecodeRawImageThumbnailPixels(const std::filesystem::path& absolutePath,
 Editor::Editor(Core::EngineServices& services, std::filesystem::path activeScenePath,
                      const std::size_t historyCapacity, Core::ISimulationControl* const simulationControl)
     : m_services(&services),
+      m_levelServices(&services),
       m_simulationControl(simulationControl),
       m_activeScenePath(std::move(activeScenePath)),
       m_historyCapacity(std::max<std::size_t>(std::size_t{1U}, historyCapacity)) {
@@ -6632,7 +6636,7 @@ std::uintptr_t Editor::GetMeshThumbnail(const std::filesystem::path& relativePat
         Asset::IAssetDatabase& assetDatabase = m_services->GetAssetDatabase();
         std::vector<std::unique_ptr<MaterialThumbnailImage>> images;
         const auto lookOf = [&](const Asset::AssetGuid materialGuid) {
-            return buildLook(materialGuid, assetDatabase, images, false);
+            return buildLook(materialGuid, assetDatabase, images, true);
         };
         const auto pose = [&](Asset::MeshAsset& model, const std::filesystem::path& file) {
             std::filesystem::path skeletonFile = file;
@@ -7486,18 +7490,36 @@ void Editor::EnsureBackgroundModelImportWorker() {
                 }
             }
 
+            const auto trimHeapAfterHeavyImport = []() noexcept {
+#if defined(__ANDROID__) && defined(M_PURGE)
+                static_cast<void>(mallopt(M_PURGE, 0));
+#elif defined(__GLIBC__)
+                static_cast<void>(malloc_trim(0));
+#endif
+            };
             if (hasCopy) {
-                const bool copied = CopyFileAtomically(copyTask.source, copyTask.destination);
-                if (copied) {
-                    std::lock_guard<std::mutex> lock(m_bgImportMutex);
-                    m_bgCompletedCopies.push_back(copyTask.destination);
-                    ++m_bgCopyBatchDone;
-                } else {
-                    std::lock_guard<std::mutex> lock(m_bgImportMutex);
-                    ++m_bgCopyBatchDone;
+                bool copied = false;
+                try {
+                    copied = CopyFileAtomically(copyTask.source, copyTask.destination);
+                } catch (const std::exception& e) {
+                    UVE_WARNING("Editor: background asset copy failed: {}", e.what());
+                } catch (...) {
+                    UVE_WARNING("Editor: background asset copy failed with an unknown exception");
                 }
+                std::lock_guard<std::mutex> lock(m_bgImportMutex);
+                if (copied) {
+                    m_bgCompletedCopies.push_back(copyTask.destination);
+                }
+                ++m_bgCopyBatchDone;
             } else if (hasProbe) {
-                EditorModelSourceInfo info = ReadModelSourceInfo(probeTask.source);
+                EditorModelSourceInfo info;
+                try {
+                    info = ReadModelSourceInfo(probeTask.source);
+                } catch (const std::exception& e) {
+                    UVE_WARNING("Editor: background model probe failed for {}: {}", probeTask.key, e.what());
+                } catch (...) {
+                    UVE_WARNING("Editor: background model probe failed for {} with an unknown exception", probeTask.key);
+                }
                 std::lock_guard<std::mutex> lock(m_bgImportMutex);
                 m_bgProbeQueuedKeys.erase(probeTask.key);
                 m_bgCompletedProbes.push_back(BgModelProbeResult{
@@ -7505,50 +7527,75 @@ void Editor::EnsureBackgroundModelImportWorker() {
                     std::move(info)});
                 ++m_bgProbeBatchDone;
             } else if (hasModel) {
-                // One lightweight single-job queue per model keeps peak job history O(1) across 1,000+ imports.
-                Asset::AssetImportQueue singleJobQueue(m_services->GetAssetImporter(),
-                                                          m_services->GetAssetDatabase(),
-                                                          m_services->GetDerivedArtifactCache());
                 BgModelConvertResult outcome;
                 outcome.key = modelTask.key;
-                if (const std::optional<Asset::AssetImportJobId> id =
-                        singleJobQueue.Enqueue(std::move(modelTask.request));
-                    id.has_value()) {
-                    static_cast<void>(singleJobQueue.Tick());
-                    const std::vector<Asset::AssetImportJob> jobs = singleJobQueue.GetJobs();
-                    const auto found = std::find_if(jobs.begin(), jobs.end(), [id](const Asset::AssetImportJob& job) {
-                        return job.id == *id;
-                    });
-                    if (found != jobs.end() && found->state == Asset::AssetImportJobState::Succeeded) {
-                        outcome.succeeded = true;
-                        outcome.cacheHit = found->cacheHit;
-                    } else {
-                        outcome.errorReason = "the importer reported no reason";
-                        if (found != jobs.end()) {
-                            for (const Asset::AssetImportDiagnostic& diagnostic : found->diagnostics) {
-                                if (diagnostic.severity == Asset::AssetImportDiagnosticSeverity::Error &&
-                                    !diagnostic.message.empty()) {
-                                    outcome.errorReason = diagnostic.message;
+                try {
+                    // Use stable level services (never swapped by EntityDocumentScope) with an O(1) single-job queue.
+                    Core::EngineServices* const svc = m_levelServices != nullptr ? m_levelServices : m_services;
+                    Asset::AssetImportQueue singleJobQueue(svc->GetAssetImporter(),
+                                                           svc->GetAssetDatabase(),
+                                                           svc->GetDerivedArtifactCache());
+                    if (const std::optional<Asset::AssetImportJobId> id =
+                            singleJobQueue.Enqueue(std::move(modelTask.request));
+                        id.has_value()) {
+                        static_cast<void>(singleJobQueue.Tick());
+                        const std::vector<Asset::AssetImportJob> jobs = singleJobQueue.GetJobs();
+                        const auto found = std::find_if(jobs.begin(), jobs.end(), [id](const Asset::AssetImportJob& job) {
+                            return job.id == *id;
+                        });
+                        if (found != jobs.end() && found->state == Asset::AssetImportJobState::Succeeded) {
+                            outcome.succeeded = true;
+                            outcome.cacheHit = found->cacheHit;
+                        } else {
+                            outcome.errorReason = "the importer reported no reason";
+                            if (found != jobs.end()) {
+                                for (const Asset::AssetImportDiagnostic& diagnostic : found->diagnostics) {
+                                    if (diagnostic.severity == Asset::AssetImportDiagnosticSeverity::Error &&
+                                        !diagnostic.message.empty()) {
+                                        outcome.errorReason = diagnostic.message;
+                                    }
                                 }
                             }
                         }
+                    } else {
+                        outcome.errorReason = "unable to enqueue model import";
                     }
-                } else {
-                    outcome.errorReason = "unable to enqueue model import";
+                } catch (const std::exception& e) {
+                    outcome.succeeded = false;
+                    outcome.errorReason = e.what();
+                    UVE_WARNING("Editor: background model import threw for {}: {}", outcome.key, e.what());
+                } catch (...) {
+                    outcome.succeeded = false;
+                    outcome.errorReason = "unexpected exception during model import";
+                    UVE_WARNING("Editor: background model import threw an unknown exception for {}", outcome.key);
                 }
+                trimHeapAfterHeavyImport();
                 std::lock_guard<std::mutex> lock(m_bgImportMutex);
                 m_bgCompletedModels.push_back(std::move(outcome));
             } else if (hasAnim) {
-                ExtractedModelAnimations extracted = ExtractModelAnimationsOffThread(
-                    animTask.absoluteSource, animTask.contentRoot, animTask.importedModel, animTask.keepInModel,
-                    animTask.retargetedCurrent);
                 BgAnimExtractResult res;
-                res.absoluteSource = std::move(extracted.absoluteSource);
-                res.contentRoot = std::move(extracted.contentRoot);
-                res.importedModel = std::move(extracted.importedModel);
-                res.keepInModel = extracted.keepInModel;
-                res.embeddedTakes = std::move(extracted.embeddedTakes);
-                res.writtenLooseFiles = std::move(extracted.writtenLooseFiles);
+                res.absoluteSource = animTask.absoluteSource;
+                res.contentRoot = animTask.contentRoot;
+                res.importedModel = animTask.importedModel;
+                res.keepInModel = animTask.keepInModel;
+                try {
+                    ExtractedModelAnimations extracted = ExtractModelAnimationsOffThread(
+                        animTask.absoluteSource, animTask.contentRoot, animTask.importedModel, animTask.keepInModel,
+                        animTask.retargetedCurrent);
+                    res.absoluteSource = std::move(extracted.absoluteSource);
+                    res.contentRoot = std::move(extracted.contentRoot);
+                    res.importedModel = std::move(extracted.importedModel);
+                    res.keepInModel = extracted.keepInModel;
+                    res.embeddedTakes = std::move(extracted.embeddedTakes);
+                    res.writtenLooseFiles = std::move(extracted.writtenLooseFiles);
+                } catch (const std::exception& e) {
+                    UVE_WARNING("Editor: background animation extraction threw for {}: {}",
+                                animTask.absoluteSource.filename().string(), e.what());
+                } catch (...) {
+                    UVE_WARNING("Editor: background animation extraction threw an unknown exception for {}",
+                                animTask.absoluteSource.filename().string());
+                }
+                trimHeapAfterHeavyImport();
                 std::lock_guard<std::mutex> lock(m_bgImportMutex);
                 m_bgAnimQueuedKeys.erase(animTask.absoluteSource.generic_string());
                 m_bgCompletedAnims.push_back(std::move(res));
@@ -7763,7 +7810,16 @@ void Editor::TickExternalContentWatcher() {
 
     if (m_externalScanFuture.valid() &&
         m_externalScanFuture.wait_for(std::chrono::seconds::zero()) == std::future_status::ready) {
-        std::unordered_map<std::string, ExternalFileStat> scanned = m_externalScanFuture.get();
+        std::unordered_map<std::string, ExternalFileStat> scanned;
+        try {
+            scanned = m_externalScanFuture.get();
+        } catch (const std::exception& e) {
+            UVE_WARNING("Editor: background content scan failed: {}", e.what());
+            return;
+        } catch (...) {
+            UVE_WARNING("Editor: background content scan failed with an unknown exception");
+            return;
+        }
         bool hasReadyDelta = false;
 
         // Detect deleted paths.

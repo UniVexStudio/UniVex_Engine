@@ -110,6 +110,7 @@ public:
     [[nodiscard]] RenderOperationResult SubmitWithSync(std::unique_ptr<ICommandBuffer> commandBuffer,
                                                             const SubmitDesc &desc) override;
     void Present() override;
+    [[nodiscard]] std::uint64_t GetPresentEpoch() const noexcept override;
 
     [[nodiscard]] bool IsUsable() const noexcept override;
     [[nodiscard]] std::string_view GetBackendName() const noexcept override;

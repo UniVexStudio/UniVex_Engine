@@ -1447,6 +1447,7 @@ void GlRenderDevice::Submit(std::unique_ptr<ICommandBuffer> commandBuffer) {
 }
 
 void GlRenderDevice::Present() {
+    ++m_presentEpoch;
     if (IsUsable()) {
         CollectRetiredTextures();
         m_impl->state.windowManager->SwapBuffers();

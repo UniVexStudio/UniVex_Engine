@@ -1,5 +1,6 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 #include "editor_vfx_editor.h"
+#include "editor_layout_store.h"
 
 #include "editor.h"
 #include "editor_chrome.h"
@@ -281,6 +282,7 @@ prism::Ref<prism::Widget> EditorVfxEditor::Build() {
     columns->add(m_leftColumn, prism::Splitter::Pane{395.0F, 330.0F, 640.0F, false});
     columns->add(BuildCentreColumn(), prism::Splitter::Pane{695.0F, 420.0F, 1e9F, true});
     columns->add(m_rightColumn, prism::Splitter::Pane{350.0F, 260.0F, 600.0F, false});
+    EditorLayoutStore::Instance().BindSplitter("vfx.columns", *columns);
     window->add(columns, prism::Slot{1.0F});
 
     auto frame = prism::make<VfxWindowFrame>();
@@ -633,6 +635,7 @@ prism::Ref<prism::Widget> EditorVfxEditor::BuildLeftColumn() {
     auto leftSplit = prism::make<prism::Splitter>(prism::Orientation::Vertical);
     leftSplit->add(Panel(previewPane), prism::Splitter::Pane{470.0F, 280.0F, 1e9F, true});
     leftSplit->add(Panel(emittersBox), prism::Splitter::Pane{310.0F, 160.0F, 1e9F, false});
+    EditorLayoutStore::Instance().BindSplitter("vfx.left", *leftSplit);
     return leftSplit;
 }
 
@@ -783,6 +786,7 @@ prism::Ref<prism::Widget> EditorVfxEditor::BuildCentreColumn() {
     centreSplit->add(Panel(graphBox), prism::Splitter::Pane{590.0F, 260.0F, 1e9F, true});
     m_compilePanel = Panel(compileBox);
     centreSplit->add(m_compilePanel, prism::Splitter::Pane{165.0F, 110.0F, 360.0F, false});
+    EditorLayoutStore::Instance().BindSplitter("vfx.centre", *centreSplit);
     return centreSplit;
 }
 
@@ -827,6 +831,7 @@ prism::Ref<prism::Widget> EditorVfxEditor::BuildRightColumn() {
     auto rightSplit = prism::make<prism::Splitter>(prism::Orientation::Vertical);
     rightSplit->add(Panel(inspectorBox), prism::Splitter::Pane{460.0F, 200.0F, 1e9F, true});
     rightSplit->add(Panel(paramsBox), prism::Splitter::Pane{280.0F, 150.0F, 1e9F, false});
+    EditorLayoutStore::Instance().BindSplitter("vfx.right", *rightSplit);
     return rightSplit;
 }
 

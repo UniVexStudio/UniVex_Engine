@@ -936,7 +936,7 @@ void showDialog(const std::string& title, Ref<Widget> content, std::vector<Dialo
   bar->dialog = root;
   bar->setBackground(ThemeColor(&Theme::header));
   bar->setBorder(ThemeColor(&Theme::borderSoft), Margin(0, 0, 0, 1));
-  bar->setPadding(Margin(compact ? 12.f : 16.f, 0, 6.f, 0));
+  bar->setPadding(Margin(compact ? 12.f : 16.f, 0, 10.f, 0));
   bar->setFixedHeight(barH);
   auto row = hbox();
   auto lbl = make<Label>(title, FontRole::Semibold);
@@ -957,7 +957,7 @@ void showDialog(const std::string& title, Ref<Widget> content, std::vector<Dialo
 
   auto foot = make<Border>();
   foot->setBorder(t.borderSoft, Margin(0, 1, 0, 0));
-  foot->setPadding(Margin(compact ? 10.f : 14.f, footPadY));
+  foot->setPadding(Margin(compact ? 12.f : 14.f, footPadY, compact ? 14.f : 16.f, footPadY + 2.f));
   auto frow = hbox(8);
   frow->add(make<Spacer>(), {.fill = 1});
   for (auto& b : buttons) {

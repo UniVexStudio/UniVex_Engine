@@ -2930,6 +2930,8 @@ private:
     [[nodiscard]] bool IsRiggedModelSource(const std::filesystem::path& relativeSource) const;
 
     Core::EngineServices* m_services = nullptr;
+    /// Level-document services (never swapped by EntityDocumentScope); safe for the background import worker.
+    Core::EngineServices* const m_levelServices = nullptr;
     /// The editor's own settings, declared by RegisterEditorSettings; read and written in the
     /// services' settings store.
     Config::SettingsRegistry m_settingsRegistry;
@@ -3210,6 +3212,7 @@ private:
         std::vector<std::shared_ptr<const Asset::AnimationClipAsset>> redo;
         /// Edited since it was loaded or saved.
         bool dirty = false;
+        std::uint64_t editRevision = 0U;
         /// Record: moving the animated object (gizmo or Details) keys its transform at the playhead.
         bool recording = false;
         /// Sequencer settings: the preview's speed, the view following the playhead while it plays,

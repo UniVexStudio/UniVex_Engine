@@ -95,6 +95,8 @@ private:
     std::string m_lastKeysFilter;
     std::string m_lastKeysError;
     Scene::Entity m_lastKeysPlayer = Scene::kInvalidEntity;
+    std::uint64_t m_lastKeysRevision = 0U;
+    std::string m_lastKeysBone;
 };
 
 } // namespace UVE::Editor

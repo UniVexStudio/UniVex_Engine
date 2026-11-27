@@ -835,6 +835,7 @@ bool Editor::EditAnimationTimelineClip(const std::function<void(Asset::Animation
     m_timeline.retired = m_timeline.clip;
     m_timeline.clip = std::move(next);
     m_timeline.dirty = true;
+    ++m_timeline.editRevision;
     return true;
 }
 
@@ -848,6 +849,7 @@ void Editor::UndoAnimationTimeline() {
     m_timeline.selectedKeys.clear();
     m_timeline.selectedEvent = -1;
     m_timeline.dirty = true;
+    ++m_timeline.editRevision;
 }
 
 void Editor::RedoAnimationTimeline() {
@@ -860,6 +862,7 @@ void Editor::RedoAnimationTimeline() {
     m_timeline.selectedKeys.clear();
     m_timeline.selectedEvent = -1;
     m_timeline.dirty = true;
+    ++m_timeline.editRevision;
 }
 
 void Editor::SaveAnimationTimelineClip() {

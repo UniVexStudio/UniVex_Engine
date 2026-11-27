@@ -90,6 +90,7 @@ public:
     [[nodiscard]] std::unique_ptr<ICommandBuffer> CreateCommandBuffer() override;
     void Submit(std::unique_ptr<ICommandBuffer> commandBuffer) override;
     void Present() override;
+    [[nodiscard]] std::uint64_t GetPresentEpoch() const noexcept override { return m_presentEpoch; }
 
     [[nodiscard]] std::string_view GetBackendName() const noexcept override;
 
@@ -115,6 +116,7 @@ public:
 private:
     struct Impl;
     std::unique_ptr<Impl> m_impl;
+    std::uint64_t m_presentEpoch = 0U;
 };
 
 } // namespace UVE::Render

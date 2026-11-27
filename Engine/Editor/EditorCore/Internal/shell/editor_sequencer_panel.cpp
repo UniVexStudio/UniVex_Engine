@@ -462,7 +462,8 @@ void EditorSequencerPanel::Refresh(const double deltaSeconds, const bool shown) 
         state.curves != m_lastKeysCurves || state.playing != m_lastKeysPlaying ||
         state.dirty != m_lastKeysDirty || state.selectedKeys.size() != m_lastKeysSelection ||
         state.selectedEvent != m_lastKeysEvent || state.filter != m_lastKeysFilter ||
-        state.loadError != m_lastKeysError || view.player != m_lastKeysPlayer;
+        state.loadError != m_lastKeysError || view.player != m_lastKeysPlayer ||
+        state.editRevision != m_lastKeysRevision || m_editor.m_selectedSkeletonBone != m_lastKeysBone;
     if (m_keys && keysChanged) {
         m_lastKeysClip = view.clip;
         m_lastKeysTime = state.timeSeconds;
@@ -474,6 +475,8 @@ void EditorSequencerPanel::Refresh(const double deltaSeconds, const bool shown) 
         m_lastKeysFilter = state.filter;
         m_lastKeysError = state.loadError;
         m_lastKeysPlayer = view.player;
+        m_lastKeysRevision = state.editRevision;
+        m_lastKeysBone = m_editor.m_selectedSkeletonBone;
         m_keys->invalidate();
     }
 }

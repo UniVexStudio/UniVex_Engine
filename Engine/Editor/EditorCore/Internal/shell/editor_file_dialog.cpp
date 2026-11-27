@@ -1,5 +1,6 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 #include "editor_file_dialog.h"
+#include "editor_layout_store.h"
 
 #include "editor_chrome.h"
 #include "editor_host.h"
@@ -393,6 +394,7 @@ prism::Ref<prism::Widget> EditorFileDialog::Build() {
     auto body = prism::make<prism::Splitter>(prism::Orientation::Horizontal);
     body->add(Panel(places), prism::Splitter::Pane{170.0F, 120.0F, 400.0F, false});
     body->add(Panel(m_table), prism::Splitter::Pane{740.0F, 300.0F, 1e9F, true});
+    EditorLayoutStore::Instance().BindSplitter("fileDialog.body", *body);
     window->add(body, prism::Slot{1.0F});
 
     // File name and kind.

@@ -74,6 +74,9 @@ public:
   int paneCount() const { return int(m_panes.size()); }
   Pane* paneAt(int i) { return i >= 0 && i < int(m_panes.size()) ? &m_panes[size_t(i)] : nullptr; }
   Orientation orientation() const { return m_orient; }
+  std::vector<float> paneSizes() const;
+  void setPaneSizes(const std::vector<float>& sizes);
+  std::function<void()> onChange;
   Vec2 measure(Vec2) override { return m_desired = constrain({0, 0}); }
   void arrange(Rect r) override;
   void paint(Canvas& c) override;

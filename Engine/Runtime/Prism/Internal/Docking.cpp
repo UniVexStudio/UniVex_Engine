@@ -2,6 +2,8 @@
 #include "prism/Docking.h"
 #include "prism/Application.h"
 #include "prism/Layouts.h"
+#include "prism/Controls.h"
+#include "prism/TextInput.h"
 #include <algorithm>
 
 namespace prism {
@@ -97,11 +99,25 @@ public:
 
 } // namespace
 
+namespace {
+bool IsInteractiveChild(const Widget* leaf, const Widget* frameRoot) {
+  for (const Widget* w = leaf; w && w != frameRoot; w = w->parent()) {
+    if (w->focusable() || dynamic_cast<const Button*>(w) != nullptr ||
+        dynamic_cast<const TextInput*>(w) != nullptr || dynamic_cast<const CheckBox*>(w) != nullptr ||
+        dynamic_cast<const Slider*>(w) != nullptr || dynamic_cast<const ComboBox*>(w) != nullptr ||
+        dynamic_cast<const Segmented*>(w) != nullptr) {
+      return true;
+    }
+  }
+  return false;
+}
+} // namespace
+
 uint8_t ResizablePopupFrame::hitEdges(Vec2 p) const {
   if (!resizable || m_rect.w <= 0.f || m_rect.h <= 0.f) return 0;
   const bool touch = Application::exists() && Application::get().platform().singleSurface();
-  const float edge = touch ? 14.f : 6.f;
-  const float corner = edge * 1.5f;
+  const float edge = touch ? 8.f : 5.f;
+  const float corner = touch ? 13.f : 10.f;
   if (!m_rect.contains(p)) return 0;
   const float dl = p.x - m_rect.x;
   const float dr = m_rect.right() - p.x;
@@ -130,6 +146,7 @@ Reply ResizablePopupFrame::onPreviewMouseDown(const MouseEvent& e) {
   if (e.button != MouseButton::Left || !resizable) return Reply::unhandled();
   const uint8_t edges = hitEdges(e.pos);
   if (edges == 0) return Reply::unhandled();
+  if (IsInteractiveChild(Border::hitTest(e.pos), this)) return Reply::unhandled();
   m_edges = edges;
   m_hoverEdges = edges;
   m_dragStart = e.pos;
@@ -140,7 +157,8 @@ Reply ResizablePopupFrame::onPreviewMouseDown(const MouseEvent& e) {
 
 Reply ResizablePopupFrame::onPreviewMouseMove(const MouseEvent& e) {
   if (m_edges != 0) return Reply::unhandled();
-  const uint8_t hovered = hitEdges(e.pos);
+  const uint8_t rawEdges = hitEdges(e.pos);
+  const uint8_t hovered = (rawEdges != 0 && !IsInteractiveChild(Border::hitTest(e.pos), this)) ? rawEdges : 0;
   if (hovered != m_hoverEdges) {
     m_hoverEdges = hovered;
     invalidate();

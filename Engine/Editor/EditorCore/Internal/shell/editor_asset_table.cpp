@@ -1,5 +1,6 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 #include "editor_asset_table.h"
+#include "editor_layout_store.h"
 #include <functional>
 #include <iterator>
 #include <fstream>
@@ -706,6 +707,7 @@ prism::Ref<prism::Widget> EditorAssetTable::Build() {
     auto sections = prism::make<prism::Splitter>(prism::Orientation::Vertical);
     sections->add(favoritesSection, prism::Splitter::Pane{66.0F, 24.0F, 400.0F, false});
     sections->add(contentSection, prism::Splitter::Pane{160.0F, 60.0F, 1e9F, true});
+    EditorLayoutStore::Instance().BindSplitter("assetTable.sections", *sections);
     left->add(createBar);
     left->add(sections, prism::Slot{1.0F});
     left->add(shelvesSection);
@@ -776,6 +778,7 @@ void EditorAssetTable::ApplySplitMode() {
             m_split->add(m_sidebar, prism::Splitter::Pane{stacked ? 220.0F : std::max(kSidebarMinWidth, ratio * 640.0F),
                                                           stacked ? 120.0F : kSidebarMinWidth, stacked ? 600.0F : 700.0F, false});
             m_split->add(m_items, prism::Splitter::Pane{600.0F, 160.0F, 1e9F, true});
+            EditorLayoutStore::Instance().BindSplitter(stacked ? "assetTable.splitV" : "assetTable.splitH", *m_split);
             m_root->setChild(m_split);
             break;
         }
@@ -1793,13 +1796,18 @@ struct EntityFileObject {
         const nlohmann::json& components = entity["components"];
         Node node;
         node.id = entity.value("localId", std::int64_t{-1});
-        if (const auto h = components.find("HierarchyComponent"); h != components.end() && h->is_object()) {
+        const auto findComp = [&components](const char* key) -> const nlohmann::json* {
+            if (const auto it = components.find(key); it != components.end() && it->is_object()) return &(*it);
+            if (const auto it = components.find(std::string(key) + "UVE"); it != components.end() && it->is_object()) return &(*it);
+            return nullptr;
+        };
+        if (const nlohmann::json* const h = findComp("HierarchyComponent")) {
             node.parent = h->value("parentLocalId", std::int64_t{-1});
         }
-        if (const auto n = components.find("NameComponent"); n != components.end() && n->is_object()) {
+        if (const nlohmann::json* const n = findComp("NameComponent")) {
             node.name = n->value("name", std::string{});
         }
-        if (const auto sc = components.find("ScriptComponent"); sc != components.end() && sc->is_object()) {
+        if (const nlohmann::json* const sc = findComp("ScriptComponent")) {
             const std::string path = sc->value("scriptAssetPath", std::string{});
             std::error_code error;
             if (path.ends_with(".uvbp") && std::filesystem::is_regular_file(projectRoot / path, error)) {

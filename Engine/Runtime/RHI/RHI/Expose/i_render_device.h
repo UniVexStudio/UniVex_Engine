@@ -332,6 +332,8 @@ public:
     /// GetPresentCallCount()); a windowless backend that never renders to a window has nothing
     /// meaningful to do here either.
     virtual void Present() = 0;
+    /// Monotonic counter incremented each Present(); lets multi-pane frames preserve earlier panes' GPU buffers.
+    [[nodiscard]] virtual std::uint64_t GetPresentEpoch() const noexcept { return 0U; }
 
     /// True when the backend can safely accept resource/command calls. A device can become
     /// unusable after a native surface/context loss; callers must stop issuing work when this

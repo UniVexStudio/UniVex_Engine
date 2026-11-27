@@ -287,12 +287,24 @@ private:
                     continue;
                 }
                 jstring headerKey = env->NewStringUTF(header.name.c_str());
-                if (headerKey == nullptr || failed()) {
+                if (failed() || headerKey == nullptr) {
+                    if (headerKey != nullptr) env->DeleteLocalRef(headerKey);
+                    if (response.error.empty()) {
+                        response.error = "JNI string allocation failed";
+                        env->CallVoidMethod(connection, disconnect);
+                        env->ExceptionClear();
+                    }
                     return response;
                 }
                 jstring headerVal = env->NewStringUTF(header.value.c_str());
-                if (headerVal == nullptr || failed()) {
+                if (failed() || headerVal == nullptr) {
+                    if (headerVal != nullptr) env->DeleteLocalRef(headerVal);
                     env->DeleteLocalRef(headerKey);
+                    if (response.error.empty()) {
+                        response.error = "JNI string allocation failed";
+                        env->CallVoidMethod(connection, disconnect);
+                        env->ExceptionClear();
+                    }
                     return response;
                 }
                 env->CallVoidMethod(connection, setProperty, headerKey, headerVal);
@@ -387,7 +399,12 @@ private:
                     if (count == kEndOfStream) {
                         break;
                     }
-                    if (count <= 0 || count > kReadChunkBytes) {
+                    if (count < 0 || count > kReadChunkBytes) {
+                        response.reached = false;
+                        response.error = "Invalid HTTP stream read length";
+                        break;
+                    }
+                    if (count == 0) {
                         continue;
                     }
                     env->GetByteArrayRegion(buffer, 0, count, reinterpret_cast<jbyte*>(chunk.data()));

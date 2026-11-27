@@ -51,6 +51,14 @@ using ScenePtr = std::unique_ptr<ufbx_scene, SceneDeleter>;
     options.ignore_geometry = !geometry;
     // FBX only: the parser also reads OBJ, which has its own importer and rules here.
     options.file_format = UFBX_FILE_FORMAT_FBX;
+    // Cap per-file ufbx memory so a corrupt or oversized FBX returns an error instead of OOM-killing the app.
+#if defined(__ANDROID__)
+    constexpr std::size_t kUfbxMemoryCap = 192U * 1024U * 1024U;
+#else
+    constexpr std::size_t kUfbxMemoryCap = 512U * 1024U * 1024U;
+#endif
+    options.temp_allocator.memory_limit = kUfbxMemoryCap;
+    options.result_allocator.memory_limit = kUfbxMemoryCap;
     return options;
 }
 
