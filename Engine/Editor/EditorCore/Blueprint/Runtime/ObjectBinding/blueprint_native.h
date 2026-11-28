@@ -2,7 +2,7 @@
 
 #pragma once
 
-// The runtime that C++ generated from UVScript (see uvscript_codegen_uve.h) is compiled against.
+// The runtime that C++ generated from UVScript (see blueprint_codegen.h) is compiled against.
 // Generated code is a translation of a program's bytecode into straight C++ - no instruction fetch,
 // no dispatch loop - that calls the same value operations the interpreter uses, so a script behaves
 // the same whichever way it runs. Nothing here is meant to be called by hand.

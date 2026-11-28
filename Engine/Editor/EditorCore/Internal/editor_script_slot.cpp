@@ -22,6 +22,7 @@
 #include <utility>
 #include <vector>
 
+#include "script.h"
 #include "script_component.h"
 #include "i_entity_manager.h"
 #include "scene_object_type.h"
@@ -30,7 +31,7 @@ namespace UVE::Editor {
 namespace {
 
 constexpr std::string_view kScriptFolder = "scripts";
-constexpr std::string_view kUVScriptExtension = ".uvs";
+constexpr std::string_view kUVScriptExtension = Scene::Script::kUVScriptExtension;
 
 /// A file stem from an object name: letters, digits, '-' and '_' kept, anything else an underscore,
 /// runs of underscores collapsed. "Main Menu (old)" becomes "Main_Menu_old".
@@ -75,7 +76,7 @@ struct ScriptPathProperty final {
     return property == entry->properties.cend() ? ScriptPathProperty{} : ScriptPathProperty{entry, &*property};
 }
 
-[[nodiscard]] bool IsUVScriptPath(const std::string_view path) noexcept { return path.ends_with(kUVScriptExtension); }
+[[nodiscard]] bool IsUVScriptPath(const std::string_view path) noexcept { return Scene::Script::IsUVScriptPath(path); }
 
 /// A free script path for `stem`: not a file that exists, and not a path another object already
 /// names (it may not have been saved yet). Bounded, so a folder full of collisions gives up

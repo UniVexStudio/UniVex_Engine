@@ -763,7 +763,7 @@ void WriteRagdollPoseToSkeleton(IEntityManager& entityManager, Ragdoll3DComponen
             continue;
         }
 
-        // BUG #1 FIX (Floating Corpse): Root/pelvis writes BOTH world position AND rotation back!
+        // The root/pelvis writes both its world position and its rotation back, or the rendered body would float.
         // Non-root limbs remain rotation-only so bone lengths can never stretch.
         if (binding.isRootBody) {
             const Math::Vector3 boneWorldPosition =
@@ -1529,7 +1529,7 @@ bool InitializeRagdoll3D(IEntityManager& entityManager, const Entity entity) {
         if (!bindResolved[boneIndex]) continue;
         const ObjectWorldFrame& boneFrame = bindFrames[boneIndex];
 
-        // BUG #5 FIX: Use midline-aware primary child selection for Pelvis/Chest multi-child bones!
+        // Pelvis and chest have several children: the primary one is the child on the body's midline.
         const std::uint32_t childIndex = FindPrimaryChild(skeleton.bones, boneIndex);
         Math::Vector3 direction{0.0F, 1.0F, 0.0F};
         float length = 2.0F * (std::max(0.0F, setup.halfHeight) + setup.radius);

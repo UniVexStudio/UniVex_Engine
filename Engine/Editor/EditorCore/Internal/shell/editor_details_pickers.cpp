@@ -154,7 +154,7 @@ void EditorDetails::ShowPicker(const PickerSpec& spec, PickerActions actions, co
                 const std::filesystem::path folder = now.contentRoot / m_editor.m_assetTableDirectory;
                 std::error_code error;
                 std::filesystem::create_directories(folder, error);
-                const std::filesystem::path path = Editor::MakeUniqueContentPath(folder, kind.stem, ".uvmaterial");
+                const std::filesystem::path path = Editor::MakeUniqueContentPath(folder, kind.stem, ".uvmat");
                 Asset::MaterialAsset material{};
                 material.kind = kind.kind;
                 if (kind.kind == Asset::MaterialKind::Orm) {

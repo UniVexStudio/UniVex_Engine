@@ -1740,7 +1740,7 @@ void EditorAssetTable::CreateMaterial(const std::string& stem, const Asset::Mate
     const std::filesystem::path folder = snapshot.contentRoot / m_editor.m_assetTableDirectory;
     std::error_code error;
     std::filesystem::create_directories(folder, error);
-    const std::filesystem::path path = Editor::MakeUniqueContentPath(folder, stem, ".uvmaterial");
+    const std::filesystem::path path = Editor::MakeUniqueContentPath(folder, stem, ".uvmat");
     Asset::MaterialAsset material{};
     material.kind = kind;
     if (kind == Asset::MaterialKind::Orm) {

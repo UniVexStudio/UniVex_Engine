@@ -36,7 +36,9 @@ from pathlib import Path
 
 SOURCE_EXTENSIONS = {".h", ".hpp", ".cpp", ".c", ".cc", ".cxx", ".inl"}
 BUILD_EXTENSIONS = {".txt", ".cmake"}
-SKIP_DIRS = {".git", "build", "node_modules", ".vs", "out", "_deps"}
+# Docs, tool scripts and icon files carry names too (an icon title or a README sentence is user-visible).
+DOC_EXTENSIONS = {".md", ".py", ".svg"}
+SKIP_DIRS = {".git", "build", "node_modules", ".vs", "out", "_deps", ".uvbt", "ThirdParty"}
 
 # Names this engine has retired. Each entry is (old_name, what replaced it). Add to this list in
 # the same commit that performs a rename - that is the whole mechanism.
@@ -227,8 +229,10 @@ def main() -> int:
     foreign_hits = Counter()
     foreign_files = Counter()
 
-    for path in iter_files(repo_root, SOURCE_EXTENSIONS | BUILD_EXTENSIONS):
+    for path in iter_files(repo_root, SOURCE_EXTENSIONS | BUILD_EXTENSIONS | DOC_EXTENSIONS):
         rel = path.relative_to(repo_root).as_posix()
+        if rel == "Engine/Tools/check_engine_vocabulary.py":
+            continue  # this file lists the dead names and quotes the bad articles on purpose
         try:
             lines = path.read_text(encoding="utf-8", errors="ignore").splitlines()
         except OSError:

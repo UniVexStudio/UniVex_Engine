@@ -20,7 +20,7 @@
 #include "network_session.h"
 #include "network_shot.h"
 #include "network_transport.h"
-#include "uvscript_value.h"
+#include "blueprint_value.h"
 
 namespace UVE::Samples {
 namespace {
@@ -125,10 +125,10 @@ PacketCaptureSampleResult RunPacketCaptureSample(
     pump(1100U);
 
     if (!serverRpc.RegisterMethod(
-            "add", [](const std::span<const UVScript::Value> args) {
+            "add", [](const std::span<const Blueprint::Value> args) {
                 const std::int64_t x = std::get<std::int64_t>(args[0]);
                 const std::int64_t y = std::get<std::int64_t>(args[1]);
-                return Network::RpcOk(UVScript::Value{x + y});
+                return Network::RpcOk(Blueprint::Value{x + y});
             })) {
         result.failures.push_back("rpc method registration refused");
         result.success = false;
@@ -136,7 +136,7 @@ PacketCaptureSampleResult RunPacketCaptureSample(
     }
     std::map<Network::RpcCallId, Network::RpcOutcome> done;
     const Network::RpcCallId callId = clientRpc.Call(
-        "add", {UVScript::Value{std::int64_t{1}}, UVScript::Value{std::int64_t{2}}},
+        "add", {Blueprint::Value{std::int64_t{1}}, Blueprint::Value{std::int64_t{2}}},
         [&](const Network::RpcCallId id, const Network::RpcOutcome& outcome) {
             done.emplace(id, outcome);
         });
@@ -150,7 +150,7 @@ PacketCaptureSampleResult RunPacketCaptureSample(
     pump(1150U);
     const auto answered = done.find(callId);
     if (answered == done.end() || !answered->second.ok ||
-        answered->second.value != UVScript::Value{std::int64_t{3}}) {
+        answered->second.value != Blueprint::Value{std::int64_t{3}}) {
         result.failures.push_back("rpc round trip never answered 3");
         result.success = false;
         return result;

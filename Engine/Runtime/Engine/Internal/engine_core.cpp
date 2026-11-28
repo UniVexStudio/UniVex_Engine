@@ -3612,9 +3612,9 @@ void EngineCore::UpgradeProjectContentIfNeeded() {
 }
 
 void EngineCore::SyncRagdoll3DObjects() {
-    // BUG #2 FIX: Gate normal ragdoll simulation strictly behind Running mode (scaled by
-    // m_simulationSpeedScale) so ragdolls never collapse in Edit mode or while paused, while
-    // still stepping ragdolls explicitly marked with `editorPreviewSimulating` for live Editor preview!
+    // Normal ragdoll simulation runs only in Running mode (scaled by m_simulationSpeedScale), so ragdolls never
+    // collapse in Edit mode or while paused; ragdolls marked `editorPreviewSimulating` still step for the live
+    // editor preview.
     const float rawDt = static_cast<float>(m_frameStats.deltaTimeSeconds);
     if (m_simulationExecutionMode == SimulationExecutionMode::Running) {
         static_cast<void>(Scene::UpdateRagdoll3DObjects(

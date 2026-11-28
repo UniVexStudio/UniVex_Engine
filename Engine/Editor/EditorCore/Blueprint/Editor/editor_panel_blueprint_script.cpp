@@ -22,11 +22,12 @@
 #include "i_entity_manager.h"
 #include "blueprint_compiler.h"
 #include "blueprint_parser.h"
+#include "script.h"
 
 namespace UVE::Editor {
 namespace {
 
-[[nodiscard]] bool IsUVScriptPath(const std::string_view path) noexcept { return path.ends_with(".uvs"); }
+[[nodiscard]] bool IsUVScriptPath(const std::string_view path) noexcept { return Scene::Script::IsUVScriptPath(path); }
 
 /// Every problem in the document's text. Checked against the object while it exists - its
 /// components decide which properties are in scope - and only parsed once it is gone.
@@ -72,7 +73,7 @@ bool Editor::OpenUVScriptPath(const std::filesystem::path& path) {
         return false;
     }
     const std::string pathStr = path.generic_string();
-    if (!pathStr.ends_with(".uvs")) {
+    if (!Scene::Script::IsUVScriptPath(pathStr)) {
         return false;
     }
     if (!m_openUVScript.has_value() || m_openUVScript->path != pathStr) {

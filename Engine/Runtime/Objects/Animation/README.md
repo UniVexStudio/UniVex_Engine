@@ -4,7 +4,7 @@ This folder owns animation-facing scene-node definitions and implementations:
 
 - `AnimationSequencer` and `AnimationGraph` (pure-Node authoring and playback behavior)
 - `Skeleton3D` and `BoneAttachment3D` (3D skeletal authoring data)
-- `BoneModifier3D` and `AnimationMixer` abstract bases
+- `BoneModifier3D` and `AnimationDriver` abstract bases
 
 The underlying animation runtime, clip types, and state machine remain in
 `Engine/Runtime/Animation`; component data remains in `Engine/Runtime/Component`.

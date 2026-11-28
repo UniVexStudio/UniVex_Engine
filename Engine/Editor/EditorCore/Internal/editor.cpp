@@ -981,7 +981,7 @@ std::optional<std::filesystem::path> Editor::CreateContentCatalogueItem(
     }
     if (item->action == ContentCatalogueAction::MaterialAsset) {
         const std::string_view stem = item->fileStem.empty() ? item->label : item->fileStem;
-        const std::filesystem::path path = MakeUniqueContentPath(directory, stem, ".uvmaterial");
+        const std::filesystem::path path = MakeUniqueContentPath(directory, stem, ".uvmat");
         Asset::MaterialAsset mat{};
         mat.kind = Asset::MaterialKind::Standard;
         if (!Asset::SaveMaterialAsset(mat, path)) {
@@ -6077,9 +6077,8 @@ Editor::AssetTableItemType Editor::ClassifyAssetTableEntry(
     if (extension == ".uvshader") {
         return AssetTableItemType::Shader;
     }
-    // Both spellings: every importer writes `.uvmat`, while the Inspector's own "New Material"
-    // flow creates `.uvmaterial`. A material the editor itself just created must still classify as
-    // one here or it would get a generic File icon and never a material preview.
+    // Both spellings: everything now writes `.uvmat`, but a project made before the editor's "New Material"
+    // flow moved to it still holds `.uvmaterial` files, which must keep classifying as materials.
     if (extension == ".uvmat" || extension == ".uvmaterial") {
         return AssetTableItemType::Material;
     }

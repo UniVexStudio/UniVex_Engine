@@ -1,7 +1,7 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
 // Bytecode to C++. Each chunk becomes one function; each instruction becomes a block of straight
-// C++ that calls the same value operations as the interpreter (uvscript_native_uve.h), with jumps
+// C++ that calls the same value operations as the interpreter (blueprint_native.h), with jumps
 // as `goto` and every `wait` as a return that the next call resumes from. The result keeps the
 // interpreter's semantics exactly - including the instruction budget and line numbers in errors -
 // while dropping its fetch-decode-dispatch loop.

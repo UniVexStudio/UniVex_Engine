@@ -35,7 +35,7 @@ enum class ContentCatalogueAction : std::uint8_t {
     ScriptAsset,
     /// A `.uvmontage` Motion Montage, empty until clips are put on its slot track.
     MontageAsset,
-    /// A `.uvmaterial` material file.
+    /// A `.uvmat` (`.uvmaterial` is still read) material file.
     MaterialAsset,
     /// A `.uvshader` custom shader file.
     ShaderAsset,
