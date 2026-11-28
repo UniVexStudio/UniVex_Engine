@@ -11,7 +11,9 @@
 #include <string>
 #include <vector>
 
+#include "collider_component.h"
 #include "disabled_component.h"
+#include "hierarchy_component.h"
 #include "rigid_3d_component.h"
 #include "transform_component.h"
 #include "world_transform_component.h"
@@ -30,27 +32,34 @@ constexpr float kMaxInheritedLinearSpeed = 25.0F;
 constexpr float kMaxInheritedAngularSpeed = 30.0F;
 constexpr float kMaxDynamicPushbackImpulse = 120.0F;
 
-/// Expanded industry-standard humanoid profile table (UE5 Mannequin, Mixamo, VRM / Unity Humanoid,
-/// Blender, and generic DCC rigs). Ordered most-specific-first; all patterns strictly lowercase.
-constexpr std::array<HumanoidRagdollProfileEntry, 38U> kHumanoidProfile{{
+/// Expanded humanoid profile table covering standard DCC & character rig naming conventions.
+/// Ordered most-specific-first; all patterns strictly lowercase.
+constexpr std::array<HumanoidRagdollProfileEntry, 50U> kHumanoidProfile{{
     {"lowerarm", 1.5F, 0.045F, 0.10F, 0.05F, 1.0F, 5.0F, 5.0F, 150.0F, true, -5.0F, 150.0F},
     {"lower_arm", 1.5F, 0.045F, 0.10F, 0.05F, 1.0F, 5.0F, 5.0F, 150.0F, true, -5.0F, 150.0F},
     {"forearm", 1.5F, 0.045F, 0.10F, 0.05F, 1.0F, 5.0F, 5.0F, 150.0F, true, -5.0F, 150.0F},
+    {"fore_arm", 1.5F, 0.045F, 0.10F, 0.05F, 1.0F, 5.0F, 5.0F, 150.0F, true, -5.0F, 150.0F},
     {"arm_lower", 1.5F, 0.045F, 0.10F, 0.05F, 1.0F, 5.0F, 5.0F, 150.0F, true, -5.0F, 150.0F},
     {"elbow", 1.5F, 0.045F, 0.10F, 0.05F, 1.0F, 5.0F, 5.0F, 150.0F, true, -5.0F, 150.0F},
     {"upperarm", 2.5F, 0.055F, 0.12F, 0.05F, 0.8F, 90.0F, 90.0F, 60.0F, false, -60.0F, 60.0F},
     {"upper_arm", 2.5F, 0.055F, 0.12F, 0.05F, 0.8F, 90.0F, 90.0F, 60.0F, false, -60.0F, 60.0F},
     {"arm_upper", 2.5F, 0.055F, 0.12F, 0.05F, 0.8F, 90.0F, 90.0F, 60.0F, false, -60.0F, 60.0F},
+    {"bicep", 2.5F, 0.055F, 0.12F, 0.05F, 0.8F, 90.0F, 90.0F, 60.0F, false, -60.0F, 60.0F},
     {"leftarm", 2.5F, 0.055F, 0.12F, 0.05F, 0.8F, 90.0F, 90.0F, 60.0F, false, -60.0F, 60.0F},
     {"rightarm", 2.5F, 0.055F, 0.12F, 0.05F, 0.8F, 90.0F, 90.0F, 60.0F, false, -60.0F, 60.0F},
+    {"l_arm", 2.5F, 0.055F, 0.12F, 0.05F, 0.8F, 90.0F, 90.0F, 60.0F, false, -60.0F, 60.0F},
+    {"r_arm", 2.5F, 0.055F, 0.12F, 0.05F, 0.8F, 90.0F, 90.0F, 60.0F, false, -60.0F, 60.0F},
     {"arm_l", 2.5F, 0.055F, 0.12F, 0.05F, 0.8F, 90.0F, 90.0F, 60.0F, false, -60.0F, 60.0F},
     {"arm_r", 2.5F, 0.055F, 0.12F, 0.05F, 0.8F, 90.0F, 90.0F, 60.0F, false, -60.0F, 60.0F},
     {"arm.l", 2.5F, 0.055F, 0.12F, 0.05F, 0.8F, 90.0F, 90.0F, 60.0F, false, -60.0F, 60.0F},
     {"arm.r", 2.5F, 0.055F, 0.12F, 0.05F, 0.8F, 90.0F, 90.0F, 60.0F, false, -60.0F, 60.0F},
     {"clavicle", 1.5F, 0.05F, 0.08F, 0.05F, 0.6F, 20.0F, 20.0F, 30.0F, false, -30.0F, 30.0F},
+    {"collar", 1.5F, 0.05F, 0.08F, 0.05F, 0.6F, 20.0F, 20.0F, 30.0F, false, -30.0F, 30.0F},
     {"shoulder", 1.5F, 0.05F, 0.08F, 0.05F, 0.6F, 20.0F, 20.0F, 30.0F, false, -30.0F, 30.0F},
     {"hand", 0.5F, 0.035F, 0.04F, 0.10F, 1.5F, 60.0F, 60.0F, 40.0F, false, -40.0F, 40.0F},
+    {"wrist", 0.5F, 0.035F, 0.04F, 0.10F, 1.5F, 60.0F, 60.0F, 40.0F, false, -40.0F, 40.0F},
     {"thigh", 9.0F, 0.08F, 0.16F, 0.05F, 0.5F, 70.0F, 70.0F, 40.0F, false, -40.0F, 40.0F},
+    {"femur", 9.0F, 0.08F, 0.16F, 0.05F, 0.5F, 70.0F, 70.0F, 40.0F, false, -40.0F, 40.0F},
     {"upperleg", 9.0F, 0.08F, 0.16F, 0.05F, 0.5F, 70.0F, 70.0F, 40.0F, false, -40.0F, 40.0F},
     {"upper_leg", 9.0F, 0.08F, 0.16F, 0.05F, 0.5F, 70.0F, 70.0F, 40.0F, false, -40.0F, 40.0F},
     {"upleg", 9.0F, 0.08F, 0.16F, 0.05F, 0.5F, 70.0F, 70.0F, 40.0F, false, -40.0F, 40.0F},
@@ -58,33 +67,40 @@ constexpr std::array<HumanoidRagdollProfileEntry, 38U> kHumanoidProfile{{
     {"leg_upper", 9.0F, 0.08F, 0.16F, 0.05F, 0.5F, 70.0F, 70.0F, 40.0F, false, -40.0F, 40.0F},
     {"calf", 3.5F, 0.06F, 0.16F, 0.05F, 0.7F, 5.0F, 5.0F, 150.0F, true, -150.0F, 5.0F},
     {"shin", 3.5F, 0.06F, 0.16F, 0.05F, 0.7F, 5.0F, 5.0F, 150.0F, true, -150.0F, 5.0F},
+    {"tibia", 3.5F, 0.06F, 0.16F, 0.05F, 0.7F, 5.0F, 5.0F, 150.0F, true, -150.0F, 5.0F},
     {"lowerleg", 3.5F, 0.06F, 0.16F, 0.05F, 0.7F, 5.0F, 5.0F, 150.0F, true, -150.0F, 5.0F},
     {"lower_leg", 3.5F, 0.06F, 0.16F, 0.05F, 0.7F, 5.0F, 5.0F, 150.0F, true, -150.0F, 5.0F},
     {"leg_lower", 3.5F, 0.06F, 0.16F, 0.05F, 0.7F, 5.0F, 5.0F, 150.0F, true, -150.0F, 5.0F},
     {"leftleg", 3.5F, 0.06F, 0.16F, 0.05F, 0.7F, 5.0F, 5.0F, 150.0F, true, -150.0F, 5.0F},
     {"rightleg", 3.5F, 0.06F, 0.16F, 0.05F, 0.7F, 5.0F, 5.0F, 150.0F, true, -150.0F, 5.0F},
+    {"l_leg", 3.5F, 0.06F, 0.16F, 0.05F, 0.7F, 5.0F, 5.0F, 150.0F, true, -150.0F, 5.0F},
+    {"r_leg", 3.5F, 0.06F, 0.16F, 0.05F, 0.7F, 5.0F, 5.0F, 150.0F, true, -150.0F, 5.0F},
     {"leg_l", 3.5F, 0.06F, 0.16F, 0.05F, 0.7F, 5.0F, 5.0F, 150.0F, true, -150.0F, 5.0F},
     {"leg_r", 3.5F, 0.06F, 0.16F, 0.05F, 0.7F, 5.0F, 5.0F, 150.0F, true, -150.0F, 5.0F},
     {"leg.l", 3.5F, 0.06F, 0.16F, 0.05F, 0.7F, 5.0F, 5.0F, 150.0F, true, -150.0F, 5.0F},
     {"leg.r", 3.5F, 0.06F, 0.16F, 0.05F, 0.7F, 5.0F, 5.0F, 150.0F, true, -150.0F, 5.0F},
     {"foot", 1.0F, 0.04F, 0.06F, 0.10F, 1.5F, 5.0F, 5.0F, 40.0F, true, -40.0F, 40.0F},
+    {"ankle", 1.0F, 0.04F, 0.06F, 0.10F, 1.5F, 5.0F, 5.0F, 40.0F, true, -40.0F, 40.0F},
     {"neck", 1.5F, 0.05F, 0.04F, 0.05F, 0.8F, 30.0F, 30.0F, 40.0F, false, -40.0F, 40.0F},
     {"head", 5.0F, 0.09F, 0.05F, 0.05F, 0.8F, 30.0F, 30.0F, 30.0F, false, -30.0F, 30.0F},
     {"spine", 6.0F, 0.10F, 0.08F, 0.05F, 0.4F, 25.0F, 25.0F, 20.0F, false, -20.0F, 20.0F},
+    {"abdomen", 6.0F, 0.10F, 0.08F, 0.05F, 0.4F, 25.0F, 25.0F, 20.0F, false, -20.0F, 20.0F},
 }};
 
-/// Separate torso aliases checked after `kHumanoidProfile` so VRM/Unity `Chest`/`UpperChest`
-/// rigs auto-build cleanly alongside standard spine chains.
-constexpr std::array<HumanoidRagdollProfileEntry, 3U> kHumanoidTorsoFallbackProfile{{
+/// Separate torso aliases checked after `kHumanoidProfile` so chest/torso rigs auto-build cleanly.
+constexpr std::array<HumanoidRagdollProfileEntry, 5U> kHumanoidTorsoFallbackProfile{{
     {"upperchest", 6.0F, 0.11F, 0.09F, 0.05F, 0.4F, 25.0F, 25.0F, 20.0F, false, -20.0F, 20.0F},
+    {"upper_chest", 6.0F, 0.11F, 0.09F, 0.05F, 0.4F, 25.0F, 25.0F, 20.0F, false, -20.0F, 20.0F},
     {"chest", 6.0F, 0.11F, 0.09F, 0.05F, 0.4F, 25.0F, 25.0F, 20.0F, false, -20.0F, 20.0F},
     {"torso", 6.0F, 0.11F, 0.09F, 0.05F, 0.4F, 25.0F, 25.0F, 20.0F, false, -20.0F, 20.0F},
+    {"waist", 6.0F, 0.10F, 0.08F, 0.05F, 0.4F, 25.0F, 25.0F, 20.0F, false, -20.0F, 20.0F},
 }};
 
-/// The root row is separate because `pelvis` and `hips` win over `spine`.
-constexpr std::array<HumanoidRagdollProfileEntry, 2U> kHumanoidRootProfile{{
+/// The root row is separate because `pelvis` and `hips`/`hip` win over `spine`.
+constexpr std::array<HumanoidRagdollProfileEntry, 3U> kHumanoidRootProfile{{
     {"pelvis", 12.0F, 0.12F, 0.08F, 0.05F, 0.4F, 45.0F, 45.0F, 35.0F, false, -35.0F, 35.0F},
     {"hips", 12.0F, 0.12F, 0.08F, 0.05F, 0.4F, 45.0F, 45.0F, 35.0F, false, -35.0F, 35.0F},
+    {"hip", 12.0F, 0.12F, 0.08F, 0.05F, 0.4F, 45.0F, 45.0F, 35.0F, false, -35.0F, 35.0F},
 }};
 
 [[nodiscard]] std::string ToLowerAscii(std::string_view value) {
@@ -829,7 +845,20 @@ void ApplyRagdollQualityPreset(Ragdoll3DComponent& ragdoll, const RagdollQuality
 
 std::vector<RagdollBoneSetup> BuildHumanoidRagdollBones(const std::vector<SkeletonBone>& skeletonBones) {
     std::vector<RagdollBoneSetup> setups;
+    const auto isControlOrHelperBone = [](const std::string_view name) {
+        const std::string lowered = ToLowerAscii(name);
+        static constexpr std::array<std::string_view, 10U> kHelperPatterns{{
+            "ik_", "_ik", "pole", "twist", "_end", "nub", "ctrl_", "_ctrl", "target_", "_target",
+        }};
+        for (const std::string_view pat : kHelperPatterns) {
+            if (lowered.find(pat) != std::string::npos) {
+                return true;
+            }
+        }
+        return false;
+    };
     for (std::size_t boneIndex = 0U; boneIndex < skeletonBones.size(); ++boneIndex) {
+        if (isControlOrHelperBone(skeletonBones[boneIndex].name)) continue;
         const HumanoidRagdollProfileEntry* entry = FindProfileEntry(skeletonBones[boneIndex].name);
         if (entry == nullptr) continue;
         RagdollBoneSetup setup;
@@ -853,6 +882,89 @@ std::vector<RagdollBoneSetup> BuildHumanoidRagdollBones(const std::vector<Skelet
         setups.push_back(std::move(setup));
     }
     return setups;
+}
+
+std::vector<RagdollBoneSetup> BuildGenericRagdollBones(const std::vector<SkeletonBone>& skeletonBones) {
+    std::vector<RagdollBoneSetup> setups;
+    if (skeletonBones.empty()) {
+        return setups;
+    }
+    const auto isDetailOrHelperBone = [](const std::string_view name) {
+        const std::string lowered = ToLowerAscii(name);
+        static constexpr std::array<std::string_view, 25U> kSkipPatterns{{
+            "finger", "thumb", "index", "middle", "ring", "pinky", "toe", "eye", "eyelid",
+            "eyebrow", "brow", "jaw", "tongue", "cheek", "lip", "hair", "cloth", "cape",
+            "skirt", "twist", "ik_", "_ik", "pole", "_end", "nub",
+        }};
+        for (const std::string_view pat : kSkipPatterns) {
+            if (lowered.find(pat) != std::string::npos) {
+                return true;
+            }
+        }
+        return false;
+    };
+
+    // Prioritize shallower structural bones first so large rigs keep trunk + limbs within the body cap.
+    std::vector<std::size_t> indices;
+    indices.reserve(skeletonBones.size());
+    for (std::size_t i = 0U; i < skeletonBones.size(); ++i) {
+        if (!skeletonBones[i].name.empty() && !isDetailOrHelperBone(skeletonBones[i].name)) {
+            indices.push_back(i);
+        }
+    }
+    if (indices.empty()) {
+        for (std::size_t i = 0U; i < skeletonBones.size(); ++i) {
+            if (!skeletonBones[i].name.empty()) {
+                indices.push_back(i);
+            }
+        }
+    }
+    std::sort(indices.begin(), indices.end(), [&skeletonBones](const std::size_t lhs, const std::size_t rhs) {
+        const std::uint32_t dl = BoneDepth(skeletonBones, static_cast<std::uint32_t>(lhs));
+        const std::uint32_t dr = BoneDepth(skeletonBones, static_cast<std::uint32_t>(rhs));
+        if (dl != dr) return dl < dr;
+        return lhs < rhs;
+    });
+
+    const std::size_t maxCount = std::min<std::size_t>(indices.size(), kMaximumRagdollBones);
+    setups.reserve(maxCount);
+    for (std::size_t idx = 0U; idx < maxCount; ++idx) {
+        const std::size_t boneIndex = indices[idx];
+        const std::uint32_t depth = BoneDepth(skeletonBones, static_cast<std::uint32_t>(boneIndex));
+        RagdollBoneSetup setup;
+        setup.boneName = skeletonBones[boneIndex].name;
+        setup.mass = depth == 0U ? 10.0F : (depth == 1U ? 6.0F : 2.5F);
+        setup.radius = depth == 0U ? 0.10F : (depth <= 2U ? 0.065F : 0.045F);
+        setup.halfHeight = 0.08F;
+        setup.linearDamping = 0.06F;
+        setup.angularDamping = depth <= 1U ? 0.5F : 0.85F;
+        setup.swing1LimitDegrees = 45.0F;
+        setup.swing2LimitDegrees = 45.0F;
+        setup.twistLimitDegrees = 35.0F;
+        setups.push_back(std::move(setup));
+    }
+    return setups;
+}
+
+bool SyncRagdollBodiesToSkeletonPose(IEntityManager& entityManager, const Entity entity) {
+    if (!entityManager.IsAlive(entity) || !entityManager.HasComponent<Ragdoll3DComponent>(entity)) {
+        return false;
+    }
+    Ragdoll3DComponent& ragdoll = entityManager.GetComponent<Ragdoll3DComponent>(entity);
+    if (!ragdoll.initialized || ragdoll.bindings.empty() || ragdoll.solver.GetBodyCount() == 0U) {
+        return false;
+    }
+    if (ragdoll.skeleton == kInvalidEntity || !entityManager.IsAlive(ragdoll.skeleton) ||
+        !entityManager.HasComponent<Skeleton3DComponent>(ragdoll.skeleton)) {
+        return false;
+    }
+    const Skeleton3DComponent& skeleton = entityManager.GetComponent<Skeleton3DComponent>(ragdoll.skeleton);
+    ObjectWorldFrame skeletonFrame;
+    if (!ResolveSkeletonWorldFrame(entityManager, ragdoll.skeleton, skeletonFrame)) {
+        return false;
+    }
+    SyncBodiesFromAnimatedPose(ragdoll, skeleton, skeletonFrame, 0.0F, /*kinematicOnlyBodies=*/false);
+    return true;
 }
 
 bool InitializeRagdoll3D(IEntityManager& entityManager, const Entity entity) {
@@ -1295,7 +1407,8 @@ bool ApplyRagdollImpact(IEntityManager& entityManager, const Entity entity,
 }
 
 std::size_t UpdateRagdoll3DObjects(IEntityManager& entityManager, const float deltaTimeSeconds,
-                                      const bool editorPreviewOnly) {
+                                      const bool editorPreviewOnly,
+                                      const std::optional<float> fallbackFloorPlaneY) {
     if (!std::isfinite(deltaTimeSeconds) || !(deltaTimeSeconds > 0.0F)) return 0U;
 
     std::vector<Entity> ragdollEntities;
@@ -1308,6 +1421,8 @@ std::size_t UpdateRagdoll3DObjects(IEntityManager& entityManager, const float de
             }
         });
     if (ragdollEntities.empty()) return 0U;
+
+    const bool hasFloorPlane = fallbackFloorPlaneY.has_value() && std::isfinite(*fallbackFloorPlaneY);
 
     const std::vector<Physics::Detail::ColliderWorldAabb> colliders =
         Physics::Detail::BuildColliderWorldAabbCache(entityManager);
@@ -1396,23 +1511,45 @@ std::size_t UpdateRagdoll3DObjects(IEntityManager& entityManager, const float de
 
         Physics::RagdollCollisionFilter filter = ragdoll.filter;
         if (filter.ignoreEntity == kInvalidEntity) filter.ignoreEntity = ragdoll.skeleton;
+        if (filter.alsoIgnoreEntity == kInvalidEntity &&
+            entityManager.HasComponent<HierarchyComponent>(ragdoll.skeleton)) {
+            Entity ancestor = entityManager.GetComponent<HierarchyComponent>(ragdoll.skeleton).parent;
+            for (std::uint32_t hops = 0U;
+                 hops < 8U && ancestor != kInvalidEntity && entityManager.IsAlive(ancestor); ++hops) {
+                if (ancestor != filter.ignoreEntity && entityManager.HasComponent<ColliderComponent>(ancestor)) {
+                    filter.alsoIgnoreEntity = ancestor;
+                    break;
+                }
+                if (!entityManager.HasComponent<HierarchyComponent>(ancestor)) {
+                    break;
+                }
+                const Entity next = entityManager.GetComponent<HierarchyComponent>(ancestor).parent;
+                if (next == ancestor) break;
+                ancestor = next;
+            }
+        }
 
         // Broadphase pre-filter once per frame (expanded by max expected displacement during frame).
         const float expandMargin = std::clamp(deltaTimeSeconds * 15.0F + 0.15F, 0.15F, 1.5F);
         Physics::BuildRagdollBroadphaseCandidates(ragdoll.solver, colliders, filter, expandMargin,
                                                      broadphaseCandidates);
+        const std::span<const Physics::Detail::ColliderWorldAabb> activeColliders =
+            broadphaseCandidates.empty()
+                ? std::span<const Physics::Detail::ColliderWorldAabb>{}
+                : std::span<const Physics::Detail::ColliderWorldAabb>{colliders};
 
         std::array<Physics::RagdollContact, Physics::kMaximumRagdollContacts> contacts{};
 
-        // BUG #3 FIX (Smart Sleep): NEVER wake a sleeping corpse on resting static floor contacts!
-        // Wake ONLY on moving dynamic/kinematic collider hits, lost floor support, or active motor target change.
+        // Smart Sleep: never wake a sleeping corpse on resting static floor contacts.
+        // Wake only on moving dynamic/kinematic collider hits, lost floor support, or active motor target change.
         if (ragdoll.solver.IsSleeping()) {
             const Physics::RagdollContactStats probeStats =
-                broadphaseCandidates.empty()
+                (broadphaseCandidates.empty() && !hasFloorPlane)
                     ? Physics::RagdollContactStats{}
-                    : Physics::BuildRagdollContacts(ragdoll.solver, colliders, filter,
+                    : Physics::BuildRagdollContacts(ragdoll.solver, activeColliders, filter,
                                                        std::span<Physics::RagdollContact>{contacts},
-                                                       colliderMotions, broadphaseCandidates);
+                                                       colliderMotions, broadphaseCandidates,
+                                                       fallbackFloorPlaneY);
             const bool lostFloor = ragdoll.hadFloorSupport && !probeStats.hasFloorSupport;
             const bool activeMotorMoved = ragdoll.mode == RagdollMode::Active && animatedTargetChanged;
             if (probeStats.hasMovingColliderContact || lostFloor || activeMotorMoved) {
@@ -1430,12 +1567,13 @@ std::size_t UpdateRagdoll3DObjects(IEntityManager& entityManager, const float de
         bool lastHadFloorSupport = ragdoll.hadFloorSupport;
 
         while (ragdoll.pendingSeconds >= stepSeconds && substeps < maxSubsteps) {
-            // BUG #4 FIX: Refresh world contacts PER SUBSTEP using the fast broadphase candidate list!
+            // Refresh world contacts per substep using the fast broadphase candidate list.
             Physics::RagdollContactStats substepStats{};
-            if (!broadphaseCandidates.empty()) {
-                substepStats = Physics::BuildRagdollContacts(ragdoll.solver, colliders, filter,
+            if (!broadphaseCandidates.empty() || hasFloorPlane) {
+                substepStats = Physics::BuildRagdollContacts(ragdoll.solver, activeColliders, filter,
                                                                 std::span<Physics::RagdollContact>{contacts},
-                                                                colliderMotions, broadphaseCandidates);
+                                                                colliderMotions, broadphaseCandidates,
+                                                                fallbackFloorPlaneY);
             }
             lastHadFloorSupport = substepStats.hasFloorSupport;
 

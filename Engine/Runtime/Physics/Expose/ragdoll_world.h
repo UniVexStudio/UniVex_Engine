@@ -4,6 +4,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <span>
 #include <vector>
 
@@ -65,11 +66,13 @@ void BuildRagdollBroadphaseCandidates(const RagdollSolver& solver,
 ///
 /// Uses AABB broadphase rejection, exact closest-point contact generation for Sphere, Capsule,
 /// Oriented Box (with 2-point flat-surface capsule manifold for zero-rocking floor stability), and
-/// Cylinder AABBs, plus optional dynamic-collider velocity and pushback tagging.
+/// Cylinder AABBs, plus optional dynamic-collider velocity and pushback tagging, and an optional
+/// infinite horizontal studio floor plane at `floorPlaneY`.
 [[nodiscard]] RagdollContactStats BuildRagdollContacts(
     const RagdollSolver& solver, std::span<const Detail::ColliderWorldAabb> colliders,
     const RagdollCollisionFilter& filter, std::span<RagdollContact> outContacts,
     std::span<const RagdollColliderMotion> colliderMotions = {},
-    std::span<const std::size_t> candidateIndices = {}) noexcept;
+    std::span<const std::size_t> candidateIndices = {},
+    std::optional<float> floorPlaneY = std::nullopt) noexcept;
 
 } // namespace UVE::Physics

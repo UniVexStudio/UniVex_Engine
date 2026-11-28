@@ -10,8 +10,10 @@
 #include "editor_shell.h"
 #include "animation_graph_component.h"
 #include "animation_sequencer_component.h"
+#include "bone_attachment_pass.h"
 #include "nav_seeker_3d.h"
 #include "particle_emitter_component.h"
+#include "ragdoll_3d.h"
 #include "surface_instance_component.h"
 #include "animation_sequencer.h"
 #include "scene_object_type.h"
@@ -651,11 +653,11 @@ prism::Ref<prism::Widget> EditorEntityEditor::BuildComponents() {
         EditorObjectMenu::Hooks hooks;
         hooks.tree = m_components.get();
         // A widget's children come from the widget palette, not the 3D Add menu.
-        hooks.addChild = [this] {
+        hooks.addChild = [this](const Scene::Entity target) {
             if (m_widgetMode) {
                 ShowWidgetPalette();
             } else {
-                ShowAddMenu();
+                ShowAddMenu(target);
             }
         };
         EditorObjectMenu::Show(m_editor, entity, node, at, hooks);
@@ -2622,7 +2624,7 @@ void EditorEntityEditor::ShowStageAddMenu() {
                           "Search stage objects");
 }
 
-void EditorEntityEditor::ShowAddMenu() {
+void EditorEntityEditor::ShowAddMenu(const Scene::Entity explicitParent) {
     // What an entity is built from (no level environment, sky or streaming), grouped and searchable.
     // Only what fits this entity's root: a character's parts, or a prop's.
     const Scene::Entity root = m_editor.GetEntityEditorRoot();
@@ -2632,7 +2634,10 @@ void EditorEntityEditor::ShowAddMenu() {
             : EntityRootOf(Scene::ResolveSceneObjectKind(m_editor.m_services->GetEntityManager(), root));
     std::vector<prism::MenuItem> items = BuildAddObjectMenu(
         AddObjectContext::Entity, m_icons,
-        [this](const SceneObjectKind kind) { static_cast<void>(m_editor.CreateDocumentSceneObject(kind)); }, {}, rootKind);
+        [this, explicitParent](const SceneObjectKind kind) {
+            static_cast<void>(m_editor.CreateDocumentSceneObject(kind, explicitParent));
+        },
+        {}, rootKind);
     prism::showSearchMenu(std::move(items), m_addButton ? m_addButton->rect() : prism::Rect{}, prism::PopupPlacement::Below,
                           "Search components");
 }
@@ -2923,6 +2928,25 @@ void EditorEntityEditor::Refresh() {
                                 m_dockTabs.size() == kDockPageCount && m_dockTabs[kGraphPage]->visible();
         m_animGraphPanel.Refresh(dt, graphShown);
         SyncGraphDetails(graphShown);
+        if (m_editor.GetEntitySimulationState() != Editor::EntitySimulationState::Running && dt > 0.0) {
+            Scene::IEntityManager& em = m_editor.m_services->GetEntityManager();
+            Scene::ISceneGraph& sceneGraph = m_editor.m_services->GetSceneGraph();
+            bool anyPreview = false;
+            em.ForEach<Scene::Ragdoll3DComponent>(
+                [&anyPreview](const Scene::Entity, const Scene::Ragdoll3DComponent& ragdoll) {
+                    if (ragdoll.enabled && ragdoll.editorPreviewSimulating) {
+                        anyPreview = true;
+                    }
+                });
+            if (anyPreview) {
+                sceneGraph.Update(em);
+                const float stepDt = static_cast<float>(std::min(dt, 0.05));
+                static_cast<void>(Scene::UpdateRagdoll3DObjects(em, stepDt, /*editorPreviewOnly=*/true,
+                                                                /*fallbackFloorPlaneY=*/0.0F));
+                static_cast<void>(Scene::SyncBoneAttachment3DObjects(em, sceneGraph));
+                sceneGraph.Update(em);
+            }
+        }
         m_blueprintPanel.Refresh();
         if (!m_editor.m_pendingBlueprintOpen.empty()) {
             // Opened from the Asset Table: the object that runs it.

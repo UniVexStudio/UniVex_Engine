@@ -60,9 +60,9 @@ void EditorObjectMenu::Show(Editor& editor, const Scene::Entity entity, prism::T
     items.push_back(prism::MenuItem::Sep());
 
     // Making and naming.
-    items.push_back(when(prism::MenuItem::Item("Add Child...", [add = hooks.addChild] {
+    items.push_back(when(prism::MenuItem::Item("Add Child...", [add = hooks.addChild, entity] {
                              if (add) {
-                                 add();
+                                 add(entity);
                              }
                          }, "", prism::Icon::Plus),
                          authoring && !sealed && static_cast<bool>(hooks.addChild)));

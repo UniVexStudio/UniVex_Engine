@@ -12,6 +12,7 @@
 #include <gtest/gtest.h>
 
 #include "collider_component.h"
+#include "hierarchy_component.h"
 #include "rigid_3d_component.h"
 #include "transform_component.h"
 #include "world_transform_component.h"
@@ -601,6 +602,91 @@ TEST_F(Ragdoll3DTest, PhysicalBone3D_DelegatesToAAASolverAndStopsOnFloorCollider
     const float finalY = entityManager.GetComponent<TransformComponent>(pbEntity).localPosition.y;
     EXPECT_GT(finalY, 0.05F) << "upgraded PhysicalBone3D must rest on floor collider instead of tunneling forever";
     EXPECT_LT(finalY, 0.35F);
+}
+
+TEST_F(Ragdoll3DTest, BuildGenericRagdollBones_GeneratesBodiesForNonHumanoidRigs) {
+    Skeleton3DComponent skeleton;
+    auto addBone = [&](const char* name, const std::int32_t parent, const Math::Vector3 pos) {
+        SkeletonBone bone{};
+        bone.name = name;
+        bone.parentIndex = parent;
+        bone.localPosition = pos;
+        skeleton.bones.push_back(bone);
+    };
+    addBone("Bone", -1, {0.0F, 1.0F, 0.0F});
+    addBone("Bone.001", 0, {0.0F, 0.4F, 0.0F});
+    addBone("Bone.002", 1, {0.0F, 0.4F, 0.0F});
+    addBone("Bone.003", 2, {0.3F, 0.0F, 0.0F});
+    // Helper / finger / end-nub bones should be filtered out automatically.
+    addBone("IK_Foot", 0, {0.0F, -1.0F, 0.0F});
+    addBone("Finger_01", 3, {0.1F, 0.0F, 0.0F});
+    addBone("Bone.003_end", 3, {0.1F, 0.0F, 0.0F});
+
+    EXPECT_TRUE(BuildHumanoidRagdollBones(skeleton.bones).empty());
+    const std::vector<RagdollBoneSetup> genericBones = BuildGenericRagdollBones(skeleton.bones);
+    ASSERT_EQ(genericBones.size(), 4U);
+
+    const Entity skelEntity = MakeSkeletonEntity(skeleton);
+    const Entity ragdollEntity = MakeRagdoll(skelEntity);
+    entityManager.GetComponent<Ragdoll3DComponent>(ragdollEntity).bones = genericBones;
+    ASSERT_TRUE(InitializeRagdoll3D(entityManager, ragdollEntity));
+
+    const Ragdoll3DComponent& ragdoll = entityManager.GetComponent<Ragdoll3DComponent>(ragdollEntity);
+    EXPECT_EQ(ragdoll.solver.GetBodyCount(), 4U);
+    EXPECT_EQ(ragdoll.solver.GetJointCount(), 3U);
+}
+
+TEST_F(Ragdoll3DTest, UpdateRagdoll3DObjects_StopsFallingRagdollOnVirtualFloorPlane) {
+    // No floor ColliderComponent exists in the scene — mirrors Entity Editor simulation!
+    const Entity ragdollEntity = MakeHumanoidRagdoll();
+    const Entity skeletonEntity = entityManager.GetComponent<Ragdoll3DComponent>(ragdollEntity).skeleton;
+    ASSERT_TRUE(InitializeRagdoll3D(entityManager, ragdollEntity));
+
+    const float initialPoseY = entityManager.GetComponent<Skeleton3DComponent>(skeletonEntity).pose[0].position.y;
+    Ragdoll3DComponent& ragdoll = entityManager.GetComponent<Ragdoll3DComponent>(ragdollEntity);
+    bool sawContact = false;
+    for (int frame = 0; frame < 180; ++frame) {
+        UpdateRagdoll3DObjects(entityManager, 1.0F / 60.0F, /*editorPreviewOnly=*/false,
+                               /*fallbackFloorPlaneY=*/0.0F);
+        if (ragdoll.lastReport.resolvedContactCount > 0U) {
+            sawContact = true;
+        }
+    }
+    EXPECT_TRUE(sawContact) << "virtual floor plane at y = 0 must generate contacts with zero floor colliders";
+
+    float lowestSurface = std::numeric_limits<float>::infinity();
+    for (std::size_t body = 0U; body < ragdoll.solver.GetBodyCount(); ++body) {
+        const Physics::RagdollBody& value = ragdoll.solver.GetBody(body);
+        Math::Vector3 start{};
+        Math::Vector3 end{};
+        Physics::ComputeRagdollCapsuleWorldSegment(value, start, end);
+        lowestSurface = std::min(lowestSurface, std::min(start.y, end.y) - value.radius);
+    }
+    EXPECT_GT(lowestSurface, -0.05F);
+    EXPECT_LT(lowestSurface, 0.25F);
+    EXPECT_LT(entityManager.GetComponent<Skeleton3DComponent>(skeletonEntity).pose[0].position.y, initialPoseY - 0.35F);
+}
+
+TEST_F(Ragdoll3DTest, UpdateRagdoll3DObjects_IgnoresOwningAncestorCharacterCollider) {
+    // Place the Skeleton3D under a character root that owns an enclosing ColliderComponent.
+    const Entity characterRoot = MakeBoxCollider({0.0F, 1.0F, 0.0F}, {1.0F, 1.5F, 1.0F});
+    entityManager.AddComponent<HierarchyComponent>(characterRoot, HierarchyComponent{});
+
+    const Entity ragdollEntity = MakeHumanoidRagdoll();
+    const Entity skeletonEntity = entityManager.GetComponent<Ragdoll3DComponent>(ragdollEntity).skeleton;
+    entityManager.AddComponent<HierarchyComponent>(skeletonEntity, HierarchyComponent{});
+    entityManager.GetComponent<HierarchyComponent>(skeletonEntity).parent = characterRoot;
+
+    ASSERT_TRUE(InitializeRagdoll3D(entityManager, ragdollEntity));
+    Ragdoll3DComponent& ragdoll = entityManager.GetComponent<Ragdoll3DComponent>(ragdollEntity);
+    for (int frame = 0; frame < 120; ++frame) {
+        UpdateRagdoll3DObjects(entityManager, 1.0F / 60.0F, /*editorPreviewOnly=*/false,
+                               /*fallbackFloorPlaneY=*/0.0F);
+    }
+    const Math::Vector3 pelvisPos = ragdoll.solver.GetBody(0U).position;
+    EXPECT_TRUE(std::isfinite(pelvisPos.x) && std::isfinite(pelvisPos.y) && std::isfinite(pelvisPos.z));
+    EXPECT_LT(pelvisPos.y, 0.70F) << "ragdoll must fall freely instead of being trapped inside owning character collider";
+    EXPECT_GT(pelvisPos.y, -0.05F);
 }
 
 } // namespace

@@ -669,6 +669,12 @@ public:
         /// This segment belongs to the selected object's collider. The overlay marks it rather than
         /// colouring it, because what a highlight looks like is the viewport's decision.
         bool highlighted = false;
+        /// When true, the viewport renders occluded segments with faint x-ray alpha instead of
+        /// hiding them completely (used for ragdoll bone capsules/joints inside a character mesh).
+        bool xray = false;
+        /// Optional RGB colour override (0..1) for distinguishing active ragdoll bone vs joint cones.
+        bool hasColour = false;
+        std::array<float, 3> colour{};
     };
 
     struct ViewportOverlayState final {
@@ -3185,6 +3191,8 @@ private:
     std::string m_skeletonSourceStatus;
     /// The bone whose rest pose the Skeleton3D Inspector shows, by name.
     std::string m_selectedSkeletonBone;
+    /// The bone currently selected in the Ragdoll3D Inspector for capsule/limit editing.
+    std::string m_selectedRagdollBoneName;
     /// The Entity Editor's Timeline: the AnimationSequencer it shows, that player's clip, and the
     /// preview playhead. Previewing writes the skeleton's runtime pose only, never a saved value.
     struct AnimationTimelineState final {

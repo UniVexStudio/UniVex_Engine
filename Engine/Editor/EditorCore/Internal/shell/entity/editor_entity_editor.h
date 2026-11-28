@@ -85,7 +85,7 @@ private:
     [[nodiscard]] prism::Ref<prism::Widget> BuildToolbarRow();
     [[nodiscard]] prism::Ref<prism::Widget> BuildComponents();
     [[nodiscard]] prism::Ref<prism::Widget> BuildCentre();
-    void ShowAddMenu();
+    void ShowAddMenu(Scene::Entity explicitParent = Scene::kInvalidEntity);
     void ShowClassSettings(prism::Rect anchor);
     void RunFind(const std::string& query);
     void RunDiff();
