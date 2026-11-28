@@ -5592,7 +5592,7 @@ EngineServices& EngineCore::GetServices() {
 }
 
 Version EngineCore::GetEngineVersion() noexcept {
-    return Version{0, 5, 3, 0};
+    return Version{0, 5, 4, 0};
 }
 
 
