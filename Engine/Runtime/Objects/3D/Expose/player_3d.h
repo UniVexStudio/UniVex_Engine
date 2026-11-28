@@ -70,6 +70,10 @@ void MaintainPlayerPossession(IEntityManager& entityManager);
 
 [[nodiscard]] Entity ResolvePlayCharacter(IEntityManager& entityManager);
 
+/// Whether Play should spawn the project's default player: only when the level holds no character at
+/// all. A character the author placed is the player, so Play never adds a second one beside it.
+[[nodiscard]] bool ShouldSpawnDefaultPlayer(IEntityManager& entityManager);
+
 [[nodiscard]] Entity FindPlayerLookTarget(IEntityManager& entityManager, Entity player);
 
 [[nodiscard]] Entity FindPlayerCamera(IEntityManager& entityManager, Entity player);

@@ -165,6 +165,10 @@ Entity ResolvePlayCharacter(IEntityManager& entityManager) {
     return preferred != kInvalidEntity ? preferred : anyBody;
 }
 
+bool ShouldSpawnDefaultPlayer(IEntityManager& entityManager) {
+    return ResolvePlayCharacter(entityManager) == kInvalidEntity;
+}
+
 Entity FindPlayerCamera(IEntityManager& entityManager, const Entity player) {
     if (!entityManager.IsAlive(player)) {
         return kInvalidEntity;

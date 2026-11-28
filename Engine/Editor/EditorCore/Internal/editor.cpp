@@ -594,7 +594,9 @@ bool Editor::ApplyPlayEntrySpawn() {
 
     Scene::MaintainPlayerPossession(entityManager);
     Scene::Entity player = Scene::ResolvePossessedPlayer(entityManager);
-    if (player == Scene::kInvalidEntity) {
+    // The default player is only for a level with no character: a placed character is the player, so
+    // Play never adds a second one next to it (that extra entity showed in the Outliner until Stop).
+    if (player == Scene::kInvalidEntity && Scene::ShouldSpawnDefaultPlayer(entityManager)) {
         const std::string relative = GetDefaultPlayerEntity();
         if (!relative.empty()) {
             const std::filesystem::path absolute =

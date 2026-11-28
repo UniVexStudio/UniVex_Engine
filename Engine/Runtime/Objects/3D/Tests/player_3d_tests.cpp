@@ -164,6 +164,15 @@ TEST_F(Player3DTest, ResolvePlayCharacterPrefersABodyMeantForAPlayerOverAnAICrow
     EXPECT_EQ(ResolvePlayCharacter(entityManager), hero);
 }
 
+TEST_F(Player3DTest, TheDefaultPlayerSpawnsOnlyWhenTheLevelHasNoCharacter) {
+    EXPECT_TRUE(ShouldSpawnDefaultPlayer(entityManager));
+
+    const Entity placed = entityManager.CreateEntity();
+    sceneGraph.AttachTransform(entityManager, placed, TransformComponent{});
+    ApplyCharacter3DObjectDefinition(entityManager, placed, Character3DObjectDefinition{});
+    EXPECT_FALSE(ShouldSpawnDefaultPlayer(entityManager)) << "a placed character is the player";
+}
+
 TEST_F(Player3DTest, FindPlayerCameraWalksPastTheSpringArm) {
     const Entity player = entityManager.CreateEntity();
     sceneGraph.AttachTransform(entityManager, player, TransformComponent{});
