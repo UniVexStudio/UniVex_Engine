@@ -907,13 +907,6 @@ std::size_t Editor::SaveAll() {
                                               : m_activeScenePath.filename().string());
         }
     }
-    if (m_openUVScript.has_value() && m_openUVScript->IsDirty()) {
-        if (SaveOpenUVScript()) {
-            ++saved;
-        } else {
-            failed.emplace_back(std::filesystem::path{m_openUVScript->path}.filename().string());
-        }
-    }
     if (IsVfxEditorDirty()) {
         if (SaveVfxEditor()) {
             ++saved;
@@ -969,15 +962,6 @@ std::optional<std::filesystem::path> Editor::CreateContentCatalogueItem(
             return std::nullopt;
         }
         return folder;
-    }
-    if (item->action == ContentCatalogueAction::ScriptAsset) {
-        const std::string_view stem = item->fileStem.empty() ? item->label : item->fileStem;
-        const std::filesystem::path path = MakeUniqueContentPath(directory, stem, ".uvs");
-        const std::string text = "entity " + path.stem().generic_string() + " : Object\n\non ready:\n    print(\"Ready\")\n\non tick(dt):\n    pass\n";
-        if (!WriteProjectTextFile(path.generic_string(), text)) {
-            return std::nullopt;
-        }
-        return path;
     }
     if (item->action == ContentCatalogueAction::MaterialAsset) {
         const std::string_view stem = item->fileStem.empty() ? item->label : item->fileStem;
@@ -5299,10 +5283,6 @@ void Editor::SetActiveScenePath(std::filesystem::path path) {
     }
 }
 
-bool Editor::OpenScriptGraphForEntity(const Scene::Entity entity) {
-    return OpenUVScriptForEntity(entity);
-}
-
 bool Editor::WriteProjectTextFile(const std::filesystem::path& path, const std::string_view text) {
     const auto writeAtomically = [text](const std::filesystem::path& target) {
         const std::filesystem::path temporaryPath = target.string() + ".tmp";
@@ -6091,9 +6071,6 @@ Editor::AssetTableItemType Editor::ClassifyAssetTableEntry(
     if (extension == ".uvwbp") {
         return AssetTableItemType::WidgetBlueprint;
     }
-    if (extension == ".uvs") {
-        return AssetTableItemType::Script;
-    }
     // A clip (a take imported from an FBX, or authored): the same Animation an animation-only
     // model source shows as.
     if (extension == ".uvanim") {
@@ -6184,8 +6161,6 @@ const char* Editor::GetAssetTableItemTypeLabel(const AssetTableItemType type) no
             return "Blueprint";
         case AssetTableItemType::WidgetBlueprint:
             return "Widget Blueprint";
-        case AssetTableItemType::Script:
-            return "Script";
         case AssetTableItemType::Audio:
             return "Audio";
         case AssetTableItemType::Font:

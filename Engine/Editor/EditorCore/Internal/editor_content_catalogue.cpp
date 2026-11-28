@@ -250,9 +250,6 @@ Scene::Objects::SceneObjectKind GetContentCatalogueIconKind(const ContentCatalog
     if (item.action == ContentCatalogueAction::Folder) {
         return Kind::Folder;
     }
-    if (item.action == ContentCatalogueAction::ScriptAsset) {
-        return Kind::Script;
-    }
     if (item.action == ContentCatalogueAction::MontageAsset || item.action == ContentCatalogueAction::LibraryAsset ||
         item.action == ContentCatalogueAction::MontageLibraryAsset) {
         return Kind::AnimationSequencer;

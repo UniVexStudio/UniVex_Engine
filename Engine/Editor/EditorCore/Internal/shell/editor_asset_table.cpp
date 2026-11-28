@@ -252,7 +252,6 @@ prism::Icon EditorAssetTable::IconFor(const ItemType type) {
         case ItemType::MontageLibrary: return prism::Icon::MontageLibrary;
         case ItemType::Blueprint: return prism::Icon::BlueprintClass;
         case ItemType::WidgetBlueprint: return prism::Icon::BlueprintClass;
-        case ItemType::Script: return prism::Icon::Script;
         case ItemType::Audio: return prism::Icon::NodeSound;
         case ItemType::Font: return prism::Icon::NodeText;
         case ItemType::File: return prism::Icon::File;
@@ -280,7 +279,6 @@ std::pair<std::string, std::string> EditorAssetTable::Describe(const ItemType ty
         case ItemType::MontageLibrary: return {"Motion Montage Library", "ACL"};
         case ItemType::Blueprint: return {"Blueprint Class", "BP"};
         case ItemType::WidgetBlueprint: return {"Widget Blueprint", "WBP"};
-        case ItemType::Script: return {"Script", "UVS"};
         case ItemType::Audio: return {"Audio", "AUD"};
         case ItemType::Font: return {"Font", "FNT"};
         case ItemType::File: return {"File", "FILE"};
@@ -298,7 +296,6 @@ prism::Color EditorAssetTable::TintFor(const ItemType type) {
         case ItemType::Model: return prism::Color(160, 200, 230);
         case ItemType::Texture: return prism::Color(220, 140, 110);
         case ItemType::Material: return prism::Color(200, 160, 110);
-        case ItemType::Script:
         case ItemType::Shader: return prism::Color(170, 150, 230);
         case ItemType::Animation:
         case ItemType::AnimationLibrary:
@@ -1043,10 +1040,6 @@ void EditorAssetTable::RebuildItems() {
     std::vector<std::size_t> candidates;
     for (const std::size_t i : listed) {
         const ItemType type = m_editor.GetAssetTableEntryType(snapshot.entries[i]);
-        // Gameplay is written as Blueprints: loose script files are not listed.
-        if (type == ItemType::Script) {
-            continue;
-        }
         // An image's import settings (<image>.uvimport) belong to the image, not beside it as a file.
         if (snapshot.entries[i].relativePath.extension() == ".uvimport") {
             continue;
@@ -2744,11 +2737,6 @@ void EditorAssetTable::OpenEntry(const std::size_t entryIndex) {
         case ItemType::WidgetBlueprint:
             if (!m_editor.OpenEntityEditor(full)) {
                 m_editor.m_contentStatusMessage = "Could not open " + name + " in the Widget Editor.";
-            }
-            break;
-        case ItemType::Script:
-            if (!m_editor.OpenUVScriptPath(full)) {
-                m_editor.m_contentStatusMessage = "Could not open " + name + " in the Script Editor.";
             }
             break;
         default:

@@ -52,7 +52,6 @@ TEST(ContentCatalogueTest, EveryItemIsCreatableAndGroupsAreInOrder) {
         // Folder and LibraryAsset make a file, not entities, so none of their items carry objects.
         if (item.action == ContentCatalogueAction::Folder ||
             item.action == ContentCatalogueAction::LibraryAsset ||
-            item.action == ContentCatalogueAction::ScriptAsset ||
             item.action == ContentCatalogueAction::MaterialAsset ||
             item.action == ContentCatalogueAction::ShaderAsset) {
             EXPECT_TRUE(item.objects.empty());
