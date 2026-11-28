@@ -2,7 +2,7 @@
 
 #pragma once
 
-// The bytecode UVScript compiles to. Internal: only the compiler writes it and only the instance
+// The bytecode Blueprint compiles to. Internal: only the compiler writes it and only the instance
 // runs it. A stack machine - every instruction pops its operands and pushes its result.
 
 #include <cstdint>

@@ -102,7 +102,7 @@ TEST_F(WidgetBlueprintTest, AButtonClickRunsOnlyItsOwnEvent) {
     Core::BlueprintObjectHost host{entityManager, nullptr, root};
     const Blueprint::CompileResult compiled = Compile(graph, host);
     ASSERT_TRUE(compiled.IsSuccess());
-    Blueprint::ScriptInstance instance(compiled.program, host);
+    Blueprint::BlueprintInstance instance(compiled.program, host);
     static_cast<void>(instance.RaiseEvent("ready"));
 
     const Blueprint::Value other[] = {std::string{"Quit"}};
@@ -128,7 +128,7 @@ TEST_F(WidgetBlueprintTest, AWidgetReachesOnlyItsOwnWidgetsByName) {
     Core::BlueprintObjectHost host{entityManager, nullptr, second};
     const Blueprint::CompileResult compiled = Compile(graph, host);
     ASSERT_TRUE(compiled.IsSuccess());
-    Blueprint::ScriptInstance instance(compiled.program, host);
+    Blueprint::BlueprintInstance instance(compiled.program, host);
     static_cast<void>(instance.RaiseEvent("ready"));
     int mine = 0;
     int untouched = 0;
@@ -159,7 +159,7 @@ TEST_F(WidgetBlueprintTest, CreateWidgetThenAddToViewportShowsIt) {
     graph.wires = {BlueprintWire{1U, 0U, 2U, 0U}, BlueprintWire{2U, 0U, 3U, 0U}, BlueprintWire{2U, 1U, 3U, 1U}};
     const Blueprint::CompileResult compiled = Asset::CompileBlueprintGraph(graph, "BP_Player", "Object3D", host).result;
     ASSERT_TRUE(compiled.IsSuccess());
-    Blueprint::ScriptInstance instance(compiled.program, host);
+    Blueprint::BlueprintInstance instance(compiled.program, host);
     static_cast<void>(instance.RaiseEvent("ready"));
     EXPECT_EQ(asked, "Content/UI/WBP_Hud.uvwbp");
     ASSERT_NE(made, kInvalidEntity);
@@ -188,7 +188,7 @@ TEST_F(WidgetBlueprintTest, ShowMouseCursorAndAComboBoxChoiceReachTheGame) {
                    BlueprintWire{5U, 0U, 7U, 0U}, BlueprintWire{6U, 0U, 7U, 2U}};
     const Blueprint::CompileResult compiled = Compile(graph, host);
     ASSERT_TRUE(compiled.IsSuccess());
-    Blueprint::ScriptInstance instance(compiled.program, host);
+    Blueprint::BlueprintInstance instance(compiled.program, host);
     static_cast<void>(instance.RaiseEvent("ready"));
     ASSERT_EQ(shown.size(), 1U);
     EXPECT_TRUE(shown.front());
@@ -219,7 +219,7 @@ TEST_F(WidgetBlueprintTest, ShowScreenShowsOneScreenAndHidesTheOthers) {
     Core::BlueprintObjectHost host{entityManager, nullptr, root};
     const Blueprint::CompileResult compiled = Compile(graph, host);
     ASSERT_TRUE(compiled.IsSuccess());
-    Blueprint::ScriptInstance instance(compiled.program, host);
+    Blueprint::BlueprintInstance instance(compiled.program, host);
     const Blueprint::Value clicked[] = {std::string{"Open"}};
     static_cast<void>(instance.RaiseEvent("ui_clicked", clicked));
     EXPECT_FALSE(entityManager.GetComponent<CanvasComponent>(main).visible);

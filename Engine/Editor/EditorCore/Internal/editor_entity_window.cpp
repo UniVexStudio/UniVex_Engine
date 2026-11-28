@@ -62,13 +62,13 @@ namespace {
 
 } // namespace
 
-/// The Entity Editor's Simulate: each scripted object's compiled UVScript, and the entity as it
+/// The Entity Editor's Simulate: each scripted object's compiled Blueprint, and the entity as it
 /// was when Play was pressed.
 struct EntitySimulation final {
     struct Script final {
         Scene::Entity entity = Scene::kInvalidEntity;
         std::unique_ptr<Core::BlueprintObjectHost> host;
-        std::unique_ptr<Blueprint::ScriptInstance> instance;
+        std::unique_ptr<Blueprint::BlueprintInstance> instance;
         bool ready = false;
     };
     Scene::SceneSnapshot snapshot;
@@ -899,7 +899,7 @@ bool Editor::PlayEntitySimulation() {
         EntitySimulation* const raw = simulation.get();
         script.host = std::make_unique<Core::BlueprintObjectHost>(
             entityManager, &m_services->GetInputSystem(), entity, nullptr, nullptr,
-            [raw](const Scene::Entity other) -> Blueprint::ScriptInstance* {
+            [raw](const Scene::Entity other) -> Blueprint::BlueprintInstance* {
                 for (EntitySimulation::Script& candidate : raw->scripts) {
                     if (candidate.entity == other) {
                         return candidate.instance.get();
@@ -913,7 +913,7 @@ bool Editor::PlayEntitySimulation() {
             ++failed;
             continue;
         }
-        script.instance = std::make_unique<Blueprint::ScriptInstance>(compiled.program, *script.host);
+        script.instance = std::make_unique<Blueprint::BlueprintInstance>(compiled.program, *script.host);
         for (const Blueprint::FieldInfo& field : Blueprint::GetProgramFields(*compiled.program)) {
             const auto stored = component.exportValues.find(field.name);
             if (field.kind != Blueprint::FieldKind::Export || stored == component.exportValues.end()) {

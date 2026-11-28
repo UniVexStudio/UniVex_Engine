@@ -22,7 +22,7 @@ namespace UVE::Blueprint::Tests {
 namespace {
 
 /// A Character3D-like object: a velocity, a read-only floor flag, input, and three events.
-class FakeHost final : public UVScriptHost {
+class FakeHost final : public BlueprintHost {
 public:
     std::optional<HostProperty> DescribeProperty(const std::string_view name) const override {
         if (name == "velocity") return HostProperty{Type::Vec3(), true};
@@ -78,7 +78,7 @@ public:
 };
 
 [[nodiscard]] std::shared_ptr<const Program> CompileOrFail(const std::string& source, const FakeHost& host) {
-    const CompileResult result = CompileUVScriptSource(source, host);
+    const CompileResult result = CompileBlueprintNotation(source, host);
     for (const Diagnostic& d : result.diagnostics) {
         ADD_FAILURE() << d.at.line << ":" << d.at.column << " " << d.message;
     }
@@ -88,13 +88,13 @@ public:
 [[nodiscard]] std::vector<std::string> ErrorsOf(const std::string& source) {
     FakeHost host;
     std::vector<std::string> messages;
-    for (const Diagnostic& d : CompileUVScriptSource(source, host).diagnostics) {
+    for (const Diagnostic& d : CompileBlueprintNotation(source, host).diagnostics) {
         messages.push_back(std::to_string(d.at.line) + ": " + d.message);
     }
     return messages;
 }
 
-TEST(UVScriptVmTest, RunsAPlayerController) {
+TEST(BlueprintVmTest, RunsAPlayerController) {
     FakeHost host;
     const auto program = CompileOrFail(R"(entity Player : Character3D
 export speed: float = 6.0
@@ -111,7 +111,7 @@ on tick(dt):
         jumps += 1
 )", host);
     ASSERT_NE(program, nullptr);
-    ScriptInstance instance(program, host);
+    BlueprintInstance instance(program, host);
     ASSERT_TRUE(instance.RaiseEvent("ready"));
     ASSERT_EQ(host.printed, (std::vector<std::string>{"0 jumps, speed 6.0"}));
 
@@ -124,7 +124,7 @@ on tick(dt):
     EXPECT_FALSE(instance.RaiseEvent("body_entered")); // wrong argument count
 }
 
-TEST(UVScriptVmTest, EvaluatesArithmeticUnitsAndControlFlow) {
+TEST(BlueprintVmTest, EvaluatesArithmeticUnitsAndControlFlow) {
     FakeHost host;
     const auto program = CompileOrFail(R"(
 const TURN = 90 deg
@@ -155,7 +155,7 @@ fn mix() -> float:
     return 7 / 2 + 1 * 2.5 - -1
 )", host);
     ASSERT_NE(program, nullptr);
-    ScriptInstance instance(program, host);
+    BlueprintInstance instance(program, host);
     EXPECT_NEAR(std::get<double>(*instance.GetField("TURN")), std::numbers::pi / 2.0, 1e-12);
     EXPECT_DOUBLE_EQ(std::get<double>(*instance.GetField("SHORT")), 0.25);
     const std::array<Value, 1> ten{std::int64_t{10}};
@@ -166,7 +166,7 @@ fn mix() -> float:
     EXPECT_DOUBLE_EQ(std::get<double>(*instance.Call("mix")), 3.5 + 2.5 + 1.0);
 }
 
-TEST(UVScriptVmTest, WaitPausesAHandlerForExactlyItsTime) {
+TEST(BlueprintVmTest, WaitPausesAHandlerForExactlyItsTime) {
     FakeHost host;
     const auto program = CompileOrFail(R"(
 on ready:
@@ -177,7 +177,7 @@ on ready:
     print("c")
 )", host);
     ASSERT_NE(program, nullptr);
-    ScriptInstance instance(program, host);
+    BlueprintInstance instance(program, host);
     ASSERT_TRUE(instance.RaiseEvent("ready"));
     EXPECT_EQ(host.printed, (std::vector<std::string>{"a"}));
     EXPECT_EQ(instance.GetWaitingCount(), 1U);
@@ -190,7 +190,7 @@ on ready:
     EXPECT_EQ(instance.GetWaitingCount(), 0U);
 }
 
-TEST(UVScriptVmTest, ReportsTypeErrorsBeforeRunning) {
+TEST(BlueprintVmTest, ReportsTypeErrorsBeforeRunning) {
     EXPECT_EQ(ErrorsOf("on ready:\n    let a = 1\n    a = \"text\"\n"),
               (std::vector<std::string>{"3: this assignment needs int but this is str"}));
     EXPECT_EQ(ErrorsOf("on ready:\n    print(nope)\n"), (std::vector<std::string>{"2: nothing is called 'nope' here"}));
@@ -217,7 +217,7 @@ TEST(UVScriptVmTest, ReportsTypeErrorsBeforeRunning) {
               (std::vector<std::string>{"3: '/=' would turn this int into float"}));
 }
 
-TEST(UVScriptVmTest, StopsRunawayLoopsAndRuntimeErrors) {
+TEST(BlueprintVmTest, StopsRunawayLoopsAndRuntimeErrors) {
     FakeHost host;
     const auto program = CompileOrFail(R"(
 fn spin():
@@ -231,7 +231,7 @@ on ready:
     health = 3
 )", host);
     ASSERT_NE(program, nullptr);
-    ScriptInstance instance(program, host);
+    BlueprintInstance instance(program, host);
     EXPECT_FALSE(instance.Call("spin").has_value());
     EXPECT_NE(instance.GetLastError().find("ran too long"), std::string::npos);
     const std::array<Value, 2> byZero{std::int64_t{1}, std::int64_t{0}};
@@ -241,7 +241,7 @@ on ready:
     EXPECT_EQ(host.health, 3);
 }
 
-TEST(UVScriptVmTest, FieldsAreSetFromTheInspectorWithTheirOwnType) {
+TEST(BlueprintVmTest, FieldsAreSetFromTheInspectorWithTheirOwnType) {
     FakeHost host;
     const auto program = CompileOrFail("export speed = 4.0\nconst LIMIT = 3\n", host);
     ASSERT_NE(program, nullptr);
@@ -249,7 +249,7 @@ TEST(UVScriptVmTest, FieldsAreSetFromTheInspectorWithTheirOwnType) {
     ASSERT_EQ(fields.size(), 2U);
     EXPECT_EQ(fields[0].type, Type::Float());
     EXPECT_EQ(fields[1].kind, FieldKind::Const);
-    ScriptInstance instance(program, host);
+    BlueprintInstance instance(program, host);
     EXPECT_TRUE(instance.SetField("speed", 9.5));
     EXPECT_DOUBLE_EQ(std::get<double>(*instance.GetField("speed")), 9.5);
     EXPECT_FALSE(instance.SetField("speed", std::string{"fast"}));
@@ -257,7 +257,7 @@ TEST(UVScriptVmTest, FieldsAreSetFromTheInspectorWithTheirOwnType) {
     EXPECT_FALSE(instance.SetField("missing", 1.0));
 }
 
-TEST(UVScriptVmTest, ValueTextReadsBackWhatFormatWrites) {
+TEST(BlueprintVmTest, ValueTextReadsBackWhatFormatWrites) {
     const std::array<std::pair<Value, Type>, 5> values{{
         {Value{true}, Type::Bool()},
         {Value{std::int64_t{-12}}, Type::Int()},
@@ -277,7 +277,7 @@ TEST(UVScriptVmTest, ValueTextReadsBackWhatFormatWrites) {
     EXPECT_FALSE(ParseValueText("", Type::Int()).has_value());
 }
 
-TEST(UVScriptVmTest, CallsMethodsOnOtherNodesFireAndForget) {
+TEST(BlueprintVmTest, CallsMethodsOnOtherNodesFireAndForget) {
     FakeHost host;
     const auto program = CompileOrFail(R"(
 on body_entered(other):
@@ -294,14 +294,14 @@ on body_entered(other):
         print("fire and forget")
 )", host);
     ASSERT_NE(program, nullptr);
-    ScriptInstance instance(program, host);
+    BlueprintInstance instance(program, host);
     const std::array<Value, 1> args{Value{ObjectRef{3U}}};
     ASSERT_TRUE(instance.RaiseEvent("body_entered", args)) << instance.GetLastError();
     EXPECT_EQ(host.calls, (std::vector<std::string>{"3.take_damage(30)", "3.hide()", "7.greet(hi)"}));
     EXPECT_EQ(host.printed, (std::vector<std::string>{"here", "no ghost", "fire and forget"}));
 }
 
-TEST(UVScriptVmTest, ReportsBadMethodCallsBeforeRunning) {
+TEST(BlueprintVmTest, ReportsBadMethodCallsBeforeRunning) {
     EXPECT_EQ(ErrorsOf("on tick(dt):\n    velocity.hide()\n"),
               (std::vector<std::string>{"2: there is no function 'velocity.hide'"}));
     EXPECT_EQ(ErrorsOf("on tick(dt):\n    dt.hide()\n"),
@@ -312,10 +312,10 @@ TEST(UVScriptVmTest, ReportsBadMethodCallsBeforeRunning) {
               (std::vector<std::string>{"2: '<' cannot compare Object3D with Object3D"}));
 }
 
-// ---- Native code: the same scripts compiled to C++ by uvsc at build time (Test/CMakeLists.txt).
+// ---- Native code: the same scripts compiled to C++ by uvbc at build time (Test/CMakeLists.txt).
 
 [[nodiscard]] std::string ReadNativeScript(const std::string& name) {
-    std::ifstream file(std::string{UVE_UVSCRIPT_NATIVE_DIR} + "/" + name, std::ios::binary);
+    std::ifstream file(std::string{UVE_BLUEPRINT_NATIVE_DIR} + "/" + name, std::ios::binary);
     return std::string(std::istreambuf_iterator<char>(file), {});
 }
 
@@ -341,7 +341,7 @@ template <typename RunFn>
     if (program == nullptr) {
         return transcript;
     }
-    ScriptInstance instance(program, host, execution);
+    BlueprintInstance instance(program, host, execution);
     native = instance.IsNative();
     run(instance, host, transcript.results);
     transcript.printed = host.printed;
@@ -367,12 +367,12 @@ void ExpectNativeMatchesInterpreter(const std::string& name, const RunFn& run) {
     EXPECT_EQ(compiled.results, interpreted.results) << name;
 }
 
-[[nodiscard]] std::string ResultText(const std::optional<Value>& value, const ScriptInstance& instance) {
+[[nodiscard]] std::string ResultText(const std::optional<Value>& value, const BlueprintInstance& instance) {
     return value.has_value() ? FormatValue(*value) : "error: " + instance.GetLastError();
 }
 
-TEST(UVScriptNativeTest, PlayerControllerMatchesTheInterpreter) {
-    ExpectNativeMatchesInterpreter("player.uvs", [](ScriptInstance& instance, FakeHost& host,
+TEST(BlueprintNativeTest, PlayerControllerMatchesTheInterpreter) {
+    ExpectNativeMatchesInterpreter("player.bpn", [](BlueprintInstance& instance, FakeHost& host,
                                                        std::vector<std::string>& results) {
         results.push_back(std::to_string(instance.RaiseEvent("ready")));
         const std::array<Value, 1> dt{0.016};
@@ -385,9 +385,9 @@ TEST(UVScriptNativeTest, PlayerControllerMatchesTheInterpreter) {
     });
 }
 
-TEST(UVScriptNativeTest, MethodCallsMatchTheInterpreter) {
+TEST(BlueprintNativeTest, MethodCallsMatchTheInterpreter) {
     ExpectNativeMatchesInterpreter(
-        "methods.uvs", [](ScriptInstance& instance, FakeHost&, std::vector<std::string>& results) {
+        "methods.bpn", [](BlueprintInstance& instance, FakeHost&, std::vector<std::string>& results) {
             const std::array<Value, 1> nobody{Value{ObjectRef{}}};
             results.push_back(std::to_string(instance.RaiseEvent("body_entered", nobody)));
             const std::array<Value, 1> friend_{Value{ObjectRef{5U}}};
@@ -395,8 +395,8 @@ TEST(UVScriptNativeTest, MethodCallsMatchTheInterpreter) {
         });
 }
 
-TEST(UVScriptNativeTest, CollectionsMatchTheInterpreter) {
-    ExpectNativeMatchesInterpreter("collections.uvs", [](ScriptInstance& instance, FakeHost&,
+TEST(BlueprintNativeTest, CollectionsMatchTheInterpreter) {
+    ExpectNativeMatchesInterpreter("collections.bpn", [](BlueprintInstance& instance, FakeHost&,
                                                              std::vector<std::string>& results) {
         results.push_back(ResultText(instance.Call("describe"), instance));
         results.push_back(ResultText(instance.Call("total"), instance));
@@ -415,9 +415,9 @@ TEST(UVScriptNativeTest, CollectionsMatchTheInterpreter) {
     });
     // And the values are the right ones, not merely the same wrong ones.
     FakeHost host;
-    const auto program = CompileOrFail(ReadNativeScript("collections.uvs"), host);
+    const auto program = CompileOrFail(ReadNativeScript("collections.bpn"), host);
     ASSERT_NE(program, nullptr);
-    ScriptInstance instance(program, host);
+    BlueprintInstance instance(program, host);
     ASSERT_TRUE(instance.IsNative());
     EXPECT_EQ(FormatValue(*instance.Call("total")), "6");
     EXPECT_EQ(FormatValue(*instance.Call("unpacked")), "one=1");
@@ -425,8 +425,8 @@ TEST(UVScriptNativeTest, CollectionsMatchTheInterpreter) {
     EXPECT_EQ(FormatValue(*instance.Call("describe")), "3 things: rope, map");
 }
 
-TEST(UVScriptNativeTest, ArithmeticControlFlowAndBuiltinsMatchTheInterpreter) {
-    ExpectNativeMatchesInterpreter("math.uvs", [](ScriptInstance& instance, FakeHost&,
+TEST(BlueprintNativeTest, ArithmeticControlFlowAndBuiltinsMatchTheInterpreter) {
+    ExpectNativeMatchesInterpreter("math.bpn", [](BlueprintInstance& instance, FakeHost&,
                                                      std::vector<std::string>& results) {
         results.push_back(FormatValue(*instance.GetField("TURN")));
         results.push_back(FormatValue(*instance.GetField("SHORT")));
@@ -448,9 +448,9 @@ TEST(UVScriptNativeTest, ArithmeticControlFlowAndBuiltinsMatchTheInterpreter) {
     });
     // And the values are the right ones, not merely the same wrong ones.
     FakeHost host;
-    const auto program = CompileOrFail(ReadNativeScript("math.uvs"), host);
+    const auto program = CompileOrFail(ReadNativeScript("math.bpn"), host);
     ASSERT_NE(program, nullptr);
-    ScriptInstance instance(program, host);
+    BlueprintInstance instance(program, host);
     ASSERT_TRUE(instance.IsNative());
     const std::array<Value, 1> ten{std::int64_t{10}};
     EXPECT_EQ(std::get<std::int64_t>(*instance.Call("fib", ten)), 55);
@@ -458,8 +458,8 @@ TEST(UVScriptNativeTest, ArithmeticControlFlowAndBuiltinsMatchTheInterpreter) {
     EXPECT_DOUBLE_EQ(std::get<double>(*instance.GetField("TURN")), std::numbers::pi / 2.0);
 }
 
-TEST(UVScriptNativeTest, WaitResumesWhereItStopped) {
-    ExpectNativeMatchesInterpreter("waits.uvs", [](ScriptInstance& instance, FakeHost&,
+TEST(BlueprintNativeTest, WaitResumesWhereItStopped) {
+    ExpectNativeMatchesInterpreter("waits.bpn", [](BlueprintInstance& instance, FakeHost&,
                                                       std::vector<std::string>& results) {
         results.push_back(std::to_string(instance.RaiseEvent("ready")));
         results.push_back(std::to_string(instance.RaiseEvent("ready"))); // two runs wait side by side
@@ -471,8 +471,8 @@ TEST(UVScriptNativeTest, WaitResumesWhereItStopped) {
     });
 }
 
-TEST(UVScriptNativeTest, RuntimeErrorsReadTheSame) {
-    ExpectNativeMatchesInterpreter("errors.uvs", [](ScriptInstance& instance, FakeHost&,
+TEST(BlueprintNativeTest, RuntimeErrorsReadTheSame) {
+    ExpectNativeMatchesInterpreter("errors.bpn", [](BlueprintInstance& instance, FakeHost&,
                                                        std::vector<std::string>& results) {
         results.push_back(ResultText(instance.Call("spin"), instance));
         const std::array<Value, 2> byZero{std::int64_t{1}, std::int64_t{0}};
@@ -483,15 +483,15 @@ TEST(UVScriptNativeTest, RuntimeErrorsReadTheSame) {
     });
 }
 
-TEST(UVScriptNativeTest, GeneratedCodeNamesItsProgramAndRegistersIt) {
+TEST(BlueprintNativeTest, GeneratedCodeNamesItsProgramAndRegistersIt) {
     FakeHost host;
     const auto program = CompileOrFail("var n = 1\n\nfn twice() -> int:\n    return n * 2\n", host);
     ASSERT_NE(program, nullptr);
-    const std::string cpp = GenerateUVScriptNativeCpp(*program, "twice.uvs");
+    const std::string cpp = GenerateBlueprintNativeCpp(*program, "twice.bpn");
     char fingerprint[24];
     std::snprintf(fingerprint, sizeof(fingerprint), "0x%016llxULL",
                   static_cast<unsigned long long>(GetProgramFingerprint(*program)));
-    EXPECT_NE(cpp.find("Generated from twice.uvs"), std::string::npos);
+    EXPECT_NE(cpp.find("Generated from twice.bpn"), std::string::npos);
     EXPECT_NE(cpp.find(std::string{"Registration kRegistration{ProgramTable{"} + fingerprint), std::string::npos);
     // The same source compiled twice is the same program; a different host description is not.
     EXPECT_EQ(GetProgramFingerprint(*CompileOrFail("var n = 1\n\nfn twice() -> int:\n    return n * 2\n", host)),
@@ -500,29 +500,29 @@ TEST(UVScriptNativeTest, GeneratedCodeNamesItsProgramAndRegistersIt) {
               GetProgramFingerprint(*program));
 }
 
-TEST(UVScriptNativeTest, StraightLineFunctionsGetUnboxedCode) {
+TEST(BlueprintNativeTest, StraightLineFunctionsGetUnboxedCode) {
     FakeHost host;
-    const auto math = CompileOrFail(ReadNativeScript("math.uvs"), host);
+    const auto math = CompileOrFail(ReadNativeScript("math.bpn"), host);
     ASSERT_NE(math, nullptr);
-    const std::string cpp = GenerateUVScriptNativeCpp(*math, "math.uvs");
+    const std::string cpp = GenerateBlueprintNativeCpp(*math, "math.bpn");
     // sum_to(n: int) -> int, mix() -> float and shapes(x: float) -> vec3 run on plain C++ values.
     EXPECT_NE(cpp.find("std::int64_t T0(Context& c, std::int64_t a0)"), std::string::npos);
     EXPECT_NE(cpp.find("double T3(Context& c)"), std::string::npos);
     EXPECT_NE(cpp.find("Vec3Value T4(Context& c, double a0)"), std::string::npos);
     // A handler that waits keeps the resumable form.
-    const auto waits = CompileOrFail(ReadNativeScript("waits.uvs"), host);
+    const auto waits = CompileOrFail(ReadNativeScript("waits.bpn"), host);
     ASSERT_NE(waits, nullptr);
-    EXPECT_EQ(GenerateUVScriptNativeCpp(*waits, "waits.uvs").find(" T0(Context& c"), std::string::npos);
+    EXPECT_EQ(GenerateBlueprintNativeCpp(*waits, "waits.bpn").find(" T0(Context& c"), std::string::npos);
 }
 
 // Not a pass/fail check on speed (CI machines vary); it prints both times so a change can be seen.
-TEST(UVScriptNativeTest, ReportsNativeAndInterpretedTimeForFib) {
+TEST(BlueprintNativeTest, ReportsNativeAndInterpretedTimeForFib) {
     FakeHost host;
-    const auto program = CompileOrFail(ReadNativeScript("math.uvs"), host);
+    const auto program = CompileOrFail(ReadNativeScript("math.bpn"), host);
     ASSERT_NE(program, nullptr);
     const std::array<Value, 1> arg{std::int64_t{20}};
     const auto time = [&](const Execution execution) {
-        ScriptInstance instance(program, host, execution);
+        BlueprintInstance instance(program, host, execution);
         const auto start = std::chrono::steady_clock::now();
         const std::optional<Value> result = instance.Call("fib", arg);
         const auto elapsed = std::chrono::steady_clock::now() - start;
@@ -535,7 +535,7 @@ TEST(UVScriptNativeTest, ReportsNativeAndInterpretedTimeForFib) {
                 native > 0.0 ? interpreted / native : 0.0);
 }
 
-TEST(UVScriptNativeTest, HostDescriptionsParseAndReportTheirMistakes) {
+TEST(BlueprintNativeTest, HostDescriptionsParseAndReportTheirMistakes) {
     std::string error;
     const std::optional<DescribedHost> host = DescribedHost::Parse(ReadNativeScript("fake_object.uvhost"), error);
     ASSERT_TRUE(host.has_value()) << error;
@@ -549,8 +549,8 @@ TEST(UVScriptNativeTest, HostDescriptionsParseAndReportTheirMistakes) {
     EXPECT_FALSE(host->DescribeProperty("missing").has_value());
     // A script compiled against the description is the program the FakeHost gives: same fingerprint.
     FakeHost fake;
-    EXPECT_EQ(GetProgramFingerprint(*CompileUVScriptSource(ReadNativeScript("player.uvs"), *host).program),
-              GetProgramFingerprint(*CompileOrFail(ReadNativeScript("player.uvs"), fake)));
+    EXPECT_EQ(GetProgramFingerprint(*CompileBlueprintNotation(ReadNativeScript("player.bpn"), *host).program),
+              GetProgramFingerprint(*CompileOrFail(ReadNativeScript("player.bpn"), fake)));
 
     EXPECT_FALSE(DescribedHost::Parse("property speed 3fast\n", error).has_value());
     EXPECT_EQ(error, "line 1: unknown type '3fast'");

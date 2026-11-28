@@ -76,7 +76,7 @@ std::vector<Editor::ScriptExportRow> Editor::GetSelectedScriptExports() {
         return {};
     }
     // The defaults are whatever the field initializers produce, so a throwaway instance runs them.
-    const Blueprint::ScriptInstance defaults(compiled.program, host);
+    const Blueprint::BlueprintInstance defaults(compiled.program, host);
     std::vector<ScriptExportRow> rows;
     for (const Blueprint::FieldInfo& field : Blueprint::GetProgramFields(*compiled.program)) {
         if (field.kind != Blueprint::FieldKind::Export) {

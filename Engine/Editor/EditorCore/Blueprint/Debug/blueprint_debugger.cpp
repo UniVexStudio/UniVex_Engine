@@ -213,7 +213,7 @@ std::string BlueprintExecutionTrace::FormatSummary() const {
 // BlueprintDebugSession
 // ---------------------------------------------------------------------------
 
-bool BlueprintDebugSession::Attach(ScriptInstance& instance, const bool positionsAreNodes) {
+bool BlueprintDebugSession::Attach(BlueprintInstance& instance, const bool positionsAreNodes) {
     if (!instance.EnableDebugger()) {
         m_diagnostics.push_back(BlueprintDebugDiagnostic{
             0U, 0U, "Could not enable debugger (instance may be running linked native code)."});

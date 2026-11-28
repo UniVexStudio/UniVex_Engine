@@ -95,13 +95,13 @@ TEST(ContactScriptEventsTest, CollisionScriptEvents_BothBodiesHearEnterThenExitW
     const auto startedAt = std::chrono::steady_clock::now();
     while (std::chrono::steady_clock::now() - startedAt < std::chrono::seconds(5)) {
         engine.TickFrame();
-        Blueprint::ScriptInstance* const a = engine.FindUVScriptInstance(boxA);
+        Blueprint::BlueprintInstance* const a = engine.FindBlueprintInstance(boxA);
         if (a != nullptr && a->GetField("enters") == Blueprint::Value{std::int64_t{1}}) {
             break;
         }
     }
-    Blueprint::ScriptInstance* const a = engine.FindUVScriptInstance(boxA);
-    Blueprint::ScriptInstance* const b = engine.FindUVScriptInstance(boxB);
+    Blueprint::BlueprintInstance* const a = engine.FindBlueprintInstance(boxA);
+    Blueprint::BlueprintInstance* const b = engine.FindBlueprintInstance(boxB);
     ASSERT_NE(a, nullptr);
     ASSERT_NE(b, nullptr);
     EXPECT_EQ(a->GetField("enters"), Blueprint::Value{std::int64_t{1}});
@@ -158,13 +158,13 @@ TEST(ContactScriptEventsTest, OverlapScriptEvents_AreaAndBodyHearEnterThenExit) 
     const auto startedAt = std::chrono::steady_clock::now();
     while (std::chrono::steady_clock::now() - startedAt < std::chrono::seconds(5)) {
         engine.TickFrame();
-        Blueprint::ScriptInstance* const z = engine.FindUVScriptInstance(zone);
+        Blueprint::BlueprintInstance* const z = engine.FindBlueprintInstance(zone);
         if (z != nullptr && z->GetField("enters") == Blueprint::Value{std::int64_t{1}}) {
             break;
         }
     }
-    Blueprint::ScriptInstance* const z = engine.FindUVScriptInstance(zone);
-    Blueprint::ScriptInstance* const p = engine.FindUVScriptInstance(player);
+    Blueprint::BlueprintInstance* const z = engine.FindBlueprintInstance(zone);
+    Blueprint::BlueprintInstance* const p = engine.FindBlueprintInstance(player);
     ASSERT_NE(z, nullptr);
     ASSERT_NE(p, nullptr);
     EXPECT_EQ(z->GetField("enters"), Blueprint::Value{std::int64_t{1}});

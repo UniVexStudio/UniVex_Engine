@@ -25,7 +25,7 @@ enum class BlueprintPinType : std::uint8_t {
     Vector,
     String,
     Object,
-    /// Lists (UVScript `list[...]`), kept after the scalars so saved numbers never change.
+    /// Lists (Blueprint `list[...]`), kept after the scalars so saved numbers never change.
     ObjectArray,
     IntArray,
     FloatArray,
@@ -93,7 +93,7 @@ struct BlueprintComment final {
 };
 
 /// A Blueprint Class (`.uvbp`): the gameplay of one kind of object, as a graph of the engine's own
-/// nodes. It runs as UVScript: the engine translates it (TranslateBlueprintToUVScript) and
+/// nodes. It runs as Blueprint: the engine translates it (TranslateBlueprintToBlueprint) and
 /// compiles the result, so a blueprint has every event, call and check a script has.
 struct BlueprintAsset final {
     /// The object kind it was made for ("Character3D", "Player3D", "Static3D" ...).

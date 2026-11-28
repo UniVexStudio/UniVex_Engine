@@ -19,7 +19,7 @@ struct BlueprintPinSpec final {
     std::string defaultText;
 };
 
-/// How a node turns into UVScript.
+/// How a node turns into Blueprint.
 enum class BlueprintNodeRole : std::uint8_t {
     Event,        ///< starts a chain: `on <event>(args):`
     Action,       ///< one statement (`code`, `{n}` = input pin n's expression), then its exec output
@@ -53,7 +53,7 @@ struct BlueprintNodeType final {
     BlueprintNodeRole role = BlueprintNodeRole::Action;
     std::vector<BlueprintPinSpec> inputs;
     std::vector<BlueprintPinSpec> outputs;
-    /// Event: the UVScript event name.
+    /// Event: the Blueprint event name.
     std::string event;
     /// Action: the statement.
     std::string code;

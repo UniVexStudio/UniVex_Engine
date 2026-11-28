@@ -215,7 +215,7 @@ private:
         }
         const char c = Peek();
         if (kOneCharSymbols.find(c) == std::string_view::npos) {
-            Error(std::string{"'"} + c + "' is not part of UVScript");
+            Error(std::string{"'"} + c + "' is not part of Blueprint");
             Advance();
             return;
         }
@@ -774,10 +774,10 @@ private:
             const auto [end, error] =
                 std::from_chars(token.text.data(), token.text.data() + token.text.size(), expr->number);
             if (error != std::errc{} || end != token.text.data() + token.text.size()) {
-                m_diagnostics.push_back({token.at, "'" + token.text + "' is not a number UVScript can hold"});
+                m_diagnostics.push_back({token.at, "'" + token.text + "' is not a number Blueprint can hold"});
             }
             // A unit right after a number on the same line: "2 s", "90 deg".
-            if (Is(TokenKind::Name) && IsUVScriptUnit(Current().text)) {
+            if (Is(TokenKind::Name) && IsBlueprintNotationUnit(Current().text)) {
                 expr->unit = Take().text;
                 expr->isInteger = false;
             }
@@ -902,7 +902,7 @@ private:
 
 } // namespace
 
-bool IsUVScriptUnit(const std::string_view word) noexcept {
+bool IsBlueprintNotationUnit(const std::string_view word) noexcept {
     for (const std::string_view unit : kUnits) {
         if (unit == word) {
             return true;
@@ -911,7 +911,7 @@ bool IsUVScriptUnit(const std::string_view word) noexcept {
     return false;
 }
 
-ParseResult ParseUVScript(const std::string_view source) {
+ParseResult ParseBlueprintNotation(const std::string_view source) {
     ParseResult result;
     std::vector<Token> tokens = Lexer(source, result.diagnostics).Run();
     result.file = Parser(std::move(tokens), result.diagnostics).Run();

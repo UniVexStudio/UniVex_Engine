@@ -142,7 +142,7 @@ struct BlueprintDebugDiagnostic final {
     std::string message;
 };
 
-/// High-level Blueprint debugger session wrapping a VM ScriptInstance and optional position-to-node meaning.
+/// High-level Blueprint debugger session wrapping a VM BlueprintInstance and optional position-to-node meaning.
 class BlueprintDebugSession final {
 public:
     BlueprintDebugSession() = default;
@@ -151,7 +151,7 @@ public:
     /// Enables VM debugging on `instance` and synchronizes configured breakpoints.
     /// `positionsAreNodes`: the instance runs a program compiled from a graph, whose instruction positions are
     /// node ids (so a stop reports its node).
-    [[nodiscard]] bool Attach(ScriptInstance& instance, bool positionsAreNodes = false);
+    [[nodiscard]] bool Attach(BlueprintInstance& instance, bool positionsAreNodes = false);
     void Detach() noexcept;
     [[nodiscard]] bool IsAttached() const noexcept { return m_instance != nullptr; }
 
@@ -185,7 +185,7 @@ private:
     void RecordResumeResult(BlueprintTraceEventKind actionKind, const ScriptDebugResumeResult& result);
     void RefreshCallStackFromSnapshot(const ScriptDebugSnapshot& snapshot);
 
-    ScriptInstance* m_instance = nullptr;
+    BlueprintInstance* m_instance = nullptr;
     bool m_positionsAreNodes = false;
     BlueprintBreakpointManager m_breakpoints;
     std::vector<std::string> m_watchExpressions;

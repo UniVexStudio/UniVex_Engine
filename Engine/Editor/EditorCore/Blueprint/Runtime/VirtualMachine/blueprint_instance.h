@@ -45,14 +45,14 @@ struct ScriptDebugResumeResult final {
 
 /// One object running a program: its field values and any handlers paused on `wait`.
 /// Not thread-safe; an object's script runs on the thread that updates the object.
-class ScriptInstance final {
+class BlueprintInstance final {
 public:
     /// Evaluates the field initializers in source order. `host` must outlive the instance.
-    ScriptInstance(std::shared_ptr<const Program> program, UVScriptHost& host,
+    BlueprintInstance(std::shared_ptr<const Program> program, BlueprintHost& host,
                       Execution execution = Execution::Auto);
-    ~ScriptInstance();
-    ScriptInstance(const ScriptInstance&) = delete;
-    ScriptInstance& operator=(const ScriptInstance&) = delete;
+    ~BlueprintInstance();
+    BlueprintInstance(const BlueprintInstance&) = delete;
+    BlueprintInstance& operator=(const BlueprintInstance&) = delete;
 
     /// Runs `on <event>` with `args` until it returns or reaches a `wait`. Returns false when the
     /// script has no such handler or it stopped with an error (see GetLastError).

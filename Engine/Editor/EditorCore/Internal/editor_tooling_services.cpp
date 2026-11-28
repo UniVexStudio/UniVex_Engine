@@ -35,7 +35,7 @@ namespace {
 
 [[nodiscard]] bool IsSearchableAssetExt(const std::string& ext) {
     return ext == ".uvscene" || ext == ".uvmaterial" || ext == ".uvprefab" ||
-           ext == ".uvmatgraph" || ext == ".uvs" || ext == ".uvfx" || ext == ".uvanim" ||
+           ext == ".uvmatgraph" || ext == ".uvbp" || ext == ".uvfx" || ext == ".uvanim" ||
            ext == ".json" || ext == ".glsl" || ext == ".uvproject";
 }
 

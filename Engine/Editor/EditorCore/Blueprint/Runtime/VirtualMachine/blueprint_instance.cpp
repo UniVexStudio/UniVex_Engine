@@ -76,11 +76,11 @@ using Native::Error;
 /// StartChunk's index for the field initializers, which are not one of the program's functions.
 constexpr std::size_t kInitChunk = static_cast<std::size_t>(-1);
 
-struct ScriptInstance::State final {
+struct BlueprintInstance::State final {
     std::shared_ptr<const Program> program;
     /// The program's native form when one is linked in (and not refused), else null.
     const Native::ProgramTable* native = nullptr;
-    UVScriptHost* host = nullptr;
+    BlueprintHost* host = nullptr;
     std::vector<Value> fields;
     std::vector<Coroutine> waiting;
     std::string lastError;
@@ -412,7 +412,7 @@ namespace {
 
 } // namespace
 
-ScriptInstance::ScriptInstance(std::shared_ptr<const Program> program, UVScriptHost& host,
+BlueprintInstance::BlueprintInstance(std::shared_ptr<const Program> program, BlueprintHost& host,
                                      const Execution execution)
     : m_state(std::make_unique<State>()) {
     m_state->program = std::move(program);
@@ -429,9 +429,9 @@ ScriptInstance::ScriptInstance(std::shared_ptr<const Program> program, UVScriptH
     static_cast<void>(m_state->Resume(init));
 }
 
-ScriptInstance::~ScriptInstance() = default;
+BlueprintInstance::~BlueprintInstance() = default;
 
-bool ScriptInstance::RaiseEvent(const std::string_view event, const std::span<const Value> args) {
+bool BlueprintInstance::RaiseEvent(const std::string_view event, const std::span<const Value> args) {
     if (m_state->DebuggerBusy()) return false;
     const auto& handlers = m_state->program->handlers;
     const auto it = std::ranges::find_if(handlers, [event](const auto& h) { return h.first == event; });
@@ -464,7 +464,7 @@ bool ScriptInstance::RaiseEvent(const std::string_view event, const std::span<co
     return ok;
 }
 
-void ScriptInstance::Advance(const double seconds) {
+void BlueprintInstance::Advance(const double seconds) {
     if (m_state->DebuggerBusy()) return;
     // Only those already waiting when this call starts count down now; a handler that waits again
     // while resuming joins the back of the line for the next call.
@@ -492,7 +492,7 @@ void ScriptInstance::Advance(const double seconds) {
     }
 }
 
-bool ScriptInstance::HasFunction(const std::string_view name, const std::size_t argc) const noexcept {
+bool BlueprintInstance::HasFunction(const std::string_view name, const std::size_t argc) const noexcept {
     for (const Chunk& chunk : m_state->program->functions) {
         if (chunk.name == name && static_cast<std::size_t>(chunk.paramCount) == argc) {
             return true;
@@ -501,7 +501,7 @@ bool ScriptInstance::HasFunction(const std::string_view name, const std::size_t 
     return false;
 }
 
-std::optional<Value> ScriptInstance::Call(const std::string_view name, const std::span<const Value> args) {
+std::optional<Value> BlueprintInstance::Call(const std::string_view name, const std::span<const Value> args) {
     if (m_state->DebuggerBusy()) return std::nullopt;
     if (g_callDepth >= kMaximumCallDepth) {
         // Fail closed like a missing method, without an error: the chain stops, and every call
@@ -531,7 +531,7 @@ std::optional<Value> ScriptInstance::Call(const std::string_view name, const std
     return std::nullopt;
 }
 
-std::optional<Value> ScriptInstance::GetField(const std::string_view name) const {
+std::optional<Value> BlueprintInstance::GetField(const std::string_view name) const {
     const auto& fields = m_state->program->fields;
     for (std::size_t i = 0U; i < fields.size(); ++i) {
         if (fields[i].name == name) {
@@ -541,7 +541,7 @@ std::optional<Value> ScriptInstance::GetField(const std::string_view name) const
     return std::nullopt;
 }
 
-bool ScriptInstance::SetField(const std::string_view name, const Value& value) {
+bool BlueprintInstance::SetField(const std::string_view name, const Value& value) {
     const auto& fields = m_state->program->fields;
     for (std::size_t i = 0U; i < fields.size(); ++i) {
         if (fields[i].name != name) {
@@ -556,25 +556,25 @@ bool ScriptInstance::SetField(const std::string_view name, const Value& value) {
     return false;
 }
 
-bool ScriptInstance::IsNative() const noexcept {
+bool BlueprintInstance::IsNative() const noexcept {
     return m_state->native != nullptr;
 }
 
-std::size_t ScriptInstance::GetWaitingCount() const noexcept {
+std::size_t BlueprintInstance::GetWaitingCount() const noexcept {
     return m_state->waiting.size();
 }
 
-const std::string& ScriptInstance::GetLastError() const noexcept {
+const std::string& BlueprintInstance::GetLastError() const noexcept {
     return m_state->lastError;
 }
 
-bool ScriptInstance::EnableDebugger() {
+bool BlueprintInstance::EnableDebugger() {
     if (IsNative() || m_state->executionDepth != 0U) return false;
     m_state->debuggerEnabled = true;
     return true;
 }
 
-void ScriptInstance::DisableDebugger() noexcept {
+void BlueprintInstance::DisableDebugger() noexcept {
     m_state->debuggerEnabled = false;
     m_state->breakpoints.clear();
     m_state->pausedCoroutine.reset();
@@ -584,7 +584,7 @@ void ScriptInstance::DisableDebugger() noexcept {
     m_state->debugAction = State::DebugAction::Continue;
 }
 
-bool ScriptInstance::SetDebuggerBreakpoints(const std::span<const std::uint32_t> lines) {
+bool BlueprintInstance::SetDebuggerBreakpoints(const std::span<const std::uint32_t> lines) {
     if (!EnableDebugger()) return false;
     m_state->breakpoints.clear();
     for (const std::uint32_t line : lines) {
@@ -593,19 +593,19 @@ bool ScriptInstance::SetDebuggerBreakpoints(const std::span<const std::uint32_t>
     return true;
 }
 
-void ScriptInstance::ClearDebuggerBreakpoints() noexcept { m_state->breakpoints.clear(); }
-bool ScriptInstance::IsDebuggerEnabled() const noexcept { return m_state->debuggerEnabled; }
-bool ScriptInstance::IsDebugPaused() const noexcept { return m_state->debugPaused; }
-std::optional<ScriptDebugSnapshot> ScriptInstance::GetDebugSnapshot() const {
+void BlueprintInstance::ClearDebuggerBreakpoints() noexcept { m_state->breakpoints.clear(); }
+bool BlueprintInstance::IsDebuggerEnabled() const noexcept { return m_state->debuggerEnabled; }
+bool BlueprintInstance::IsDebugPaused() const noexcept { return m_state->debugPaused; }
+std::optional<ScriptDebugSnapshot> BlueprintInstance::GetDebugSnapshot() const {
     return m_state->debugPaused ? m_state->debugSnapshot : std::nullopt;
 }
-ScriptDebugResumeResult ScriptInstance::ContinueDebug() {
+ScriptDebugResumeResult BlueprintInstance::ContinueDebug() {
     return m_state->ResumePaused(State::DebugAction::Continue);
 }
-ScriptDebugResumeResult ScriptInstance::StepIntoDebug() {
+ScriptDebugResumeResult BlueprintInstance::StepIntoDebug() {
     return m_state->ResumePaused(State::DebugAction::StepInto);
 }
-ScriptDebugResumeResult ScriptInstance::StepOverDebug() {
+ScriptDebugResumeResult BlueprintInstance::StepOverDebug() {
     return m_state->ResumePaused(State::DebugAction::StepOver);
 }
 

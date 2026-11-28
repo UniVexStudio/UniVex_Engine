@@ -827,7 +827,7 @@ public:
 
     [[nodiscard]] std::string Run(const std::string_view origin) {
         const std::size_t initIndex = m_program.functions.size();
-        m_out += "// Generated from " + std::string{origin} + " by uvsc. Do not edit: regenerate it.\n";
+        m_out += "// Generated from " + std::string{origin} + " by uvbc. Do not edit: regenerate it.\n";
         m_out += "// Program fingerprint " + Hex(m_program.fingerprint) + ".\n\n";
         m_out += "#include <algorithm>\n#include <bit>\n#include <cmath>\n#include <cstdint>\n#include <cstdlib>\n#include <string>\n"
                  "#include <utility>\n#include <variant>\n#include <vector>\n\n";
@@ -1035,7 +1035,7 @@ private:
 
 } // namespace
 
-std::string GenerateUVScriptNativeCpp(const Program& program, const std::string_view origin) {
+std::string GenerateBlueprintNativeCpp(const Program& program, const std::string_view origin) {
     return Generator(program).Run(origin);
 }
 

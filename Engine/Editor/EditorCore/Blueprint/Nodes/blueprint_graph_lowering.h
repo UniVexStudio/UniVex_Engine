@@ -36,6 +36,6 @@ struct BlueprintCompilation final {
 
 [[nodiscard]] BlueprintCompilation CompileBlueprintGraph(const BlueprintAsset& blueprint, std::string_view objectName,
                                                          std::string_view objectKind,
-                                                         const Blueprint::UVScriptHost& host);
+                                                         const Blueprint::BlueprintHost& host);
 
 } // namespace UVE::Asset

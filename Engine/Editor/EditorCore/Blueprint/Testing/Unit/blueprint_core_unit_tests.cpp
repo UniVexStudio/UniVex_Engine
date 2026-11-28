@@ -54,7 +54,7 @@ public:
     std::vector<Core::BlueprintGraphEvent> events;
 };
 
-class MinimalDebugHost final : public UVScriptHost {
+class MinimalDebugHost final : public BlueprintHost {
 public:
     std::optional<HostProperty> DescribeProperty(std::string_view) const override { return std::nullopt; }
     std::optional<HostFunction> DescribeFunction(std::string_view) const override { return std::nullopt; }
@@ -210,10 +210,10 @@ TEST(BlueprintDebugUnitTest, DebugSessionBreakpointsWatchAndTrace) {
         "    return doubled + counter\n";
 
     MinimalDebugHost host;
-    const CompileResult compiled = CompileUVScriptSource(kSource, host);
+    const CompileResult compiled = CompileBlueprintNotation(kSource, host);
     ASSERT_TRUE(compiled.IsSuccess());
 
-    ScriptInstance instance(compiled.program, host, Execution::Interpreted);
+    BlueprintInstance instance(compiled.program, host, Execution::Interpreted);
     Debug::BlueprintDebugSession session;
     const std::uint32_t bpId = session.Breakpoints().AddLineBreakpoint(3U, 42U);
     ASSERT_NE(bpId, 0U);

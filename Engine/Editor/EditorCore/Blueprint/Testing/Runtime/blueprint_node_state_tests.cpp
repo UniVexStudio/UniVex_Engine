@@ -17,7 +17,7 @@
 namespace UVE::Scene::Tests {
 namespace {
 
-class UVScriptNodeStateTest : public ::testing::Test {
+class BlueprintNodeStateTest : public ::testing::Test {
 protected:
     Memory::MemoryManager memoryManager;
     Events::EventSystem eventSystem;
@@ -36,7 +36,7 @@ protected:
     }
 };
 
-TEST_F(UVScriptNodeStateTest, Host_DescribesNodeStateSurface) {
+TEST_F(BlueprintNodeStateTest, Host_DescribesNodeStateSurface) {
     const Core::BlueprintObjectHost bare{entityManager, nullptr, entityManager.CreateEntity()};
     const std::optional<Blueprint::HostProperty> visible = bare.DescribeProperty("visible");
     ASSERT_TRUE(visible.has_value());
@@ -61,7 +61,7 @@ TEST_F(UVScriptNodeStateTest, Host_DescribesNodeStateSurface) {
     EXPECT_FALSE(camera.DescribeProperty("intensity").has_value());
 }
 
-TEST_F(UVScriptNodeStateTest, Visible_DefaultsTrueAndWriteAddsComponent) {
+TEST_F(BlueprintNodeStateTest, Visible_DefaultsTrueAndWriteAddsComponent) {
     Core::BlueprintObjectHost host{entityManager, nullptr, entityManager.CreateEntity()};
     EXPECT_TRUE(std::get<bool>(host.GetProperty("visible")));
 
@@ -72,7 +72,7 @@ TEST_F(UVScriptNodeStateTest, Visible_DefaultsTrueAndWriteAddsComponent) {
     EXPECT_TRUE(std::get<bool>(host.GetProperty("visible")));
 }
 
-TEST_F(UVScriptNodeStateTest, Visible_AddsComponentWithoutTouchingDerivedHierarchy) {
+TEST_F(BlueprintNodeStateTest, Visible_AddsComponentWithoutTouchingDerivedHierarchy) {
     const Entity entity = entityManager.CreateEntity();
     Core::BlueprintObjectHost host{entityManager, nullptr, entity};
     ASSERT_FALSE(entityManager.HasComponent<VisibilityComponent>(entity));
@@ -99,7 +99,7 @@ TEST_F(UVScriptNodeStateTest, Visible_AddsComponentWithoutTouchingDerivedHierarc
     EXPECT_FALSE(childStored.visibleInHierarchy);
 }
 
-TEST_F(UVScriptNodeStateTest, Intensity_RoundTripsAndRejectsInvalid) {
+TEST_F(BlueprintNodeStateTest, Intensity_RoundTripsAndRejectsInvalid) {
     Core::BlueprintObjectHost host{entityManager, nullptr, MakeLight()};
     EXPECT_DOUBLE_EQ(std::get<double>(host.GetProperty("intensity")), 1.0);
 
@@ -114,7 +114,7 @@ TEST_F(UVScriptNodeStateTest, Intensity_RoundTripsAndRejectsInvalid) {
     EXPECT_DOUBLE_EQ(std::get<double>(host.GetProperty("intensity")), 2.5);
 }
 
-TEST_F(UVScriptNodeStateTest, Fov_RoundTripsAndRejectsInvalid) {
+TEST_F(BlueprintNodeStateTest, Fov_RoundTripsAndRejectsInvalid) {
     Core::BlueprintObjectHost host{entityManager, nullptr, MakeCamera()};
     EXPECT_FLOAT_EQ(static_cast<float>(std::get<double>(host.GetProperty("fov"))), 60.0);
 

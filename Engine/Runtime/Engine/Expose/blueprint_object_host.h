@@ -28,7 +28,7 @@ class IAudioSystem;
 } // namespace Audio
 
 namespace UVE::Blueprint {
-class ScriptInstance;
+class BlueprintInstance;
 } // namespace UVE::Blueprint
 
 namespace UVE::Network {
@@ -61,7 +61,7 @@ using LobbyRosterSink = std::function<void(std::uint32_t)>;
 /// The world a gameplay script reaches beyond its own object: traces, spawning, the clock, the
 /// game's state, saves, and messages to other scripts. One set is shared by every script of a game
 /// (the engine fills it); each entry may be empty, and a call to an empty one fails closed.
-/// Vectors are UVScript's, so this header stays free of engine maths.
+/// Vectors are Blueprint's, so this header stays free of engine maths.
 struct ScriptServices final {
     /// What a trace hit: the first collider along the segment.
     struct TraceHit final {
@@ -122,7 +122,7 @@ struct ScriptServices final {
     std::map<std::string, std::string> gameData;
 };
 
-/// What a `.uvs` script can reach on the object it is attached to. The object's components decide:
+/// What a Blueprint can reach on the object it is attached to. The object's components decide:
 /// - every object: `name` (read-only);
 /// - an object with a transform: `position`, `scale` (local, metres);
 /// - a character body: `velocity`, `grounded` (read-only);
@@ -169,11 +169,11 @@ struct ScriptServices final {
 ///   read the project's input map; events `ready` and `tick(dt)`.
 /// - always: `node(name)` finds another object by name, and `ref.method(args)` calls one of its
 ///   script functions (or the built-in `hide()`/`show()`), fire-and-forget.
-class BlueprintObjectHost final : public Blueprint::UVScriptHost {
+class BlueprintObjectHost final : public Blueprint::BlueprintHost {
 public:
     /// Finds the running script of an entity, for routing cross-node calls at it. Null when the
     /// entity runs no script. Empty on check-only hosts, whose calls then only reach built-ins.
-    using InstanceResolver = std::function<Blueprint::ScriptInstance*(Scene::Entity)>;
+    using InstanceResolver = std::function<Blueprint::BlueprintInstance*(Scene::Entity)>;
 
     /// `input` may be null (no input system): input calls then read as not pressed.
     /// `audioSources`/`audio` may be null (no audio): audio calls then fail closed as false. Both

@@ -107,7 +107,7 @@ protected:
     /// A graph made to run: its host (with `services`), its program and a running instance.
     struct Running final {
         std::unique_ptr<Core::BlueprintObjectHost> host;
-        std::unique_ptr<Blueprint::ScriptInstance> instance;
+        std::unique_ptr<Blueprint::BlueprintInstance> instance;
         [[nodiscard]] Blueprint::Value Field(const std::string& name) const {
             return instance->GetField(name).value_or(Blueprint::Value{});
         }
@@ -121,7 +121,7 @@ protected:
             ADD_FAILURE() << "node " << d.at.line << ": " << d.message;
         }
         if (compiled.IsSuccess()) {
-            run.instance = std::make_unique<Blueprint::ScriptInstance>(compiled.program, *run.host);
+            run.instance = std::make_unique<Blueprint::BlueprintInstance>(compiled.program, *run.host);
         }
         return run;
     }
@@ -267,7 +267,7 @@ TEST_F(BlueprintTest, AReadyBlueprintRunsAndMovesItsObject) {
     Core::BlueprintObjectHost host{entityManager, nullptr, entity};
     const Blueprint::CompileResult compiled = Asset::CompileBlueprintGraph(blueprint, "BP", "Object3D", host).result;
     ASSERT_TRUE(compiled.IsSuccess());
-    Blueprint::ScriptInstance instance(compiled.program, host);
+    Blueprint::BlueprintInstance instance(compiled.program, host);
     static_cast<void>(instance.RaiseEvent("ready", {}));
     const TransformComponent& transform = entityManager.GetComponent<TransformComponent>(entity);
     EXPECT_FLOAT_EQ(transform.localPosition.x, 1.0F);
@@ -284,7 +284,7 @@ TEST_F(BlueprintTest, AddMovementInputAndJumpSteerTheCharacter) {
     Core::BlueprintObjectHost host{entityManager, nullptr, entity};
     const Blueprint::CompileResult compiled = Asset::CompileBlueprintGraph(blueprint, "BP", "Character3D", host).result;
     ASSERT_TRUE(compiled.IsSuccess());
-    Blueprint::ScriptInstance instance(compiled.program, host);
+    Blueprint::BlueprintInstance instance(compiled.program, host);
     const Blueprint::Value dt[] = {0.016};
     ASSERT_TRUE(instance.RaiseEvent("tick", dt));
     const CharacterControllerComponent& body = entityManager.GetComponent<CharacterControllerComponent>(entity);
@@ -306,7 +306,7 @@ TEST_F(BlueprintTest, RotationNodesTurnTheObject) {
     Core::BlueprintObjectHost host{entityManager, nullptr, entity};
     const Blueprint::CompileResult compiled = Asset::CompileBlueprintGraph(blueprint, "BP", "Object3D", host).result;
     ASSERT_TRUE(compiled.IsSuccess());
-    Blueprint::ScriptInstance instance(compiled.program, host);
+    Blueprint::BlueprintInstance instance(compiled.program, host);
     ASSERT_TRUE(instance.RaiseEvent("ready", {}));
     // A quarter turn left about up: forward (-Z) now points along -X.
     const Math::Vector3 forward = Math::RotateVector(entityManager.GetComponent<TransformComponent>(entity).localRotation,

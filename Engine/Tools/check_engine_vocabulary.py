@@ -164,7 +164,7 @@ ALLOWED_PREFIXES = (
     # point of the line, so the file is allowlisted rather than rewritten.
     "Engine/Runtime/Engine/Internal/blueprint_object_host.cpp",
     # ...and the test that proves that alias reads, reports read-only, and is NOT described.
-    "Engine/Editor/EditorCore/Blueprint/Testing/Compiler/uvscript_vm_tests.cpp",
+    "Engine/Editor/EditorCore/Blueprint/Testing/Compiler/blueprint_vm_tests.cpp",
     # This tool's own denylist obviously names what it forbids.
     "Engine/Tools/check_engine_vocabulary.py",
 )

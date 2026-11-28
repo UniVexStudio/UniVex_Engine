@@ -87,7 +87,7 @@ extern "C" __attribute__((visibility("default"))) int UveEditorRun(android_app* 
     // Import opens Android's own file manager directly (multi-select files and whole folders).
     static const std::vector<std::string> kImportExtensions{
         ".fbx", ".gltf", ".glb", ".obj", ".uvanim", ".png", ".jpg", ".jpeg",
-        ".tga", ".bmp",  ".hdr", ".wav", ".ogg",    ".mp3", ".uvs", ".uvshader", ".glsl"};
+        ".tga", ".bmp",  ".hdr", ".wav", ".ogg",    ".mp3", ".uvshader", ".glsl"};
     UVE::Editor::SetSystemImportFilesPicker(
         [&activity](std::function<void(const std::vector<std::filesystem::path>&)> onPicked) {
             return UVE::AndroidHost::StartMultiFilePick(

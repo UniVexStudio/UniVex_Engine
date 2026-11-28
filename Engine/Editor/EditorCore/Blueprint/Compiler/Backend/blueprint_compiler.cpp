@@ -89,7 +89,7 @@ constexpr std::array<BuiltinInfo, 20> kBuiltins{{
 
 class Compiler final {
 public:
-    Compiler(const UVScriptHost& host, std::vector<Diagnostic>& diagnostics, Program& program)
+    Compiler(const BlueprintHost& host, std::vector<Diagnostic>& diagnostics, Program& program)
         : m_host(host), m_diagnostics(diagnostics), m_program(program) {}
 
     void Run(const File& file) {
@@ -1567,7 +1567,7 @@ private:
         std::vector<std::size_t> continues;
     };
 
-    const UVScriptHost& m_host;
+    const BlueprintHost& m_host;
     std::vector<Diagnostic>& m_diagnostics;
     Program& m_program;
     std::unordered_map<std::string, std::uint32_t> m_fields;
@@ -1582,7 +1582,7 @@ private:
 
 } // namespace
 
-CompileResult CompileUVScript(const File& file, const UVScriptHost& host) {
+CompileResult CompileBlueprintTree(const File& file, const BlueprintHost& host) {
     auto program = std::make_shared<Program>();
     CompileResult result;
     Compiler(host, result.diagnostics, *program).Run(file);
@@ -1596,12 +1596,12 @@ CompileResult CompileUVScript(const File& file, const UVScriptHost& host) {
     return result;
 }
 
-CompileResult CompileUVScriptSource(const std::string_view source, const UVScriptHost& host) {
-    ParseResult parsed = ParseUVScript(source);
+CompileResult CompileBlueprintNotation(const std::string_view source, const BlueprintHost& host) {
+    ParseResult parsed = ParseBlueprintNotation(source);
     if (!parsed.IsSuccess()) {
         return {nullptr, std::move(parsed.diagnostics)};
     }
-    return CompileUVScript(parsed.file, host);
+    return CompileBlueprintTree(parsed.file, host);
 }
 
 std::vector<FieldInfo> GetProgramFields(const Program& program) {

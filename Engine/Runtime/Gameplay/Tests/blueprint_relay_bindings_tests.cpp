@@ -133,7 +133,7 @@ struct RelaySignature final {
     Blueprint::Type result;
 };
 
-class UVScriptRelayBindingsTest : public ::testing::Test {
+class BlueprintRelayBindingsTest : public ::testing::Test {
 protected:
     Memory::MemoryManager memoryManager;
     Events::EventSystem eventSystem;
@@ -141,42 +141,42 @@ protected:
 
     [[nodiscard]] std::shared_ptr<const Blueprint::Program> CompileOrFail(
         const std::string& source, Core::BlueprintObjectHost& host) {
-        const Blueprint::CompileResult result = Blueprint::CompileUVScriptSource(source, host);
+        const Blueprint::CompileResult result = Blueprint::CompileBlueprintNotation(source, host);
         for (const Blueprint::Diagnostic& d : result.diagnostics) {
             ADD_FAILURE() << d.at.line << ":" << d.at.column << " " << d.message;
         }
         return result.program;
     }
 
-    [[nodiscard]] std::int64_t CallInt(Blueprint::ScriptInstance& instance,
+    [[nodiscard]] std::int64_t CallInt(Blueprint::BlueprintInstance& instance,
                                           const std::string& function) {
         return std::get<std::int64_t>(*instance.Call(function));
     }
 
-    [[nodiscard]] std::int64_t CallInt(Blueprint::ScriptInstance& instance,
+    [[nodiscard]] std::int64_t CallInt(Blueprint::BlueprintInstance& instance,
                                           const std::string& function, const std::int64_t id) {
         const std::array<Blueprint::Value, 1> args{Blueprint::Value{id}};
         return std::get<std::int64_t>(*instance.Call(function, args));
     }
 
-    [[nodiscard]] std::string CallStr(Blueprint::ScriptInstance& instance,
+    [[nodiscard]] std::string CallStr(Blueprint::BlueprintInstance& instance,
                                          const std::string& function) {
         return std::get<std::string>(*instance.Call(function));
     }
 
-    [[nodiscard]] std::string CallStr(Blueprint::ScriptInstance& instance,
+    [[nodiscard]] std::string CallStr(Blueprint::BlueprintInstance& instance,
                                          const std::string& function, const std::int64_t id) {
         const std::array<Blueprint::Value, 1> args{Blueprint::Value{id}};
         return std::get<std::string>(*instance.Call(function, args));
     }
 
-    [[nodiscard]] bool CallBool(Blueprint::ScriptInstance& instance,
+    [[nodiscard]] bool CallBool(Blueprint::BlueprintInstance& instance,
                                    const std::string& function, const std::int64_t id) {
         const std::array<Blueprint::Value, 1> args{Blueprint::Value{id}};
         return std::get<bool>(*instance.Call(function, args));
     }
 
-    [[nodiscard]] bool CallBool2(Blueprint::ScriptInstance& instance,
+    [[nodiscard]] bool CallBool2(Blueprint::BlueprintInstance& instance,
                                     const std::string& function, const std::int64_t first,
                                     const std::int64_t second) {
         const std::array<Blueprint::Value, 2> args{Blueprint::Value{first},
@@ -184,7 +184,7 @@ protected:
         return std::get<bool>(*instance.Call(function, args));
     }
 
-    [[nodiscard]] bool CallBool3(Blueprint::ScriptInstance& instance,
+    [[nodiscard]] bool CallBool3(Blueprint::BlueprintInstance& instance,
                                     const std::string& function, const std::int64_t first,
                                     const std::int64_t second, const bool third) {
         const std::array<Blueprint::Value, 3> args{
@@ -192,14 +192,14 @@ protected:
         return std::get<bool>(*instance.Call(function, args));
     }
 
-    [[nodiscard]] bool CallBoolStr(Blueprint::ScriptInstance& instance,
+    [[nodiscard]] bool CallBoolStr(Blueprint::BlueprintInstance& instance,
                                       const std::string& function, const std::string& text) {
         const std::array<Blueprint::Value, 1> args{Blueprint::Value{text}};
         return std::get<bool>(*instance.Call(function, args));
     }
 };
 
-TEST_F(UVScriptRelayBindingsTest, Host_DescribesRelaySurfaceUngated) {
+TEST_F(BlueprintRelayBindingsTest, Host_DescribesRelaySurfaceUngated) {
     // Ungated means ungated: a bare entity with neither attachment still describes every
     // name, and every call through them fails closed at run time instead.
     Core::BlueprintObjectHost host{entityManager, nullptr, entityManager.CreateEntity()};
@@ -233,7 +233,7 @@ TEST_F(UVScriptRelayBindingsTest, Host_DescribesRelaySurfaceUngated) {
     }
 }
 
-TEST_F(UVScriptRelayBindingsTest, Host_FailsClosedWithoutAttachments) {
+TEST_F(BlueprintRelayBindingsTest, Host_FailsClosedWithoutAttachments) {
     Core::BlueprintObjectHost host{entityManager, nullptr, entityManager.CreateEntity()};
     const std::span<const Blueprint::Value> noArgs{};
     EXPECT_EQ(std::get<std::int64_t>(host.CallFunction("relay.peer_count", noArgs)), 0);
@@ -257,7 +257,7 @@ TEST_F(UVScriptRelayBindingsTest, Host_FailsClosedWithoutAttachments) {
     EXPECT_FALSE(std::get<bool>(host.CallFunction("relay.send", text)));
 }
 
-TEST_F(UVScriptRelayBindingsTest, Script_ManagesRoomsAndRoutes) {
+TEST_F(BlueprintRelayBindingsTest, Script_ManagesRoomsAndRoutes) {
     ScriptRelayHarness harness;
     harness.AddClient();
     harness.AddClient();
@@ -278,7 +278,7 @@ TEST_F(UVScriptRelayBindingsTest, Script_ManagesRoomsAndRoutes) {
                                      &harness.clients[0]};
     const auto program = CompileOrFail(kRelayScript, host);
     ASSERT_NE(program, nullptr);
-    Blueprint::ScriptInstance instance(program, host);
+    Blueprint::BlueprintInstance instance(program, host);
 
     EXPECT_EQ(CallInt(instance, "peer_count"), 3);
     const std::int64_t moved = harness.ids[2];
@@ -298,7 +298,7 @@ TEST_F(UVScriptRelayBindingsTest, Script_ManagesRoomsAndRoutes) {
     EXPECT_FALSE(harness.clients[0].TryReceiveData().has_value());
 }
 
-TEST_F(UVScriptRelayBindingsTest, Script_ManagesInterestMutes) {
+TEST_F(BlueprintRelayBindingsTest, Script_ManagesInterestMutes) {
     ScriptRelayHarness harness;
     harness.AddClient();
     harness.AddClient();
@@ -319,7 +319,7 @@ TEST_F(UVScriptRelayBindingsTest, Script_ManagesInterestMutes) {
                                      &harness.clients[0]};
     const auto program = CompileOrFail(kRelayScript, host);
     ASSERT_NE(program, nullptr);
-    Blueprint::ScriptInstance instance(program, host);
+    Blueprint::BlueprintInstance instance(program, host);
 
     const std::int64_t muted = harness.ids[1];
     const std::int64_t speaker = harness.ids[0];
@@ -341,7 +341,7 @@ TEST_F(UVScriptRelayBindingsTest, Script_ManagesInterestMutes) {
     EXPECT_TRUE(CallBool2(instance, "interested", muted, speaker));
 }
 
-TEST_F(UVScriptRelayBindingsTest, Script_RemovesPeersAndReadsStates) {
+TEST_F(BlueprintRelayBindingsTest, Script_RemovesPeersAndReadsStates) {
     ScriptRelayHarness harness;
     harness.AddClient();
     harness.AddClient();
@@ -361,7 +361,7 @@ TEST_F(UVScriptRelayBindingsTest, Script_RemovesPeersAndReadsStates) {
                                      &harness.clients[0]};
     const auto program = CompileOrFail(kRelayScript, host);
     ASSERT_NE(program, nullptr);
-    Blueprint::ScriptInstance instance(program, host);
+    Blueprint::BlueprintInstance instance(program, host);
 
     EXPECT_EQ(CallInt(instance, "peer_count"), 2);
     EXPECT_EQ(CallStr(instance, "peer_state", harness.ids[0]), "established");
@@ -373,7 +373,7 @@ TEST_F(UVScriptRelayBindingsTest, Script_RemovesPeersAndReadsStates) {
     EXPECT_EQ(CallStr(instance, "peer_state", harness.ids[1]), "unknown");
 }
 
-TEST_F(UVScriptRelayBindingsTest, Script_ReadsStats) {
+TEST_F(BlueprintRelayBindingsTest, Script_ReadsStats) {
     ScriptRelayHarness harness;
     harness.AddClient();
     harness.AddClient();
@@ -394,7 +394,7 @@ TEST_F(UVScriptRelayBindingsTest, Script_ReadsStats) {
                                      &harness.clients[0]};
     const auto program = CompileOrFail(kRelayScript, host);
     ASSERT_NE(program, nullptr);
-    Blueprint::ScriptInstance instance(program, host);
+    Blueprint::BlueprintInstance instance(program, host);
 
     EXPECT_TRUE(CallBoolStr(instance, "send_text", "a"));
     harness.UpdateAll(1100U);
@@ -407,7 +407,7 @@ TEST_F(UVScriptRelayBindingsTest, Script_ReadsStats) {
     EXPECT_EQ(harness.relay.Stats().payloadsForwarded, 4U);
 }
 
-TEST_F(UVScriptRelayBindingsTest, Script_SendsAndPolls) {
+TEST_F(BlueprintRelayBindingsTest, Script_SendsAndPolls) {
     ScriptRelayHarness harness;
     harness.AddClient();
     harness.AddClient();
@@ -427,7 +427,7 @@ TEST_F(UVScriptRelayBindingsTest, Script_SendsAndPolls) {
                                      &harness.clients[0]};
     const auto program = CompileOrFail(kRelayScript, host);
     ASSERT_NE(program, nullptr);
-    Blueprint::ScriptInstance instance(program, host);
+    Blueprint::BlueprintInstance instance(program, host);
 
     EXPECT_EQ(CallStr(instance, "poll"), "");
     EXPECT_TRUE(CallBoolStr(instance, "send_text", "hi"));
@@ -443,7 +443,7 @@ TEST_F(UVScriptRelayBindingsTest, Script_SendsAndPolls) {
     EXPECT_EQ(CallStr(instance, "poll"), "");
 }
 
-TEST_F(UVScriptRelayBindingsTest, Script_RefusesOutOfRangeIds) {
+TEST_F(BlueprintRelayBindingsTest, Script_RefusesOutOfRangeIds) {
     ScriptRelayHarness harness;
     harness.AddClient();
     ASSERT_TRUE(harness.Establish(1000U));
@@ -462,7 +462,7 @@ TEST_F(UVScriptRelayBindingsTest, Script_RefusesOutOfRangeIds) {
                                      &harness.clients[0]};
     const auto program = CompileOrFail(kRelayScript, host);
     ASSERT_NE(program, nullptr);
-    Blueprint::ScriptInstance instance(program, host);
+    Blueprint::BlueprintInstance instance(program, host);
 
     constexpr std::int64_t kPastU32 = 4294967296LL;
     EXPECT_FALSE(CallBool2(instance, "set_room", -1, 0));

@@ -131,8 +131,8 @@ TEST(ScriptServicesTest, TracesMessagesRemovalAndSaveSlotsWorkThroughTheEngine) 
     engine.TickFrame();
     EXPECT_FALSE(entities.IsAlive(shooter)) << "a script may remove its own object";
     EXPECT_FALSE(entities.IsAlive(doomed));
-    EXPECT_EQ(engine.FindUVScriptInstance(shooter), nullptr);
-    Blueprint::ScriptInstance* const heard = engine.FindUVScriptInstance(listener);
+    EXPECT_EQ(engine.FindBlueprintInstance(shooter), nullptr);
+    Blueprint::BlueprintInstance* const heard = engine.FindBlueprintInstance(listener);
     ASSERT_NE(heard, nullptr);
     EXPECT_EQ(heard->GetField("heard"), Blueprint::Value{std::string("Bye")}) << "the doomed object heard `destroyed`";
     EXPECT_EQ(heard->GetField("from"), Blueprint::Value{std::string("Doomed")});

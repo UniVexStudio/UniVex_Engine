@@ -234,7 +234,7 @@ void StampStatement(B::Stmt& stmt, const std::uint32_t line) {
 
 /// Parses one expression written in the node-template notation ("lerp(a, b, t)"); null when it does not parse.
 [[nodiscard]] B::ExprPtr ParseExpression(const std::string& text) {
-    B::ParseResult parsed = B::ParseUVScript("on __template:\n    let __value = " + text + "\n");
+    B::ParseResult parsed = B::ParseBlueprintNotation("on __template:\n    let __value = " + text + "\n");
     if (!parsed.IsSuccess() || parsed.file.handlers.empty() || parsed.file.handlers[0].body.empty()) {
         return nullptr;
     }
@@ -243,7 +243,7 @@ void StampStatement(B::Stmt& stmt, const std::uint32_t line) {
 
 /// Parses one statement written in the node-template notation ("physics.apply_impulse(v)", "x = 3").
 [[nodiscard]] B::StmtPtr ParseStatementText(const std::string& text) {
-    B::ParseResult parsed = B::ParseUVScript("on __template:\n    " + text + "\n");
+    B::ParseResult parsed = B::ParseBlueprintNotation("on __template:\n    " + text + "\n");
     if (!parsed.IsSuccess() || parsed.file.handlers.empty() || parsed.file.handlers[0].body.empty()) {
         return nullptr;
     }
@@ -886,11 +886,11 @@ BlueprintLowering LowerBlueprintGraph(const BlueprintAsset& blueprint, const std
 }
 
 BlueprintCompilation CompileBlueprintGraph(const BlueprintAsset& blueprint, const std::string_view objectName,
-                                           const std::string_view objectKind, const Blueprint::UVScriptHost& host) {
+                                           const std::string_view objectKind, const Blueprint::BlueprintHost& host) {
     BlueprintLowering lowered = LowerBlueprintGraph(blueprint, objectName, objectKind);
     BlueprintCompilation compilation;
     compilation.problems = std::move(lowered.problems);
-    compilation.result = Blueprint::CompileUVScript(lowered.file, host);
+    compilation.result = Blueprint::CompileBlueprintTree(lowered.file, host);
     return compilation;
 }
 

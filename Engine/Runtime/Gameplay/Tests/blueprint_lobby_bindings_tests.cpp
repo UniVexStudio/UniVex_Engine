@@ -158,7 +158,7 @@ struct LobbySignature final {
     Blueprint::Type result;
 };
 
-class UVScriptLobbyBindingsTest : public ::testing::Test {
+class BlueprintLobbyBindingsTest : public ::testing::Test {
 protected:
     Memory::MemoryManager memoryManager;
     Events::EventSystem eventSystem;
@@ -166,25 +166,25 @@ protected:
 
     [[nodiscard]] std::shared_ptr<const Blueprint::Program> CompileOrFail(
         const std::string& source, Core::BlueprintObjectHost& host) {
-        const Blueprint::CompileResult result = Blueprint::CompileUVScriptSource(source, host);
+        const Blueprint::CompileResult result = Blueprint::CompileBlueprintNotation(source, host);
         for (const Blueprint::Diagnostic& d : result.diagnostics) {
             ADD_FAILURE() << d.at.line << ":" << d.at.column << " " << d.message;
         }
         return result.program;
     }
 
-    [[nodiscard]] std::int64_t CallInt(Blueprint::ScriptInstance& instance,
+    [[nodiscard]] std::int64_t CallInt(Blueprint::BlueprintInstance& instance,
                                           const std::string& function) {
         return std::get<std::int64_t>(*instance.Call(function));
     }
 
-    [[nodiscard]] std::int64_t CallInt(Blueprint::ScriptInstance& instance,
+    [[nodiscard]] std::int64_t CallInt(Blueprint::BlueprintInstance& instance,
                                           const std::string& function, const std::int64_t id) {
         const std::array<Blueprint::Value, 1> args{Blueprint::Value{id}};
         return std::get<std::int64_t>(*instance.Call(function, args));
     }
 
-    [[nodiscard]] std::int64_t CallInt2(Blueprint::ScriptInstance& instance,
+    [[nodiscard]] std::int64_t CallInt2(Blueprint::BlueprintInstance& instance,
                                            const std::string& function, const std::int64_t first,
                                            const std::int64_t second) {
         const std::array<Blueprint::Value, 2> args{Blueprint::Value{first},
@@ -192,13 +192,13 @@ protected:
         return std::get<std::int64_t>(*instance.Call(function, args));
     }
 
-    [[nodiscard]] std::string CallStr(Blueprint::ScriptInstance& instance,
+    [[nodiscard]] std::string CallStr(Blueprint::BlueprintInstance& instance,
                                          const std::string& function, const std::int64_t id) {
         const std::array<Blueprint::Value, 1> args{Blueprint::Value{id}};
         return std::get<std::string>(*instance.Call(function, args));
     }
 
-    [[nodiscard]] std::string CallStr2(Blueprint::ScriptInstance& instance,
+    [[nodiscard]] std::string CallStr2(Blueprint::BlueprintInstance& instance,
                                           const std::string& function, const std::int64_t first,
                                           const std::int64_t second) {
         const std::array<Blueprint::Value, 2> args{Blueprint::Value{first},
@@ -206,14 +206,14 @@ protected:
         return std::get<std::string>(*instance.Call(function, args));
     }
 
-    [[nodiscard]] bool CallBool(Blueprint::ScriptInstance& instance,
+    [[nodiscard]] bool CallBool(Blueprint::BlueprintInstance& instance,
                                    const std::string& function, const std::int64_t id) {
         const std::array<Blueprint::Value, 1> args{Blueprint::Value{id}};
         return std::get<bool>(*instance.Call(function, args));
     }
 };
 
-TEST_F(UVScriptLobbyBindingsTest, Host_DescribesLobbySurfaceUngated) {
+TEST_F(BlueprintLobbyBindingsTest, Host_DescribesLobbySurfaceUngated) {
     // Ungated means ungated: a bare entity with no peer at all still describes every name,
     // and every call through them fails closed at run time instead.
     Core::BlueprintObjectHost host{entityManager, nullptr, entityManager.CreateEntity()};
@@ -280,7 +280,7 @@ TEST_F(UVScriptLobbyBindingsTest, Host_DescribesLobbySurfaceUngated) {
     EXPECT_EQ(*roster, (std::vector<Blueprint::Type>{Blueprint::Type::Int()}));
 }
 
-TEST_F(UVScriptLobbyBindingsTest, Host_FailsClosedWithoutPeer) {
+TEST_F(BlueprintLobbyBindingsTest, Host_FailsClosedWithoutPeer) {
     Core::BlueprintObjectHost host{entityManager, nullptr, entityManager.CreateEntity()};
     const std::span<const Blueprint::Value> noArgs{};
     EXPECT_EQ(std::get<std::int64_t>(host.CallFunction("lobby.list", noArgs)), 0);
@@ -317,7 +317,7 @@ TEST_F(UVScriptLobbyBindingsTest, Host_FailsClosedWithoutPeer) {
               "");
 }
 
-TEST_F(UVScriptLobbyBindingsTest, Script_ListsCreatesAndReadsRooms) {
+TEST_F(BlueprintLobbyBindingsTest, Script_ListsCreatesAndReadsRooms) {
     ScriptLobbyHarness harness;
     harness.AddFacade();
     ASSERT_TRUE(harness.Establish(1000U));
@@ -326,7 +326,7 @@ TEST_F(UVScriptLobbyBindingsTest, Script_ListsCreatesAndReadsRooms) {
     // exactly as a running game would from its own response sinks.
     std::vector<std::pair<std::uint32_t, bool>> results;
     std::vector<std::uint32_t> pushes;
-    Blueprint::ScriptInstance* live = nullptr;
+    Blueprint::BlueprintInstance* live = nullptr;
     Core::LobbyResultSink resultSink = [&](const std::uint32_t id, const bool ok) {
         results.emplace_back(id, ok);
         if (live != nullptr) {
@@ -356,7 +356,7 @@ TEST_F(UVScriptLobbyBindingsTest, Script_ListsCreatesAndReadsRooms) {
                                      std::move(rosterSink)};
     const auto program = CompileOrFail(kLobbyScript, host);
     ASSERT_NE(program, nullptr);
-    Blueprint::ScriptInstance instance(program, host);
+    Blueprint::BlueprintInstance instance(program, host);
     live = &instance;
 
     const std::int64_t listed = CallInt(instance, "do_list");
@@ -410,7 +410,7 @@ TEST_F(UVScriptLobbyBindingsTest, Script_ListsCreatesAndReadsRooms) {
     EXPECT_TRUE(pushes.empty());
 }
 
-TEST_F(UVScriptLobbyBindingsTest, Script_JoinsLeavesAndSeesErrors) {
+TEST_F(BlueprintLobbyBindingsTest, Script_JoinsLeavesAndSeesErrors) {
     ScriptLobbyHarness harness;
     harness.AddFacade();
     harness.AddFacade();
@@ -442,7 +442,7 @@ TEST_F(UVScriptLobbyBindingsTest, Script_JoinsLeavesAndSeesErrors) {
                                      Core::LobbyRosterSink{}};
     const auto program = CompileOrFail(kLobbyScript, host);
     ASSERT_NE(program, nullptr);
-    Blueprint::ScriptInstance instance(program, host);
+    Blueprint::BlueprintInstance instance(program, host);
 
     auto joinAs = [&](const std::int64_t room, const std::string& player) {
         const std::array<Blueprint::Value, 2> args{Blueprint::Value{room},
@@ -497,14 +497,14 @@ TEST_F(UVScriptLobbyBindingsTest, Script_JoinsLeavesAndSeesErrors) {
     EXPECT_FALSE(CallBool(instance, "release", ghost));
 }
 
-TEST_F(UVScriptLobbyBindingsTest, Script_ReceivesRosterPushes) {
+TEST_F(BlueprintLobbyBindingsTest, Script_ReceivesRosterPushes) {
     ScriptLobbyHarness harness;
     harness.AddFacade();
     harness.AddFacade();
     ASSERT_TRUE(harness.Establish(1000U));
 
     std::vector<std::uint32_t> pushes;
-    Blueprint::ScriptInstance* live = nullptr;
+    Blueprint::BlueprintInstance* live = nullptr;
     Core::BlueprintObjectHost host{entityManager,
                                      nullptr,
                                      entityManager.CreateEntity(),
@@ -527,7 +527,7 @@ TEST_F(UVScriptLobbyBindingsTest, Script_ReceivesRosterPushes) {
                                      }};
     const auto program = CompileOrFail(kLobbyScript, host);
     ASSERT_NE(program, nullptr);
-    Blueprint::ScriptInstance instance(program, host);
+    Blueprint::BlueprintInstance instance(program, host);
     live = &instance;
 
     const std::array<Blueprint::Value, 3> create{Blueprint::Value{std::string{"arena"}},
@@ -570,7 +570,7 @@ TEST_F(UVScriptLobbyBindingsTest, Script_ReceivesRosterPushes) {
     EXPECT_EQ(CallInt(instance, "my_roster_count"), 1);
 }
 
-TEST_F(UVScriptLobbyBindingsTest, Host_AbandonsAndUnhooksOnDestruction) {
+TEST_F(BlueprintLobbyBindingsTest, Host_AbandonsAndUnhooksOnDestruction) {
     ScriptLobbyHarness harness;
     harness.AddFacade();
     harness.AddFacade();
@@ -640,7 +640,7 @@ TEST_F(UVScriptLobbyBindingsTest, Host_AbandonsAndUnhooksOnDestruction) {
               (std::vector<std::string>{"ghost", "m1", "m2"}));
 }
 
-TEST_F(UVScriptLobbyBindingsTest, Script_QueriesRostersWithoutJoining) {
+TEST_F(BlueprintLobbyBindingsTest, Script_QueriesRostersWithoutJoining) {
     ScriptLobbyHarness harness;
     harness.AddFacade();
     harness.AddFacade();
@@ -679,7 +679,7 @@ TEST_F(UVScriptLobbyBindingsTest, Script_QueriesRostersWithoutJoining) {
                                      [&](const std::uint32_t room) { pushes.push_back(room); }};
     const auto program = CompileOrFail(kLobbyScript, host);
     ASSERT_NE(program, nullptr);
-    Blueprint::ScriptInstance instance(program, host);
+    Blueprint::BlueprintInstance instance(program, host);
 
     const std::int64_t queried = CallInt(instance, "do_roster", 1);
     EXPECT_NE(queried, 0);
@@ -697,7 +697,7 @@ TEST_F(UVScriptLobbyBindingsTest, Script_QueriesRostersWithoutJoining) {
     EXPECT_EQ(CallStr(instance, "err", ghost), "unknown room '999'");
 }
 
-TEST_F(UVScriptLobbyBindingsTest, Script_SendFailuresAnswerZero) {
+TEST_F(BlueprintLobbyBindingsTest, Script_SendFailuresAnswerZero) {
     ScriptLobbyHarness harness;
     harness.AddFacade();
     // Never established: every call fails its send synchronously, before any pump.
@@ -719,7 +719,7 @@ TEST_F(UVScriptLobbyBindingsTest, Script_SendFailuresAnswerZero) {
                                      [&](const std::uint32_t room) { pushes.push_back(room); }};
     const auto program = CompileOrFail(kLobbyScript, host);
     ASSERT_NE(program, nullptr);
-    Blueprint::ScriptInstance instance(program, host);
+    Blueprint::BlueprintInstance instance(program, host);
 
     EXPECT_EQ(CallInt(instance, "do_list"), 0);
     const std::array<Blueprint::Value, 3> create{Blueprint::Value{std::string{"arena"}},

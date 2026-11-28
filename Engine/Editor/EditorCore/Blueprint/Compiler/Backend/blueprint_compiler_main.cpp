@@ -1,8 +1,8 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
-// uvsc: compiles a .uvs script to C++23 for a release build.
+// uvbc: compiles a Blueprint notation file to C++23 for a release build.
 //
-//     uvsc --host <object.uvhost> --out <script.uvs.cpp> <script.uvs>
+//     uvbc --host <object.uvhost> --out <script.bpn.cpp> <script.bpn>
 //
 // The host file describes what the object offers (see DescribedHost). Problems are printed as
 // `file:line:column: message` and the exit code is non-zero; nothing is written then.
@@ -31,7 +31,7 @@ namespace {
 }
 
 int Usage() {
-    std::cerr << "usage: uvsc --host <object.uvhost> --out <script.uvs.cpp> <script.uvs>\n";
+    std::cerr << "usage: uvbc --host <object.uvhost> --out <script.bpn.cpp> <script.bpn>\n";
     return 2;
 }
 
@@ -69,7 +69,7 @@ int main(const int argc, char** const argv) {
         std::cerr << hostPath.string() << ": " << hostError << "\n";
         return 1;
     }
-    const UVE::Blueprint::CompileResult compiled = UVE::Blueprint::CompileUVScriptSource(*source, *host);
+    const UVE::Blueprint::CompileResult compiled = UVE::Blueprint::CompileBlueprintNotation(*source, *host);
     if (!compiled.IsSuccess()) {
         for (const UVE::Blueprint::Diagnostic& diagnostic : compiled.diagnostics) {
             std::cerr << scriptPath.string() << ":" << diagnostic.at.line << ":" << diagnostic.at.column << ": "
@@ -77,7 +77,7 @@ int main(const int argc, char** const argv) {
         }
         return 1;
     }
-    const std::string cpp = UVE::Blueprint::GenerateUVScriptNativeCpp(*compiled.program, scriptPath.filename().string());
+    const std::string cpp = UVE::Blueprint::GenerateBlueprintNativeCpp(*compiled.program, scriptPath.filename().string());
     // Written only when it changed, so an unchanged script does not trigger a recompile.
     if (ReadFile(outPath) == cpp) {
         return 0;
