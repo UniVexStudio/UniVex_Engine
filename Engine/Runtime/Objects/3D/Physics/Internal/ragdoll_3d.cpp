@@ -380,7 +380,10 @@ void EnsureSkeletonPose(Skeleton3DComponent& skeleton) {
         const Math::Vector3 leftAvg = leftSum * (1.0F / static_cast<float>(leftCount));
         const Math::Vector3 rightAvg = rightSum * (1.0F / static_cast<float>(rightCount));
         const Math::Vector3 rightToLeft = leftAvg - rightAvg;
-        const Math::Vector3 forwardCand = Math::Cross(skelUp, rightToLeft);
+        // Forward is where the character faces: with up and the left side known, `left = up x forward`,
+        // so `forward = left x up`. A character facing +Z has its left at +X (X x Y = Z). The reverse
+        // product pointed the other way, which folded every elbow backward and every knee forward.
+        const Math::Vector3 forwardCand = Math::Cross(rightToLeft, skelUp);
         if (Math::LengthSquared(forwardCand) > kDirectionEpsilon) {
             return SafeNormalize(forwardCand, defaultForward);
         }
@@ -402,18 +405,18 @@ void ResolveEffectiveStepSettings(const Ragdoll3DComponent& ragdoll,
     outDynamicPushback = ragdoll.enableDynamicPushback;
 
     switch (ragdoll.qualityPreset) {
-    case RagdollQualityPreset::DesktopAAA:
+    case RagdollQualityPreset::High:
         outStepSettings.enableSelfCollision = ragdoll.enableSelfCollision;
         outStepSettings.stabilizeInertia = true;
         break;
-    case RagdollQualityPreset::MobileBalanced:
+    case RagdollQualityPreset::Balanced:
         outStepSettings.velocityIterations = std::min<std::size_t>(outStepSettings.velocityIterations, 6U);
         outStepSettings.positionIterations = std::min<std::size_t>(outStepSettings.positionIterations, 3U);
         outStepSettings.enableSelfCollision = ragdoll.enableSelfCollision;
         outStepSettings.stabilizeInertia = true;
         outMaxSubsteps = std::min<std::uint32_t>(outMaxSubsteps, 4U);
         break;
-    case RagdollQualityPreset::MobileFast:
+    case RagdollQualityPreset::Fast:
         outStepSettings.velocityIterations = std::min<std::size_t>(outStepSettings.velocityIterations, 4U);
         outStepSettings.positionIterations = std::min<std::size_t>(outStepSettings.positionIterations, 2U);
         outStepSettings.enableSelfCollision = false;
@@ -815,7 +818,7 @@ void ApplyRagdoll3DObjectDefinition(IEntityManager& entityManager, const Entity 
 void ApplyRagdollQualityPreset(Ragdoll3DComponent& ragdoll, const RagdollQualityPreset preset) noexcept {
     ragdoll.qualityPreset = preset;
     switch (preset) {
-    case RagdollQualityPreset::DesktopAAA:
+    case RagdollQualityPreset::High:
         ragdoll.stepSettings.velocityIterations = Physics::kRagdollDefaultVelocityIterations;
         ragdoll.stepSettings.positionIterations = Physics::kRagdollDefaultPositionIterations;
         ragdoll.stepSettings.stabilizeInertia = true;
@@ -823,7 +826,7 @@ void ApplyRagdollQualityPreset(Ragdoll3DComponent& ragdoll, const RagdollQuality
         ragdoll.enableDynamicPushback = true;
         ragdoll.maxSubstepsPerFrame = Physics::kMaximumRagdollSubsteps;
         break;
-    case RagdollQualityPreset::MobileBalanced:
+    case RagdollQualityPreset::Balanced:
         ragdoll.stepSettings.velocityIterations = 6U;
         ragdoll.stepSettings.positionIterations = 3U;
         ragdoll.stepSettings.stabilizeInertia = true;
@@ -831,7 +834,7 @@ void ApplyRagdollQualityPreset(Ragdoll3DComponent& ragdoll, const RagdollQuality
         ragdoll.enableDynamicPushback = true;
         ragdoll.maxSubstepsPerFrame = 4U;
         break;
-    case RagdollQualityPreset::MobileFast:
+    case RagdollQualityPreset::Fast:
         ragdoll.stepSettings.velocityIterations = 4U;
         ragdoll.stepSettings.positionIterations = 2U;
         ragdoll.stepSettings.stabilizeInertia = true;
@@ -1424,7 +1427,7 @@ bool InitializeRagdoll3D(IEntityManager& entityManager, const Entity entity) {
         if (!component.solver.AddJoint(joint)) return fail("A ragdoll joint could not be created.");
     }
 
-    // Jolt-style non-adjacent self-collision filter table: disable parent-child + bind-pose overlaps.
+    // Pairwise non-adjacent self-collision filter table: disable parent-child + bind-pose overlaps.
     component.solver.RebuildSelfCollisionFilter(/*disableCurrentPoseOverlaps=*/true, /*minimumJointHops=*/2U);
 
     EnsureSkeletonPose(skeleton);

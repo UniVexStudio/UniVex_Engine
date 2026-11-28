@@ -393,7 +393,7 @@ TEST_F(Ragdoll3DTest, ApplyRagdollImpact_RefusesAHitThatTouchesNothing) {
     }
 }
 
-// ---- AAA Overhaul Regression & Capability Tests -----------------------------------------------
+// ---- Overhaul Regression & Capability Tests -----------------------------------------------
 
 TEST_F(Ragdoll3DTest, RootPositionWriteBack_DropsRenderedPelvisToFloorInsteadOfFloating) {
     // Regression test for Bug #1 (Floating Corpse): previously only rotation was written back,
@@ -580,14 +580,14 @@ TEST_F(Ragdoll3DTest, ActiveModePartialSubtreeVelocityInheritanceAndGetUpBlendOu
     EXPECT_FALSE(ragdoll.editorPreviewSimulating);
     EXPECT_NEAR(skel.pose[0].position.y, 1.0F, 1.0e-4F) << "stopping Editor Preview must restore exact bind pose";
 
-    // Test MobileFast preset scales down cost for low-end Android phones.
-    ApplyRagdollQualityPreset(ragdoll, RagdollQualityPreset::MobileFast);
+    // Test the Fast preset scales down cost for low-end hardware.
+    ApplyRagdollQualityPreset(ragdoll, RagdollQualityPreset::Fast);
     EXPECT_FALSE(ragdoll.enableSelfCollision);
     EXPECT_FALSE(ragdoll.enableDynamicPushback);
     EXPECT_EQ(ragdoll.maxSubstepsPerFrame, 2U);
 }
 
-TEST_F(Ragdoll3DTest, PhysicalBone3D_DelegatesToAAASolverAndStopsOnFloorCollider) {
+TEST_F(Ragdoll3DTest, PhysicalBone3D_DelegatesToTheRagdollSolverAndStopsOnFloorCollider) {
     static_cast<void>(MakeBoxCollider({0.0F, -0.5F, 0.0F}, {20.0F, 0.5F, 20.0F}));
     const Entity pbEntity = entityManager.CreateEntity();
     PhysicalBone3DObjectDefinition def{};
@@ -781,6 +781,40 @@ TEST_F(Ragdoll3DTest, OrdinaryWordsInStructuralBoneNamesAreNotMistakenForFingers
     EXPECT_TRUE(ContainsBone(built, "spine_middle")) << "a structural bone must not be skipped as a finger";
     EXPECT_FALSE(ContainsBone(built, "LeftHandIndex1")) << "a real finger still is";
     EXPECT_TRUE(ContainsBone(built, "LeftHand"));
+}
+
+/// The world-space hinge axis of the joint that connects the bone named `boneName` to its parent body.
+[[nodiscard]] Math::Vector3 HingeWorldAxisOf(const Ragdoll3DComponent& ragdoll, const Skeleton3DComponent& skeleton,
+                                             const std::string& boneName) {
+    for (std::size_t j = 0U; j < ragdoll.solver.GetJointCount(); ++j) {
+        const Physics::RagdollJoint& joint = ragdoll.solver.GetJoint(j);
+        for (const RagdollBoneBinding& binding : ragdoll.bindings) {
+            if (binding.bodyIndex == joint.secondBody && skeleton.bones[binding.boneIndex].name == boneName) {
+                const Physics::RagdollBody& parentBody = ragdoll.solver.GetBody(joint.firstBody);
+                const Math::Quaternion worldFrame = Math::Multiply(parentBody.rotation, joint.firstFrame);
+                return Math::RotateVector(worldFrame, {1.0F, 0.0F, 0.0F});
+            }
+        }
+    }
+    return {};
+}
+
+TEST_F(Ragdoll3DTest, HingesFoldTheAnatomicalWay_ElbowsForwardAndKneesBackward) {
+    // A rig facing +Z has its left side at +X. Positive twist about the elbow axis must carry the forearm
+    // toward the front; the knee range is negative, so its axis must make that fold carry the shin backward.
+    // The sign was reversed once (forward computed as `up x left`), which folded every limb the wrong way.
+    const Skeleton3DComponent mixamo = MakeFullMixamoSkeleton();
+    const Entity skeletonEntity = MakeSkeletonEntity(mixamo);
+    const Entity ragdollEntity = MakeRagdoll(skeletonEntity);
+    ASSERT_TRUE(InitializeRagdoll3D(entityManager, ragdollEntity));
+    const Ragdoll3DComponent& ragdoll = entityManager.GetComponent<Ragdoll3DComponent>(ragdollEntity);
+
+    // Left forearm points along +X, so axis = (+X) x forward(+Z) = -Y; the right forearm mirrors it.
+    EXPECT_LT(HingeWorldAxisOf(ragdoll, mixamo, "mixamorig:LeftForeArm").y, -0.8F);
+    EXPECT_GT(HingeWorldAxisOf(ragdoll, mixamo, "mixamorig:RightForeArm").y, 0.8F);
+    // Shins point along -Y, so axis = (-Y) x forward(+Z) = -X on both sides.
+    EXPECT_LT(HingeWorldAxisOf(ragdoll, mixamo, "mixamorig:LeftLeg").x, -0.8F);
+    EXPECT_LT(HingeWorldAxisOf(ragdoll, mixamo, "mixamorig:RightLeg").x, -0.8F);
 }
 
 TEST_F(Ragdoll3DTest, FullMixamoRig_PreviewStartsAndFallsOntoTheStudioFloor) {

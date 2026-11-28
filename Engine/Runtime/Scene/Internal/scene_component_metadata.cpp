@@ -3710,12 +3710,12 @@ void DeclareRagdoll3D(std::vector<TypeMetadataEntry>& entries) {
                 InGroup(WithTooltip(DeclareEnum<&R::qualityPreset>(
                                               "qualityPreset", "Quality Preset",
                                               {
-                                                  {static_cast<std::int64_t>(RagdollQualityPreset::DesktopAAA), "DesktopAAA"},
-                                                  {static_cast<std::int64_t>(RagdollQualityPreset::MobileBalanced), "MobileBalanced"},
-                                                  {static_cast<std::int64_t>(RagdollQualityPreset::MobileFast), "MobileFast"},
+                                                  {static_cast<std::int64_t>(RagdollQualityPreset::High), "High"},
+                                                  {static_cast<std::int64_t>(RagdollQualityPreset::Balanced), "Balanced"},
+                                                  {static_cast<std::int64_t>(RagdollQualityPreset::Fast), "Fast"},
                                                   {static_cast<std::int64_t>(RagdollQualityPreset::Custom), "Custom"},
                                               }),
-                                          "Balances solver substeps and self-collision for desktop vs low-end mobile."),
+                                          "Balances solver substeps and self-collision for full quality vs low-end hardware."),
                            "Simulation"),
                 InGroup(WithTooltip(WithRange(Declare<&R::physicsBlendWeight>(
                                                            "physicsBlendWeight", "Physics Blend",

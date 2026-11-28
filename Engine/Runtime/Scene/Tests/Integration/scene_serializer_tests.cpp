@@ -3616,7 +3616,7 @@ TEST_F(SceneSerializerTest, Ragdoll3DComponent_RoundTripsWithResolvedSkeletonRef
     Ragdoll3DComponent ragdoll;
     ragdoll.skeleton = skeletonEntity;
     ragdoll.mode = RagdollMode::Active;
-    ragdoll.qualityPreset = RagdollQualityPreset::MobileBalanced;
+    ragdoll.qualityPreset = RagdollQualityPreset::Balanced;
     ragdoll.physicsBlendWeight = 0.75F;
     ragdoll.enableSelfCollision = true;
     ragdoll.enableDynamicPushback = true;
@@ -3653,7 +3653,7 @@ TEST_F(SceneSerializerTest, Ragdoll3DComponent_RoundTripsWithResolvedSkeletonRef
     const Ragdoll3DComponent& revived = fresh.GetComponent<Ragdoll3DComponent>(restoredRagdoll);
     EXPECT_EQ(revived.skeleton, restoredSkeleton);
     EXPECT_EQ(revived.mode, RagdollMode::Active);
-    EXPECT_EQ(revived.qualityPreset, RagdollQualityPreset::MobileBalanced);
+    EXPECT_EQ(revived.qualityPreset, RagdollQualityPreset::Balanced);
     EXPECT_FLOAT_EQ(revived.physicsBlendWeight, 0.75F);
     EXPECT_FLOAT_EQ(revived.motorStiffness, 220.0F);
     EXPECT_EQ(revived.partialRootBoneName, "spine_01");

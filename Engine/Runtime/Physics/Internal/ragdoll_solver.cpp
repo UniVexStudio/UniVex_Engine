@@ -29,7 +29,7 @@ constexpr float kMinimumProjectionAngle = 1.0e-4F;
 /// Two radians of swing is past any human joint, so a decomposition that reports more than this is
 /// reading a degenerate quaternion rather than a pose.
 constexpr float kMaximumSwingAngle = kPi + 0.01F;
-/// Small bind-pose overlap margin (1 cm) when building Jolt-style self-collision pair masks.
+/// Small bind-pose overlap margin (1 cm) when building pairwise self-collision pair masks.
 constexpr float kBindOverlapMargin = 0.01F;
 
 [[nodiscard]] float WrapAngle(const float radians) noexcept {
@@ -194,7 +194,7 @@ void ClosestPointsBetweenSegments(const Math::Vector3& p1, const Math::Vector3& 
     return imag * 2.0F;
 }
 
-/// Jolt/Havok-style conditioning on a single diagonal inverse-inertia vector: caps the ratio
+/// Conditioning on a single diagonal inverse-inertia vector: caps the ratio
 /// between largest and smallest positive inverse-inertia components (lifting tiny axial inertia).
 [[nodiscard]] Math::Vector3 ConditionSingleInverseInertia(const Math::Vector3& invI,
                                                                 const float maxPrincipalRatio) noexcept {
@@ -1096,7 +1096,7 @@ void RagdollSolver::SolveContactVelocity(const RagdollContact& contact,
         return eff;
     };
 
-    // 1. Accumulated clamped normal impulse (Havok / Box2D Sequential Impulses).
+    // 1. Accumulated clamped normal impulse (sequential impulses).
     const float normalVelocity = Math::Dot(relativePointVelocity(), state.normal);
     const float normalEffInvMass = combinedEffectiveInvMass(state.normal);
     if (std::isfinite(normalVelocity) && normalEffInvMass > kDirectionEpsilon) {

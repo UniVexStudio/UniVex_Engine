@@ -23,12 +23,12 @@ class IEntityManager;
 
 inline constexpr std::uint32_t kMaximumRagdollBones = static_cast<std::uint32_t>(Physics::kMaximumRagdollBodies);
 
-/// High-level simulation mode for a `Ragdoll3DComponent` (UE5 Physics Control / Godot 4.3+ model).
+/// High-level simulation mode for a `Ragdoll3DComponent`.
 enum class RagdollMode : std::uint8_t {
     /// Animation drives the bodies; per-bone linear & angular velocities are tracked for seamless activation.
     Kinematic = 0,
     /// Active Ragdoll / Physical Animation: PD joint & root motors track the live animated pose while
-    /// physically reacting to gravity, bullets, impacts, and world collisions.
+    /// physically reacting to gravity, projectiles, impacts, and world collisions.
     Active = 1,
     /// Full passive ragdoll driven by gravity, impacts, contacts, and anatomical joint limits.
     Simulating = 2,
@@ -36,12 +36,12 @@ enum class RagdollMode : std::uint8_t {
     BlendingOut = 3,
 };
 
-/// Performance / fidelity preset so games can run full AAA ragdolls on desktop and smoothly scale
-/// down substeps / self-collision on low-end Android phones.
+/// Performance / fidelity preset. `High` runs full substeps, self-collision and pushback;
+/// `Balanced` runs fewer substeps; `Fast` runs the fewest substeps with self-collision off.
 enum class RagdollQualityPreset : std::uint8_t {
-    DesktopAAA = 0,
-    MobileBalanced = 1,
-    MobileFast = 2,
+    High = 0,
+    Balanced = 1,
+    Fast = 2,
     Custom = 3,
 };
 
@@ -134,7 +134,7 @@ struct RagdollBoneBinding final {
     bool hasPreviousWorldPose = false;
 };
 
-/// First-class AAA ragdoll & physical animation component (passive, active PD motors, partial
+/// Full ragdoll and physical animation component (passive, active PD motors, partial
 /// subtree hit reactions, smooth pose-snapshot get-up blending, self-collision, dynamic Rigid3D
 /// pushback, and Editor live Simulate Preview).
 struct Ragdoll3DComponent final {
@@ -149,12 +149,12 @@ struct Ragdoll3DComponent final {
     /// Extra initial velocity inherited when starting simulation (combined with animated bone velocities).
     Math::Vector3 initialVelocity{};
 
-    // ---- AAA Simulation & Authoring Settings ----
+    // ---- Simulation & Authoring Settings ----
     RagdollMode mode = RagdollMode::Simulating;
-    RagdollQualityPreset qualityPreset = RagdollQualityPreset::DesktopAAA;
+    RagdollQualityPreset qualityPreset = RagdollQualityPreset::High;
     /// Overall blend between live animated pose (0) and simulated ragdoll pose (1).
     float physicsBlendWeight = 1.0F;
-    /// Enables Jolt-style non-adjacent limb self-collision.
+    /// Enables pairwise non-adjacent limb self-collision.
     bool enableSelfCollision = true;
     /// Applies equal-and-opposite contact impulses back onto dynamic `Rigid3DComponent` entities.
     bool enableDynamicPushback = true;
@@ -162,9 +162,9 @@ struct Ragdoll3DComponent final {
     bool driveEntityTransform = false;
     /// Samples per-bone linear & angular velocity from animated pose before transitioning to ragdoll.
     bool inheritAnimatedVelocity = true;
-    /// Maximum fixed substeps executed per frame (scaled down by `MobileFast` preset for low-end phones).
+    /// Maximum fixed substeps executed per frame (scaled down by the `Fast` preset on low-end hardware).
     std::uint32_t maxSubstepsPerFrame = Physics::kMaximumRagdollSubsteps;
-    /// Active Ragdoll joint PD motor parameters (UE5 Physics Control / Jolt DriveToPoseUsingMotors).
+    /// Active Ragdoll joint PD motor parameters: joint PD motors driving toward the animated pose.
     float motorStiffness = 160.0F;
     float motorDamping = 20.0F;
     float maxMotorTorque = 180.0F;
@@ -258,11 +258,11 @@ struct Ragdoll3DObjectDefinition final {
 void ApplyRagdoll3DObjectDefinition(IEntityManager& entityManager, Entity entity,
                                        const Ragdoll3DObjectDefinition& value);
 
-/// Applies a performance / fidelity preset (`DesktopAAA`, `MobileBalanced`, `MobileFast`) onto
+/// Applies a performance / fidelity preset (`High`, `Balanced`, `Fast`) onto
 /// `ragdoll`'s substep cap, solver iteration counts, self-collision, and dynamic pushback flags.
 void ApplyRagdollQualityPreset(Ragdoll3DComponent& ragdoll, RagdollQualityPreset preset) noexcept;
 
-/// Standard humanoid profile entry matched against lowercased bone names (Mixamo, UE5, VRM/Unity,
+/// Standard humanoid profile entry matched against lowercased bone names (Mixamo, VRM,
 /// Blender, and generic DCC conventions).
 struct HumanoidRagdollProfileEntry final {
     std::string_view pattern;

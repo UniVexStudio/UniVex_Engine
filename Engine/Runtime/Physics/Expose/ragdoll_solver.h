@@ -70,11 +70,11 @@ enum class RagdollMotion : std::uint8_t {
     Locked,
 };
 
-/// World-space PD drive for a single ragdoll body (UE5 Chaos Physics Control / pelvis balance drive).
+/// World-space PD drive for a single ragdoll body (pelvis balance drive).
 ///
 /// Joint motors only control relative orientation between parent and child; a world-space drive lets
 /// an active ragdoll or hit-reaction root track an animated pelvis position/orientation with bounded
-/// force/torque so bullets and heavy impacts can still overpower it naturally.
+/// force/torque so projectiles and heavy impacts can still overpower it naturally.
 struct RagdollBodyDrive final {
     bool enabled = false;
     Math::Vector3 targetPosition{};
@@ -134,7 +134,7 @@ struct RagdollBody final {
     [[nodiscard]] bool operator==(const RagdollBody&) const noexcept = default;
 };
 
-/// Active Ragdoll / Physical Animation PD angular motor (UE5 Physics Control / Jolt DriveToPoseUsingMotors).
+/// Active Ragdoll / Physical Animation PD angular motor that drives a joint toward the animated pose.
 ///
 /// Solved with an unconditionally stable implicit spring-damper clamped by `maxTorque`, and executed
 /// before anatomical joint limits so motors can never snap a limb past its joint cone.
@@ -257,12 +257,12 @@ struct RagdollStepSettings final {
     float sleepDelaySeconds = kRagdollSleepDelaySeconds;
     float sleepLinearSpeed = kRagdollSleepLinearSpeed;
     float sleepAngularSpeed = kRagdollSleepAngularSpeed;
-    /// Jolt/Havok-style inertia tensor conditioning inside the solver: bounds each body's principal
+    /// Inertia tensor conditioning inside the solver: bounds each body's principal
     /// inertia axis ratio and cross-chain ratio so thin extremities never explode against heavy torsos.
     bool stabilizeInertia = true;
     float maxPrincipalInertiaRatio = 4.0F;
     float maxChainInertiaRatio = 16.0F;
-    /// Enables Jolt-style non-adjacent limb self-collision (using the solver's collision filter table).
+    /// Enables pairwise non-adjacent limb self-collision (using the solver's collision filter table).
     bool enableSelfCollision = false;
 
     [[nodiscard]] bool operator==(const RagdollStepSettings&) const noexcept = default;
@@ -290,7 +290,7 @@ struct RagdollStepReport final {
 /// A bounded, deterministic articulated-body solver for passive, partial and active ragdolls.
 ///
 /// The method is sequential impulses (projected Gauss-Seidel) with accumulated clamped contact and
-/// one-sided joint limit impulses, Jolt/Havok principal inertia conditioning, non-adjacent limb
+/// one-sided joint limit impulses, principal inertia conditioning, non-adjacent limb
 /// self-collision filtering, unconditionally stable implicit PD joint/body motors, and elliptical
 /// swing-cone + linear re-projection.
 ///
@@ -320,11 +320,11 @@ public:
     /// caller that knows better (a hand-tuned inertia tensor) must be able to override it.
     void RebuildInertia() noexcept;
 
-    /// Jolt/Havok-style permanent inertia tensor conditioning: clamps each body's principal inertia
+    /// Permanent inertia tensor conditioning: clamps each body's principal inertia
     /// ratio to `maxPrincipalRatio` and cross-body inverse inertia spread to `maxChainRatio`.
     void StabilizeInertia(float maxPrincipalRatio = 4.0F, float maxChainRatio = 16.0F) noexcept;
 
-    /// Builds the Jolt-style non-adjacent self-collision filter table: disables body pairs separated
+    /// Builds the pairwise non-adjacent self-collision filter table: disables body pairs separated
     /// by fewer than `minimumJointHops` joints (default 2 = disables parent-child pairs) and
     /// optionally disables any pairs whose capsules already overlap in the current (bind) pose.
     void RebuildSelfCollisionFilter(bool disableCurrentPoseOverlaps = true,
@@ -357,7 +357,7 @@ public:
     /// Puts every body to sleep immediately and zeroes its velocity.
     void Sleep() noexcept;
     /// Wakes the ragdoll and restarts the sleep timer. Called by anything that applies an external
-    /// impulse - a bullet, a blast, a grabbed limb.
+    /// impulse - a projectile, a blast, a grabbed limb.
     void Wake() noexcept;
     [[nodiscard]] bool IsSleeping() const noexcept { return m_sleeping; }
 
