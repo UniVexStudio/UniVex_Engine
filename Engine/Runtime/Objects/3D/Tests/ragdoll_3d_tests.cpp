@@ -15,6 +15,7 @@
 
 #include "blueprint_object_host.h"
 #include "blueprint_value.h"
+#include "animation_graph_component.h"
 #include "character_controller_component.h"
 #include "collider_component.h"
 #include "hierarchy_component.h"
@@ -1496,6 +1497,55 @@ TEST_F(Ragdoll3DTest, BlueprintHost_ModeReactionsAndStaggerNodes) {
     EXPECT_TRUE(std::get<bool>(host.CallFunction("ragdoll.stagger", full)));
     EXPECT_TRUE(ragdoll.staggering);
     EXPECT_EQ(ragdoll.mode, RagdollMode::Active);
+}
+
+TEST_F(Ragdoll3DTest, GetUp_FiresTheTriggerThatMatchesHowTheBodyLies) {
+    const Entity character = entityManager.CreateEntity();
+    entityManager.AddComponent<TransformComponent>(character, TransformComponent{});
+    AnimationGraphComponent graph;
+    graph.parameters.push_back(AnimationParameter{"GetUpFaceUp", AnimationParameterType::Trigger});
+    graph.parameters.push_back(AnimationParameter{"GetUpFaceDown", AnimationParameterType::Trigger});
+    entityManager.AddComponent<AnimationGraphComponent>(character, graph);
+    const Entity skeletonEntity = MakeSkeletonEntity(MakeFullMixamoSkeleton());
+    HierarchyComponent link;
+    link.parent = character;
+    entityManager.AddComponent<HierarchyComponent>(skeletonEntity, link);
+    const Entity ragdollEntity = MakeRagdoll(skeletonEntity);
+    ASSERT_TRUE(ActivateRagdoll(entityManager, ragdollEntity, RagdollMode::Simulating));
+    for (int frame = 0; frame < 240; ++frame) UpdateRagdoll3DObjects(entityManager, 1.0F / 60.0F, false, 0.0F);
+
+    RagdollGetUpState lying;
+    ASSERT_TRUE(EvaluateRagdollGetUpState(entityManager, ragdollEntity, lying));
+    ASSERT_TRUE(BeginRagdollRecovery(entityManager, ragdollEntity));
+    const AnimationGraphComponent& after = entityManager.GetComponent<AnimationGraphComponent>(character);
+    const bool faceUp = after.parameters[0].value != 0.0F;
+    const bool faceDown = after.parameters[1].value != 0.0F;
+    EXPECT_EQ(faceUp, lying.orientation == RagdollLyingOrientation::FaceUp);
+    EXPECT_EQ(faceDown, lying.orientation == RagdollLyingOrientation::FaceDown);
+    EXPECT_FALSE(faceUp && faceDown) << "only the matching trigger fires";
+}
+
+TEST_F(Ragdoll3DTest, GetUp_AnEmptyTriggerNameFiresNothing) {
+    const Entity character = entityManager.CreateEntity();
+    entityManager.AddComponent<TransformComponent>(character, TransformComponent{});
+    AnimationGraphComponent graph;
+    graph.parameters.push_back(AnimationParameter{"GetUpFaceUp", AnimationParameterType::Trigger});
+    graph.parameters.push_back(AnimationParameter{"GetUpFaceDown", AnimationParameterType::Trigger});
+    entityManager.AddComponent<AnimationGraphComponent>(character, graph);
+    const Entity skeletonEntity = MakeSkeletonEntity(MakeFullMixamoSkeleton());
+    HierarchyComponent link;
+    link.parent = character;
+    entityManager.AddComponent<HierarchyComponent>(skeletonEntity, link);
+    Ragdoll3DComponent setup = SimulatingSetup();
+    setup.getUpFaceUpTrigger.clear();
+    setup.getUpFaceDownTrigger.clear();
+    const Entity ragdollEntity = MakeRagdoll(skeletonEntity, setup);
+    ASSERT_TRUE(ActivateRagdoll(entityManager, ragdollEntity, RagdollMode::Simulating));
+    for (int frame = 0; frame < 120; ++frame) UpdateRagdoll3DObjects(entityManager, 1.0F / 60.0F, false, 0.0F);
+    ASSERT_TRUE(BeginRagdollRecovery(entityManager, ragdollEntity));
+    const AnimationGraphComponent& after = entityManager.GetComponent<AnimationGraphComponent>(character);
+    EXPECT_EQ(after.parameters[0].value, 0.0F);
+    EXPECT_EQ(after.parameters[1].value, 0.0F);
 }
 
 } // namespace

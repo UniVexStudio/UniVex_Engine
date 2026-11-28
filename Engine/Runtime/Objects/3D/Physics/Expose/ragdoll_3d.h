@@ -208,6 +208,10 @@ struct Ragdoll3DComponent final {
     float staggerDecaySeconds = 0.6F;
     /// A staggering body that tilts further than this (degrees from upright) falls.
     float staggerFallTiltDegrees = 50.0F;
+    /// Animation Graph triggers fired when the body starts standing back up, by how it lies: on its back or on its
+    /// front. The graph plays the matching get-up clip, which the recovery then blends into. Empty: not fired.
+    std::string getUpFaceUpTrigger = "GetUpFaceUp";
+    std::string getUpFaceDownTrigger = "GetUpFaceDown";
 
     // ---- Runtime, never persisted ----
     bool initialized = false;
@@ -269,6 +273,7 @@ struct Ragdoll3DComponent final {
             staggerBlendPeak != other.staggerBlendPeak || staggerRiseSeconds != other.staggerRiseSeconds ||
             staggerDecaySeconds != other.staggerDecaySeconds ||
             staggerFallTiltDegrees != other.staggerFallTiltDegrees ||
+            getUpFaceUpTrigger != other.getUpFaceUpTrigger || getUpFaceDownTrigger != other.getUpFaceDownTrigger ||
             bones.size() != other.bones.size()) {
             return false;
         }

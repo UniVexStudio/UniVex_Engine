@@ -12,6 +12,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include "animation_graph_component.h"
 #include "character_controller_component.h"
 #include "collider_component.h"
 #include "disabled_component.h"
@@ -834,6 +835,7 @@ bool IsRagdoll3DComponentAuthoredValid(const Ragdoll3DComponent& value) noexcept
         value.staggerFallTiltDegrees > 180.0F) {
         return false;
     }
+    if (value.getUpFaceUpTrigger.size() > 64U || value.getUpFaceDownTrigger.size() > 64U) return false;
     for (const RagdollBoneSetup& bone : value.bones) {
         if (bone.boneName.empty()) return false;
         if (!std::isfinite(bone.mass) || bone.mass <= 0.0F) return false;
@@ -1815,12 +1817,60 @@ bool StaggerRagdoll(IEntityManager& entityManager, const Entity entity, const fl
     return true;
 }
 
+namespace {
+
+/// The Animation Graph that animates the skeleton: on it or an ancestor, or directly under one of them.
+[[nodiscard]] AnimationGraphComponent* FindGraphAnimating(IEntityManager& entities, const Entity skeleton) {
+    Entity cursor = skeleton;
+    for (std::uint32_t hops = 0U; hops < 8U && cursor != kInvalidEntity && entities.IsAlive(cursor); ++hops) {
+        if (entities.HasComponent<AnimationGraphComponent>(cursor)) {
+            return &entities.GetComponent<AnimationGraphComponent>(cursor);
+        }
+        AnimationGraphComponent* underneath = nullptr;
+        entities.ForEach<AnimationGraphComponent>([&](const Entity candidate, AnimationGraphComponent& graph) {
+            if (underneath == nullptr && entities.HasComponent<HierarchyComponent>(candidate) &&
+                entities.GetComponent<HierarchyComponent>(candidate).parent == cursor) {
+                underneath = &graph;
+            }
+        });
+        if (underneath != nullptr) return underneath;
+        if (!entities.HasComponent<HierarchyComponent>(cursor)) break;
+        const Entity parent = entities.GetComponent<HierarchyComponent>(cursor).parent;
+        if (parent == cursor) break;
+        cursor = parent;
+    }
+    return nullptr;
+}
+
+/// Fires the get-up trigger that matches how the body lies, so a graph with get-up clips plays the right one.
+void FireGetUpTrigger(IEntityManager& entities, const Entity entity, const Ragdoll3DComponent& ragdoll) {
+    RagdollGetUpState state;
+    if (!EvaluateRagdollGetUpState(entities, entity, state)) return;
+    const std::string& trigger = state.orientation == RagdollLyingOrientation::FaceDown ? ragdoll.getUpFaceDownTrigger
+                                 : state.orientation == RagdollLyingOrientation::FaceUp ? ragdoll.getUpFaceUpTrigger
+                                                                                        : std::string{};
+    if (trigger.empty()) return;
+    AnimationGraphComponent* const graph = FindGraphAnimating(entities, ragdoll.skeleton);
+    if (graph == nullptr) return;
+    for (AnimationParameter& parameter : graph->parameters) {
+        if (parameter.name == trigger && parameter.type == AnimationParameterType::Trigger) {
+            parameter.value = 1.0F;
+            return;
+        }
+    }
+}
+
+} // namespace
+
 bool BeginRagdollRecovery(IEntityManager& entityManager, const Entity entity) {
     if (!IsRagdollActive(entityManager, entity)) return false;
     Ragdoll3DComponent& ragdoll = entityManager.GetComponent<Ragdoll3DComponent>(entity);
     if (ragdoll.mode == RagdollMode::BlendingOut) return true; // already standing up
     ragdoll.restSeconds = 0.0F;
-    return BeginBlendOutFromRagdoll(entityManager, entity, ragdoll.recoverDurationSeconds);
+    // How the body lies is read before the blend starts, while it is still where it fell.
+    const bool began = BeginBlendOutFromRagdoll(entityManager, entity, ragdoll.recoverDurationSeconds);
+    if (began) FireGetUpTrigger(entityManager, entity, ragdoll);
+    return began;
 }
 
 bool StartRagdollEditorPreview(IEntityManager& entityManager, const Entity entity) {

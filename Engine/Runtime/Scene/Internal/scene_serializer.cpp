@@ -1529,6 +1529,8 @@ template <typename VectorT>
             {"staggerRiseSeconds", value.staggerRiseSeconds},
             {"staggerDecaySeconds", value.staggerDecaySeconds},
             {"staggerFallTiltDegrees", value.staggerFallTiltDegrees},
+            {"getUpFaceUpTrigger", value.getUpFaceUpTrigger},
+            {"getUpFaceDownTrigger", value.getUpFaceDownTrigger},
             {"layerMask", value.filter.layerMask},
             {"enabled", value.enabled}};
 }
@@ -1614,6 +1616,8 @@ template <typename VectorT>
     value.staggerRiseSeconds = json.value("staggerRiseSeconds", value.staggerRiseSeconds);
     value.staggerDecaySeconds = json.value("staggerDecaySeconds", value.staggerDecaySeconds);
     value.staggerFallTiltDegrees = json.value("staggerFallTiltDegrees", value.staggerFallTiltDegrees);
+    value.getUpFaceUpTrigger = json.value("getUpFaceUpTrigger", value.getUpFaceUpTrigger);
+    value.getUpFaceDownTrigger = json.value("getUpFaceDownTrigger", value.getUpFaceDownTrigger);
     value.filter.layerMask = json.value("layerMask", value.filter.layerMask);
     value.enabled = json.value("enabled", true);
     return value;
