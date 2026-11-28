@@ -1,18 +1,26 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <optional>
 #include <string>
 #include <vector>
 
 #include <gtest/gtest.h>
 
+#include "blueprint_object_host.h"
+#include "blueprint_value.h"
+#include "animation_graph_component.h"
+#include "character_controller_component.h"
 #include "collider_component.h"
 #include "hierarchy_component.h"
+#include "mesh_component.h"
+#include "scene_graph.h"
 #include "rigid_3d_component.h"
 #include "transform_component.h"
 #include "world_transform_component.h"
@@ -85,7 +93,14 @@ protected:
         return entity;
     }
 
-    [[nodiscard]] Entity MakeRagdoll(const Entity skeleton, Ragdoll3DComponent ragdoll = {}) {
+    /// A ragdoll that is already falling: a new component stands (Kinematic) until something activates it.
+    [[nodiscard]] static Ragdoll3DComponent SimulatingSetup() {
+        Ragdoll3DComponent setup;
+        setup.mode = RagdollMode::Simulating;
+        return setup;
+    }
+
+    [[nodiscard]] Entity MakeRagdoll(const Entity skeleton, Ragdoll3DComponent ragdoll = SimulatingSetup()) {
         const Entity entity = entityManager.CreateEntity();
         ragdoll.skeleton = skeleton;
         entityManager.AddComponent<Ragdoll3DComponent>(entity, ragdoll);
@@ -155,7 +170,10 @@ TEST_F(Ragdoll3DTest, BuildHumanoidRagdollBones_UsesTheRigsOwnBoneNames) {
     EXPECT_EQ(shin->twistMotion, Physics::RagdollMotion::Limited);
     EXPECT_TRUE(shin->twistAsymmetric);
     EXPECT_LT(shin->twistLowerLimitDegrees, shin->twistUpperLimitDegrees);
-    EXPECT_LT(shin->twistUpperLimitDegrees, 10.0F) << "a knee does not hyperextend";
+    // In the solver's twist sign the knee folds toward the upper limit; the lower limit is the
+    // hyperextension side, which stays within a few degrees (see KneesAndElbowsBendTheAnatomicalWay...).
+    EXPECT_GT(shin->twistLowerLimitDegrees, -10.0F) << "a knee does not hyperextend";
+    EXPECT_GT(shin->twistUpperLimitDegrees, 90.0F) << "and it folds a long way the other way";
 }
 
 TEST_F(Ragdoll3DTest, BuildHumanoidRagdollBones_LeavesAnUnknownRigAlone) {
@@ -393,7 +411,7 @@ TEST_F(Ragdoll3DTest, ApplyRagdollImpact_RefusesAHitThatTouchesNothing) {
     }
 }
 
-// ---- AAA Overhaul Regression & Capability Tests -----------------------------------------------
+// ---- Overhaul Regression & Capability Tests -----------------------------------------------
 
 TEST_F(Ragdoll3DTest, RootPositionWriteBack_DropsRenderedPelvisToFloorInsteadOfFloating) {
     // Regression test for Bug #1 (Floating Corpse): previously only rotation was written back,
@@ -580,14 +598,14 @@ TEST_F(Ragdoll3DTest, ActiveModePartialSubtreeVelocityInheritanceAndGetUpBlendOu
     EXPECT_FALSE(ragdoll.editorPreviewSimulating);
     EXPECT_NEAR(skel.pose[0].position.y, 1.0F, 1.0e-4F) << "stopping Editor Preview must restore exact bind pose";
 
-    // Test MobileFast preset scales down cost for low-end Android phones.
-    ApplyRagdollQualityPreset(ragdoll, RagdollQualityPreset::MobileFast);
+    // Test the Fast preset scales down cost for low-end hardware.
+    ApplyRagdollQualityPreset(ragdoll, RagdollQualityPreset::Fast);
     EXPECT_FALSE(ragdoll.enableSelfCollision);
     EXPECT_FALSE(ragdoll.enableDynamicPushback);
     EXPECT_EQ(ragdoll.maxSubstepsPerFrame, 2U);
 }
 
-TEST_F(Ragdoll3DTest, PhysicalBone3D_DelegatesToAAASolverAndStopsOnFloorCollider) {
+TEST_F(Ragdoll3DTest, PhysicalBone3D_DelegatesToTheRagdollSolverAndStopsOnFloorCollider) {
     static_cast<void>(MakeBoxCollider({0.0F, -0.5F, 0.0F}, {20.0F, 0.5F, 20.0F}));
     const Entity pbEntity = entityManager.CreateEntity();
     PhysicalBone3DObjectDefinition def{};
@@ -739,25 +757,54 @@ TEST_F(Ragdoll3DTest, UpdateRagdoll3DObjects_IgnoresOwningAncestorCharacterColli
                        [&name](const RagdollBoneSetup& bone) { return bone.boneName == name; });
 }
 
-TEST_F(Ragdoll3DTest, FullMixamoRig_GeneratesAStructuralBodyWithinTheSolverLimit) {
+TEST_F(Ragdoll3DTest, FullMixamoRig_GetsTheWholeBodyIncludingEveryFingerAndToe) {
     const Skeleton3DComponent mixamo = MakeFullMixamoSkeleton();
     ASSERT_EQ(mixamo.bones.size(), 65U);
 
     const std::vector<RagdollBoneSetup> built = BuildHumanoidRagdollBones(mixamo.bones);
-    EXPECT_LE(built.size(), static_cast<std::size_t>(kMaximumRagdollBones))
-        << "a fingered rig used to generate ~60 bodies, which the solver refuses outright";
-    EXPECT_EQ(built.size(), 20U) << "hips, 3 spine, neck, head, and 2x(shoulder, arm, forearm, hand, thigh, leg, foot)";
-    EXPECT_TRUE(ContainsBone(built, "mixamorig:Hips"));
-    EXPECT_TRUE(ContainsBone(built, "mixamorig:Head"));
-    EXPECT_TRUE(ContainsBone(built, "mixamorig:LeftHand"));
-    EXPECT_TRUE(ContainsBone(built, "mixamorig:RightFoot"));
+    EXPECT_LE(built.size(), static_cast<std::size_t>(kMaximumRagdollBones));
+    // hips + 3 spine + neck + head + 2 clavicles + 2x(arm, forearm, hand) + 2x(thigh, shin, foot, toe)
+    // + 2 hands x 5 fingers x 3 phalanges.
+    EXPECT_EQ(built.size(), 52U);
+    for (const char* body : {"mixamorig:Hips", "mixamorig:Head", "mixamorig:LeftHand", "mixamorig:RightFoot",
+                             "mixamorig:LeftToeBase", "mixamorig:RightToeBase"}) {
+        EXPECT_TRUE(ContainsBone(built, body)) << body;
+    }
+    // Every finger of both hands: the three phalanges (the "4" tip is not a body of its own).
+    for (const char* side : {"Left", "Right"}) {
+        for (const char* finger : {"Thumb", "Index", "Middle", "Ring", "Pinky"}) {
+            for (int joint = 1; joint <= 3; ++joint) {
+                EXPECT_TRUE(ContainsBone(built, std::string{"mixamorig:"} + side + "Hand" + finger + std::to_string(joint)))
+                    << side << finger << joint;
+            }
+            EXPECT_FALSE(ContainsBone(built, std::string{"mixamorig:"} + side + "Hand" + finger + "4"));
+        }
+    }
     for (const RagdollBoneSetup& bone : built) {
-        EXPECT_EQ(bone.boneName.find("Thumb"), std::string::npos) << bone.boneName;
-        EXPECT_EQ(bone.boneName.find("Index"), std::string::npos) << bone.boneName;
-        EXPECT_EQ(bone.boneName.find("Pinky"), std::string::npos) << bone.boneName;
         EXPECT_EQ(bone.boneName.find("_End"), std::string::npos) << bone.boneName;
     }
     EXPECT_EQ(BuildAutoRagdollBones(mixamo.bones).size(), built.size());
+}
+
+TEST_F(Ragdoll3DTest, FingersAreLightDetailBodiesThatNeverCollideWithTheBody) {
+    const Skeleton3DComponent mixamo = MakeFullMixamoSkeleton();
+    const Entity ragdollEntity = MakeRagdoll(MakeSkeletonEntity(mixamo));
+    ASSERT_TRUE(InitializeRagdoll3D(entityManager, ragdollEntity))
+        << entityManager.GetComponent<Ragdoll3DComponent>(ragdollEntity).lastSetupError;
+    const Ragdoll3DComponent& ragdoll = entityManager.GetComponent<Ragdoll3DComponent>(ragdollEntity);
+    ASSERT_EQ(ragdoll.solver.GetBodyCount(), 52U);
+
+    std::uint32_t finger = Physics::kInvalidRagdollBody;
+    std::uint32_t hips = Physics::kInvalidRagdollBody;
+    for (const RagdollBoneBinding& binding : ragdoll.bindings) {
+        const std::string& name = mixamo.bones[binding.boneIndex].name;
+        if (name == "mixamorig:LeftHandIndex2") finger = binding.bodyIndex;
+        if (name == "mixamorig:Hips") hips = binding.bodyIndex;
+    }
+    ASSERT_NE(finger, Physics::kInvalidRagdollBody);
+    ASSERT_NE(hips, Physics::kInvalidRagdollBody);
+    EXPECT_LT(ragdoll.solver.GetBody(finger).radius, 0.02F) << "a fingertip-sized capsule";
+    EXPECT_FALSE(ragdoll.solver.CanSelfCollide(finger, hips));
 }
 
 TEST_F(Ragdoll3DTest, OrdinaryWordsInStructuralBoneNamesAreNotMistakenForFingers) {
@@ -783,6 +830,196 @@ TEST_F(Ragdoll3DTest, OrdinaryWordsInStructuralBoneNamesAreNotMistakenForFingers
     EXPECT_TRUE(ContainsBone(built, "LeftHand"));
 }
 
+/// The world-space hinge axis of the joint that connects the bone named `boneName` to its parent body.
+[[nodiscard]] Math::Vector3 HingeWorldAxisOf(const Ragdoll3DComponent& ragdoll, const Skeleton3DComponent& skeleton,
+                                             const std::string& boneName) {
+    for (std::size_t j = 0U; j < ragdoll.solver.GetJointCount(); ++j) {
+        const Physics::RagdollJoint& joint = ragdoll.solver.GetJoint(j);
+        for (const RagdollBoneBinding& binding : ragdoll.bindings) {
+            if (binding.bodyIndex == joint.secondBody && skeleton.bones[binding.boneIndex].name == boneName) {
+                const Physics::RagdollBody& parentBody = ragdoll.solver.GetBody(joint.firstBody);
+                const Math::Quaternion worldFrame = Math::Multiply(parentBody.rotation, joint.firstFrame);
+                return Math::RotateVector(worldFrame, {1.0F, 0.0F, 0.0F});
+            }
+        }
+    }
+    return {};
+}
+
+TEST_F(Ragdoll3DTest, HingeAxesAreOrthogonalToTheLimbAndTheFacingDirection) {
+    // A rig facing +Z has its left side at +X. Positive twist about the elbow axis must carry the forearm
+    // toward the front; the knee range is negative, so its axis must make that fold carry the shin backward.
+    // The sign was reversed once (forward computed as `up x left`), which folded every limb the wrong way.
+    const Skeleton3DComponent mixamo = MakeFullMixamoSkeleton();
+    const Entity skeletonEntity = MakeSkeletonEntity(mixamo);
+    const Entity ragdollEntity = MakeRagdoll(skeletonEntity);
+    ASSERT_TRUE(InitializeRagdoll3D(entityManager, ragdollEntity));
+    const Ragdoll3DComponent& ragdoll = entityManager.GetComponent<Ragdoll3DComponent>(ragdollEntity);
+
+    // Left forearm points along +X, so axis = forward(+Z) x (+X) = +Y; the right forearm mirrors it.
+    EXPECT_GT(HingeWorldAxisOf(ragdoll, mixamo, "mixamorig:LeftForeArm").y, 0.8F);
+    EXPECT_LT(HingeWorldAxisOf(ragdoll, mixamo, "mixamorig:RightForeArm").y, -0.8F);
+    // Shins point along -Y, so axis = forward(+Z) x (-Y) = +X on both sides.
+    EXPECT_GT(HingeWorldAxisOf(ragdoll, mixamo, "mixamorig:LeftLeg").x, 0.8F);
+    EXPECT_GT(HingeWorldAxisOf(ragdoll, mixamo, "mixamorig:RightLeg").x, 0.8F);
+}
+
+/// The angle, in degrees, between the long axes of the bodies of two bones: 0 for a straight limb.
+[[nodiscard]] float BendDegrees(const Ragdoll3DComponent& ragdoll, const Skeleton3DComponent& skeleton,
+                                const std::string& upperBone, const std::string& lowerBone) {
+    std::uint32_t upper = Physics::kInvalidRagdollBody;
+    std::uint32_t lower = Physics::kInvalidRagdollBody;
+    for (const RagdollBoneBinding& binding : ragdoll.bindings) {
+        if (skeleton.bones[binding.boneIndex].name == upperBone) upper = binding.bodyIndex;
+        if (skeleton.bones[binding.boneIndex].name == lowerBone) lower = binding.bodyIndex;
+    }
+    if (upper == Physics::kInvalidRagdollBody || lower == Physics::kInvalidRagdollBody) return -1.0F;
+    const Math::Vector3 a = Math::RotateVector(ragdoll.solver.GetBody(upper).rotation, {0.0F, 1.0F, 0.0F});
+    const Math::Vector3 b = Math::RotateVector(ragdoll.solver.GetBody(lower).rotation, {0.0F, 1.0F, 0.0F});
+    const float cosine = std::clamp(Math::Dot(a, b), -1.0F, 1.0F);
+    return std::acos(cosine) * 180.0F / 3.14159265F;
+}
+
+/// Kicks the body of `kickedBone` along `kickZ` in zero gravity and returns how far `lowerBone` bent
+/// away from `upperBone` afterwards. Every body at or above `upperBone` is pinned, so only the joint
+/// between the two bones can move.
+[[nodiscard]] float KickAndMeasureBend(const float kickZ, const std::string& kickedBone, const std::string& upperBone,
+                                       const std::string& lowerBone, EntityManager& entityManager,
+                                       const Skeleton3DComponent& rig, Entity skeletonEntity,
+                                       const std::vector<std::string>& pinnedBones) {
+    Ragdoll3DComponent setup;
+    setup.mode = RagdollMode::Simulating;
+    setup.skeleton = skeletonEntity;
+    setup.gravity = {0.0F, 0.0F, 0.0F};
+    const Entity ragdollEntity = entityManager.CreateEntity();
+    entityManager.AddComponent<Ragdoll3DComponent>(ragdollEntity, setup);
+    if (!InitializeRagdoll3D(entityManager, ragdollEntity)) return -1.0F;
+    Ragdoll3DComponent& ragdoll = entityManager.GetComponent<Ragdoll3DComponent>(ragdollEntity);
+    Math::Vector3 point{};
+    for (const RagdollBoneBinding& binding : ragdoll.bindings) {
+        const std::string& name = rig.bones[binding.boneIndex].name;
+        if (name == kickedBone) point = ragdoll.solver.GetBody(binding.bodyIndex).position;
+        if (std::find(pinnedBones.begin(), pinnedBones.end(), name) != pinnedBones.end()) {
+            ragdoll.solver.GetBody(binding.bodyIndex).kinematic = true;
+        }
+    }
+    ragdoll.solver.RebuildInertia();
+    if (!ApplyRagdollImpact(entityManager, ragdollEntity, point, {0.0F, 0.0F, kickZ}, 0.2F)) return -1.0F;
+    float widest = 0.0F;
+    for (int frame = 0; frame < 45; ++frame) {
+        UpdateRagdoll3DObjects(entityManager, 1.0F / 60.0F);
+        widest = std::max(widest, BendDegrees(ragdoll, rig, upperBone, lowerBone));
+    }
+    return widest;
+}
+
+TEST_F(Ragdoll3DTest, KneesAndElbowsBendTheAnatomicalWayAndRefuseTheOther) {
+    // A rig facing +Z: a shin kicked backward must fold at the knee, kicked forward it must be stopped by
+    // the joint; a forearm pushed forward must fold at the elbow, pushed backward it must be stopped.
+    // Measured in zero gravity with everything above the joint pinned, so only the joint decides.
+    const Skeleton3DComponent mixamo = MakeFullMixamoSkeleton();
+    const std::vector<std::string> legPins{"mixamorig:Hips", "mixamorig:LeftUpLeg"};
+    const std::vector<std::string> armPins{"mixamorig:Hips", "mixamorig:Spine", "mixamorig:Spine1", "mixamorig:Spine2",
+                                           "mixamorig:LeftShoulder", "mixamorig:LeftArm"};
+    // A fresh skeleton for every measurement: a ragdoll writes its pose back, so a reused one would start the
+    // next kick from the previous kick's bent limb.
+    const auto bend = [&](const float kick, const std::string& kicked, const std::string& upper,
+                          const std::string& lower, const std::vector<std::string>& pins) {
+        return KickAndMeasureBend(kick, kicked, upper, lower, entityManager, mixamo, MakeSkeletonEntity(mixamo), pins);
+    };
+    const float kneeBack = bend(-30.0F, "mixamorig:LeftLeg", "mixamorig:LeftUpLeg", "mixamorig:LeftLeg", legPins);
+    const float kneeFront = bend(30.0F, "mixamorig:LeftLeg", "mixamorig:LeftUpLeg", "mixamorig:LeftLeg", legPins);
+    const float elbowFront = bend(4.0F, "mixamorig:LeftForeArm", "mixamorig:LeftArm", "mixamorig:LeftForeArm", armPins);
+    const float elbowBack = bend(-4.0F, "mixamorig:LeftForeArm", "mixamorig:LeftArm", "mixamorig:LeftForeArm", armPins);
+    EXPECT_GT(kneeBack, 30.0F) << "the knee folds backward";
+    EXPECT_LT(kneeFront, 12.0F) << "and is stopped when pushed forward";
+    EXPECT_GT(elbowFront, 30.0F) << "the elbow folds forward";
+    EXPECT_LT(elbowBack, 12.0F) << "and is stopped when pushed backward";
+}
+
+/// Height of the named bone in world space, from the skeleton's current pose.
+[[nodiscard]] float BoneWorldHeight(const Skeleton3DComponent& skeleton, const std::string& boneName) {
+    for (std::uint32_t bone = 0U; bone < skeleton.bones.size(); ++bone) {
+        if (skeleton.bones[bone].name != boneName) continue;
+        ObjectWorldFrame frame;
+        if (TryResolveSkeletonBoneWorldFrame(skeleton, bone, ObjectWorldFrame{}, frame)) return frame.position.y;
+    }
+    return -1000.0F;
+}
+
+TEST_F(Ragdoll3DTest, GetUp_StandsTheFallenBodyBackIntoItsStartingPose) {
+    const Skeleton3DComponent mixamo = MakeFullMixamoSkeleton();
+    const Entity skeletonEntity = MakeSkeletonEntity(mixamo);
+    const Entity ragdollEntity = MakeRagdoll(skeletonEntity);
+    const float startHips = BoneWorldHeight(mixamo, "mixamorig:Hips");
+    ASSERT_TRUE(StartRagdollEditorPreview(entityManager, ragdollEntity));
+    for (int frame = 0; frame < 150; ++frame) {
+        UpdateRagdoll3DObjects(entityManager, 1.0F / 60.0F, true, 0.0F);
+    }
+    const Skeleton3DComponent& posed = entityManager.GetComponent<Skeleton3DComponent>(skeletonEntity);
+    EXPECT_LT(BoneWorldHeight(posed, "mixamorig:Hips"), startHips - 0.5F) << "it has fallen";
+
+    ASSERT_TRUE(BeginRagdollRecovery(entityManager, ragdollEntity));
+    EXPECT_EQ(entityManager.GetComponent<Ragdoll3DComponent>(ragdollEntity).mode, RagdollMode::BlendingOut);
+    // Halfway through it is neither lying down nor standing.
+    for (int frame = 0; frame < 48; ++frame) {
+        UpdateRagdoll3DObjects(entityManager, 1.0F / 60.0F, true, 0.0F);
+    }
+    const float midway = BoneWorldHeight(posed, "mixamorig:Hips");
+    EXPECT_GT(midway, 0.2F);
+    EXPECT_LT(midway, startHips - 0.1F);
+    for (int frame = 0; frame < 120; ++frame) {
+        UpdateRagdoll3DObjects(entityManager, 1.0F / 60.0F, true, 0.0F);
+    }
+    const Ragdoll3DComponent& done = entityManager.GetComponent<Ragdoll3DComponent>(ragdollEntity);
+    EXPECT_NE(done.mode, RagdollMode::BlendingOut);
+    EXPECT_FALSE(done.editorPreviewSimulating) << "the preview ends standing, so Simulate can be pressed again";
+    EXPECT_NEAR(BoneWorldHeight(posed, "mixamorig:Hips"), startHips, 0.03F);
+    EXPECT_NEAR(BoneWorldHeight(posed, "mixamorig:Head"), BoneWorldHeight(mixamo, "mixamorig:Head"), 0.05F);
+    EXPECT_NEAR(BoneWorldHeight(posed, "mixamorig:LeftFoot"), BoneWorldHeight(mixamo, "mixamorig:LeftFoot"), 0.05F);
+}
+
+TEST_F(Ragdoll3DTest, GetUp_WithoutAFallIsRefused) {
+    const Entity ragdollEntity = MakeRagdoll(MakeSkeletonEntity(MakeFullMixamoSkeleton()));
+    EXPECT_FALSE(BeginRagdollRecovery(entityManager, ragdollEntity)) << "nothing is simulating";
+    EXPECT_FALSE(IsRagdollActive(entityManager, ragdollEntity));
+}
+
+TEST_F(Ragdoll3DTest, AutoRecover_StandsUpOnItsOwnAfterTheBodyComesToRest) {
+    const Skeleton3DComponent mixamo = MakeFullMixamoSkeleton();
+    const Entity skeletonEntity = MakeSkeletonEntity(mixamo);
+    Ragdoll3DComponent setup;
+    setup.autoRecover = true;
+    setup.recoverDelaySeconds = 0.5F;
+    setup.recoverDurationSeconds = 1.0F;
+    const Entity ragdollEntity = MakeRagdoll(skeletonEntity, setup);
+    const float startHips = BoneWorldHeight(mixamo, "mixamorig:Hips");
+    ASSERT_TRUE(StartRagdollEditorPreview(entityManager, ragdollEntity));
+
+    bool fell = false;
+    bool recovered = false;
+    for (int frame = 0; frame < 60 * 20 && !recovered; ++frame) {
+        UpdateRagdoll3DObjects(entityManager, 1.0F / 60.0F, true, 0.0F);
+        const Skeleton3DComponent& posed = entityManager.GetComponent<Skeleton3DComponent>(skeletonEntity);
+        if (BoneWorldHeight(posed, "mixamorig:Hips") < startHips - 0.5F) fell = true;
+        recovered = fell && !entityManager.GetComponent<Ragdoll3DComponent>(ragdollEntity).editorPreviewSimulating;
+    }
+    EXPECT_TRUE(fell);
+    EXPECT_TRUE(recovered) << "an auto-recovering body stands back up once it has rested";
+    EXPECT_NEAR(BoneWorldHeight(entityManager.GetComponent<Skeleton3DComponent>(skeletonEntity), "mixamorig:Hips"),
+                startHips, 0.03F);
+}
+
+TEST_F(Ragdoll3DTest, RecoverySettings_AreValidated) {
+    Ragdoll3DComponent bad;
+    bad.recoverDurationSeconds = 0.0F;
+    EXPECT_FALSE(IsRagdoll3DComponentAuthoredValid(bad));
+    bad = Ragdoll3DComponent{};
+    bad.recoverDelaySeconds = -1.0F;
+    EXPECT_FALSE(IsRagdoll3DComponentAuthoredValid(bad));
+    EXPECT_TRUE(IsRagdoll3DComponentAuthoredValid(Ragdoll3DComponent{}));
+}
+
 TEST_F(Ragdoll3DTest, FullMixamoRig_PreviewStartsAndFallsOntoTheStudioFloor) {
     const Entity skeleton = MakeSkeletonEntity(MakeFullMixamoSkeleton());
     const Entity ragdollEntity = MakeRagdoll(skeleton);
@@ -790,7 +1027,7 @@ TEST_F(Ragdoll3DTest, FullMixamoRig_PreviewStartsAndFallsOntoTheStudioFloor) {
         << entityManager.GetComponent<Ragdoll3DComponent>(ragdollEntity).lastSetupError;
     Ragdoll3DComponent& ragdoll = entityManager.GetComponent<Ragdoll3DComponent>(ragdollEntity);
     EXPECT_TRUE(ragdoll.lastSetupError.empty());
-    EXPECT_EQ(ragdoll.solver.GetBodyCount(), 20U);
+    EXPECT_EQ(ragdoll.solver.GetBodyCount(), 52U);
     EXPECT_GT(ragdoll.solver.GetJointCount(), 0U);
 
     const float startY = ragdoll.solver.GetBody(0U).position.y;
@@ -814,6 +1051,12 @@ TEST_F(Ragdoll3DTest, OversizedAuthoredBoneList_IsTrimmedNotRefused) {
         setup.boneName = bone.name;
         setup.mass = bone.name.find("Hand") != std::string::npos && bone.name.size() > 18U ? 0.5F : 3.0F;
         authored.bones.push_back(setup);
+    }
+    for (int ghost = 0; ghost < 16; ++ghost) {
+        RagdollBoneSetup extra;
+        extra.boneName = "ghost_" + std::to_string(ghost);
+        extra.mass = 0.1F;
+        authored.bones.push_back(extra);
     }
     ASSERT_GT(authored.bones.size(), static_cast<std::size_t>(kMaximumRagdollBones));
 
@@ -889,6 +1132,507 @@ TEST_F(Ragdoll3DTest, FindNearestSkeleton_PrefersItsOwnCharacterOverAnother) {
     EXPECT_FALSE(PrepareRagdoll3D(entityManager, loose));
     EXPECT_FALSE(entityManager.GetComponent<Ragdoll3DComponent>(loose).lastSetupError.empty());
     static_cast<void>(villainSkeleton);
+}
+
+TEST_F(Ragdoll3DTest, BlueprintHost_DescribesRagdollFunctionsOnlyWhereThereIsARagdoll) {
+    const Entity ragdollEntity = MakeRagdoll(MakeSkeletonEntity(MakeFullMixamoSkeleton()));
+    const Core::BlueprintObjectHost host{entityManager, nullptr, ragdollEntity};
+    for (const char* name : {"ragdoll.activate", "ragdoll.activate_powered", "ragdoll.deactivate", "ragdoll.get_up",
+                             "ragdoll.is_active", "ragdoll.is_at_rest", "ragdoll.is_lying"}) {
+        const std::optional<Blueprint::HostFunction> described = host.DescribeFunction(name);
+        ASSERT_TRUE(described.has_value()) << name;
+        EXPECT_TRUE(described->params.empty()) << name;
+        EXPECT_EQ(described->result.kind, Blueprint::Type::Kind::Bool) << name;
+    }
+    const std::optional<Blueprint::HostFunction> hit = host.DescribeFunction("ragdoll.hit");
+    ASSERT_TRUE(hit.has_value());
+    EXPECT_EQ(hit->params.size(), 2U);
+    const std::optional<Blueprint::HostFunction> blend = host.DescribeFunction("ragdoll.get_blend");
+    ASSERT_TRUE(blend.has_value());
+    EXPECT_EQ(blend->result.kind, Blueprint::Type::Kind::Float);
+
+    const Core::BlueprintObjectHost bare{entityManager, nullptr, entityManager.CreateEntity()};
+    EXPECT_FALSE(bare.DescribeFunction("ragdoll.activate").has_value());
+    EXPECT_FALSE(bare.DescribeFunction("ragdoll.hit").has_value());
+}
+
+TEST_F(Ragdoll3DTest, BlueprintHost_ADriverOnTheCharacterReachesTheRagdollUnderIt) {
+    // A character's script lives on the character; the ragdoll is a child of it.
+    const Entity character = entityManager.CreateEntity();
+    entityManager.AddComponent<TransformComponent>(character, TransformComponent{});
+    const Entity skeletonEntity = MakeSkeletonEntity(MakeFullMixamoSkeleton());
+    Ragdoll3DComponent setup;
+    setup.skeleton = skeletonEntity;
+    const Entity ragdollEntity = entityManager.CreateEntity();
+    entityManager.AddComponent<Ragdoll3DComponent>(ragdollEntity, setup);
+    HierarchyComponent link;
+    link.parent = character;
+    entityManager.AddComponent<HierarchyComponent>(ragdollEntity, link);
+
+    Core::BlueprintObjectHost host{entityManager, nullptr, character};
+    ASSERT_TRUE(host.DescribeFunction("ragdoll.activate").has_value());
+    EXPECT_FALSE(std::get<bool>(host.CallFunction("ragdoll.is_active", {})));
+    EXPECT_TRUE(std::get<bool>(host.CallFunction("ragdoll.activate", {})));
+    EXPECT_TRUE(std::get<bool>(host.CallFunction("ragdoll.is_active", {})));
+    EXPECT_EQ(entityManager.GetComponent<Ragdoll3DComponent>(ragdollEntity).mode, RagdollMode::Simulating);
+}
+
+TEST_F(Ragdoll3DTest, BlueprintHost_GoLimpFallGetUpAndDeactivate) {
+    const Skeleton3DComponent mixamo = MakeFullMixamoSkeleton();
+    const Entity skeletonEntity = MakeSkeletonEntity(mixamo);
+    const Entity ragdollEntity = MakeRagdoll(skeletonEntity);
+    Core::BlueprintObjectHost host{entityManager, nullptr, ragdollEntity};
+    const float startHips = BoneWorldHeight(mixamo, "mixamorig:Hips");
+
+    EXPECT_FALSE(std::get<bool>(host.CallFunction("ragdoll.get_up", {}))) << "nothing has fallen yet";
+    ASSERT_TRUE(std::get<bool>(host.CallFunction("ragdoll.activate", {})));
+    for (int frame = 0; frame < 150; ++frame) {
+        UpdateRagdoll3DObjects(entityManager, 1.0F / 60.0F, false, 0.0F);
+    }
+    EXPECT_LT(BoneWorldHeight(entityManager.GetComponent<Skeleton3DComponent>(skeletonEntity), "mixamorig:Hips"),
+              startHips - 0.5F);
+
+    ASSERT_TRUE(std::get<bool>(host.CallFunction("ragdoll.get_up", {})));
+    EXPECT_EQ(entityManager.GetComponent<Ragdoll3DComponent>(ragdollEntity).mode, RagdollMode::BlendingOut);
+    for (int frame = 0; frame < 240; ++frame) {
+        UpdateRagdoll3DObjects(entityManager, 1.0F / 60.0F, false, 0.0F);
+    }
+    EXPECT_EQ(entityManager.GetComponent<Ragdoll3DComponent>(ragdollEntity).mode, RagdollMode::Kinematic);
+    EXPECT_NEAR(BoneWorldHeight(entityManager.GetComponent<Skeleton3DComponent>(skeletonEntity), "mixamorig:Hips"),
+                startHips, 0.05F) << "a scripted get up really stands the body back up";
+
+    ASSERT_TRUE(std::get<bool>(host.CallFunction("ragdoll.activate", {})));
+    ASSERT_TRUE(std::get<bool>(host.CallFunction("ragdoll.deactivate", {})));
+    EXPECT_EQ(entityManager.GetComponent<Ragdoll3DComponent>(ragdollEntity).mode, RagdollMode::Kinematic);
+    EXPECT_FALSE(std::get<bool>(host.CallFunction("ragdoll.is_active", {})));
+    EXPECT_FALSE(std::get<bool>(host.CallFunction("ragdoll.deactivate", {}))) << "already handed back";
+}
+
+TEST_F(Ragdoll3DTest, BlueprintHost_SettingsAreWrittenAndBadNumbersRefused) {
+    const Entity ragdollEntity = MakeRagdoll(MakeSkeletonEntity(MakeFullMixamoSkeleton()));
+    Core::BlueprintObjectHost host{entityManager, nullptr, ragdollEntity};
+    const Ragdoll3DComponent& ragdoll = entityManager.GetComponent<Ragdoll3DComponent>(ragdollEntity);
+
+    const std::array<Blueprint::Value, 1U> half{Blueprint::Value{0.5}};
+    EXPECT_TRUE(std::get<bool>(host.CallFunction("ragdoll.set_blend", half)));
+    EXPECT_FLOAT_EQ(ragdoll.physicsBlendWeight, 0.5F);
+    EXPECT_DOUBLE_EQ(std::get<double>(host.CallFunction("ragdoll.get_blend", {})), 0.5);
+    const std::array<Blueprint::Value, 1U> tooMuch{Blueprint::Value{7.0}};
+    EXPECT_TRUE(std::get<bool>(host.CallFunction("ragdoll.set_blend", tooMuch)));
+    EXPECT_FLOAT_EQ(ragdoll.physicsBlendWeight, 1.0F) << "clamped";
+    const std::array<Blueprint::Value, 1U> notANumber{Blueprint::Value{std::numeric_limits<double>::quiet_NaN()}};
+    EXPECT_FALSE(std::get<bool>(host.CallFunction("ragdoll.set_blend", notANumber)));
+    EXPECT_FLOAT_EQ(ragdoll.physicsBlendWeight, 1.0F);
+
+    const std::array<Blueprint::Value, 1U> yes{Blueprint::Value{true}};
+    EXPECT_TRUE(std::get<bool>(host.CallFunction("ragdoll.set_auto_recover", yes)));
+    EXPECT_TRUE(ragdoll.autoRecover);
+    const std::array<Blueprint::Value, 1U> stiff{Blueprint::Value{300.0}};
+    EXPECT_TRUE(std::get<bool>(host.CallFunction("ragdoll.set_motor_stiffness", stiff)));
+    EXPECT_FLOAT_EQ(ragdoll.motorStiffness, 300.0F);
+}
+
+TEST_F(Ragdoll3DTest, BlueprintHost_AHitShovesTheBody) {
+    const Entity skeletonEntity = MakeSkeletonEntity(MakeFullMixamoSkeleton());
+    const Entity ragdollEntity = MakeRagdoll(skeletonEntity);
+    Core::BlueprintObjectHost host{entityManager, nullptr, ragdollEntity};
+    ASSERT_TRUE(std::get<bool>(host.CallFunction("ragdoll.activate", {})));
+    const Ragdoll3DComponent& ragdoll = entityManager.GetComponent<Ragdoll3DComponent>(ragdollEntity);
+    ASSERT_GT(ragdoll.solver.GetBodyCount(), 0U);
+    const Math::Vector3 before = ragdoll.solver.GetBody(0U).linearVelocity;
+
+    const std::array<Blueprint::Value, 1U> shove{Blueprint::Value{Blueprint::Vec3Value{0.0, 0.0, 400.0}}};
+    EXPECT_TRUE(std::get<bool>(host.CallFunction("ragdoll.apply_impulse", shove)));
+    EXPECT_GT(ragdoll.solver.GetBody(0U).linearVelocity.z, before.z + 0.5F);
+}
+
+
+// ---- Editing the mode or preset must never pull the bodies off the bones -----------------------
+
+TEST_F(Ragdoll3DTest, EditingModeOrPreset_KeepsEveryBodyOnItsBoneAtAnyRigScale) {
+    for (const float scale : {1.0F, 0.01F}) {
+        for (const RagdollMode mode : {RagdollMode::Kinematic, RagdollMode::Active, RagdollMode::Simulating,
+                                       RagdollMode::BlendingOut}) {
+            for (const RagdollQualityPreset preset :
+                 {RagdollQualityPreset::High, RagdollQualityPreset::Balanced, RagdollQualityPreset::Fast}) {
+                Skeleton3DComponent mixamo = MakeFullMixamoSkeleton();
+                for (SkeletonBone& bone : mixamo.bones) bone.localPosition = bone.localPosition * scale;
+                const Entity skeletonEntity = entityManager.CreateEntity();
+                entityManager.AddComponent<TransformComponent>(skeletonEntity, TransformComponent{});
+                WorldTransformComponent world;
+                world.worldScale = Math::Vector3{1.0F, 1.0F, 1.0F};
+                world.dirty = false;
+                entityManager.AddComponent<WorldTransformComponent>(skeletonEntity, world);
+                entityManager.AddComponent<Skeleton3DComponent>(skeletonEntity, mixamo);
+                const Entity ragdollEntity = MakeRagdoll(skeletonEntity);
+                ASSERT_TRUE(InitializeRagdoll3D(entityManager, ragdollEntity)) << scale;
+
+                Ragdoll3DComponent& ragdoll = entityManager.GetComponent<Ragdoll3DComponent>(ragdollEntity);
+                std::vector<Math::Vector3> reference;
+                for (std::size_t i = 0U; i < ragdoll.solver.GetBodyCount(); ++i) {
+                    reference.push_back(ragdoll.solver.GetBody(i).position);
+                }
+                const float hipsBefore =
+                    BoneWorldHeight(entityManager.GetComponent<Skeleton3DComponent>(skeletonEntity), "mixamorig:Hips");
+
+                // What the inspector does for an edit of `mode` or `qualityPreset`.
+                ragdoll.mode = mode;
+                ragdoll.qualityPreset = preset;
+                ApplyRagdollQualityPreset(ragdoll, preset);
+                ragdoll.initialized = false;
+                ASSERT_TRUE(InitializeRagdoll3D(entityManager, ragdollEntity));
+                for (int frame = 0; frame < 30; ++frame) {
+                    UpdateRagdoll3DObjects(entityManager, 1.0F / 60.0F, /*editorPreviewOnly=*/true);
+                }
+                ASSERT_TRUE(SyncRagdollBodiesToSkeletonPose(entityManager, ragdollEntity));
+
+                float worst = 0.0F;
+                ASSERT_EQ(ragdoll.solver.GetBodyCount(), reference.size());
+                for (std::size_t i = 0U; i < reference.size(); ++i) {
+                    worst = std::max(worst, std::sqrt(Math::LengthSquared(ragdoll.solver.GetBody(i).position -
+                                                                             reference[i])));
+                }
+                EXPECT_LT(worst, 0.001F * std::max(scale, 0.1F))
+                    << "mode " << static_cast<int>(mode) << " preset " << static_cast<int>(preset) << " scale "
+                    << scale << ": a body moved off its bone by " << worst;
+                const float hipsAfter =
+                    BoneWorldHeight(entityManager.GetComponent<Skeleton3DComponent>(skeletonEntity), "mixamorig:Hips");
+                EXPECT_NEAR(hipsAfter, hipsBefore, 1.0e-4F) << "the mesh pose must not move while only editing";
+            }
+        }
+    }
+}
+
+// ---- Automatic reactions ------------------------------------------------------------------------
+
+TEST_F(Ragdoll3DTest, NewRagdollStandsUntilSomethingActivatesIt) {
+    EXPECT_EQ(Ragdoll3DComponent{}.mode, RagdollMode::Kinematic);
+    EXPECT_FALSE(Ragdoll3DComponent{}.automaticReactions);
+}
+
+TEST_F(Ragdoll3DTest, Reactions_OffIgnoreHits_OnReactToTheirStrength) {
+    const Skeleton3DComponent mixamo = MakeFullMixamoSkeleton();
+    const Entity skeletonEntity = MakeSkeletonEntity(mixamo);
+    Ragdoll3DComponent setup;
+    setup.mode = RagdollMode::Kinematic;
+    const Entity ragdollEntity = MakeRagdoll(skeletonEntity, setup);
+    ASSERT_TRUE(InitializeRagdoll3D(entityManager, ragdollEntity));
+    Ragdoll3DComponent& ragdoll = entityManager.GetComponent<Ragdoll3DComponent>(ragdollEntity);
+    const Math::Vector3 hips = ragdoll.solver.GetBody(0U).position;
+
+    // Off: a strong hit does not change what the body is doing.
+    EXPECT_TRUE(ApplyRagdollImpact(entityManager, ragdollEntity, hips, {0.0F, 0.0F, 400.0F}, 0.5F));
+    EXPECT_EQ(ragdoll.mode, RagdollMode::Kinematic);
+
+    ragdoll.automaticReactions = true;
+    // Below the stagger threshold: nothing.
+    EXPECT_TRUE(ApplyRagdollImpact(entityManager, ragdollEntity, hips, {0.0F, 0.0F, 10.0F}, 0.5F));
+    EXPECT_EQ(ragdoll.mode, RagdollMode::Kinematic);
+    EXPECT_FALSE(ragdoll.staggering);
+    // A light hit staggers.
+    EXPECT_TRUE(ApplyRagdollImpact(entityManager, ragdollEntity, hips, {0.0F, 0.0F, 80.0F}, 0.5F));
+    EXPECT_EQ(ragdoll.mode, RagdollMode::Active);
+    EXPECT_TRUE(ragdoll.staggering);
+    // A strong hit while staggering knocks the body down.
+    EXPECT_TRUE(ApplyRagdollImpact(entityManager, ragdollEntity, hips, {0.0F, 0.0F, 400.0F}, 0.5F));
+    EXPECT_EQ(ragdoll.mode, RagdollMode::Simulating);
+    EXPECT_FALSE(ragdoll.staggering);
+}
+
+TEST_F(Ragdoll3DTest, Reactions_AStrongHitOnAStandingBodyKnocksItDown) {
+    const Skeleton3DComponent mixamo = MakeFullMixamoSkeleton();
+    const Entity skeletonEntity = MakeSkeletonEntity(mixamo);
+    Ragdoll3DComponent setup;
+    setup.mode = RagdollMode::Kinematic;
+    setup.automaticReactions = true;
+    const Entity ragdollEntity = MakeRagdoll(skeletonEntity, setup);
+    ASSERT_TRUE(InitializeRagdoll3D(entityManager, ragdollEntity));
+    const float startHips = BoneWorldHeight(mixamo, "mixamorig:Hips");
+    const Math::Vector3 hips = entityManager.GetComponent<Ragdoll3DComponent>(ragdollEntity).solver.GetBody(0U).position;
+    ASSERT_TRUE(ApplyRagdollImpact(entityManager, ragdollEntity, hips, {0.0F, 0.0F, 600.0F}, 0.5F));
+    for (int frame = 0; frame < 150; ++frame) {
+        UpdateRagdoll3DObjects(entityManager, 1.0F / 60.0F, false, 0.0F);
+    }
+    EXPECT_LT(BoneWorldHeight(entityManager.GetComponent<Skeleton3DComponent>(skeletonEntity), "mixamorig:Hips"),
+              startHips - 0.5F);
+}
+
+TEST_F(Ragdoll3DTest, Reactions_ALightHitStaggersAndTheBodyReturnsToTheAnimation) {
+    const Skeleton3DComponent mixamo = MakeFullMixamoSkeleton();
+    const Entity skeletonEntity = MakeSkeletonEntity(mixamo);
+    Ragdoll3DComponent setup;
+    setup.mode = RagdollMode::Kinematic;
+    setup.automaticReactions = true;
+    const Entity ragdollEntity = MakeRagdoll(skeletonEntity, setup);
+    ASSERT_TRUE(InitializeRagdoll3D(entityManager, ragdollEntity));
+    Ragdoll3DComponent& ragdoll = entityManager.GetComponent<Ragdoll3DComponent>(ragdollEntity);
+    const float startHips = BoneWorldHeight(mixamo, "mixamorig:Hips");
+    ASSERT_TRUE(ApplyRagdollImpact(entityManager, ragdollEntity, ragdoll.solver.GetBody(0U).position,
+                                   {0.0F, 0.0F, 60.0F}, 0.5F));
+    ASSERT_TRUE(ragdoll.staggering);
+
+    float peak = 0.0F;
+    float lowestHips = startHips;
+    bool returned = false;
+    for (int frame = 0; frame < 60 * 4 && !returned; ++frame) {
+        UpdateRagdoll3DObjects(entityManager, 1.0F / 60.0F, false, 0.0F);
+        if (ragdoll.staggering) peak = std::max(peak, ragdoll.effectiveBlend);
+        lowestHips = std::min(lowestHips,
+                              BoneWorldHeight(entityManager.GetComponent<Skeleton3DComponent>(skeletonEntity),
+                                              "mixamorig:Hips"));
+        returned = ragdoll.mode == RagdollMode::Kinematic && !ragdoll.staggering;
+    }
+    EXPECT_TRUE(returned) << "a stagger ends by itself";
+    EXPECT_GT(peak, 0.1F) << "the physics took over for a moment";
+    EXPECT_LE(peak, ragdoll.staggerBlendPeak + 1.0e-4F);
+    EXPECT_GT(lowestHips, startHips - 0.3F) << "a stagger is not a fall";
+}
+
+TEST_F(Ragdoll3DTest, Reactions_AHardLandingKnocksTheBodyDownASoftOneDoesNot) {
+    for (const float landingSpeed : {3.0F, 14.0F}) {
+        const Entity character = entityManager.CreateEntity();
+        entityManager.AddComponent<TransformComponent>(character, TransformComponent{});
+        entityManager.AddComponent<CharacterControllerComponent>(character, CharacterControllerComponent{});
+        const Entity skeletonEntity = MakeSkeletonEntity(MakeFullMixamoSkeleton());
+        HierarchyComponent link;
+        link.parent = character;
+        entityManager.AddComponent<HierarchyComponent>(skeletonEntity, link);
+        Ragdoll3DComponent setup;
+        setup.mode = RagdollMode::Kinematic;
+        setup.automaticReactions = true;
+        const Entity ragdollEntity = MakeRagdoll(skeletonEntity, setup);
+        ASSERT_TRUE(InitializeRagdoll3D(entityManager, ragdollEntity));
+        CharacterControllerComponent& controller = entityManager.GetComponent<CharacterControllerComponent>(character);
+
+        controller.grounded = false;
+        controller.velocity = {0.0F, -landingSpeed, 0.0F};
+        for (int frame = 0; frame < 5; ++frame) UpdateRagdoll3DObjects(entityManager, 1.0F / 60.0F, false, 0.0F);
+        EXPECT_EQ(entityManager.GetComponent<Ragdoll3DComponent>(ragdollEntity).mode, RagdollMode::Kinematic)
+            << "still in the air";
+        controller.grounded = true;
+        controller.velocity = {};
+        UpdateRagdoll3DObjects(entityManager, 1.0F / 60.0F, false, 0.0F);
+        EXPECT_EQ(entityManager.GetComponent<Ragdoll3DComponent>(ragdollEntity).mode,
+                  landingSpeed > 9.0F ? RagdollMode::Simulating : RagdollMode::Kinematic)
+            << "landing at " << landingSpeed;
+    }
+}
+
+TEST_F(Ragdoll3DTest, Reactions_SettingsAreValidatedAndPresetsTuneTheStagger) {
+    Ragdoll3DComponent bad;
+    bad.fallImpulseThreshold = 10.0F; // below the stagger threshold
+    EXPECT_FALSE(IsRagdoll3DComponentAuthoredValid(bad));
+    bad = Ragdoll3DComponent{};
+    bad.staggerBlendPeak = 1.5F;
+    EXPECT_FALSE(IsRagdoll3DComponentAuthoredValid(bad));
+    bad = Ragdoll3DComponent{};
+    bad.staggerDecaySeconds = 0.0F;
+    EXPECT_FALSE(IsRagdoll3DComponentAuthoredValid(bad));
+    bad = Ragdoll3DComponent{};
+    bad.fallLandingSpeed = std::numeric_limits<float>::quiet_NaN();
+    EXPECT_FALSE(IsRagdoll3DComponentAuthoredValid(bad));
+
+    Ragdoll3DComponent preset;
+    ApplyRagdollQualityPreset(preset, RagdollQualityPreset::High);
+    const float highDecay = preset.staggerDecaySeconds;
+    ApplyRagdollQualityPreset(preset, RagdollQualityPreset::Fast);
+    EXPECT_LT(preset.staggerDecaySeconds, highDecay);
+    EXPECT_TRUE(IsRagdoll3DComponentAuthoredValid(preset));
+}
+
+TEST_F(Ragdoll3DTest, Stagger_RefusesABodyThatIsAlreadyFalling) {
+    const Entity skeletonEntity = MakeSkeletonEntity(MakeFullMixamoSkeleton());
+    Ragdoll3DComponent setup;
+    setup.mode = RagdollMode::Kinematic;
+    const Entity ragdollEntity = MakeRagdoll(skeletonEntity, setup);
+    EXPECT_TRUE(StaggerRagdoll(entityManager, ragdollEntity, 1.0F));
+    ASSERT_TRUE(ActivateRagdoll(entityManager, ragdollEntity, RagdollMode::Simulating));
+    EXPECT_FALSE(StaggerRagdoll(entityManager, ragdollEntity, 1.0F));
+    EXPECT_FALSE(StaggerRagdoll(entityManager, ragdollEntity, std::numeric_limits<float>::quiet_NaN()));
+}
+
+TEST_F(Ragdoll3DTest, BlueprintHost_ModeReactionsAndStaggerNodes) {
+    const Entity skeletonEntity = MakeSkeletonEntity(MakeFullMixamoSkeleton());
+    Ragdoll3DComponent setup;
+    setup.mode = RagdollMode::Kinematic;
+    const Entity ragdollEntity = MakeRagdoll(skeletonEntity, setup);
+    Core::BlueprintObjectHost host{entityManager, nullptr, ragdollEntity};
+    const Ragdoll3DComponent& ragdoll = entityManager.GetComponent<Ragdoll3DComponent>(ragdollEntity);
+    const auto text = [](const char* value) { return Blueprint::Value{std::string{value}}; };
+
+    EXPECT_EQ(std::get<std::string>(host.CallFunction("ragdoll.get_mode", {})), "Kinematic");
+    const std::array<Blueprint::Value, 1U> simulating{text("Simulating")};
+    EXPECT_TRUE(std::get<bool>(host.CallFunction("ragdoll.set_mode", simulating)));
+    EXPECT_EQ(std::get<std::string>(host.CallFunction("ragdoll.get_mode", {})), "Simulating");
+    const std::array<Blueprint::Value, 1U> kinematic{text("Kinematic")};
+    EXPECT_TRUE(std::get<bool>(host.CallFunction("ragdoll.set_mode", kinematic)));
+    EXPECT_EQ(ragdoll.mode, RagdollMode::Kinematic);
+    const std::array<Blueprint::Value, 1U> active{text("Active")};
+    EXPECT_TRUE(std::get<bool>(host.CallFunction("ragdoll.set_mode", active)));
+    EXPECT_EQ(std::get<std::string>(host.CallFunction("ragdoll.get_mode", {})), "Active");
+    const std::array<Blueprint::Value, 1U> nonsense{text("Floating")};
+    EXPECT_FALSE(std::get<bool>(host.CallFunction("ragdoll.set_mode", nonsense))) << "an unknown mode is refused";
+    EXPECT_EQ(ragdoll.mode, RagdollMode::Active);
+    ASSERT_TRUE(std::get<bool>(host.CallFunction("ragdoll.deactivate", {})));
+
+    // Reactions on and off, and the named settings.
+    EXPECT_FALSE(std::get<bool>(host.CallFunction("ragdoll.get_automatic_reactions", {})));
+    const std::array<Blueprint::Value, 1U> yes{Blueprint::Value{true}};
+    EXPECT_TRUE(std::get<bool>(host.CallFunction("ragdoll.set_automatic_reactions", yes)));
+    EXPECT_TRUE(ragdoll.automaticReactions);
+    const std::array<Blueprint::Value, 2U> peak{text("StaggerPeak"), Blueprint::Value{0.4}};
+    EXPECT_TRUE(std::get<bool>(host.CallFunction("ragdoll.set_reaction", peak)));
+    EXPECT_FLOAT_EQ(ragdoll.staggerBlendPeak, 0.4F);
+    const std::array<Blueprint::Value, 1U> peakName{text("StaggerPeak")};
+    EXPECT_DOUBLE_EQ(std::get<double>(host.CallFunction("ragdoll.get_reaction", peakName)), static_cast<double>(0.4F));
+    const std::array<Blueprint::Value, 2U> tooMuch{text("StaggerPeak"), Blueprint::Value{4.0}};
+    EXPECT_FALSE(std::get<bool>(host.CallFunction("ragdoll.set_reaction", tooMuch))) << "refused by the component rule";
+    EXPECT_FLOAT_EQ(ragdoll.staggerBlendPeak, 0.4F) << "and left as it was";
+    const std::array<Blueprint::Value, 2U> unknown{text("Nothing"), Blueprint::Value{1.0}};
+    EXPECT_FALSE(std::get<bool>(host.CallFunction("ragdoll.set_reaction", unknown)));
+    const std::array<Blueprint::Value, 2U> belowStagger{text("FallImpulse"), Blueprint::Value{1.0}};
+    EXPECT_FALSE(std::get<bool>(host.CallFunction("ragdoll.set_reaction", belowStagger)))
+        << "a fall threshold under the stagger threshold is refused";
+
+    // Stagger by hand.
+    const std::array<Blueprint::Value, 1U> full{Blueprint::Value{1.0}};
+    EXPECT_TRUE(std::get<bool>(host.CallFunction("ragdoll.stagger", full)));
+    EXPECT_TRUE(ragdoll.staggering);
+    EXPECT_EQ(ragdoll.mode, RagdollMode::Active);
+}
+
+TEST_F(Ragdoll3DTest, GetUp_FiresTheTriggerThatMatchesHowTheBodyLies) {
+    const Entity character = entityManager.CreateEntity();
+    entityManager.AddComponent<TransformComponent>(character, TransformComponent{});
+    AnimationGraphComponent graph;
+    graph.parameters.push_back(AnimationParameter{"GetUpFaceUp", AnimationParameterType::Trigger});
+    graph.parameters.push_back(AnimationParameter{"GetUpFaceDown", AnimationParameterType::Trigger});
+    entityManager.AddComponent<AnimationGraphComponent>(character, graph);
+    const Entity skeletonEntity = MakeSkeletonEntity(MakeFullMixamoSkeleton());
+    HierarchyComponent link;
+    link.parent = character;
+    entityManager.AddComponent<HierarchyComponent>(skeletonEntity, link);
+    const Entity ragdollEntity = MakeRagdoll(skeletonEntity);
+    ASSERT_TRUE(ActivateRagdoll(entityManager, ragdollEntity, RagdollMode::Simulating));
+    for (int frame = 0; frame < 240; ++frame) UpdateRagdoll3DObjects(entityManager, 1.0F / 60.0F, false, 0.0F);
+
+    RagdollGetUpState lying;
+    ASSERT_TRUE(EvaluateRagdollGetUpState(entityManager, ragdollEntity, lying));
+    ASSERT_TRUE(BeginRagdollRecovery(entityManager, ragdollEntity));
+    const AnimationGraphComponent& after = entityManager.GetComponent<AnimationGraphComponent>(character);
+    const bool faceUp = after.parameters[0].value != 0.0F;
+    const bool faceDown = after.parameters[1].value != 0.0F;
+    EXPECT_EQ(faceUp, lying.orientation == RagdollLyingOrientation::FaceUp);
+    EXPECT_EQ(faceDown, lying.orientation == RagdollLyingOrientation::FaceDown);
+    EXPECT_FALSE(faceUp && faceDown) << "only the matching trigger fires";
+}
+
+TEST_F(Ragdoll3DTest, GetUp_AnEmptyTriggerNameFiresNothing) {
+    const Entity character = entityManager.CreateEntity();
+    entityManager.AddComponent<TransformComponent>(character, TransformComponent{});
+    AnimationGraphComponent graph;
+    graph.parameters.push_back(AnimationParameter{"GetUpFaceUp", AnimationParameterType::Trigger});
+    graph.parameters.push_back(AnimationParameter{"GetUpFaceDown", AnimationParameterType::Trigger});
+    entityManager.AddComponent<AnimationGraphComponent>(character, graph);
+    const Entity skeletonEntity = MakeSkeletonEntity(MakeFullMixamoSkeleton());
+    HierarchyComponent link;
+    link.parent = character;
+    entityManager.AddComponent<HierarchyComponent>(skeletonEntity, link);
+    Ragdoll3DComponent setup = SimulatingSetup();
+    setup.getUpFaceUpTrigger.clear();
+    setup.getUpFaceDownTrigger.clear();
+    const Entity ragdollEntity = MakeRagdoll(skeletonEntity, setup);
+    ASSERT_TRUE(ActivateRagdoll(entityManager, ragdollEntity, RagdollMode::Simulating));
+    for (int frame = 0; frame < 120; ++frame) UpdateRagdoll3DObjects(entityManager, 1.0F / 60.0F, false, 0.0F);
+    ASSERT_TRUE(BeginRagdollRecovery(entityManager, ragdollEntity));
+    const AnimationGraphComponent& after = entityManager.GetComponent<AnimationGraphComponent>(character);
+    EXPECT_EQ(after.parameters[0].value, 0.0F);
+    EXPECT_EQ(after.parameters[1].value, 0.0F);
+}
+
+// ---- An imported character: centimetre bones under a scaled, rotated import root ----------------
+
+TEST_F(Ragdoll3DTest, ImportedHierarchy_MeshBonesAndCapsulesStayTogetherWithOrWithoutEntityDrive) {
+    for (const bool drive : {false, true}) {
+        SceneGraph graph;
+        const auto addEntity = [&](const Entity parent, const Math::Vector3 position, const Math::Quaternion rotation,
+                                   const Math::Vector3 scale) {
+            const Entity entity = entityManager.CreateEntity();
+            TransformComponent transform;
+            transform.localPosition = position;
+            transform.localRotation = rotation;
+            transform.localScale = scale;
+            graph.AttachTransform(entityManager, entity, transform);
+            if (parent != kInvalidEntity) graph.SetParent(entityManager, entity, parent);
+            return entity;
+        };
+        Math::Quaternion yaw90;
+        ASSERT_TRUE(Math::TryMakeAxisAngle(Math::Vector3{0.0F, 1.0F, 0.0F}, 1.5707964F, yaw90));
+        const Entity character = addEntity(kInvalidEntity, {2.0F, 0.0F, -1.0F}, Math::Quaternion{}, {1.0F, 1.0F, 1.0F});
+        const Entity importRoot = addEntity(character, {}, yaw90, {0.01F, 0.01F, 0.01F}); // centimetres to metres
+        const Entity geo = addEntity(importRoot, {}, Math::Quaternion{}, {1.0F, 1.0F, 1.0F});
+        const Entity mesh = addEntity(geo, {}, Math::Quaternion{}, {1.0F, 1.0F, 1.0F});
+        entityManager.AddComponent<MeshComponent>(mesh, MeshComponent{});
+        const Entity skeletonEntity = addEntity(importRoot, {}, Math::Quaternion{}, {1.0F, 1.0F, 1.0F});
+        Skeleton3DComponent rig = MakeFullMixamoSkeleton();
+        for (SkeletonBone& bone : rig.bones) bone.localPosition = bone.localPosition * 100.0F;
+        entityManager.AddComponent<Skeleton3DComponent>(skeletonEntity, rig);
+        Ragdoll3DComponent setup = SimulatingSetup();
+        setup.skeleton = skeletonEntity;
+        setup.driveEntityTransform = drive;
+        const Entity ragdollEntity = entityManager.CreateEntity();
+        entityManager.AddComponent<Ragdoll3DComponent>(ragdollEntity, setup);
+        HierarchyComponent link;
+        link.parent = skeletonEntity;
+        entityManager.AddComponent<HierarchyComponent>(ragdollEntity, link);
+
+        graph.Update(entityManager);
+        ASSERT_TRUE(InitializeRagdoll3D(entityManager, ragdollEntity)) << "drive " << drive;
+        const Math::Vector3 skeletonBefore = entityManager.GetComponent<TransformComponent>(skeletonEntity).localPosition;
+        const Math::Vector3 rootBefore = entityManager.GetComponent<TransformComponent>(importRoot).localPosition;
+        const Ragdoll3DComponent& ragdoll = entityManager.GetComponent<Ragdoll3DComponent>(ragdollEntity);
+        const float radius = ragdoll.solver.GetBody(0U).radius;
+        EXPECT_GT(radius, 0.03F) << "capsules are sized in world metres";
+        EXPECT_LT(radius, 0.2F);
+
+        // A shove along the world X axis, so the body travels sideways as well as down.
+        ASSERT_TRUE(ApplyRagdollImpact(entityManager, ragdollEntity, ragdoll.solver.GetBody(0U).position,
+                                       {260.0F, 0.0F, 0.0F}, 0.5F));
+        for (int frame = 0; frame < 240; ++frame) {
+            graph.Update(entityManager);
+            UpdateRagdoll3DObjects(entityManager, 1.0F / 60.0F, false, 0.0F);
+            graph.Update(entityManager);
+        }
+
+        // The skeleton entity itself never jumps: the mesh does not follow it.
+        EXPECT_EQ(entityManager.GetComponent<TransformComponent>(skeletonEntity).localPosition, skeletonBefore)
+            << "drive " << drive;
+        const Math::Vector3 rootAfter = entityManager.GetComponent<TransformComponent>(importRoot).localPosition;
+        if (!drive) {
+            EXPECT_EQ(rootAfter, rootBefore);
+        } else {
+            EXPECT_NEAR(rootAfter.y, rootBefore.y, 1.0e-5F) << "only the horizontal travel is carried";
+            EXPECT_GT(rootAfter.x - rootBefore.x, 0.05F) << "the import root followed the shoved body";
+        }
+
+        // Bodies sit on the bones the mesh is skinned to...
+        std::vector<Math::Vector3> bodies;
+        for (std::size_t i = 0U; i < ragdoll.solver.GetBodyCount(); ++i) bodies.push_back(ragdoll.solver.GetBody(i).position);
+        const Ragdoll3DComponent copy = ragdoll;
+        ASSERT_TRUE(SyncRagdollBodiesToSkeletonPose(entityManager, ragdollEntity));
+        float worst = 0.0F;
+        Ragdoll3DComponent& synced = entityManager.GetComponent<Ragdoll3DComponent>(ragdollEntity);
+        for (std::size_t i = 0U; i < bodies.size(); ++i) {
+            worst = std::max(worst, std::sqrt(Math::LengthSquared(synced.solver.GetBody(i).position - bodies[i])));
+        }
+        EXPECT_LT(worst, 0.03F) << "drive " << drive << ": bodies and the mesh's bones agree";
+        static_cast<void>(copy);
+        // ...and the fallen body lies on the floor, near where it stood, instead of hanging in the air.
+        float lowest = 1.0e9F;
+        for (const Math::Vector3& position : bodies) lowest = std::min(lowest, position.y);
+        EXPECT_LT(lowest, 0.25F) << "drive " << drive << ": the body has come down to the floor";
+        EXPECT_GT(lowest, -0.1F);
+    }
 }
 
 } // namespace

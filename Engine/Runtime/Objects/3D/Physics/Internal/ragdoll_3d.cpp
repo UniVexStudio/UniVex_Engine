@@ -12,9 +12,12 @@
 #include <unordered_map>
 #include <vector>
 
+#include "animation_graph_component.h"
+#include "character_controller_component.h"
 #include "collider_component.h"
 #include "disabled_component.h"
 #include "hierarchy_component.h"
+#include "mesh_component.h"
 #include "rigid_3d_component.h"
 #include "transform_component.h"
 #include "world_transform_component.h"
@@ -22,6 +25,8 @@
 #include "object_3d.h"
 #include "skeleton_3d.h"
 #include "collider_world_aabb_cache.h"
+#include "retarget_humanoid.h"
+#include "retarget_match.h"
 
 namespace UVE::Scene {
 namespace {
@@ -33,76 +38,96 @@ constexpr float kMaxInheritedLinearSpeed = 25.0F;
 constexpr float kMaxInheritedAngularSpeed = 30.0F;
 constexpr float kMaxDynamicPushbackImpulse = 120.0F;
 
+/// Hinge ranges follow the solver's twist sign about the axis `forward x limb`. With that axis a positive
+/// twist folds an elbow forward and a knee backward, so both hinge rows read [-5, 150] (a hinge never bends
+/// the other way). Measured by kicking forearms and shins in zero gravity; see ragdoll_3d_tests.cpp.
 /// Expanded humanoid profile table covering standard DCC & character rig naming conventions.
 /// Ordered most-specific-first; all patterns strictly lowercase.
 constexpr std::array<HumanoidRagdollProfileEntry, 50U> kHumanoidProfile{{
-    {"lowerarm", 1.5F, 0.045F, 0.10F, 0.05F, 1.0F, 5.0F, 5.0F, 150.0F, true, -5.0F, 150.0F},
-    {"lower_arm", 1.5F, 0.045F, 0.10F, 0.05F, 1.0F, 5.0F, 5.0F, 150.0F, true, -5.0F, 150.0F},
-    {"forearm", 1.5F, 0.045F, 0.10F, 0.05F, 1.0F, 5.0F, 5.0F, 150.0F, true, -5.0F, 150.0F},
-    {"fore_arm", 1.5F, 0.045F, 0.10F, 0.05F, 1.0F, 5.0F, 5.0F, 150.0F, true, -5.0F, 150.0F},
-    {"arm_lower", 1.5F, 0.045F, 0.10F, 0.05F, 1.0F, 5.0F, 5.0F, 150.0F, true, -5.0F, 150.0F},
-    {"elbow", 1.5F, 0.045F, 0.10F, 0.05F, 1.0F, 5.0F, 5.0F, 150.0F, true, -5.0F, 150.0F},
-    {"upperarm", 2.5F, 0.055F, 0.12F, 0.05F, 0.8F, 90.0F, 90.0F, 60.0F, false, -60.0F, 60.0F},
-    {"upper_arm", 2.5F, 0.055F, 0.12F, 0.05F, 0.8F, 90.0F, 90.0F, 60.0F, false, -60.0F, 60.0F},
-    {"arm_upper", 2.5F, 0.055F, 0.12F, 0.05F, 0.8F, 90.0F, 90.0F, 60.0F, false, -60.0F, 60.0F},
-    {"bicep", 2.5F, 0.055F, 0.12F, 0.05F, 0.8F, 90.0F, 90.0F, 60.0F, false, -60.0F, 60.0F},
-    {"leftarm", 2.5F, 0.055F, 0.12F, 0.05F, 0.8F, 90.0F, 90.0F, 60.0F, false, -60.0F, 60.0F},
-    {"rightarm", 2.5F, 0.055F, 0.12F, 0.05F, 0.8F, 90.0F, 90.0F, 60.0F, false, -60.0F, 60.0F},
-    {"l_arm", 2.5F, 0.055F, 0.12F, 0.05F, 0.8F, 90.0F, 90.0F, 60.0F, false, -60.0F, 60.0F},
-    {"r_arm", 2.5F, 0.055F, 0.12F, 0.05F, 0.8F, 90.0F, 90.0F, 60.0F, false, -60.0F, 60.0F},
-    {"arm_l", 2.5F, 0.055F, 0.12F, 0.05F, 0.8F, 90.0F, 90.0F, 60.0F, false, -60.0F, 60.0F},
-    {"arm_r", 2.5F, 0.055F, 0.12F, 0.05F, 0.8F, 90.0F, 90.0F, 60.0F, false, -60.0F, 60.0F},
-    {"arm.l", 2.5F, 0.055F, 0.12F, 0.05F, 0.8F, 90.0F, 90.0F, 60.0F, false, -60.0F, 60.0F},
-    {"arm.r", 2.5F, 0.055F, 0.12F, 0.05F, 0.8F, 90.0F, 90.0F, 60.0F, false, -60.0F, 60.0F},
-    {"clavicle", 1.5F, 0.05F, 0.08F, 0.05F, 0.6F, 20.0F, 20.0F, 30.0F, false, -30.0F, 30.0F},
-    {"collar", 1.5F, 0.05F, 0.08F, 0.05F, 0.6F, 20.0F, 20.0F, 30.0F, false, -30.0F, 30.0F},
-    {"shoulder", 1.5F, 0.05F, 0.08F, 0.05F, 0.6F, 20.0F, 20.0F, 30.0F, false, -30.0F, 30.0F},
-    {"hand", 0.5F, 0.035F, 0.04F, 0.10F, 1.5F, 60.0F, 60.0F, 40.0F, false, -40.0F, 40.0F},
-    {"wrist", 0.5F, 0.035F, 0.04F, 0.10F, 1.5F, 60.0F, 60.0F, 40.0F, false, -40.0F, 40.0F},
-    {"thigh", 9.0F, 0.08F, 0.16F, 0.05F, 0.5F, 70.0F, 70.0F, 40.0F, false, -40.0F, 40.0F},
-    {"femur", 9.0F, 0.08F, 0.16F, 0.05F, 0.5F, 70.0F, 70.0F, 40.0F, false, -40.0F, 40.0F},
-    {"upperleg", 9.0F, 0.08F, 0.16F, 0.05F, 0.5F, 70.0F, 70.0F, 40.0F, false, -40.0F, 40.0F},
-    {"upper_leg", 9.0F, 0.08F, 0.16F, 0.05F, 0.5F, 70.0F, 70.0F, 40.0F, false, -40.0F, 40.0F},
-    {"upleg", 9.0F, 0.08F, 0.16F, 0.05F, 0.5F, 70.0F, 70.0F, 40.0F, false, -40.0F, 40.0F},
-    {"up_leg", 9.0F, 0.08F, 0.16F, 0.05F, 0.5F, 70.0F, 70.0F, 40.0F, false, -40.0F, 40.0F},
-    {"leg_upper", 9.0F, 0.08F, 0.16F, 0.05F, 0.5F, 70.0F, 70.0F, 40.0F, false, -40.0F, 40.0F},
-    {"calf", 3.5F, 0.06F, 0.16F, 0.05F, 0.7F, 5.0F, 5.0F, 150.0F, true, -150.0F, 5.0F},
-    {"shin", 3.5F, 0.06F, 0.16F, 0.05F, 0.7F, 5.0F, 5.0F, 150.0F, true, -150.0F, 5.0F},
-    {"tibia", 3.5F, 0.06F, 0.16F, 0.05F, 0.7F, 5.0F, 5.0F, 150.0F, true, -150.0F, 5.0F},
-    {"lowerleg", 3.5F, 0.06F, 0.16F, 0.05F, 0.7F, 5.0F, 5.0F, 150.0F, true, -150.0F, 5.0F},
-    {"lower_leg", 3.5F, 0.06F, 0.16F, 0.05F, 0.7F, 5.0F, 5.0F, 150.0F, true, -150.0F, 5.0F},
-    {"leg_lower", 3.5F, 0.06F, 0.16F, 0.05F, 0.7F, 5.0F, 5.0F, 150.0F, true, -150.0F, 5.0F},
-    {"leftleg", 3.5F, 0.06F, 0.16F, 0.05F, 0.7F, 5.0F, 5.0F, 150.0F, true, -150.0F, 5.0F},
-    {"rightleg", 3.5F, 0.06F, 0.16F, 0.05F, 0.7F, 5.0F, 5.0F, 150.0F, true, -150.0F, 5.0F},
-    {"l_leg", 3.5F, 0.06F, 0.16F, 0.05F, 0.7F, 5.0F, 5.0F, 150.0F, true, -150.0F, 5.0F},
-    {"r_leg", 3.5F, 0.06F, 0.16F, 0.05F, 0.7F, 5.0F, 5.0F, 150.0F, true, -150.0F, 5.0F},
-    {"leg_l", 3.5F, 0.06F, 0.16F, 0.05F, 0.7F, 5.0F, 5.0F, 150.0F, true, -150.0F, 5.0F},
-    {"leg_r", 3.5F, 0.06F, 0.16F, 0.05F, 0.7F, 5.0F, 5.0F, 150.0F, true, -150.0F, 5.0F},
-    {"leg.l", 3.5F, 0.06F, 0.16F, 0.05F, 0.7F, 5.0F, 5.0F, 150.0F, true, -150.0F, 5.0F},
-    {"leg.r", 3.5F, 0.06F, 0.16F, 0.05F, 0.7F, 5.0F, 5.0F, 150.0F, true, -150.0F, 5.0F},
-    {"foot", 1.0F, 0.04F, 0.06F, 0.10F, 1.5F, 5.0F, 5.0F, 40.0F, true, -40.0F, 40.0F},
-    {"ankle", 1.0F, 0.04F, 0.06F, 0.10F, 1.5F, 5.0F, 5.0F, 40.0F, true, -40.0F, 40.0F},
-    {"neck", 1.5F, 0.05F, 0.04F, 0.05F, 0.8F, 30.0F, 30.0F, 40.0F, false, -40.0F, 40.0F},
-    {"head", 5.0F, 0.09F, 0.05F, 0.05F, 0.8F, 30.0F, 30.0F, 30.0F, false, -30.0F, 30.0F},
-    {"spine", 6.0F, 0.10F, 0.08F, 0.05F, 0.4F, 25.0F, 25.0F, 20.0F, false, -20.0F, 20.0F},
-    {"abdomen", 6.0F, 0.10F, 0.08F, 0.05F, 0.4F, 25.0F, 25.0F, 20.0F, false, -20.0F, 20.0F},
+    {"lowerarm", 1.5F, 0.045F, 0.10F, 0.05F, 3.5F, 5.0F, 5.0F, 150.0F, true, -5.0F, 150.0F},
+    {"lower_arm", 1.5F, 0.045F, 0.10F, 0.05F, 3.5F, 5.0F, 5.0F, 150.0F, true, -5.0F, 150.0F},
+    {"forearm", 1.5F, 0.045F, 0.10F, 0.05F, 3.5F, 5.0F, 5.0F, 150.0F, true, -5.0F, 150.0F},
+    {"fore_arm", 1.5F, 0.045F, 0.10F, 0.05F, 3.5F, 5.0F, 5.0F, 150.0F, true, -5.0F, 150.0F},
+    {"arm_lower", 1.5F, 0.045F, 0.10F, 0.05F, 3.5F, 5.0F, 5.0F, 150.0F, true, -5.0F, 150.0F},
+    {"elbow", 1.5F, 0.045F, 0.10F, 0.05F, 3.5F, 5.0F, 5.0F, 150.0F, true, -5.0F, 150.0F},
+    {"upperarm", 2.5F, 0.055F, 0.12F, 0.05F, 3.0F, 90.0F, 90.0F, 60.0F, false, -60.0F, 60.0F},
+    {"upper_arm", 2.5F, 0.055F, 0.12F, 0.05F, 3.0F, 90.0F, 90.0F, 60.0F, false, -60.0F, 60.0F},
+    {"arm_upper", 2.5F, 0.055F, 0.12F, 0.05F, 3.0F, 90.0F, 90.0F, 60.0F, false, -60.0F, 60.0F},
+    {"bicep", 2.5F, 0.055F, 0.12F, 0.05F, 3.0F, 90.0F, 90.0F, 60.0F, false, -60.0F, 60.0F},
+    {"leftarm", 2.5F, 0.055F, 0.12F, 0.05F, 3.0F, 90.0F, 90.0F, 60.0F, false, -60.0F, 60.0F},
+    {"rightarm", 2.5F, 0.055F, 0.12F, 0.05F, 3.0F, 90.0F, 90.0F, 60.0F, false, -60.0F, 60.0F},
+    {"l_arm", 2.5F, 0.055F, 0.12F, 0.05F, 3.0F, 90.0F, 90.0F, 60.0F, false, -60.0F, 60.0F},
+    {"r_arm", 2.5F, 0.055F, 0.12F, 0.05F, 3.0F, 90.0F, 90.0F, 60.0F, false, -60.0F, 60.0F},
+    {"arm_l", 2.5F, 0.055F, 0.12F, 0.05F, 3.0F, 90.0F, 90.0F, 60.0F, false, -60.0F, 60.0F},
+    {"arm_r", 2.5F, 0.055F, 0.12F, 0.05F, 3.0F, 90.0F, 90.0F, 60.0F, false, -60.0F, 60.0F},
+    {"arm.l", 2.5F, 0.055F, 0.12F, 0.05F, 3.0F, 90.0F, 90.0F, 60.0F, false, -60.0F, 60.0F},
+    {"arm.r", 2.5F, 0.055F, 0.12F, 0.05F, 3.0F, 90.0F, 90.0F, 60.0F, false, -60.0F, 60.0F},
+    {"clavicle", 1.5F, 0.05F, 0.08F, 0.05F, 2.5F, 20.0F, 20.0F, 30.0F, false, -30.0F, 30.0F},
+    {"collar", 1.5F, 0.05F, 0.08F, 0.05F, 2.5F, 20.0F, 20.0F, 30.0F, false, -30.0F, 30.0F},
+    {"shoulder", 1.5F, 0.05F, 0.08F, 0.05F, 2.5F, 20.0F, 20.0F, 30.0F, false, -30.0F, 30.0F},
+    {"hand", 0.5F, 0.035F, 0.04F, 0.10F, 4.0F, 60.0F, 60.0F, 40.0F, false, -40.0F, 40.0F},
+    {"wrist", 0.5F, 0.035F, 0.04F, 0.10F, 4.0F, 60.0F, 60.0F, 40.0F, false, -40.0F, 40.0F},
+    {"thigh", 9.0F, 0.08F, 0.16F, 0.05F, 3.0F, 70.0F, 70.0F, 40.0F, false, -40.0F, 40.0F},
+    {"femur", 9.0F, 0.08F, 0.16F, 0.05F, 3.0F, 70.0F, 70.0F, 40.0F, false, -40.0F, 40.0F},
+    {"upperleg", 9.0F, 0.08F, 0.16F, 0.05F, 3.0F, 70.0F, 70.0F, 40.0F, false, -40.0F, 40.0F},
+    {"upper_leg", 9.0F, 0.08F, 0.16F, 0.05F, 3.0F, 70.0F, 70.0F, 40.0F, false, -40.0F, 40.0F},
+    {"upleg", 9.0F, 0.08F, 0.16F, 0.05F, 3.0F, 70.0F, 70.0F, 40.0F, false, -40.0F, 40.0F},
+    {"up_leg", 9.0F, 0.08F, 0.16F, 0.05F, 3.0F, 70.0F, 70.0F, 40.0F, false, -40.0F, 40.0F},
+    {"leg_upper", 9.0F, 0.08F, 0.16F, 0.05F, 3.0F, 70.0F, 70.0F, 40.0F, false, -40.0F, 40.0F},
+    {"calf", 3.5F, 0.06F, 0.16F, 0.05F, 3.5F, 5.0F, 5.0F, 150.0F, true, -5.0F, 150.0F},
+    {"shin", 3.5F, 0.06F, 0.16F, 0.05F, 3.5F, 5.0F, 5.0F, 150.0F, true, -5.0F, 150.0F},
+    {"tibia", 3.5F, 0.06F, 0.16F, 0.05F, 3.5F, 5.0F, 5.0F, 150.0F, true, -5.0F, 150.0F},
+    {"lowerleg", 3.5F, 0.06F, 0.16F, 0.05F, 3.5F, 5.0F, 5.0F, 150.0F, true, -5.0F, 150.0F},
+    {"lower_leg", 3.5F, 0.06F, 0.16F, 0.05F, 3.5F, 5.0F, 5.0F, 150.0F, true, -5.0F, 150.0F},
+    {"leg_lower", 3.5F, 0.06F, 0.16F, 0.05F, 3.5F, 5.0F, 5.0F, 150.0F, true, -5.0F, 150.0F},
+    {"leftleg", 3.5F, 0.06F, 0.16F, 0.05F, 3.5F, 5.0F, 5.0F, 150.0F, true, -5.0F, 150.0F},
+    {"rightleg", 3.5F, 0.06F, 0.16F, 0.05F, 3.5F, 5.0F, 5.0F, 150.0F, true, -5.0F, 150.0F},
+    {"l_leg", 3.5F, 0.06F, 0.16F, 0.05F, 3.5F, 5.0F, 5.0F, 150.0F, true, -5.0F, 150.0F},
+    {"r_leg", 3.5F, 0.06F, 0.16F, 0.05F, 3.5F, 5.0F, 5.0F, 150.0F, true, -5.0F, 150.0F},
+    {"leg_l", 3.5F, 0.06F, 0.16F, 0.05F, 3.5F, 5.0F, 5.0F, 150.0F, true, -5.0F, 150.0F},
+    {"leg_r", 3.5F, 0.06F, 0.16F, 0.05F, 3.5F, 5.0F, 5.0F, 150.0F, true, -5.0F, 150.0F},
+    {"leg.l", 3.5F, 0.06F, 0.16F, 0.05F, 3.5F, 5.0F, 5.0F, 150.0F, true, -5.0F, 150.0F},
+    {"leg.r", 3.5F, 0.06F, 0.16F, 0.05F, 3.5F, 5.0F, 5.0F, 150.0F, true, -5.0F, 150.0F},
+    {"foot", 1.0F, 0.04F, 0.06F, 0.10F, 4.0F, 5.0F, 5.0F, 40.0F, true, -40.0F, 40.0F},
+    {"ankle", 1.0F, 0.04F, 0.06F, 0.10F, 4.0F, 5.0F, 5.0F, 40.0F, true, -40.0F, 40.0F},
+    {"neck", 1.5F, 0.05F, 0.04F, 0.05F, 2.5F, 30.0F, 30.0F, 40.0F, false, -40.0F, 40.0F},
+    {"head", 5.0F, 0.09F, 0.05F, 0.05F, 2.5F, 30.0F, 30.0F, 30.0F, false, -30.0F, 30.0F},
+    {"spine", 6.0F, 0.10F, 0.08F, 0.05F, 2.0F, 25.0F, 25.0F, 20.0F, false, -20.0F, 20.0F},
+    {"abdomen", 6.0F, 0.10F, 0.08F, 0.05F, 2.0F, 25.0F, 25.0F, 20.0F, false, -20.0F, 20.0F},
 }};
 
 /// Separate torso aliases checked after `kHumanoidProfile` so chest/torso rigs auto-build cleanly.
 constexpr std::array<HumanoidRagdollProfileEntry, 5U> kHumanoidTorsoFallbackProfile{{
-    {"upperchest", 6.0F, 0.11F, 0.09F, 0.05F, 0.4F, 25.0F, 25.0F, 20.0F, false, -20.0F, 20.0F},
-    {"upper_chest", 6.0F, 0.11F, 0.09F, 0.05F, 0.4F, 25.0F, 25.0F, 20.0F, false, -20.0F, 20.0F},
-    {"chest", 6.0F, 0.11F, 0.09F, 0.05F, 0.4F, 25.0F, 25.0F, 20.0F, false, -20.0F, 20.0F},
-    {"torso", 6.0F, 0.11F, 0.09F, 0.05F, 0.4F, 25.0F, 25.0F, 20.0F, false, -20.0F, 20.0F},
-    {"waist", 6.0F, 0.10F, 0.08F, 0.05F, 0.4F, 25.0F, 25.0F, 20.0F, false, -20.0F, 20.0F},
+    {"upperchest", 6.0F, 0.11F, 0.09F, 0.05F, 2.0F, 25.0F, 25.0F, 20.0F, false, -20.0F, 20.0F},
+    {"upper_chest", 6.0F, 0.11F, 0.09F, 0.05F, 2.0F, 25.0F, 25.0F, 20.0F, false, -20.0F, 20.0F},
+    {"chest", 6.0F, 0.11F, 0.09F, 0.05F, 2.0F, 25.0F, 25.0F, 20.0F, false, -20.0F, 20.0F},
+    {"torso", 6.0F, 0.11F, 0.09F, 0.05F, 2.0F, 25.0F, 25.0F, 20.0F, false, -20.0F, 20.0F},
+    {"waist", 6.0F, 0.10F, 0.08F, 0.05F, 2.0F, 25.0F, 25.0F, 20.0F, false, -20.0F, 20.0F},
 }};
 
 /// The root row is separate because `pelvis` and `hips`/`hip` win over `spine`.
 constexpr std::array<HumanoidRagdollProfileEntry, 3U> kHumanoidRootProfile{{
-    {"pelvis", 12.0F, 0.12F, 0.08F, 0.05F, 0.4F, 45.0F, 45.0F, 35.0F, false, -35.0F, 35.0F},
-    {"hips", 12.0F, 0.12F, 0.08F, 0.05F, 0.4F, 45.0F, 45.0F, 35.0F, false, -35.0F, 35.0F},
-    {"hip", 12.0F, 0.12F, 0.08F, 0.05F, 0.4F, 45.0F, 45.0F, 35.0F, false, -35.0F, 35.0F},
+    {"pelvis", 12.0F, 0.12F, 0.08F, 0.05F, 2.0F, 45.0F, 45.0F, 35.0F, false, -35.0F, 35.0F},
+    {"hips", 12.0F, 0.12F, 0.08F, 0.05F, 2.0F, 45.0F, 45.0F, 35.0F, false, -35.0F, 35.0F},
+    {"hip", 12.0F, 0.12F, 0.08F, 0.05F, 2.0F, 45.0F, 45.0F, 35.0F, false, -35.0F, 35.0F},
 }};
+
+/// Fingers and toes, matched only against the engine's canonical bone names (never against a rig's own
+/// names, where "index" or "ring" are ordinary words). They are light, so they get strong damping and
+/// ball joints with short cones; the joint filter keeps bodies this light from colliding with the body.
+constexpr std::array<HumanoidRagdollProfileEntry, 6U> kHumanoidDetailProfile{{
+    {"thumb", 0.040F, 0.010F, 0.014F, 0.20F, 3.0F, 50.0F, 50.0F, 15.0F, false, -15.0F, 15.0F},
+    {"index", 0.030F, 0.008F, 0.012F, 0.20F, 3.0F, 45.0F, 45.0F, 10.0F, false, -10.0F, 10.0F},
+    {"middle", 0.035F, 0.009F, 0.012F, 0.20F, 3.0F, 45.0F, 45.0F, 10.0F, false, -10.0F, 10.0F},
+    {"ring", 0.030F, 0.008F, 0.012F, 0.20F, 3.0F, 45.0F, 45.0F, 10.0F, false, -10.0F, 10.0F},
+    {"pinky", 0.020F, 0.007F, 0.010F, 0.20F, 3.0F, 45.0F, 45.0F, 10.0F, false, -10.0F, 10.0F},
+    {"toe", 0.150F, 0.016F, 0.020F, 0.10F, 3.0F, 30.0F, 30.0F, 10.0F, false, -10.0F, 10.0F},
+}};
+
+/// Bodies at or below this mass are detail (fingers, toes): they never collide with other bodies of the
+/// same ragdoll, only with the world, so a clenched hand does not fight the wrist it hangs from, and they
+/// do not take part in the solver's sleep decision.
+constexpr float kDetailBodyMassKilograms = Physics::kRagdollDetailBodyMass;
 
 [[nodiscard]] std::string ToLowerAscii(std::string_view value) {
     std::string lowered;
@@ -123,6 +148,23 @@ constexpr std::array<HumanoidRagdollProfileEntry, 3U> kHumanoidRootProfile{{
     }
     for (const HumanoidRagdollProfileEntry& entry : kHumanoidTorsoFallbackProfile) {
         if (lowered.find(entry.pattern) != std::string::npos) return &entry;
+    }
+    return nullptr;
+}
+
+[[nodiscard]] const HumanoidRagdollProfileEntry* FindCanonicalProfileEntry(
+    const std::string_view loweredCanonicalName) noexcept {
+    for (const HumanoidRagdollProfileEntry& entry : kHumanoidDetailProfile) {
+        if (loweredCanonicalName.find(entry.pattern) != std::string_view::npos) return &entry;
+    }
+    for (const HumanoidRagdollProfileEntry& entry : kHumanoidRootProfile) {
+        if (loweredCanonicalName.find(entry.pattern) != std::string_view::npos) return &entry;
+    }
+    for (const HumanoidRagdollProfileEntry& entry : kHumanoidProfile) {
+        if (loweredCanonicalName.find(entry.pattern) != std::string_view::npos) return &entry;
+    }
+    for (const HumanoidRagdollProfileEntry& entry : kHumanoidTorsoFallbackProfile) {
+        if (loweredCanonicalName.find(entry.pattern) != std::string_view::npos) return &entry;
     }
     return nullptr;
 }
@@ -380,7 +422,11 @@ void EnsureSkeletonPose(Skeleton3DComponent& skeleton) {
         const Math::Vector3 leftAvg = leftSum * (1.0F / static_cast<float>(leftCount));
         const Math::Vector3 rightAvg = rightSum * (1.0F / static_cast<float>(rightCount));
         const Math::Vector3 rightToLeft = leftAvg - rightAvg;
-        const Math::Vector3 forwardCand = Math::Cross(skelUp, rightToLeft);
+        // Forward is where the character faces: with up and the left side known, `left = up x forward`,
+        // so `forward = left x up`. A character facing +Z has its left at +X (X x Y = Z). The product used
+        // to be reversed, which made this branch disagree with the single-sided one below; the hinge axis
+        // (Cross(forward, limb)) is chosen for the true facing direction.
+        const Math::Vector3 forwardCand = Math::Cross(rightToLeft, skelUp);
         if (Math::LengthSquared(forwardCand) > kDirectionEpsilon) {
             return SafeNormalize(forwardCand, defaultForward);
         }
@@ -402,20 +448,20 @@ void ResolveEffectiveStepSettings(const Ragdoll3DComponent& ragdoll,
     outDynamicPushback = ragdoll.enableDynamicPushback;
 
     switch (ragdoll.qualityPreset) {
-    case RagdollQualityPreset::DesktopAAA:
+    case RagdollQualityPreset::High:
         outStepSettings.enableSelfCollision = ragdoll.enableSelfCollision;
         outStepSettings.stabilizeInertia = true;
         break;
-    case RagdollQualityPreset::MobileBalanced:
-        outStepSettings.velocityIterations = std::min<std::size_t>(outStepSettings.velocityIterations, 6U);
-        outStepSettings.positionIterations = std::min<std::size_t>(outStepSettings.positionIterations, 3U);
+    case RagdollQualityPreset::Balanced:
+        outStepSettings.velocityIterations = std::min<std::size_t>(outStepSettings.velocityIterations, 10U);
+        outStepSettings.positionIterations = std::min<std::size_t>(outStepSettings.positionIterations, 5U);
         outStepSettings.enableSelfCollision = ragdoll.enableSelfCollision;
         outStepSettings.stabilizeInertia = true;
         outMaxSubsteps = std::min<std::uint32_t>(outMaxSubsteps, 4U);
         break;
-    case RagdollQualityPreset::MobileFast:
-        outStepSettings.velocityIterations = std::min<std::size_t>(outStepSettings.velocityIterations, 4U);
-        outStepSettings.positionIterations = std::min<std::size_t>(outStepSettings.positionIterations, 2U);
+    case RagdollQualityPreset::Fast:
+        outStepSettings.velocityIterations = std::min<std::size_t>(outStepSettings.velocityIterations, 6U);
+        outStepSettings.positionIterations = std::min<std::size_t>(outStepSettings.positionIterations, 3U);
         outStepSettings.enableSelfCollision = false;
         outStepSettings.stabilizeInertia = true;
         outMaxSubsteps = std::min<std::uint32_t>(outMaxSubsteps, 2U);
@@ -519,15 +565,29 @@ void UpdatePartialAndMotorTargets(Ragdoll3DComponent& ragdoll, const Skeleton3DC
         // Configure optional root world-space drive in Active mode.
         if (ragdoll.mode == RagdollMode::Active && binding.isRootBody && !body.kinematic &&
             hasTarget[binding.bodyIndex]) {
-            body.worldDrive.enabled = (ragdoll.rootDriveMaxLinearForce > 0.0F &&
-                                       (ragdoll.rootDriveLinearStiffness > 0.0F || ragdoll.rootDriveLinearDamping > 0.0F)) ||
+            // A stagger keeps the pelvis near where the animation puts it - the body is hit, not dropped - so the
+            // root is pulled toward its animated position at least this firmly while the stagger lasts.
+            constexpr float kStaggerRootLinearStiffness = 900.0F;
+            constexpr float kStaggerRootLinearDamping = 70.0F;
+            constexpr float kStaggerRootMaxLinearForce = 3000.0F;
+            const float rootLinearStiffness =
+                ragdoll.staggering ? std::max(ragdoll.rootDriveLinearStiffness, kStaggerRootLinearStiffness)
+                                   : ragdoll.rootDriveLinearStiffness;
+            const float rootLinearDamping =
+                ragdoll.staggering ? std::max(ragdoll.rootDriveLinearDamping, kStaggerRootLinearDamping)
+                                   : ragdoll.rootDriveLinearDamping;
+            const float rootMaxLinearForce =
+                ragdoll.staggering ? std::max(ragdoll.rootDriveMaxLinearForce, kStaggerRootMaxLinearForce)
+                                   : ragdoll.rootDriveMaxLinearForce;
+            body.worldDrive.enabled = (rootMaxLinearForce > 0.0F &&
+                                       (rootLinearStiffness > 0.0F || rootLinearDamping > 0.0F)) ||
                                       (ragdoll.rootDriveMaxAngularTorque > 0.0F &&
                                        (ragdoll.rootDriveAngularStiffness > 0.0F || ragdoll.rootDriveAngularDamping > 0.0F));
             body.worldDrive.targetPosition = targetBodyPos[binding.bodyIndex];
             body.worldDrive.targetRotation = targetBodyRot[binding.bodyIndex];
-            body.worldDrive.linearStiffness = ragdoll.rootDriveLinearStiffness;
-            body.worldDrive.linearDamping = ragdoll.rootDriveLinearDamping;
-            body.worldDrive.maxLinearForce = ragdoll.rootDriveMaxLinearForce;
+            body.worldDrive.linearStiffness = rootLinearStiffness;
+            body.worldDrive.linearDamping = rootLinearDamping;
+            body.worldDrive.maxLinearForce = rootMaxLinearForce;
             body.worldDrive.angularStiffness = ragdoll.rootDriveAngularStiffness;
             body.worldDrive.angularDamping = ragdoll.rootDriveAngularDamping;
             body.worldDrive.maxAngularTorque = ragdoll.rootDriveMaxAngularTorque;
@@ -604,10 +664,61 @@ void UpdatePartialAndMotorTargets(Ragdoll3DComponent& ragdoll, const Skeleton3DC
     }
 }
 
+/// The entity `driveEntityTransform` moves: the skeleton or its nearest ancestor that has a transform and holds a
+/// mesh in its subtree - the entity the skinned mesh follows. None when no mesh shares a parent with the skeleton.
+[[nodiscard]] Entity FindRagdollDriveTarget(IEntityManager& entityManager, const Entity skeleton) {
+    std::vector<Entity> meshes;
+    entityManager.ForEach<MeshComponent>([&meshes](const Entity mesh, const MeshComponent&) { meshes.push_back(mesh); });
+    if (meshes.empty()) return kInvalidEntity;
+    Entity candidate = skeleton;
+    for (std::uint32_t hops = 0U; hops < 16U && candidate != kInvalidEntity && entityManager.IsAlive(candidate); ++hops) {
+        if (entityManager.HasComponent<TransformComponent>(candidate)) {
+            for (const Entity mesh : meshes) {
+                Entity cursor = mesh;
+                for (std::uint32_t up = 0U; up < 64U && cursor != kInvalidEntity; ++up) {
+                    if (cursor == candidate) return candidate;
+                    cursor = entityManager.HasComponent<HierarchyComponent>(cursor)
+                                 ? entityManager.GetComponent<HierarchyComponent>(cursor).parent
+                                 : kInvalidEntity;
+                }
+            }
+        }
+        if (!entityManager.HasComponent<HierarchyComponent>(candidate)) break;
+        const Entity parent = entityManager.GetComponent<HierarchyComponent>(candidate).parent;
+        if (parent == candidate) break;
+        candidate = parent;
+    }
+    return kInvalidEntity;
+}
+
+/// Moves `target` by a world-space offset, through its own parent's frame.
+void ShiftEntityByWorldOffset(IEntityManager& entityManager, const Entity target, const Math::Vector3& worldOffset) {
+    Math::Vector3 local = worldOffset;
+    if (entityManager.HasComponent<HierarchyComponent>(target)) {
+        const Entity parent = entityManager.GetComponent<HierarchyComponent>(target).parent;
+        if (parent != kInvalidEntity && entityManager.IsAlive(parent) &&
+            entityManager.HasComponent<WorldTransformComponent>(parent)) {
+            const WorldTransformComponent& frame = entityManager.GetComponent<WorldTransformComponent>(parent);
+            Math::Quaternion inverse;
+            if (Math::TryInverse(frame.worldRotation, inverse)) local = Math::RotateVector(inverse, worldOffset);
+            if (std::fabs(frame.worldScale.x) > kDirectionEpsilon) local.x /= frame.worldScale.x;
+            if (std::fabs(frame.worldScale.y) > kDirectionEpsilon) local.y /= frame.worldScale.y;
+            if (std::fabs(frame.worldScale.z) > kDirectionEpsilon) local.z /= frame.worldScale.z;
+        }
+    }
+    if (!Math::IsFinite(local)) return;
+    entityManager.GetComponent<TransformComponent>(target).localPosition =
+        entityManager.GetComponent<TransformComponent>(target).localPosition + local;
+    if (entityManager.HasComponent<WorldTransformComponent>(target)) {
+        entityManager.GetComponent<WorldTransformComponent>(target).dirty = true;
+    }
+}
+
 void WriteRagdollPoseToSkeleton(IEntityManager& entityManager, Ragdoll3DComponent& ragdoll,
                                    Skeleton3DComponent& skeleton, const ObjectWorldFrame& skeletonFrame) {
     EnsureSkeletonPose(skeleton);
-    const float globalBlend = std::clamp(ragdoll.physicsBlendWeight, 0.0F, 1.0F);
+    const float globalBlend =
+        std::clamp(ragdoll.staggering ? ragdoll.effectiveBlend : ragdoll.physicsBlendWeight, 0.0F, 1.0F);
     if (!(globalBlend > 0.0F)) return;
 
     std::vector<RagdollBoneBinding> ordered = ragdoll.bindings;
@@ -658,28 +769,34 @@ void WriteRagdollPoseToSkeleton(IEntityManager& entityManager, Ragdoll3DComponen
             const Math::Vector3 boneWorldPosition =
                 body.position + Math::RotateVector(body.rotation, binding.rootAnchorLocal);
             if (Math::IsFinite(boneWorldPosition)) {
-                if (ragdoll.driveEntityTransform &&
-                    entityManager.HasComponent<TransformComponent>(ragdoll.skeleton)) {
-                    TransformComponent& transform =
-                        entityManager.GetComponent<TransformComponent>(ragdoll.skeleton);
-                    const Math::Vector3 targetEntityPos =
-                        LerpVector(transform.localPosition, boneWorldPosition - skeleton.bones[binding.boneIndex].localPosition, weight);
-                    if (Math::IsFinite(targetEntityPos)) {
-                        transform.localPosition = targetEntityPos;
-                        if (entityManager.HasComponent<WorldTransformComponent>(ragdoll.skeleton)) {
-                            entityManager.GetComponent<WorldTransformComponent>(ragdoll.skeleton).dirty = true;
+                // The pose always carries the pelvis (the mesh, the bones and the capsules stay in one frame). With
+                // the entity drive on, the pelvis's horizontal travel is moved onto the entity that holds the
+                // skeleton and its meshes, and the frames used below are shifted by the same amount.
+                Math::Vector3 frameShift{};
+                if (ragdoll.driveEntityTransform) {
+                    const Entity target = FindRagdollDriveTarget(entityManager, ragdoll.skeleton);
+                    if (target != kInvalidEntity) {
+                        if (ragdoll.hasDrivePrev) {
+                            const Math::Vector3 travel{
+                                (boneWorldPosition.x - ragdoll.drivePrevPelvis.x) * weight, 0.0F,
+                                (boneWorldPosition.z - ragdoll.drivePrevPelvis.z) * weight};
+                            if (Math::IsFinite(travel) && Math::LengthSquared(travel) > 0.0F) {
+                                ShiftEntityByWorldOffset(entityManager, target, travel);
+                                frameShift = travel;
+                            }
                         }
+                        ragdoll.drivePrevPelvis = boneWorldPosition;
+                        ragdoll.hasDrivePrev = true;
                     }
-                } else {
-                    const Math::Vector3 relWorld = boneWorldPosition - parentFrame.position;
-                    Math::Vector3 localPos = Math::RotateVector(inverseParent, relWorld);
-                    if (std::fabs(parentFrame.scale.x) > kDirectionEpsilon) localPos.x /= parentFrame.scale.x;
-                    if (std::fabs(parentFrame.scale.y) > kDirectionEpsilon) localPos.y /= parentFrame.scale.y;
-                    if (std::fabs(parentFrame.scale.z) > kDirectionEpsilon) localPos.z /= parentFrame.scale.z;
-                    if (Math::IsFinite(localPos)) {
-                        skeleton.pose[binding.boneIndex].position =
-                            LerpVector(skeleton.pose[binding.boneIndex].position, localPos, weight);
-                    }
+                }
+                const Math::Vector3 relWorld = boneWorldPosition - (parentFrame.position + frameShift);
+                Math::Vector3 localPos = Math::RotateVector(inverseParent, relWorld);
+                if (std::fabs(parentFrame.scale.x) > kDirectionEpsilon) localPos.x /= parentFrame.scale.x;
+                if (std::fabs(parentFrame.scale.y) > kDirectionEpsilon) localPos.y /= parentFrame.scale.y;
+                if (std::fabs(parentFrame.scale.z) > kDirectionEpsilon) localPos.z /= parentFrame.scale.z;
+                if (Math::IsFinite(localPos)) {
+                    skeleton.pose[binding.boneIndex].position =
+                        LerpVector(skeleton.pose[binding.boneIndex].position, localPos, weight);
                 }
             }
         }
@@ -759,6 +876,23 @@ bool IsRagdoll3DComponentAuthoredValid(const Ragdoll3DComponent& value) noexcept
     if (value.maxSubstepsPerFrame == 0U || value.maxSubstepsPerFrame > Physics::kMaximumRagdollSubsteps) {
         return false;
     }
+    if (!std::isfinite(value.recoverDelaySeconds) || value.recoverDelaySeconds < 0.0F ||
+        value.recoverDelaySeconds > 600.0F || !std::isfinite(value.recoverDurationSeconds) ||
+        !(value.recoverDurationSeconds > 0.0F) || value.recoverDurationSeconds > 60.0F) {
+        return false;
+    }
+    if (!std::isfinite(value.staggerImpulseThreshold) || value.staggerImpulseThreshold < 0.0F ||
+        !std::isfinite(value.fallImpulseThreshold) || value.fallImpulseThreshold < value.staggerImpulseThreshold ||
+        !std::isfinite(value.fallLandingSpeed) || value.fallLandingSpeed < 0.0F ||
+        !std::isfinite(value.staggerBlendPeak) || value.staggerBlendPeak < 0.0F || value.staggerBlendPeak > 1.0F ||
+        !std::isfinite(value.staggerRiseSeconds) || value.staggerRiseSeconds < 0.0F ||
+        value.staggerRiseSeconds > 10.0F || !std::isfinite(value.staggerDecaySeconds) ||
+        !(value.staggerDecaySeconds > 0.0F) || value.staggerDecaySeconds > 30.0F ||
+        !std::isfinite(value.staggerFallTiltDegrees) || !(value.staggerFallTiltDegrees > 0.0F) ||
+        value.staggerFallTiltDegrees > 180.0F) {
+        return false;
+    }
+    if (value.getUpFaceUpTrigger.size() > 64U || value.getUpFaceDownTrigger.size() > 64U) return false;
     for (const RagdollBoneSetup& bone : value.bones) {
         if (bone.boneName.empty()) return false;
         if (!std::isfinite(bone.mass) || bone.mass <= 0.0F) return false;
@@ -815,36 +949,143 @@ void ApplyRagdoll3DObjectDefinition(IEntityManager& entityManager, const Entity 
 void ApplyRagdollQualityPreset(Ragdoll3DComponent& ragdoll, const RagdollQualityPreset preset) noexcept {
     ragdoll.qualityPreset = preset;
     switch (preset) {
-    case RagdollQualityPreset::DesktopAAA:
+    case RagdollQualityPreset::High:
         ragdoll.stepSettings.velocityIterations = Physics::kRagdollDefaultVelocityIterations;
         ragdoll.stepSettings.positionIterations = Physics::kRagdollDefaultPositionIterations;
         ragdoll.stepSettings.stabilizeInertia = true;
         ragdoll.enableSelfCollision = true;
         ragdoll.enableDynamicPushback = true;
         ragdoll.maxSubstepsPerFrame = Physics::kMaximumRagdollSubsteps;
+        ragdoll.staggerBlendPeak = 0.6F;
+        ragdoll.staggerDecaySeconds = 0.6F;
         break;
-    case RagdollQualityPreset::MobileBalanced:
-        ragdoll.stepSettings.velocityIterations = 6U;
-        ragdoll.stepSettings.positionIterations = 3U;
+    case RagdollQualityPreset::Balanced:
+        ragdoll.stepSettings.velocityIterations = 10U;
+        ragdoll.stepSettings.positionIterations = 5U;
         ragdoll.stepSettings.stabilizeInertia = true;
         ragdoll.enableSelfCollision = true;
         ragdoll.enableDynamicPushback = true;
         ragdoll.maxSubstepsPerFrame = 4U;
+        ragdoll.staggerBlendPeak = 0.55F;
+        ragdoll.staggerDecaySeconds = 0.45F;
         break;
-    case RagdollQualityPreset::MobileFast:
-        ragdoll.stepSettings.velocityIterations = 4U;
-        ragdoll.stepSettings.positionIterations = 2U;
+    case RagdollQualityPreset::Fast:
+        ragdoll.stepSettings.velocityIterations = 6U;
+        ragdoll.stepSettings.positionIterations = 3U;
         ragdoll.stepSettings.stabilizeInertia = true;
         ragdoll.enableSelfCollision = false;
         ragdoll.enableDynamicPushback = false;
         ragdoll.maxSubstepsPerFrame = 2U;
+        ragdoll.staggerBlendPeak = 0.5F;
+        ragdoll.staggerDecaySeconds = 0.3F;
         break;
     case RagdollQualityPreset::Custom:
         break;
     }
 }
 
+namespace {
+
+[[nodiscard]] RagdollBoneSetup MakeSetupFromProfile(const HumanoidRagdollProfileEntry& entry,
+                                                    const std::string& boneName, const float sizeScale) {
+    RagdollBoneSetup setup;
+    setup.boneName = boneName;
+    setup.mass = entry.mass;
+    // Capsule thickness follows the rig: the profile is written for a 1.8 m person, so a rig twice as
+    // tall gets bodies twice as thick instead of thin sticks.
+    setup.radius = entry.radius * sizeScale;
+    setup.halfHeight = entry.halfHeight * sizeScale;
+    setup.linearDamping = entry.linearDamping;
+    setup.angularDamping = entry.angularDamping;
+    setup.swing1LimitDegrees = entry.swing1LimitDegrees;
+    setup.swing2LimitDegrees = entry.swing2LimitDegrees;
+    setup.twistLimitDegrees = entry.twistLimitDegrees;
+    if (entry.hinge) {
+        setup.swing1Motion = Physics::RagdollMotion::Locked;
+        setup.swing2Motion = Physics::RagdollMotion::Locked;
+        setup.twistMotion = Physics::RagdollMotion::Limited;
+        setup.twistAsymmetric = true;
+        setup.twistLowerLimitDegrees = entry.twistLowerLimitDegrees;
+        setup.twistUpperLimitDegrees = entry.twistUpperLimitDegrees;
+    }
+    return setup;
+}
+
+/// Keeps at most `kMaximumRagdollBones` of `candidates`, the heaviest first (pelvis, thighs, torso, head;
+/// fingers last), shallower bones winning ties, and returns them in rig order.
+template <typename Candidate>
+void KeepStructuralBodies(std::vector<Candidate>& candidates) {
+    if (candidates.size() <= kMaximumRagdollBones) return;
+    std::vector<Candidate> ranked = candidates;
+    std::stable_sort(ranked.begin(), ranked.end(), [](const Candidate& lhs, const Candidate& rhs) {
+        if (lhs.entry->mass != rhs.entry->mass) return lhs.entry->mass > rhs.entry->mass;
+        if (lhs.depth != rhs.depth) return lhs.depth < rhs.depth;
+        return lhs.boneIndex < rhs.boneIndex;
+    });
+    ranked.resize(kMaximumRagdollBones);
+    std::sort(ranked.begin(), ranked.end(),
+              [](const Candidate& lhs, const Candidate& rhs) { return lhs.boneIndex < rhs.boneIndex; });
+    candidates = std::move(ranked);
+}
+
+/// The whole body from the engine's own humanoid: every body bone and every finger and toe, whatever the
+/// rig calls them (Mixamo, Blender, UE and VRM names all map to the same set). Empty when the rig is not
+/// recognisably a humanoid, so the caller can fall back to name patterns.
+[[nodiscard]] std::vector<RagdollBoneSetup> BuildCanonicalHumanoidRagdollBones(
+    const std::vector<SkeletonBone>& skeletonBones) {
+    std::vector<std::string> names;
+    names.reserve(skeletonBones.size());
+    for (const SkeletonBone& bone : skeletonBones) names.push_back(bone.name);
+    const Retarget::HumanoidReference& reference = Retarget::GetHumanoidReference();
+    const Retarget::HumanoidMatch match = Retarget::MatchHumanoidNames(names, reference);
+
+    struct Candidate final {
+        std::size_t boneIndex = 0U;
+        std::uint32_t depth = 0U;
+        const HumanoidRagdollProfileEntry* entry = nullptr;
+        std::string canonicalName;
+    };
+    std::vector<Candidate> candidates;
+    std::size_t bodyBones = 0U;
+    for (std::size_t boneIndex = 0U; boneIndex < skeletonBones.size(); ++boneIndex) {
+        if (boneIndex >= match.referenceOfBone.size()) break;
+        const std::int32_t reference_index = match.referenceOfBone[boneIndex];
+        if (reference_index < 0 || static_cast<std::size_t>(reference_index) >= reference.info.size()) continue;
+        const Retarget::HumanoidBoneKind kind = reference.info[static_cast<std::size_t>(reference_index)].kind;
+        if (kind != Retarget::HumanoidBoneKind::Body && kind != Retarget::HumanoidBoneKind::Finger) continue;
+        const std::string canonicalName =
+            reference.skeleton.bones[static_cast<std::size_t>(reference_index)].name;
+        const std::string lowered = ToLowerAscii(canonicalName);
+        // A metacarpal is the palm's own rigid frame: it rides on the hand body.
+        if (lowered.find("metacarpal") != std::string::npos) continue;
+        const HumanoidRagdollProfileEntry* const entry = FindCanonicalProfileEntry(lowered);
+        if (entry == nullptr) continue;
+        if (kind == Retarget::HumanoidBoneKind::Body) ++bodyBones;
+        candidates.push_back(Candidate{boneIndex, BoneDepth(skeletonBones, static_cast<std::uint32_t>(boneIndex)),
+                                       entry, canonicalName});
+    }
+    // Hips, a spine, a head and at least one limb pair: below that it is not a humanoid worth building.
+    if (bodyBones < 8U) return {};
+    KeepStructuralBodies(candidates);
+
+    const float sizeScale = std::clamp(std::isfinite(match.heightScale) ? match.heightScale : 1.0F, 0.25F, 4.0F);
+    std::vector<RagdollBoneSetup> setups;
+    setups.reserve(candidates.size());
+    for (const Candidate& candidate : candidates) {
+        setups.push_back(MakeSetupFromProfile(*candidate.entry, skeletonBones[candidate.boneIndex].name, sizeScale));
+    }
+    return setups;
+}
+
+} // namespace
+
 std::vector<RagdollBoneSetup> BuildHumanoidRagdollBones(const std::vector<SkeletonBone>& skeletonBones) {
+    // The engine's own humanoid first: it recognises far more rigs than name patterns do and it knows
+    // the fingers. Name patterns below remain for rigs it cannot place.
+    if (std::vector<RagdollBoneSetup> canonical = BuildCanonicalHumanoidRagdollBones(skeletonBones);
+        !canonical.empty()) {
+        return canonical;
+    }
     // Control rigs, twist/roll correctives and leaf markers never carry a body of their own.
     const auto isControlOrHelperBone = [](const std::string_view name) {
         const std::string lowered = ToLowerAscii(name);
@@ -1184,6 +1425,7 @@ bool InitializeRagdoll3D(IEntityManager& entityManager, const Entity entity) {
         return false;
     }
     Ragdoll3DComponent& component = entityManager.GetComponent<Ragdoll3DComponent>(entity);
+    component.hasDrivePrev = false;
     const auto fail = [&component](std::string reason) {
         component.lastSetupError = std::move(reason);
         component.initialized = false;
@@ -1385,10 +1627,9 @@ bool InitializeRagdoll3D(IEntityManager& entityManager, const Entity entity) {
         joint.twistLowerLimitDegrees = setup.twistLowerLimitDegrees;
         joint.twistUpperLimitDegrees = setup.twistUpperLimitDegrees;
 
-        // BUG #5 FIX: Universal T-pose / A-pose hinge axis derivation!
-        // `Cross(limbDir, characterForward)` yields an axis strictly orthogonal to both the limb
-        // and the forward plane: positive twist folds T/A-pose elbows inward toward the chest,
-        // while negative twist folds knees anatomically backward!
+        // Universal T-pose / A-pose hinge axis derivation: `Cross(characterForward, limbDir)` is an axis
+        // strictly orthogonal to both the limb and the facing direction, so the hinge folds in the plane
+        // the limb swings in front of and behind the body.
         Math::Vector3 jointAxisLocal = setup.jointAxisLocal;
         if (!(Math::LengthSquared(jointAxisLocal) > kDirectionEpsilon)) {
             const bool isHinge = setup.twistMotion == Physics::RagdollMotion::Limited &&
@@ -1398,7 +1639,11 @@ bool InitializeRagdoll3D(IEntityManager& entityManager, const Entity entity) {
                 const Math::Vector3 limbDir =
                     SafeNormalize(Math::RotateVector(childBody.rotation, Math::Vector3{0.0F, 1.0F, 0.0F}),
                                      Math::Vector3{0.0F, -1.0F, 0.0F});
-                const Math::Vector3 crossAxis = Math::Cross(limbDir, characterForward);
+                // `forward x limb`: with the solver's twist sign, a positive twist about this axis carries the
+                // distal bone toward the front (elbows, range [-5, 150]) and a negative one toward the back
+                // (knees, range [-150, 5]). Measured by kicking shins and forearms in zero gravity; the
+                // opposite order folded elbows backward and knees forward.
+                const Math::Vector3 crossAxis = Math::Cross(characterForward, limbDir);
                 if (Math::LengthSquared(crossAxis) > kDirectionEpsilon) {
                     worldAxis = SafeNormalize(crossAxis, characterRight);
                 } else {
@@ -1424,8 +1669,20 @@ bool InitializeRagdoll3D(IEntityManager& entityManager, const Entity entity) {
         if (!component.solver.AddJoint(joint)) return fail("A ragdoll joint could not be created.");
     }
 
-    // Jolt-style non-adjacent self-collision filter table: disable parent-child + bind-pose overlaps.
+    // Pairwise non-adjacent self-collision filter table: disable parent-child + bind-pose overlaps.
     component.solver.RebuildSelfCollisionFilter(/*disableCurrentPoseOverlaps=*/true, /*minimumJointHops=*/2U);
+    // Fingers and toes only touch the world: a body this light fighting its neighbours is jitter, not detail.
+    for (const RagdollBoneBinding& detail : bindings) {
+        if (detail.setupIndex >= component.bones.size() ||
+            component.bones[detail.setupIndex].mass > kDetailBodyMassKilograms) {
+            continue;
+        }
+        for (std::uint32_t other = 0U; other < static_cast<std::uint32_t>(bodies.size()); ++other) {
+            if (other != detail.bodyIndex) {
+                component.solver.SetSelfCollisionPairEnabled(detail.bodyIndex, other, false);
+            }
+        }
+    }
 
     EnsureSkeletonPose(skeleton);
     component.bindings = std::move(bindings);
@@ -1449,6 +1706,16 @@ bool ActivateRagdoll(IEntityManager& entityManager, const Entity entity, const R
     ragdoll.mode = mode;
     ragdoll.enabled = true;
     ragdoll.solver.Wake();
+    // A simulation session that already captured its start pose (entity or editor simulation) keeps it. Otherwise
+    // a recovery stands up into the live animation - and, if nothing is animating, into the pose it fell from.
+    if (!ragdoll.recoverToCapturedPose && entityManager.IsAlive(ragdoll.skeleton) &&
+        entityManager.HasComponent<Skeleton3DComponent>(ragdoll.skeleton)) {
+        ragdoll.recoverTargetPose =
+            GetSkeletonCurrentPose(entityManager.GetComponent<Skeleton3DComponent>(ragdoll.skeleton));
+    }
+    ragdoll.restSeconds = 0.0F;
+    ragdoll.staggering = false;
+    ragdoll.hasDrivePrev = false;
 
     const std::size_t bodyCount = ragdoll.solver.GetBodyCount();
     for (std::size_t i = 0U; i < bodyCount; ++i) {
@@ -1577,6 +1844,98 @@ bool BeginBlendOutFromRagdoll(IEntityManager& entityManager, const Entity entity
     return true;
 }
 
+bool IsRagdollActive(const IEntityManager& entityManager, const Entity entity) {
+    if (!entityManager.IsAlive(entity) || !entityManager.HasComponent<Ragdoll3DComponent>(entity)) return false;
+    const Ragdoll3DComponent& ragdoll = entityManager.GetComponent<Ragdoll3DComponent>(entity);
+    return ragdoll.enabled && ragdoll.initialized &&
+           (ragdoll.mode == RagdollMode::Simulating || ragdoll.mode == RagdollMode::Active ||
+            ragdoll.mode == RagdollMode::BlendingOut);
+}
+
+bool DeactivateRagdoll(IEntityManager& entityManager, const Entity entity) {
+    if (!IsRagdollActive(entityManager, entity)) return false;
+    Ragdoll3DComponent& ragdoll = entityManager.GetComponent<Ragdoll3DComponent>(entity);
+    ragdoll.mode = RagdollMode::Kinematic;
+    ragdoll.blendOutSnapshot.valid = false;
+    ragdoll.restSeconds = 0.0F;
+    ragdoll.staggering = false;
+    return true;
+}
+
+Entity ResolveRagdollDriveTarget(IEntityManager& entityManager, const Entity skeleton) {
+    return FindRagdollDriveTarget(entityManager, skeleton);
+}
+
+bool StaggerRagdoll(IEntityManager& entityManager, const Entity entity, const float strength) {
+    if (!std::isfinite(strength)) return false;
+    if (!entityManager.IsAlive(entity) || !entityManager.HasComponent<Ragdoll3DComponent>(entity)) return false;
+    Ragdoll3DComponent& ragdoll = entityManager.GetComponent<Ragdoll3DComponent>(entity);
+    if (!ragdoll.enabled) return false;
+    if (ragdoll.mode == RagdollMode::Simulating || ragdoll.mode == RagdollMode::BlendingOut) return false;
+    if (!ActivateRagdoll(entityManager, entity, RagdollMode::Active)) return false;
+    ragdoll.staggering = true;
+    ragdoll.staggerElapsed = 0.0F;
+    ragdoll.staggerPeakNow = std::clamp(ragdoll.staggerBlendPeak * std::clamp(strength, 0.0F, 1.0F), 0.0F, 1.0F);
+    ragdoll.effectiveBlend = 0.0F;
+    return true;
+}
+
+namespace {
+
+/// The Animation Graph that animates the skeleton: on it or an ancestor, or directly under one of them.
+[[nodiscard]] AnimationGraphComponent* FindGraphAnimating(IEntityManager& entities, const Entity skeleton) {
+    Entity cursor = skeleton;
+    for (std::uint32_t hops = 0U; hops < 8U && cursor != kInvalidEntity && entities.IsAlive(cursor); ++hops) {
+        if (entities.HasComponent<AnimationGraphComponent>(cursor)) {
+            return &entities.GetComponent<AnimationGraphComponent>(cursor);
+        }
+        AnimationGraphComponent* underneath = nullptr;
+        entities.ForEach<AnimationGraphComponent>([&](const Entity candidate, AnimationGraphComponent& graph) {
+            if (underneath == nullptr && entities.HasComponent<HierarchyComponent>(candidate) &&
+                entities.GetComponent<HierarchyComponent>(candidate).parent == cursor) {
+                underneath = &graph;
+            }
+        });
+        if (underneath != nullptr) return underneath;
+        if (!entities.HasComponent<HierarchyComponent>(cursor)) break;
+        const Entity parent = entities.GetComponent<HierarchyComponent>(cursor).parent;
+        if (parent == cursor) break;
+        cursor = parent;
+    }
+    return nullptr;
+}
+
+/// Fires the get-up trigger that matches how the body lies, so a graph with get-up clips plays the right one.
+void FireGetUpTrigger(IEntityManager& entities, const Entity entity, const Ragdoll3DComponent& ragdoll) {
+    RagdollGetUpState state;
+    if (!EvaluateRagdollGetUpState(entities, entity, state)) return;
+    const std::string& trigger = state.orientation == RagdollLyingOrientation::FaceDown ? ragdoll.getUpFaceDownTrigger
+                                 : state.orientation == RagdollLyingOrientation::FaceUp ? ragdoll.getUpFaceUpTrigger
+                                                                                        : std::string{};
+    if (trigger.empty()) return;
+    AnimationGraphComponent* const graph = FindGraphAnimating(entities, ragdoll.skeleton);
+    if (graph == nullptr) return;
+    for (AnimationParameter& parameter : graph->parameters) {
+        if (parameter.name == trigger && parameter.type == AnimationParameterType::Trigger) {
+            parameter.value = 1.0F;
+            return;
+        }
+    }
+}
+
+} // namespace
+
+bool BeginRagdollRecovery(IEntityManager& entityManager, const Entity entity) {
+    if (!IsRagdollActive(entityManager, entity)) return false;
+    Ragdoll3DComponent& ragdoll = entityManager.GetComponent<Ragdoll3DComponent>(entity);
+    if (ragdoll.mode == RagdollMode::BlendingOut) return true; // already standing up
+    ragdoll.restSeconds = 0.0F;
+    // How the body lies is read before the blend starts, while it is still where it fell.
+    const bool began = BeginBlendOutFromRagdoll(entityManager, entity, ragdoll.recoverDurationSeconds);
+    if (began) FireGetUpTrigger(entityManager, entity, ragdoll);
+    return began;
+}
+
 bool StartRagdollEditorPreview(IEntityManager& entityManager, const Entity entity) {
     if (!entityManager.IsAlive(entity) || !entityManager.HasComponent<Ragdoll3DComponent>(entity)) {
         return false;
@@ -1599,6 +1958,10 @@ bool StartRagdollEditorPreview(IEntityManager& entityManager, const Entity entit
     const Skeleton3DComponent& skeleton = entityManager.GetComponent<Skeleton3DComponent>(ragdoll.skeleton);
     ragdoll.editorPreviewBackupPose = skeleton.pose;
     ragdoll.editorPreviewBackupMode = ragdoll.mode;
+    // A preview has no animation under it, so standing back up goes to the pose it started from.
+    ragdoll.recoverTargetPose = GetSkeletonCurrentPose(skeleton);
+    ragdoll.recoverToCapturedPose = true;
+    ragdoll.restSeconds = 0.0F;
     ragdoll.initialized = false;
     if (!InitializeRagdoll3D(entityManager, entity)) {
         ragdoll.editorPreviewBackupPose.clear();
@@ -1642,8 +2005,25 @@ bool ApplyRagdollImpact(IEntityManager& entityManager, const Entity entity,
     if (!ragdoll.enabled) return false;
     if (!ragdoll.initialized && !InitializeRagdoll3D(entityManager, entity)) return false;
 
-    const std::size_t bodyCount = ragdoll.solver.GetBodyCount();
+    std::size_t bodyCount = ragdoll.solver.GetBodyCount();
     if (bodyCount == 0U) return false;
+
+    // A hit on a standing body reacts on its own when asked to: a light hit staggers it, a strong one knocks it
+    // down. The bodies follow the pose first, so the animation does not overwrite the impulse that follows.
+    if (ragdoll.automaticReactions && (ragdoll.mode == RagdollMode::Kinematic || ragdoll.staggering)) {
+        const float magnitude = std::sqrt(Math::LengthSquared(impulse));
+        if (magnitude >= ragdoll.fallImpulseThreshold) {
+            static_cast<void>(SyncRagdollBodiesToSkeletonPose(entityManager, entity));
+            static_cast<void>(ActivateRagdoll(entityManager, entity, RagdollMode::Simulating));
+        } else if (magnitude >= ragdoll.staggerImpulseThreshold && !ragdoll.staggering) {
+            const float span = ragdoll.fallImpulseThreshold - ragdoll.staggerImpulseThreshold;
+            const float strength =
+                span > 1.0e-4F ? std::clamp((magnitude - ragdoll.staggerImpulseThreshold) / span, 0.35F, 1.0F) : 1.0F;
+            static_cast<void>(SyncRagdollBodiesToSkeletonPose(entityManager, entity));
+            static_cast<void>(StaggerRagdoll(entityManager, entity, strength));
+        }
+        bodyCount = ragdoll.solver.GetBodyCount();
+    }
 
     std::size_t nearestBody = bodyCount;
     float nearestDistance = searchRadius;
@@ -1664,6 +2044,84 @@ bool ApplyRagdollImpact(IEntityManager& entityManager, const Entity entity,
     ragdoll.solver.ApplyImpulse(static_cast<std::uint32_t>(nearestBody), impulse, nearestPoint);
     return true;
 }
+
+namespace {
+
+/// The character controller that moves the skeleton: on the skeleton itself or on its nearest ancestor.
+[[nodiscard]] const CharacterControllerComponent* FindDrivingCharacterController(const IEntityManager& entities,
+                                                                                    const Entity skeleton) {
+    Entity cursor = skeleton;
+    for (std::uint32_t hops = 0U; hops < 8U && cursor != kInvalidEntity && entities.IsAlive(cursor); ++hops) {
+        if (entities.HasComponent<CharacterControllerComponent>(cursor)) {
+            return &entities.GetComponent<CharacterControllerComponent>(cursor);
+        }
+        if (!entities.HasComponent<HierarchyComponent>(cursor)) break;
+        const Entity parent = entities.GetComponent<HierarchyComponent>(cursor).parent;
+        if (parent == cursor) break;
+        cursor = parent;
+    }
+    return nullptr;
+}
+
+/// Tracks the fall of the character that carries a standing ragdoll; a landing at or above `fallLandingSpeed`
+/// knocks the body down. True when this frame was spent starting the fall.
+[[nodiscard]] bool UpdateLandingReaction(IEntityManager& entities, const Entity entity, Ragdoll3DComponent& ragdoll) {
+    const CharacterControllerComponent* const controller = FindDrivingCharacterController(entities, ragdoll.skeleton);
+    if (controller == nullptr) return false;
+    if (!controller->grounded) {
+        ragdoll.wasAirborne = true;
+        ragdoll.airborneMaxDownSpeed = std::max(ragdoll.airborneMaxDownSpeed, -controller->velocity.y);
+        return false;
+    }
+    const bool hardLanding = ragdoll.wasAirborne && ragdoll.airborneMaxDownSpeed >= ragdoll.fallLandingSpeed;
+    ragdoll.wasAirborne = false;
+    ragdoll.airborneMaxDownSpeed = 0.0F;
+    if (!hardLanding) return false;
+    return ActivateRagdoll(entities, entity, RagdollMode::Simulating, controller->realVelocity);
+}
+
+/// Advances a stagger: the physics blend rises to its peak then fades, the body returns to the animation when it
+/// has faded, and a body pushed too far from its animated pose falls. True when the frame is finished here.
+[[nodiscard]] bool UpdateStagger(IEntityManager& entities, const Entity entity, Ragdoll3DComponent& ragdoll,
+                                   const float deltaTimeSeconds) {
+    ragdoll.staggerElapsed += deltaTimeSeconds;
+    const float rise = std::max(1.0e-4F, ragdoll.staggerRiseSeconds);
+    const float decay = std::max(1.0e-4F, ragdoll.staggerDecaySeconds);
+    float envelope = 0.0F;
+    if (ragdoll.staggerElapsed < rise) {
+        envelope = ragdoll.staggerPeakNow * (ragdoll.staggerElapsed / rise);
+    } else {
+        const float t = (ragdoll.staggerElapsed - rise) / decay;
+        if (t >= 1.0F) {
+            ragdoll.staggering = false;
+            ragdoll.mode = RagdollMode::Kinematic;
+            ragdoll.effectiveBlend = 0.0F;
+            return true; // the animation drives again from the next frame
+        }
+        envelope = ragdoll.staggerPeakNow * (1.0F - t * t * (3.0F - 2.0F * t));
+    }
+    ragdoll.effectiveBlend = envelope;
+
+    // Too far from where the animation wants the pelvis: it is falling, not staggering.
+    const float limitRadians = ragdoll.staggerFallTiltDegrees * 0.017453292F;
+    for (const RagdollBoneBinding& binding : ragdoll.bindings) {
+        if (!binding.isRootBody || binding.bodyIndex >= ragdoll.solver.GetBodyCount() ||
+            !binding.hasPreviousWorldPose) {
+            continue;
+        }
+        const Math::Quaternion& body = ragdoll.solver.GetBody(binding.bodyIndex).rotation;
+        const Math::Quaternion& target = binding.prevWorldRotation;
+        const float dot = std::clamp(std::fabs(body.x * target.x + body.y * target.y + body.z * target.z +
+                                               body.w * target.w), 0.0F, 1.0F);
+        if (2.0F * std::acos(dot) > limitRadians) {
+            static_cast<void>(ActivateRagdoll(entities, entity, RagdollMode::Simulating));
+        }
+        break;
+    }
+    return false;
+}
+
+} // namespace
 
 std::size_t UpdateRagdoll3DObjects(IEntityManager& entityManager, const float deltaTimeSeconds,
                                       const bool editorPreviewOnly,
@@ -1730,36 +2188,82 @@ std::size_t UpdateRagdoll3DObjects(IEntityManager& entityManager, const float de
         if (ragdoll.mode == RagdollMode::Kinematic) {
             SyncBodiesFromAnimatedPose(ragdoll, skeleton, skeletonFrame, deltaTimeSeconds,
                                           /*kinematicOnlyBodies=*/false);
+            if (ragdoll.automaticReactions && !editorPreviewOnly) {
+                static_cast<void>(UpdateLandingReaction(entityManager, entity, ragdoll));
+            }
             continue;
         }
 
-        // ---- Mode 2: BlendingOut (smooth Pose Snapshot -> Get-Up / live animation blend) ----
+        // ---- Mode 2: BlendingOut: the fallen pose stands back up into the target pose ----
         if (ragdoll.mode == RagdollMode::BlendingOut) {
             EnsureSkeletonPose(skeleton);
             ragdoll.blendOutElapsedSeconds += deltaTimeSeconds;
             const float duration = std::max(1.0e-4F, ragdoll.blendOutDurationSeconds);
             const float t = std::clamp(ragdoll.blendOutElapsedSeconds / duration, 0.0F, 1.0F);
-            // Smoothstep easing for natural organic get-up transition.
+            // Smoothstep easing for a natural, organic get-up.
             const float smoothT = t * t * (3.0F - 2.0F * t);
+            // The target is the pose the simulation started from (an editor preview has no animation under
+            // it), or - for gameplay - whatever the animation system just wrote into the pose this frame.
+            if (!ragdoll.recoverToCapturedPose && ragdoll.blendOutSnapshot.valid &&
+                ragdoll.blendOutElapsedSeconds <= deltaTimeSeconds * 1.001F &&
+                ragdoll.recoverTargetPose.size() == skeleton.pose.size() &&
+                ragdoll.blendOutSnapshot.bonePoses.size() == skeleton.pose.size()) {
+                // Still showing exactly the fallen pose on the first step: nothing is animating this skeleton,
+                // so the body stands up into the pose it started from instead of staying where it fell.
+                bool untouched = true;
+                for (std::size_t i = 0U; i < skeleton.pose.size() && untouched; ++i) {
+                    const Math::Vector3 d = skeleton.pose[i].position - ragdoll.blendOutSnapshot.bonePoses[i].position;
+                    untouched = d.x * d.x + d.y * d.y + d.z * d.z < 1.0e-10F;
+                }
+                if (untouched) ragdoll.recoverToCapturedPose = true;
+            }
+            const bool toCaptured =
+                ragdoll.recoverToCapturedPose && ragdoll.recoverTargetPose.size() == skeleton.pose.size();
             if (ragdoll.blendOutSnapshot.valid) {
                 const std::size_t count = std::min(skeleton.pose.size(), ragdoll.blendOutSnapshot.bonePoses.size());
                 for (std::size_t i = 0U; i < count; ++i) {
+                    const SkeletonBonePose target = toCaptured ? ragdoll.recoverTargetPose[i] : skeleton.pose[i];
                     skeleton.pose[i].position =
-                        LerpVector(ragdoll.blendOutSnapshot.bonePoses[i].position, skeleton.pose[i].position, smoothT);
+                        LerpVector(ragdoll.blendOutSnapshot.bonePoses[i].position, target.position, smoothT);
                     skeleton.pose[i].rotation =
-                        SlerpQuaternion(ragdoll.blendOutSnapshot.bonePoses[i].rotation, skeleton.pose[i].rotation,
-                                           smoothT);
+                        SlerpQuaternion(ragdoll.blendOutSnapshot.bonePoses[i].rotation, target.rotation, smoothT);
+                    skeleton.pose[i].scale = target.scale;
                 }
             }
+            // The bodies stand up with the mesh, so colliders and debug capsules follow the pose.
+            SyncBodiesFromAnimatedPose(ragdoll, skeleton, skeletonFrame, deltaTimeSeconds,
+                                          /*kinematicOnlyBodies=*/false);
             ++advancedCount;
             if (t >= 1.0F) {
                 ragdoll.mode = RagdollMode::Kinematic;
                 ragdoll.blendOutSnapshot.valid = false;
+                ragdoll.recoverToCapturedPose = false;
+                ragdoll.restSeconds = 0.0F;
+                if (ragdoll.editorPreviewSimulating) {
+                    // The preview has done its job: it ends standing, so Simulate can be pressed again.
+                    ragdoll.editorPreviewSimulating = false;
+                    ragdoll.mode = ragdoll.editorPreviewBackupMode;
+                    ragdoll.editorPreviewBackupPose.clear();
+                    ragdoll.initialized = false;
+                    ragdoll.pendingSeconds = 0.0F;
+                }
             }
             continue;
         }
 
         // ---- Mode 3 & 4: Simulating (Passive) or Active (PD Motors) ----
+        // A body that has come to rest stands back up when asked to (autoRecover).
+        if (ragdoll.autoRecover && ragdoll.mode == RagdollMode::Simulating) {
+            ragdoll.restSeconds = ragdoll.solver.IsSleeping() ? ragdoll.restSeconds + deltaTimeSeconds : 0.0F;
+            if (ragdoll.restSeconds >= ragdoll.recoverDelaySeconds &&
+                BeginRagdollRecovery(entityManager, entity)) {
+                continue; // the next frame blends
+            }
+        }
+        if (ragdoll.staggering && ragdoll.mode == RagdollMode::Active &&
+            UpdateStagger(entityManager, entity, ragdoll, deltaTimeSeconds)) {
+            continue;
+        }
         bool animatedTargetChanged = false;
         UpdatePartialAndMotorTargets(ragdoll, skeleton, skeletonFrame, deltaTimeSeconds, animatedTargetChanged);
 

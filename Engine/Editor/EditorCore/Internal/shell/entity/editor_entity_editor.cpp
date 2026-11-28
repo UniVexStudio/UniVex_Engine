@@ -310,6 +310,14 @@ prism::Ref<prism::Widget> EditorEntityEditor::Build() {
         }
         if (needed == "CharacterController") { return em.HasComponent<Scene::CharacterControllerComponent>(root); }
         if (needed == "Rigid3D") { return em.HasComponent<Scene::Rigid3DComponent>(root); }
+        if (needed == "Ragdoll3D") {
+            // Its own, or one in the object's tree (a character's ragdoll sits under its skeleton).
+            if (em.HasComponent<Scene::Ragdoll3DComponent>(root)) { return true; }
+            for (const Scene::Entity object : m_editor.CollectEntityEditorObjects()) {
+                if (em.HasComponent<Scene::Ragdoll3DComponent>(object)) { return true; }
+            }
+            return false;
+        }
         if (needed == "AudioSource") { return em.HasComponent<Scene::AudioSourceComponent>(root); }
         if (needed == "Light") { return em.HasComponent<Scene::LightComponent>(root); }
         if (needed == "Camera") { return em.HasComponent<Scene::CameraComponent>(root); }

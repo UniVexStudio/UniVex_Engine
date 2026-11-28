@@ -15,13 +15,17 @@ namespace UVE::Physics {
 
 /// Bounded sizes for one articulated ragdoll.
 ///
-/// A humanoid physics asset is 19 bodies; 24 leaves room for a tail, a cape chain or a four-legged
-/// character without turning this into a general rigid-body world. Joints are at most bodies - 1
-/// for a tree, and contacts are capped separately because the cap is a cost bound, not a shape.
-inline constexpr std::size_t kMaximumRagdollBodies = 24U;
-inline constexpr std::size_t kMaximumRagdollJoints = 24U;
-inline constexpr std::size_t kMaximumRagdollContacts = 128U;
-inline constexpr std::size_t kMaximumRagdollSelfContacts = 64U;
+/// A whole human body with every finger and toe is about 52 bodies; 64 leaves room for a tail, a
+/// cape chain or a four-legged character without turning this into a general rigid-body world.
+/// Self-collision masks are one 64-bit word per body, which is why the body cap stops at 64. Joints
+/// are at most bodies - 1 for a tree, and contacts are capped separately because the cap is a cost
+/// bound, not a shape.
+inline constexpr std::size_t kMaximumRagdollBodies = 64U;
+inline constexpr std::size_t kMaximumRagdollJoints = 64U;
+inline constexpr std::size_t kMaximumRagdollContacts = 384U;
+inline constexpr std::size_t kMaximumRagdollSelfContacts = 192U;
+/// Contacts with a dynamic collider whose impulses are reported back to it (pushback).
+inline constexpr std::size_t kMaximumRagdollContactFeedback = 128U;
 inline constexpr std::uint32_t kInvalidRagdollBody = 0xFFFFFFFFU;
 inline constexpr std::uint32_t kInvalidRagdollColliderIndex = 0xFFFFFFFFU;
 
@@ -35,14 +39,14 @@ inline constexpr float kRagdollFixedStepSeconds = 1.0F / 240.0F;
 /// simulation time slips against wall-clock for one frame instead.
 inline constexpr std::uint32_t kMaximumRagdollSubsteps = 8U;
 
-/// Velocity iterations per fixed step. Sequential impulses converge on joint chains slowly; 8 is the
-/// point where a 19-body humanoid at a 4:1 mass ratio stops visibly stretching, and a ninth gains
-/// less than it costs.
-inline constexpr std::size_t kRagdollDefaultVelocityIterations = 8U;
+/// Velocity iterations per fixed step. Sequential impulses converge on joint chains slowly, and a whole
+/// body with fingers is a chain of chains: at 8 iterations a 52-body human left its joints 8 cm apart and
+/// never settled, at 16 the drift is under a millimetre. The cost is a few microseconds per step.
+inline constexpr std::size_t kRagdollDefaultVelocityIterations = 16U;
 /// Position iterations. This is the common "Enable Linear/Angular Projection" and it is a different
 /// mechanism from the velocity solve: it moves bodies back onto the joint AFTER integration, so it
 /// removes drift without injecting energy into the velocity state.
-inline constexpr std::size_t kRagdollDefaultPositionIterations = 4U;
+inline constexpr std::size_t kRagdollDefaultPositionIterations = 8U;
 
 /// Penetration allowed to persist, in metres. Two millimetres: below the threshold where a capsule
 /// visibly sinks into a floor, above the depth where contact jitter would keep a resting ragdoll
@@ -52,9 +56,22 @@ inline constexpr float kRagdollContactSlop = 0.002F;
 inline constexpr float kRagdollContactCorrectionAlpha = 0.8F;
 /// Bodies slower than this for longer than the sleep delay are put to sleep. A dead body that is
 /// still being integrated costs the same as a live one, and a settled ragdoll is usually a corpse.
-inline constexpr float kRagdollSleepLinearSpeed = 0.05F;
-inline constexpr float kRagdollSleepAngularSpeed = 0.2F;
+/// A lying body keeps creeping at a few centimetres per second while its limbs settle; these limits sit
+/// above that creep so it comes to rest (and can stand back up) instead of staying awake forever.
+inline constexpr float kRagdollSleepLinearSpeed = 0.2F;
+inline constexpr float kRagdollSleepAngularSpeed = 1.0F;
 inline constexpr float kRagdollSleepDelaySeconds = 0.5F;
+/// Bodies this light or lighter are detail (fingers, toes). They spin and twitch at speeds that say nothing
+/// about whether the body has settled, so they do not take part in the sleep decision and they never
+/// collide with the rest of their own ragdoll.
+inline constexpr float kRagdollDetailBodyMass = 0.2F;
+/// Extra damping, per second, on a body that touches the world. A capsule on a floor has nothing to stop
+/// it rolling or creeping, so without this a lying ragdoll never settles; this is rolling and sliding
+/// resistance, and it only acts while there is contact.
+inline constexpr float kRagdollContactAngularDamping = 8.0F;
+/// Time constant, in seconds, of the smoothing applied to body speeds before the sleep test.
+inline constexpr float kRagdollSleepSmoothingSeconds = 0.15F;
+inline constexpr float kRagdollContactLinearDamping = 3.5F;
 
 /// A joint's freedom about one rotational axis.
 ///
@@ -70,11 +87,11 @@ enum class RagdollMotion : std::uint8_t {
     Locked,
 };
 
-/// World-space PD drive for a single ragdoll body (UE5 Chaos Physics Control / pelvis balance drive).
+/// World-space PD drive for a single ragdoll body (pelvis balance drive).
 ///
 /// Joint motors only control relative orientation between parent and child; a world-space drive lets
 /// an active ragdoll or hit-reaction root track an animated pelvis position/orientation with bounded
-/// force/torque so bullets and heavy impacts can still overpower it naturally.
+/// force/torque so projectiles and heavy impacts can still overpower it naturally.
 struct RagdollBodyDrive final {
     bool enabled = false;
     Math::Vector3 targetPosition{};
@@ -134,7 +151,7 @@ struct RagdollBody final {
     [[nodiscard]] bool operator==(const RagdollBody&) const noexcept = default;
 };
 
-/// Active Ragdoll / Physical Animation PD angular motor (UE5 Physics Control / Jolt DriveToPoseUsingMotors).
+/// Active Ragdoll / Physical Animation PD angular motor that drives a joint toward the animated pose.
 ///
 /// Solved with an unconditionally stable implicit spring-damper clamped by `maxTorque`, and executed
 /// before anatomical joint limits so motors can never snap a limb past its joint cone.
@@ -257,12 +274,12 @@ struct RagdollStepSettings final {
     float sleepDelaySeconds = kRagdollSleepDelaySeconds;
     float sleepLinearSpeed = kRagdollSleepLinearSpeed;
     float sleepAngularSpeed = kRagdollSleepAngularSpeed;
-    /// Jolt/Havok-style inertia tensor conditioning inside the solver: bounds each body's principal
+    /// Inertia tensor conditioning inside the solver: bounds each body's principal
     /// inertia axis ratio and cross-chain ratio so thin extremities never explode against heavy torsos.
     bool stabilizeInertia = true;
     float maxPrincipalInertiaRatio = 4.0F;
     float maxChainInertiaRatio = 16.0F;
-    /// Enables Jolt-style non-adjacent limb self-collision (using the solver's collision filter table).
+    /// Enables pairwise non-adjacent limb self-collision (using the solver's collision filter table).
     bool enableSelfCollision = false;
 
     [[nodiscard]] bool operator==(const RagdollStepSettings&) const noexcept = default;
@@ -290,7 +307,7 @@ struct RagdollStepReport final {
 /// A bounded, deterministic articulated-body solver for passive, partial and active ragdolls.
 ///
 /// The method is sequential impulses (projected Gauss-Seidel) with accumulated clamped contact and
-/// one-sided joint limit impulses, Jolt/Havok principal inertia conditioning, non-adjacent limb
+/// one-sided joint limit impulses, principal inertia conditioning, non-adjacent limb
 /// self-collision filtering, unconditionally stable implicit PD joint/body motors, and elliptical
 /// swing-cone + linear re-projection.
 ///
@@ -320,11 +337,11 @@ public:
     /// caller that knows better (a hand-tuned inertia tensor) must be able to override it.
     void RebuildInertia() noexcept;
 
-    /// Jolt/Havok-style permanent inertia tensor conditioning: clamps each body's principal inertia
+    /// Permanent inertia tensor conditioning: clamps each body's principal inertia
     /// ratio to `maxPrincipalRatio` and cross-body inverse inertia spread to `maxChainRatio`.
     void StabilizeInertia(float maxPrincipalRatio = 4.0F, float maxChainRatio = 16.0F) noexcept;
 
-    /// Builds the Jolt-style non-adjacent self-collision filter table: disables body pairs separated
+    /// Builds the pairwise non-adjacent self-collision filter table: disables body pairs separated
     /// by fewer than `minimumJointHops` joints (default 2 = disables parent-child pairs) and
     /// optionally disables any pairs whose capsules already overlap in the current (bind) pose.
     void RebuildSelfCollisionFilter(bool disableCurrentPoseOverlaps = true,
@@ -357,7 +374,7 @@ public:
     /// Puts every body to sleep immediately and zeroes its velocity.
     void Sleep() noexcept;
     /// Wakes the ragdoll and restarts the sleep timer. Called by anything that applies an external
-    /// impulse - a bullet, a blast, a grabbed limb.
+    /// impulse - a projectile, a blast, a grabbed limb.
     void Wake() noexcept;
     [[nodiscard]] bool IsSleeping() const noexcept { return m_sleeping; }
 
@@ -423,17 +440,24 @@ private:
 
     std::array<RagdollBody, kMaximumRagdollBodies> m_bodies{};
     std::array<Math::Vector3, kMaximumRagdollBodies> m_effectiveInverseInertiaLocal{};
-    std::array<std::uint32_t, kMaximumRagdollBodies> m_selfCollisionMask{};
+    std::array<std::uint64_t, kMaximumRagdollBodies> m_selfCollisionMask{};
+    /// Bodies that touched the world on this step (bit per body): they get contact damping.
+    std::uint64_t m_worldContactMask = 0U;
     std::size_t m_bodyCount = 0U;
     std::array<RagdollJoint, kMaximumRagdollJoints> m_joints{};
     std::size_t m_jointCount = 0U;
-    std::array<RagdollContactFeedback, kMaximumRagdollContacts> m_lastContactFeedback{};
+    std::array<RagdollContactFeedback, kMaximumRagdollContactFeedback> m_lastContactFeedback{};
     std::size_t m_lastContactFeedbackCount = 0U;
     /// The clamped step the current solve is using. The limit bias is `angle / dt`, so the solver
     /// needs the step size; passing it down every call site would be four more parameters for one
     /// value that cannot change mid-step.
     float m_lastStepSeconds = kRagdollFixedStepSeconds;
     float m_sleepTimer = 0.0F;
+    /// Exponentially smoothed fastest linear and angular body speeds, the numbers the sleep test reads: a
+    /// one-step spike in one body must not restart the rest timer of a body that has settled.
+    /// Negative until the first sample, which seeds them.
+    float m_smoothedLinearSpeed = -1.0F;
+    float m_smoothedAngularSpeed = -1.0F;
     bool m_sleeping = false;
 };
 

@@ -117,6 +117,10 @@ RETIRED = {
     "EditorRightPanelTab::Signals": "EditorRightPanelTab::Events",
     "EntityEditorTabUVE::Signals": "EntityEditorTab::Events",
     "EditorRightPanelTabUVE::Signals": "EditorRightPanelTab::Events",
+    # The ragdoll preset pass: the retired quality preset names, split so this file does not itself spell them.
+    "Desk" "topAAA": "High",
+    "Mob" "ileBalanced": "Balanced",
+    "Mob" "ileFast": "Fast",
 }
 
 # Whole families retired at once (GODOT_STYLE_AUDIT.md Finding B). Listing every derived symbol -

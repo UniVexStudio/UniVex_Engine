@@ -37,6 +37,7 @@
 #include "montage_sequencer_component.h"
 #include "rigid_3d_component.h"
 #include "transform_component.h"
+#include "ragdoll_3d.h"
 #include "blueprint_compiler.h"
 #include "blueprint_instance.h"
 #include "blueprint_object_host.h"
@@ -82,6 +83,7 @@ protected:
         entityManager.AddComponent<SurfaceInstanceComponent>(entity, SurfaceInstanceComponent{});
         entityManager.AddComponent<AnimationSequencerComponent>(entity, AnimationSequencerComponent{});
         entityManager.AddComponent<NavSeeker3DComponent>(entity, NavSeeker3DComponent{});
+        entityManager.AddComponent<Ragdoll3DComponent>(entity, Ragdoll3DComponent{});
         return entity;
     }
 

@@ -123,7 +123,7 @@ std::size_t UpdatePhysicalBone3DObjects(IEntityManager& entityManager,
 
         if (!canStep) continue;
 
-        // Delegate physical bone stepping internally to the AAA RagdollSolver + world contact pipeline.
+        // Delegate physical bone stepping internally to the RagdollSolver + world contact pipeline.
         Physics::RagdollBody body;
         body.mass = pb.mass;
         body.radius = 0.06F;

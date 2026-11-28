@@ -29,7 +29,7 @@ constexpr float kMinimumProjectionAngle = 1.0e-4F;
 /// Two radians of swing is past any human joint, so a decomposition that reports more than this is
 /// reading a degenerate quaternion rather than a pose.
 constexpr float kMaximumSwingAngle = kPi + 0.01F;
-/// Small bind-pose overlap margin (1 cm) when building Jolt-style self-collision pair masks.
+/// Small bind-pose overlap margin (1 cm) when building pairwise self-collision pair masks.
 constexpr float kBindOverlapMargin = 0.01F;
 
 [[nodiscard]] float WrapAngle(const float radians) noexcept {
@@ -194,7 +194,7 @@ void ClosestPointsBetweenSegments(const Math::Vector3& p1, const Math::Vector3& 
     return imag * 2.0F;
 }
 
-/// Jolt/Havok-style conditioning on a single diagonal inverse-inertia vector: caps the ratio
+/// Conditioning on a single diagonal inverse-inertia vector: caps the ratio
 /// between largest and smallest positive inverse-inertia components (lifting tiny axial inertia).
 [[nodiscard]] Math::Vector3 ConditionSingleInverseInertia(const Math::Vector3& invI,
                                                                 const float maxPrincipalRatio) noexcept {
@@ -384,11 +384,14 @@ bool RagdollSolver::Reset(const std::span<const RagdollBody> bodies) {
     m_bodies = {};
     m_effectiveInverseInertiaLocal = {};
     m_selfCollisionMask = {};
+    m_worldContactMask = 0U;
     m_bodyCount = 0U;
     m_joints = {};
     m_jointCount = 0U;
     m_lastContactFeedbackCount = 0U;
     m_sleepTimer = 0.0F;
+    m_smoothedLinearSpeed = -1.0F;
+    m_smoothedAngularSpeed = -1.0F;
     m_sleeping = false;
     m_lastStepSeconds = kRagdollFixedStepSeconds;
     for (const RagdollBody& authored : bodies) {
@@ -401,9 +404,9 @@ bool RagdollSolver::Reset(const std::span<const RagdollBody> bodies) {
     }
     // Enable all non-self pairs by default; AddJoint automatically clears direct parent-child pairs.
     const std::uint32_t allBodiesMask =
-        m_bodyCount >= 32U ? 0xFFFFFFFFU : ((std::uint32_t{1U} << m_bodyCount) - 1U);
+        m_bodyCount >= 64U ? ~std::uint64_t{0U} : ((std::uint64_t{1U} << m_bodyCount) - 1U);
     for (std::size_t index = 0U; index < m_bodyCount; ++index) {
-        m_selfCollisionMask[index] = allBodiesMask & ~(std::uint32_t{1U} << index);
+        m_selfCollisionMask[index] = allBodiesMask & ~(std::uint64_t{1U} << index);
     }
     return true;
 }
@@ -475,8 +478,8 @@ void RagdollSolver::SetSelfCollisionPairEnabled(const std::uint32_t firstBody,
                                                       const std::uint32_t secondBody,
                                                       const bool enabled) noexcept {
     if (firstBody >= m_bodyCount || secondBody >= m_bodyCount || firstBody == secondBody) return;
-    const std::uint32_t bitFirst = std::uint32_t{1U} << firstBody;
-    const std::uint32_t bitSecond = std::uint32_t{1U} << secondBody;
+    const std::uint64_t bitFirst = std::uint64_t{1U} << firstBody;
+    const std::uint64_t bitSecond = std::uint64_t{1U} << secondBody;
     if (enabled) {
         m_selfCollisionMask[firstBody] |= bitSecond;
         m_selfCollisionMask[secondBody] |= bitFirst;
@@ -489,19 +492,19 @@ void RagdollSolver::SetSelfCollisionPairEnabled(const std::uint32_t firstBody,
 bool RagdollSolver::CanSelfCollide(const std::uint32_t firstBody,
                                          const std::uint32_t secondBody) const noexcept {
     if (firstBody >= m_bodyCount || secondBody >= m_bodyCount || firstBody == secondBody) return false;
-    return (m_selfCollisionMask[firstBody] & (std::uint32_t{1U} << secondBody)) != 0U;
+    return (m_selfCollisionMask[firstBody] & (std::uint64_t{1U} << secondBody)) != 0U;
 }
 
 void RagdollSolver::RebuildSelfCollisionFilter(const bool disableCurrentPoseOverlaps,
                                                      const std::uint32_t minimumJointHops) noexcept {
     const std::uint32_t allBodiesMask =
-        m_bodyCount >= 32U ? 0xFFFFFFFFU : ((std::uint32_t{1U} << m_bodyCount) - 1U);
+        m_bodyCount >= 64U ? ~std::uint64_t{0U} : ((std::uint64_t{1U} << m_bodyCount) - 1U);
     for (std::size_t index = 0U; index < m_bodyCount; ++index) {
-        m_selfCollisionMask[index] = allBodiesMask & ~(std::uint32_t{1U} << index);
+        m_selfCollisionMask[index] = allBodiesMask & ~(std::uint64_t{1U} << index);
     }
 
-    // All-pairs shortest hop distance along the joint graph (bounded at <= 24 bodies).
-    constexpr std::uint32_t kInfHops = 64U;
+    // All-pairs shortest hop distance along the joint graph (bounded by kMaximumRagdollBodies).
+    constexpr std::uint32_t kInfHops = static_cast<std::uint32_t>(kMaximumRagdollBodies) + 1U;
     std::array<std::array<std::uint32_t, kMaximumRagdollBodies>, kMaximumRagdollBodies> dist{};
     for (std::size_t i = 0U; i < m_bodyCount; ++i) {
         for (std::size_t j = 0U; j < m_bodyCount; ++j) {
@@ -574,6 +577,8 @@ void RagdollSolver::Sleep() noexcept {
 void RagdollSolver::Wake() noexcept {
     m_sleeping = false;
     m_sleepTimer = 0.0F;
+    m_smoothedLinearSpeed = -1.0F; // re-seeded from the first sample after waking
+    m_smoothedAngularSpeed = -1.0F;
 }
 
 float RagdollSolver::EffectiveInverseMass(const std::size_t bodyIndex) const noexcept {
@@ -635,9 +640,9 @@ std::size_t RagdollSolver::GenerateSelfContacts(const std::span<RagdollContact> 
     for (std::size_t i = 0U; i < m_bodyCount; ++i) {
         const float ri = m_bodies[i].radius;
         if (!std::isfinite(ri) || !(ri > 1.0e-4F)) continue;
-        const std::uint32_t mask = m_selfCollisionMask[i];
+        const std::uint64_t mask = m_selfCollisionMask[i];
         for (std::size_t j = i + 1U; j < m_bodyCount; ++j) {
-            if ((mask & (std::uint32_t{1U} << j)) == 0U) continue;
+            if ((mask & (std::uint64_t{1U} << j)) == 0U) continue;
             if (m_bodies[i].kinematic && m_bodies[j].kinematic) continue;
             const float rj = m_bodies[j].radius;
             if (!std::isfinite(rj) || !(rj > 1.0e-4F)) continue;
@@ -727,8 +732,13 @@ void RagdollSolver::IntegrateVelocities(const Math::Vector3& gravity,
         const float invMass = EffectiveInverseMass(index);
         if (!(invMass > 0.0F) && Math::LengthSquared(m_effectiveInverseInertiaLocal[index]) <= 0.0F) continue;
         if (body.gravityEnabled && invMass > 0.0F) body.linearVelocity += gravity * deltaTimeSeconds;
-        const float linearFactor = 1.0F / (1.0F + std::max(0.0F, body.linearDamping) * deltaTimeSeconds);
-        const float angularFactor = 1.0F / (1.0F + std::max(0.0F, body.angularDamping) * deltaTimeSeconds);
+        const bool touching = (m_worldContactMask & (std::uint64_t{1U} << index)) != 0U;
+        const float linearFactor =
+            1.0F / (1.0F + (std::max(0.0F, body.linearDamping) + (touching ? kRagdollContactLinearDamping : 0.0F)) *
+                               deltaTimeSeconds);
+        const float angularFactor =
+            1.0F / (1.0F + (std::max(0.0F, body.angularDamping) + (touching ? kRagdollContactAngularDamping : 0.0F)) *
+                               deltaTimeSeconds);
         body.linearVelocity = body.linearVelocity * linearFactor;
         body.angularVelocity = body.angularVelocity * angularFactor;
     }
@@ -1096,7 +1106,7 @@ void RagdollSolver::SolveContactVelocity(const RagdollContact& contact,
         return eff;
     };
 
-    // 1. Accumulated clamped normal impulse (Havok / Box2D Sequential Impulses).
+    // 1. Accumulated clamped normal impulse (sequential impulses).
     const float normalVelocity = Math::Dot(relativePointVelocity(), state.normal);
     const float normalEffInvMass = combinedEffectiveInvMass(state.normal);
     if (std::isfinite(normalVelocity) && normalEffInvMass > kDirectionEpsilon) {
@@ -1324,21 +1334,41 @@ void RagdollSolver::UpdateSleep(const float deltaTimeSeconds,
         m_sleepTimer = 0.0F;
         return;
     }
-    float maximumLinearSquared = 0.0F;
-    float maximumAngularSquared = 0.0F;
+    // A mass-weighted average of body speeds decides, not the single fastest body: one forearm creeping at
+    // a few centimetres per second must not keep a settled ragdoll awake. Detail bodies (fingers, toes)
+    // are left out; a ragdoll made only of them is judged by all of its bodies instead.
+    float weightedLinear = 0.0F;
+    float weightedAngular = 0.0F;
+    float totalWeight = 0.0F;
     std::size_t dynamicCount = 0U;
-    for (std::size_t index = 0U; index < m_bodyCount; ++index) {
-        if (m_bodies[index].kinematic) continue;
-        ++dynamicCount;
-        maximumLinearSquared = std::max(maximumLinearSquared, Math::LengthSquared(m_bodies[index].linearVelocity));
-        maximumAngularSquared = std::max(maximumAngularSquared, Math::LengthSquared(m_bodies[index].angularVelocity));
+    for (const bool includeDetail : {false, true}) {
+        for (std::size_t index = 0U; index < m_bodyCount; ++index) {
+            if (m_bodies[index].kinematic) continue;
+            if (!includeDetail && m_bodies[index].mass <= kRagdollDetailBodyMass) continue;
+            ++dynamicCount;
+            const float weight = std::isfinite(m_bodies[index].mass) && m_bodies[index].mass > 0.0F
+                                     ? m_bodies[index].mass
+                                     : 1.0F;
+            totalWeight += weight;
+            weightedLinear += weight * Math::LengthSquared(m_bodies[index].linearVelocity);
+            weightedAngular += weight * Math::LengthSquared(m_bodies[index].angularVelocity);
+        }
+        if (dynamicCount > 0U) break;
     }
-    if (dynamicCount == 0U) {
+    if (dynamicCount == 0U || !(totalWeight > 0.0F)) {
         m_sleepTimer = 0.0F;
         return;
     }
-    if (std::sqrt(maximumLinearSquared) < settings.sleepLinearSpeed &&
-        std::sqrt(maximumAngularSquared) < settings.sleepAngularSpeed) {
+    const float meanLinearSquared = weightedLinear / totalWeight;
+    const float meanAngularSquared = weightedAngular / totalWeight;
+    if (m_smoothedLinearSpeed < 0.0F || m_smoothedAngularSpeed < 0.0F) {
+        m_smoothedLinearSpeed = std::sqrt(meanLinearSquared);
+        m_smoothedAngularSpeed = std::sqrt(meanAngularSquared);
+    }
+    const float smoothing = std::clamp(deltaTimeSeconds / kRagdollSleepSmoothingSeconds, 0.0F, 1.0F);
+    m_smoothedLinearSpeed += (std::sqrt(meanLinearSquared) - m_smoothedLinearSpeed) * smoothing;
+    m_smoothedAngularSpeed += (std::sqrt(meanAngularSquared) - m_smoothedAngularSpeed) * smoothing;
+    if (m_smoothedLinearSpeed < settings.sleepLinearSpeed && m_smoothedAngularSpeed < settings.sleepAngularSpeed) {
         m_sleepTimer += deltaTimeSeconds;
         if (m_sleepTimer >= settings.sleepDelaySeconds) Sleep();
     } else {
@@ -1361,6 +1391,12 @@ RagdollStepReport RagdollSolver::Step(const Math::Vector3& gravity, const float 
     m_lastStepSeconds = stepSeconds;
 
     PrepareEffectiveInertias(settings);
+    m_worldContactMask = 0U;
+    for (const RagdollContact& contact : contacts) {
+        if (contact.body < m_bodyCount && contact.otherBody == kInvalidRagdollBody && contact.depth > 0.0F) {
+            m_worldContactMask |= std::uint64_t{1U} << contact.body;
+        }
+    }
     IntegrateVelocities(gravity, stepSeconds);
 
     // Build combined bounded contact buffer (world contacts + optional non-adjacent self-contacts).

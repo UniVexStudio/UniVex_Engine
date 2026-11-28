@@ -3616,7 +3616,7 @@ TEST_F(SceneSerializerTest, Ragdoll3DComponent_RoundTripsWithResolvedSkeletonRef
     Ragdoll3DComponent ragdoll;
     ragdoll.skeleton = skeletonEntity;
     ragdoll.mode = RagdollMode::Active;
-    ragdoll.qualityPreset = RagdollQualityPreset::MobileBalanced;
+    ragdoll.qualityPreset = RagdollQualityPreset::Balanced;
     ragdoll.physicsBlendWeight = 0.75F;
     ragdoll.enableSelfCollision = true;
     ragdoll.enableDynamicPushback = true;
@@ -3653,7 +3653,7 @@ TEST_F(SceneSerializerTest, Ragdoll3DComponent_RoundTripsWithResolvedSkeletonRef
     const Ragdoll3DComponent& revived = fresh.GetComponent<Ragdoll3DComponent>(restoredRagdoll);
     EXPECT_EQ(revived.skeleton, restoredSkeleton);
     EXPECT_EQ(revived.mode, RagdollMode::Active);
-    EXPECT_EQ(revived.qualityPreset, RagdollQualityPreset::MobileBalanced);
+    EXPECT_EQ(revived.qualityPreset, RagdollQualityPreset::Balanced);
     EXPECT_FLOAT_EQ(revived.physicsBlendWeight, 0.75F);
     EXPECT_FLOAT_EQ(revived.motorStiffness, 220.0F);
     EXPECT_EQ(revived.partialRootBoneName, "spine_01");
@@ -4002,7 +4002,7 @@ TEST_F(SceneSerializerTest, UpgradeSceneContent_RenamesRetiredKeysAndLegacyPaths
 
 TEST_F(SceneSerializerTest, Load_RagdollWithAnOversizedBoneList_TrimsInsteadOfRefusing) {
     nlohmann::json bones = nlohmann::json::array();
-    for (int index = 0; index < 40; ++index) {
+    for (int index = 0; index < 100; ++index) {
         bones.push_back({{"boneName", "bone_" + std::to_string(index)}, {"mass", index < 10 ? 5.0 : 1.0}});
     }
     const nlohmann::json payload = {
@@ -4020,6 +4020,51 @@ TEST_F(SceneSerializerTest, Load_RagdollWithAnOversizedBoneList_TrimsInsteadOfRe
     const Ragdoll3DComponent& ragdoll = entityManager.GetComponent<Ragdoll3DComponent>(roots[0]);
     EXPECT_EQ(ragdoll.bones.size(), static_cast<std::size_t>(kMaximumRagdollBones));
     EXPECT_EQ(ragdoll.bones.front().boneName, "bone_0") << "heaviest bodies kept, in their authored order";
+}
+
+TEST_F(SceneSerializerTest, Ragdoll3DComponent_AutomaticReactionsRoundTripAndOldFilesGetTheDefaults) {
+    const Entity ragdollEntity = entityManager.CreateEntity();
+    Ragdoll3DComponent ragdoll;
+    ragdoll.automaticReactions = true;
+    ragdoll.staggerImpulseThreshold = 55.0F;
+    ragdoll.fallImpulseThreshold = 240.0F;
+    ragdoll.fallLandingSpeed = 11.0F;
+    ragdoll.staggerBlendPeak = 0.45F;
+    ragdoll.staggerRiseSeconds = 0.12F;
+    ragdoll.staggerDecaySeconds = 0.9F;
+    ragdoll.staggerFallTiltDegrees = 65.0F;
+    entityManager.AddComponent<Ragdoll3DComponent>(ragdollEntity, ragdoll);
+    const std::optional<SceneSnapshot> snapshot =
+        serializer.Capture(entityManager, {ragdollEntity}, SceneAssetType::Scene);
+    ASSERT_TRUE(snapshot.has_value());
+    EntityManager fresh{memoryManager.GetDefaultAllocator(), eventSystem};
+    const std::vector<Entity> roots = serializer.Restore(fresh, *snapshot);
+    ASSERT_EQ(roots.size(), 1U);
+    const Ragdoll3DComponent& revived = fresh.GetComponent<Ragdoll3DComponent>(roots[0]);
+    EXPECT_TRUE(revived.automaticReactions);
+    EXPECT_FLOAT_EQ(revived.staggerImpulseThreshold, 55.0F);
+    EXPECT_FLOAT_EQ(revived.fallImpulseThreshold, 240.0F);
+    EXPECT_FLOAT_EQ(revived.fallLandingSpeed, 11.0F);
+    EXPECT_FLOAT_EQ(revived.staggerBlendPeak, 0.45F);
+    EXPECT_FLOAT_EQ(revived.staggerRiseSeconds, 0.12F);
+    EXPECT_FLOAT_EQ(revived.staggerDecaySeconds, 0.9F);
+    EXPECT_FLOAT_EQ(revived.staggerFallTiltDegrees, 65.0F);
+
+    // A scene saved before these settings existed loads with the defaults.
+    const nlohmann::json payload = {
+        {"entities", nlohmann::json::array({{{"localId", 0}, {"components", {{"Ragdoll3DComponent", {{"mode", 1}}}}}}})}};
+    const std::string text = payload.dump();
+    const auto* raw = reinterpret_cast<const std::byte*>(text.data());
+    const SceneSnapshot old{
+        Asset::EncodeUveFileEnvelope(SceneAssetType::Scene, std::vector<std::byte>{raw, raw + text.size()}),
+        SceneAssetType::Scene};
+    EntityManager legacy{memoryManager.GetDefaultAllocator(), eventSystem};
+    const std::vector<Entity> legacyRoots = serializer.Restore(legacy, old);
+    ASSERT_EQ(legacyRoots.size(), 1U);
+    const Ragdoll3DComponent& defaults = legacy.GetComponent<Ragdoll3DComponent>(legacyRoots[0]);
+    EXPECT_FALSE(defaults.automaticReactions);
+    EXPECT_FLOAT_EQ(defaults.staggerImpulseThreshold, Ragdoll3DComponent{}.staggerImpulseThreshold);
+    EXPECT_FLOAT_EQ(defaults.fallImpulseThreshold, Ragdoll3DComponent{}.fallImpulseThreshold);
 }
 
 } // namespace UVE::Scene::Tests

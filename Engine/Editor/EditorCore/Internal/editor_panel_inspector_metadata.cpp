@@ -703,6 +703,20 @@ bool Editor::SetSelectedComponentProperty(const TypeMetadataEntry& entry,
     }
     void* const instance = entityManager.GetComponentPointer(m_selectedEntity, entry.typeIndex);
 
+    // An edit that rebuilds the ragdoll (or changes how it runs) while the live preview is simulating would be
+    // reverted when the preview stops, and would leave the bodies where the fall put them while the mesh is
+    // restored. The preview ends first - the skeleton pose and the mode come back exactly as they were - and
+    // the edit then applies to the resting ragdoll.
+    if (entry.typeIndex == std::type_index(typeid(Scene::Ragdoll3DComponent))) {
+        const auto* const running = static_cast<const Scene::Ragdoll3DComponent*>(instance);
+        if (running != nullptr && running->editorPreviewSimulating &&
+            (property.name == "skeleton" || property.name == "qualityPreset" ||
+             property.name == "partialRootBoneName" || property.name == "mode" || property.name == "enabled" ||
+             property.name == "enableSelfCollision")) {
+            static_cast<void>(Scene::StopRagdollEditorPreview(entityManager, m_selectedEntity));
+        }
+    }
+
     // The prior value is cloned before the write, so an undo restores the whole component rather
     // than replaying a reverse edit - the same guarantee the per-type commands give.
     Core::TypeInstance before = Core::TypeInstance::Clone(entry, instance);

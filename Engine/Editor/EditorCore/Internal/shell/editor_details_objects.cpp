@@ -7,6 +7,7 @@
 
 #include "bone_attachment_3d.h"
 #include "camera_component.h"
+#include "name_component.h"
 #include "ragdoll_3d.h"
 #include "skeleton_3d.h"
 
@@ -241,9 +242,20 @@ void EditorDetails::AddRagdollBuilder(const Scene::Entity entity) {
         m_rebuildRequested = true;
     };
 
+    auto recoverBtn = prism::make<prism::Button>("Get Up", prism::Icon::None, prism::ButtonStyle::Default);
+    recoverBtn->setTooltip("Stand the previewing ragdoll back up into the pose it started from");
+    recoverBtn->onClick = [this, entity] {
+        Scene::IEntityManager& entities = m_editor.m_services->GetEntityManager();
+        if (!Scene::BeginRagdollRecovery(entities, entity)) {
+            m_editor.m_contentStatusMessage = "Start Simulate Preview first: there is no fall to recover from.";
+        }
+        m_rebuildRequested = true;
+    };
+
     auto actionBar = prism::hbox(4.0F);
     actionBar->add(generateBtn, prism::Slot{1.0F, {}, prism::HAlign::Fill, prism::VAlign::Center});
     actionBar->add(previewBtn, prism::Slot{1.0F, {}, prism::HAlign::Fill, prism::VAlign::Center});
+    actionBar->add(recoverBtn, prism::Slot{0.0F, {}, prism::HAlign::Center, prism::VAlign::Center});
     actionBar->add(impulseBtn, prism::Slot{0.0F, {}, prism::HAlign::Center, prism::VAlign::Center});
 
     auto statusLabel = ValueLabel("-");
@@ -260,7 +272,26 @@ void EditorDetails::AddRagdollBuilder(const Scene::Entity entity) {
             }
         }
         if (auto lbl = weakStatus.lock()) {
-            char buf[128];
+            char buf[192];
+            // How many bones of the rig this ragdoll drives, so a mesh that does not follow it can be told
+            // apart from a ragdoll that is bound to a different skeleton than the one the mesh uses.
+            std::size_t rigBones = 0U;
+            if (ragdoll.skeleton != Scene::kInvalidEntity && entities.IsAlive(ragdoll.skeleton) &&
+                entities.HasComponent<Scene::Skeleton3DComponent>(ragdoll.skeleton)) {
+                rigBones = entities.GetComponent<Scene::Skeleton3DComponent>(ragdoll.skeleton).bones.size();
+            }
+            // Where the entity drive goes, so a mesh that is not under the driven entity is easy to spot.
+            std::string driveText;
+            if (ragdoll.driveEntityTransform) {
+                const Scene::Entity target = Scene::ResolveRagdollDriveTarget(entities, ragdoll.skeleton);
+                if (target == Scene::kInvalidEntity) {
+                    driveText = "  |  drive: no mesh shares a parent with the skeleton";
+                } else {
+                    driveText = "  |  drive: " + (entities.HasComponent<Scene::NameComponent>(target)
+                                                      ? entities.GetComponent<Scene::NameComponent>(target).name
+                                                      : std::string{"entity"});
+                }
+            }
             const char* stateText =
                 ragdoll.editorPreviewSimulating
                     ? "Previewing"
@@ -268,10 +299,10 @@ void EditorDetails::AddRagdollBuilder(const Scene::Entity entity) {
             if (!ragdoll.initialized && !ragdoll.lastSetupError.empty()) {
                 lbl->setText("Not Built  |  " + ragdoll.lastSetupError);
             } else {
-                std::snprintf(buf, sizeof(buf), "%zu bodies  |  %zu joints  |  %.1f kg  |  %s",
+                std::snprintf(buf, sizeof(buf), "%zu bodies  |  %zu joints  |  %.1f kg  |  rig %zu bones  |  %s",
                               ragdoll.solver.GetBodyCount(), ragdoll.solver.GetJointCount(),
-                              static_cast<double>(ragdoll.solver.GetTotalMass()), stateText);
-                lbl->setText(buf);
+                              static_cast<double>(ragdoll.solver.GetTotalMass()), rigBones, stateText);
+                lbl->setText(std::string{buf} + driveText);
             }
         }
     };

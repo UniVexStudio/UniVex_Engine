@@ -23,12 +23,12 @@ class IEntityManager;
 
 inline constexpr std::uint32_t kMaximumRagdollBones = static_cast<std::uint32_t>(Physics::kMaximumRagdollBodies);
 
-/// High-level simulation mode for a `Ragdoll3DComponent` (UE5 Physics Control / Godot 4.3+ model).
+/// High-level simulation mode for a `Ragdoll3DComponent`.
 enum class RagdollMode : std::uint8_t {
     /// Animation drives the bodies; per-bone linear & angular velocities are tracked for seamless activation.
     Kinematic = 0,
     /// Active Ragdoll / Physical Animation: PD joint & root motors track the live animated pose while
-    /// physically reacting to gravity, bullets, impacts, and world collisions.
+    /// physically reacting to gravity, projectiles, impacts, and world collisions.
     Active = 1,
     /// Full passive ragdoll driven by gravity, impacts, contacts, and anatomical joint limits.
     Simulating = 2,
@@ -36,12 +36,12 @@ enum class RagdollMode : std::uint8_t {
     BlendingOut = 3,
 };
 
-/// Performance / fidelity preset so games can run full AAA ragdolls on desktop and smoothly scale
-/// down substeps / self-collision on low-end Android phones.
+/// Performance / fidelity preset. `High` runs full substeps, self-collision and pushback;
+/// `Balanced` runs fewer substeps; `Fast` runs the fewest substeps with self-collision off.
 enum class RagdollQualityPreset : std::uint8_t {
-    DesktopAAA = 0,
-    MobileBalanced = 1,
-    MobileFast = 2,
+    High = 0,
+    Balanced = 1,
+    Fast = 2,
     Custom = 3,
 };
 
@@ -134,7 +134,7 @@ struct RagdollBoneBinding final {
     bool hasPreviousWorldPose = false;
 };
 
-/// First-class AAA ragdoll & physical animation component (passive, active PD motors, partial
+/// Full ragdoll and physical animation component (passive, active PD motors, partial
 /// subtree hit reactions, smooth pose-snapshot get-up blending, self-collision, dynamic Rigid3D
 /// pushback, and Editor live Simulate Preview).
 struct Ragdoll3DComponent final {
@@ -149,22 +149,25 @@ struct Ragdoll3DComponent final {
     /// Extra initial velocity inherited when starting simulation (combined with animated bone velocities).
     Math::Vector3 initialVelocity{};
 
-    // ---- AAA Simulation & Authoring Settings ----
-    RagdollMode mode = RagdollMode::Simulating;
-    RagdollQualityPreset qualityPreset = RagdollQualityPreset::DesktopAAA;
+    // ---- Simulation & Authoring Settings ----
+    /// A new ragdoll stands normally (animation drives it) until something activates it.
+    RagdollMode mode = RagdollMode::Kinematic;
+    RagdollQualityPreset qualityPreset = RagdollQualityPreset::High;
     /// Overall blend between live animated pose (0) and simulated ragdoll pose (1).
     float physicsBlendWeight = 1.0F;
-    /// Enables Jolt-style non-adjacent limb self-collision.
+    /// Enables pairwise non-adjacent limb self-collision.
     bool enableSelfCollision = true;
     /// Applies equal-and-opposite contact impulses back onto dynamic `Rigid3DComponent` entities.
     bool enableDynamicPushback = true;
-    /// When true, also moves the skeleton entity's own `TransformComponent` to follow the fallen pelvis.
+    /// When true, the pelvis's horizontal travel is also carried by the entity that holds both the skeleton and the
+    /// meshes skinned to it (the skeleton's nearest ancestor-or-self with a mesh in its subtree), so a character's
+    /// root follows the fallen body. The mesh, the bones and the capsules always stay in one frame.
     bool driveEntityTransform = false;
     /// Samples per-bone linear & angular velocity from animated pose before transitioning to ragdoll.
     bool inheritAnimatedVelocity = true;
-    /// Maximum fixed substeps executed per frame (scaled down by `MobileFast` preset for low-end phones).
+    /// Maximum fixed substeps executed per frame (scaled down by the `Fast` preset on low-end hardware).
     std::uint32_t maxSubstepsPerFrame = Physics::kMaximumRagdollSubsteps;
-    /// Active Ragdoll joint PD motor parameters (UE5 Physics Control / Jolt DriveToPoseUsingMotors).
+    /// Active Ragdoll joint PD motor parameters: joint PD motors driving toward the animated pose.
     float motorStiffness = 160.0F;
     float motorDamping = 20.0F;
     float maxMotorTorque = 180.0F;
@@ -178,6 +181,39 @@ struct Ragdoll3DComponent final {
     /// Optional bone name limiting dynamic simulation to that bone's subtree (empty = full body).
     std::string partialRootBoneName;
     bool enabled = true;
+
+    // ---- Recovery (standing back up after a fall) ----
+    /// When true, a body that has come to rest stands back up on its own: after `recoverDelaySeconds` of
+    /// rest the pose blends from where it lies back to the pose it was simulated from.
+    bool autoRecover = false;
+    /// Seconds of rest before an automatic recovery begins.
+    float recoverDelaySeconds = 2.0F;
+    /// Seconds the stand-up blend takes.
+    float recoverDurationSeconds = 1.6F;
+
+    // ---- Automatic reactions (stagger on a light hit, fall on a strong one) ----
+    /// When true, hits applied through `ApplyRagdollImpact` and hard landings of a character controller start a
+    /// reaction on their own: a stagger for a light hit, a full fall for a strong one. Off: nothing reacts until
+    /// the ragdoll is activated.
+    bool automaticReactions = false;
+    /// Impulse (N.s) from which a hit staggers the body.
+    float staggerImpulseThreshold = 40.0F;
+    /// Impulse (N.s) from which a hit knocks the body down.
+    float fallImpulseThreshold = 180.0F;
+    /// Downward speed (m/s) at landing from which the body falls instead of landing on its feet.
+    float fallLandingSpeed = 9.0F;
+    /// Most the physics takes over during a stagger, in [0, 1].
+    float staggerBlendPeak = 0.6F;
+    /// Seconds the stagger takes to reach its peak.
+    float staggerRiseSeconds = 0.08F;
+    /// Seconds the stagger takes to fade back to the animation.
+    float staggerDecaySeconds = 0.6F;
+    /// A staggering body that tilts further than this (degrees from upright) falls.
+    float staggerFallTiltDegrees = 50.0F;
+    /// Animation Graph triggers fired when the body starts standing back up, by how it lies: on its back or on its
+    /// front. The graph plays the matching get-up clip, which the recovery then blends into. Empty: not fired.
+    std::string getUpFaceUpTrigger = "GetUpFaceUp";
+    std::string getUpFaceDownTrigger = "GetUpFaceDown";
 
     // ---- Runtime, never persisted ----
     bool initialized = false;
@@ -195,6 +231,25 @@ struct Ragdoll3DComponent final {
     /// Why the last `InitializeRagdoll3D` did not build, in words an author can act on. Empty after
     /// a successful build. Shown by the editor instead of a generic "could not start".
     std::string lastSetupError;
+
+    /// The pose the skeleton had when the simulation took over (the animated or rest pose): what a recovery
+    /// stands back up into when there is no animation driving the skeleton (the editor preview).
+    std::vector<SkeletonBonePose> recoverTargetPose;
+    /// True when a recovery blends to `recoverTargetPose`; false when it blends to the live animation.
+    bool recoverToCapturedPose = false;
+    /// How long the body has been at rest, for `autoRecover`.
+    float restSeconds = 0.0F;
+    /// A stagger is running: `effectiveBlend` replaces `physicsBlendWeight` for the pose write-back.
+    bool staggering = false;
+    float staggerElapsed = 0.0F;
+    float staggerPeakNow = 0.0F;
+    float effectiveBlend = 0.0F;
+    /// Landing detection: largest downward speed while airborne.
+    float airborneMaxDownSpeed = 0.0F;
+    bool wasAirborne = false;
+    /// `driveEntityTransform`: where the pelvis was last frame, to carry its horizontal travel to the driven entity.
+    Math::Vector3 drivePrevPelvis{};
+    bool hasDrivePrev = false;
 
     /// Compares authored fields only: a running ragdoll is not a different ragdoll.
     [[nodiscard]] bool operator==(const Ragdoll3DComponent& other) const noexcept {
@@ -214,7 +269,16 @@ struct Ragdoll3DComponent final {
             rootDriveAngularStiffness != other.rootDriveAngularStiffness ||
             rootDriveAngularDamping != other.rootDriveAngularDamping ||
             rootDriveMaxAngularTorque != other.rootDriveMaxAngularTorque ||
-            partialRootBoneName != other.partialRootBoneName ||
+            partialRootBoneName != other.partialRootBoneName || autoRecover != other.autoRecover ||
+            recoverDelaySeconds != other.recoverDelaySeconds ||
+            recoverDurationSeconds != other.recoverDurationSeconds ||
+            automaticReactions != other.automaticReactions ||
+            staggerImpulseThreshold != other.staggerImpulseThreshold ||
+            fallImpulseThreshold != other.fallImpulseThreshold || fallLandingSpeed != other.fallLandingSpeed ||
+            staggerBlendPeak != other.staggerBlendPeak || staggerRiseSeconds != other.staggerRiseSeconds ||
+            staggerDecaySeconds != other.staggerDecaySeconds ||
+            staggerFallTiltDegrees != other.staggerFallTiltDegrees ||
+            getUpFaceUpTrigger != other.getUpFaceUpTrigger || getUpFaceDownTrigger != other.getUpFaceDownTrigger ||
             bones.size() != other.bones.size()) {
             return false;
         }
@@ -258,11 +322,11 @@ struct Ragdoll3DObjectDefinition final {
 void ApplyRagdoll3DObjectDefinition(IEntityManager& entityManager, Entity entity,
                                        const Ragdoll3DObjectDefinition& value);
 
-/// Applies a performance / fidelity preset (`DesktopAAA`, `MobileBalanced`, `MobileFast`) onto
+/// Applies a performance / fidelity preset (`High`, `Balanced`, `Fast`) onto
 /// `ragdoll`'s substep cap, solver iteration counts, self-collision, and dynamic pushback flags.
 void ApplyRagdollQualityPreset(Ragdoll3DComponent& ragdoll, RagdollQualityPreset preset) noexcept;
 
-/// Standard humanoid profile entry matched against lowercased bone names (Mixamo, UE5, VRM/Unity,
+/// Standard humanoid profile entry matched against lowercased bone names (Mixamo, VRM,
 /// Blender, and generic DCC conventions).
 struct HumanoidRagdollProfileEntry final {
     std::string_view pattern;
@@ -336,6 +400,30 @@ bool TrimRagdollBonesToCap(std::vector<RagdollBoneSetup>& bones);
 /// and computes a grounded root position and yaw-aligned upright facing rotation for Get-Up clips.
 [[nodiscard]] bool EvaluateRagdollGetUpState(IEntityManager& entityManager, Entity entity,
                                                 RagdollGetUpState& outState, float floorYOffset = 0.0F);
+
+/// Starts standing the body back up: the current fallen pose blends into the pose it was simulated from (or
+/// into the live animation when the simulation was started by gameplay) over `recoverDurationSeconds`, with
+/// the bodies following the pose so the colliders stand up with the mesh. The ragdoll returns to
+/// `Kinematic` when it is done (an editor preview ends there). False when nothing is simulating.
+[[nodiscard]] bool BeginRagdollRecovery(IEntityManager& entityManager, Entity entity);
+
+/// Hands the skeleton back to the animation at once (no blend): the ragdoll returns to `Kinematic`. False
+/// when it was not simulating.
+[[nodiscard]] bool DeactivateRagdoll(IEntityManager& entityManager, Entity entity);
+
+/// The entity `driveEntityTransform` moves for the skeleton: its nearest ancestor-or-self that has a transform and
+/// holds a mesh in its subtree. `kInvalidEntity` when no mesh shares a parent with the skeleton.
+[[nodiscard]] Entity ResolveRagdollDriveTarget(IEntityManager& entityManager, Entity skeleton);
+
+/// A light hit: the physics takes over for a moment (`Active` mode, an envelope that rises then fades by
+/// `staggerBlendPeak` / `staggerRiseSeconds` / `staggerDecaySeconds`) and the body returns to the animation on
+/// its own; if it tilts past `staggerFallTiltDegrees` it falls instead. `strength` in [0, 1] scales the peak.
+/// False when the ragdoll is already simulating or blending out.
+[[nodiscard]] bool StaggerRagdoll(IEntityManager& entityManager, Entity entity, float strength = 1.0F);
+
+/// True while the ragdoll is simulating or blending out, i.e. there is a fall to recover from or a recovery
+/// in progress.
+[[nodiscard]] bool IsRagdollActive(const IEntityManager& entityManager, Entity entity);
 
 /// Captures a pose snapshot and enters `RagdollMode::BlendingOut`, smoothly blending from the
 /// simulated ragdoll pose back into the live animated / Get-Up pose over `blendDurationSeconds`.
