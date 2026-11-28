@@ -46,4 +46,8 @@ struct CompileResult final {
 /// the same things gives the same fingerprint. Native code is looked up by it.
 [[nodiscard]] std::uint64_t GetProgramFingerprint(const Program& program);
 
+/// The same hash with every instruction's source position left out: two programs that run the same code give the
+/// same value however they were written down (text lines or graph node ids).
+[[nodiscard]] std::uint64_t GetProgramShapeFingerprint(const Program& program);
+
 } // namespace UVE::Blueprint

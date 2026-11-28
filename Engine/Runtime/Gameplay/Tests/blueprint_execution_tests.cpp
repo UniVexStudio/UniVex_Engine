@@ -1,8 +1,10 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
+#include <algorithm>
 #include <cstdint>
 #include <filesystem>
 #include <memory>
+#include <optional>
 #include <set>
 #include <string>
 #include <utility>
@@ -39,6 +41,7 @@
 #include "transform_component.h"
 #include "ragdoll_3d.h"
 #include "blueprint_compiler.h"
+#include "blueprint_graph_lowering.h"
 #include "blueprint_instance.h"
 #include "blueprint_object_host.h"
 
@@ -87,6 +90,28 @@ protected:
         return entity;
     }
 
+    /// Compiles `blueprint` through the text path and through the direct path and demands the same outcome: the same
+    /// problems and diagnostics and, when it compiles, the same code (instruction positions aside).
+    void ExpectDirectMatchesText(Core::BlueprintObjectHost& host, const BlueprintAsset& blueprint, const std::string& what) {
+        const Asset::BlueprintTranslation translated = Asset::TranslateBlueprintToUVScript(blueprint, "BP_Test", "Character3D");
+        const Blueprint::CompileResult text = Blueprint::CompileUVScriptSource(translated.source, host);
+        const Asset::BlueprintCompilation direct = Asset::CompileBlueprintGraph(blueprint, "BP_Test", "Character3D", host);
+        EXPECT_EQ(direct.problems, translated.problems) << what;
+        ASSERT_EQ(direct.result.program != nullptr, text.program != nullptr) << what << "\n" << translated.source;
+        std::vector<std::string> textMessages;
+        std::vector<std::string> directMessages;
+        for (const Blueprint::Diagnostic& diagnostic : text.diagnostics) textMessages.push_back(diagnostic.message);
+        for (const Blueprint::Diagnostic& diagnostic : direct.result.diagnostics) directMessages.push_back(diagnostic.message);
+        std::ranges::sort(textMessages);
+        std::ranges::sort(directMessages);
+        EXPECT_EQ(directMessages, textMessages) << what;
+        if (text.program != nullptr && direct.result.program != nullptr) {
+            EXPECT_EQ(Blueprint::GetProgramShapeFingerprint(*direct.result.program),
+                      Blueprint::GetProgramShapeFingerprint(*text.program))
+                << what << ": the direct path built different code\n" << translated.source;
+        }
+    }
+
     /// Translates and compiles; every diagnostic fails the test with the source around it.
     void ExpectCompiles(const BlueprintAsset& blueprint, const std::string& what) {
         const Entity entity = MakeEverything();
@@ -99,6 +124,8 @@ protected:
         for (const Blueprint::Diagnostic& d : result.diagnostics) {
             ADD_FAILURE() << what << " line " << d.at.line << ": " << d.message << "\n" << translated.source;
         }
+        // Every graph a test compiles is also compiled straight from the graph, and must come out the same.
+        ExpectDirectMatchesText(host, blueprint, what);
     }
 
     /// A graph made to run: its host (with `services`), its program and a running instance.
@@ -133,47 +160,75 @@ protected:
     }
 };
 
+/// A small graph that uses `type` the way the editor would: an event reaching it, or its value stored in a variable.
+/// Empty for the variable nodes, which have their own test.
+[[nodiscard]] std::optional<BlueprintAsset> PaletteGraph(const Asset::BlueprintNodeType& type) {
+    BlueprintAsset blueprint;
+    const auto node = [](const std::uint32_t id, const std::string& key, const std::string& variable = "") {
+        BlueprintNode made;
+        made.id = id;
+        made.type = key;
+        made.variable = variable;
+        return made;
+    };
+    if (type.role == BlueprintNodeRole::Event) {
+        blueprint.nodes = {node(1U, type.key)};
+        return blueprint;
+    }
+    if (type.role == BlueprintNodeRole::GetVariable || type.role == BlueprintNodeRole::SetVariable) {
+        return std::nullopt;
+    }
+    blueprint.nodes.push_back(node(1U, "event_tick"));
+    // An array input is wired from a variable of its type (Add, Remove and Clear change it in place).
+    const std::uint32_t arrayPin = type.role == BlueprintNodeRole::Pure ? 0U : 1U;
+    const bool takesArray = arrayPin < type.inputs.size() && Asset::IsBlueprintArrayType(type.inputs[arrayPin].type);
+    if (takesArray) {
+        blueprint.variables.push_back({"items", type.inputs[arrayPin].type, "", false});
+        blueprint.nodes.push_back(node(9U, "get_variable", "items"));
+        blueprint.wires.push_back(BlueprintWire{9U, 0U, 2U, arrayPin});
+    }
+    const bool needsObject = type.key == "hide_object" || type.key == "show_object" || type.key == "is_valid" ||
+                             type.key == "ui_add_to_viewport";
+    if (type.role == BlueprintNodeRole::Pure) {
+        // Its first output stored in a variable of that type.
+        blueprint.variables.push_back({"result", type.outputs.front().type, "", false});
+        blueprint.nodes.push_back(node(2U, type.key));
+        blueprint.nodes.push_back(node(3U, "set_variable", "result"));
+        blueprint.wires.push_back(BlueprintWire{1U, 0U, 3U, 0U});
+        blueprint.wires.push_back(BlueprintWire{2U, 0U, 3U, 1U});
+    } else {
+        blueprint.nodes.push_back(node(2U, type.key));
+        blueprint.wires.push_back(BlueprintWire{1U, 0U, 2U, 0U});
+        if (needsObject) {
+            BlueprintNode find = node(3U, "find_object");
+            find.inputValues = {"Door"};
+            blueprint.nodes.push_back(find);
+            blueprint.wires.push_back(BlueprintWire{3U, 0U, 2U, 1U});
+        }
+    }
+    return blueprint;
+}
+
 TEST_F(BlueprintTest, EveryNodeOfThePaletteTranslatesToUVScriptThatCompiles) {
     for (const Asset::BlueprintNodeType& type : Asset::GetBlueprintNodeTypes()) {
-        BlueprintAsset blueprint;
-        if (type.role == BlueprintNodeRole::Event) {
-            blueprint.nodes = {Node(1U, type.key)};
-            ExpectCompiles(blueprint, type.key);
-            continue;
+        const std::optional<BlueprintAsset> blueprint = PaletteGraph(type);
+        if (blueprint.has_value()) {
+            ExpectCompiles(*blueprint, type.key);
         }
-        if (type.role == BlueprintNodeRole::GetVariable || type.role == BlueprintNodeRole::SetVariable) {
-            continue;   // the next test
-        }
-        blueprint.nodes.push_back(Node(1U, "event_tick"));
-        // An array input is wired from a variable of its type (Add, Remove and Clear change it in place).
-        const std::uint32_t arrayPin = type.role == BlueprintNodeRole::Pure ? 0U : 1U;
-        const bool takesArray = arrayPin < type.inputs.size() && Asset::IsBlueprintArrayType(type.inputs[arrayPin].type);
-        if (takesArray) {
-            blueprint.variables.push_back({"items", type.inputs[arrayPin].type, "", false});
-            blueprint.nodes.push_back(Node(9U, "get_variable", "items"));
-            blueprint.wires.push_back(BlueprintWire{9U, 0U, 2U, arrayPin});
-        }
-        const bool needsObject = type.key == "hide_object" || type.key == "show_object" || type.key == "is_valid" ||
-                                 type.key == "ui_add_to_viewport";
-        if (type.role == BlueprintNodeRole::Pure) {
-            // Its first output stored in a variable of that type.
-            blueprint.variables.push_back({"result", type.outputs.front().type, "", false});
-            blueprint.nodes.push_back(Node(2U, type.key));
-            blueprint.nodes.push_back(Node(3U, "set_variable", "result"));
-            blueprint.wires.push_back(BlueprintWire{1U, 0U, 3U, 0U});
-            blueprint.wires.push_back(BlueprintWire{2U, 0U, 3U, 1U});
-        } else {
-            blueprint.nodes.push_back(Node(2U, type.key));
-            blueprint.wires.push_back(BlueprintWire{1U, 0U, 2U, 0U});
-            if (needsObject) {
-                BlueprintNode find = Node(3U, "find_object");
-                find.inputValues = {"Door"};
-                blueprint.nodes.push_back(find);
-                blueprint.wires.push_back(BlueprintWire{3U, 0U, 2U, 1U});
-            }
-        }
-        ExpectCompiles(blueprint, type.key);
     }
+}
+
+TEST_F(BlueprintTest, DirectCompileMatchesTheTextPathForEveryNodeOfThePalette) {
+    const Entity entity = MakeEverything();
+    Core::BlueprintObjectHost host{entityManager, nullptr, entity};
+    std::size_t checked = 0U;
+    for (const Asset::BlueprintNodeType& type : Asset::GetBlueprintNodeTypes()) {
+        const std::optional<BlueprintAsset> blueprint = PaletteGraph(type);
+        if (!blueprint.has_value()) continue;
+        ExpectDirectMatchesText(host, *blueprint, type.key);
+        ++checked;
+    }
+    EXPECT_GT(checked, 300U);
 }
 
 TEST_F(BlueprintTest, EveryNodeHasItsOwnTitleAndKey) {

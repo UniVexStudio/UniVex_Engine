@@ -1612,6 +1612,15 @@ std::uint64_t GetProgramFingerprint(const Program& program) {
     return program.fingerprint;
 }
 
+std::uint64_t GetProgramShapeFingerprint(const Program& program) {
+    Program copy = program;
+    for (Instruction& instruction : copy.init.code) instruction.line = 0U;
+    for (Chunk& chunk : copy.functions) {
+        for (Instruction& instruction : chunk.code) instruction.line = 0U;
+    }
+    return ComputeProgramFingerprint(copy);
+}
+
 std::uint64_t ComputeProgramFingerprint(const Program& program) {
     // FNV-1a over a plain serialization; stable across runs and builds.
     // Kept local deliberately: this module is standard-library-only by design, and linking
