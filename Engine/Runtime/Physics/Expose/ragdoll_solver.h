@@ -39,14 +39,14 @@ inline constexpr float kRagdollFixedStepSeconds = 1.0F / 240.0F;
 /// simulation time slips against wall-clock for one frame instead.
 inline constexpr std::uint32_t kMaximumRagdollSubsteps = 8U;
 
-/// Velocity iterations per fixed step. Sequential impulses converge on joint chains slowly; 8 is the
-/// point where a 19-body humanoid at a 4:1 mass ratio stops visibly stretching, and a ninth gains
-/// less than it costs.
-inline constexpr std::size_t kRagdollDefaultVelocityIterations = 8U;
+/// Velocity iterations per fixed step. Sequential impulses converge on joint chains slowly, and a whole
+/// body with fingers is a chain of chains: at 8 iterations a 52-body human left its joints 8 cm apart and
+/// never settled, at 16 the drift is under a millimetre. The cost is a few microseconds per step.
+inline constexpr std::size_t kRagdollDefaultVelocityIterations = 16U;
 /// Position iterations. This is the common "Enable Linear/Angular Projection" and it is a different
 /// mechanism from the velocity solve: it moves bodies back onto the joint AFTER integration, so it
 /// removes drift without injecting energy into the velocity state.
-inline constexpr std::size_t kRagdollDefaultPositionIterations = 4U;
+inline constexpr std::size_t kRagdollDefaultPositionIterations = 8U;
 
 /// Penetration allowed to persist, in metres. Two millimetres: below the threshold where a capsule
 /// visibly sinks into a floor, above the depth where contact jitter would keep a resting ragdoll
@@ -56,9 +56,22 @@ inline constexpr float kRagdollContactSlop = 0.002F;
 inline constexpr float kRagdollContactCorrectionAlpha = 0.8F;
 /// Bodies slower than this for longer than the sleep delay are put to sleep. A dead body that is
 /// still being integrated costs the same as a live one, and a settled ragdoll is usually a corpse.
-inline constexpr float kRagdollSleepLinearSpeed = 0.05F;
-inline constexpr float kRagdollSleepAngularSpeed = 0.2F;
+/// A lying body keeps creeping at a few centimetres per second while its limbs settle; these limits sit
+/// above that creep so it comes to rest (and can stand back up) instead of staying awake forever.
+inline constexpr float kRagdollSleepLinearSpeed = 0.2F;
+inline constexpr float kRagdollSleepAngularSpeed = 1.0F;
 inline constexpr float kRagdollSleepDelaySeconds = 0.5F;
+/// Bodies this light or lighter are detail (fingers, toes). They spin and twitch at speeds that say nothing
+/// about whether the body has settled, so they do not take part in the sleep decision and they never
+/// collide with the rest of their own ragdoll.
+inline constexpr float kRagdollDetailBodyMass = 0.2F;
+/// Extra damping, per second, on a body that touches the world. A capsule on a floor has nothing to stop
+/// it rolling or creeping, so without this a lying ragdoll never settles; this is rolling and sliding
+/// resistance, and it only acts while there is contact.
+inline constexpr float kRagdollContactAngularDamping = 8.0F;
+/// Time constant, in seconds, of the smoothing applied to body speeds before the sleep test.
+inline constexpr float kRagdollSleepSmoothingSeconds = 0.15F;
+inline constexpr float kRagdollContactLinearDamping = 3.5F;
 
 /// A joint's freedom about one rotational axis.
 ///
@@ -428,6 +441,8 @@ private:
     std::array<RagdollBody, kMaximumRagdollBodies> m_bodies{};
     std::array<Math::Vector3, kMaximumRagdollBodies> m_effectiveInverseInertiaLocal{};
     std::array<std::uint64_t, kMaximumRagdollBodies> m_selfCollisionMask{};
+    /// Bodies that touched the world on this step (bit per body): they get contact damping.
+    std::uint64_t m_worldContactMask = 0U;
     std::size_t m_bodyCount = 0U;
     std::array<RagdollJoint, kMaximumRagdollJoints> m_joints{};
     std::size_t m_jointCount = 0U;
@@ -438,6 +453,11 @@ private:
     /// value that cannot change mid-step.
     float m_lastStepSeconds = kRagdollFixedStepSeconds;
     float m_sleepTimer = 0.0F;
+    /// Exponentially smoothed fastest linear and angular body speeds, the numbers the sleep test reads: a
+    /// one-step spike in one body must not restart the rest timer of a body that has settled.
+    /// Negative until the first sample, which seeds them.
+    float m_smoothedLinearSpeed = -1.0F;
+    float m_smoothedAngularSpeed = -1.0F;
     bool m_sleeping = false;
 };
 

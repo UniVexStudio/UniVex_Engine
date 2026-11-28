@@ -1518,6 +1518,9 @@ template <typename VectorT>
             {"rootDriveAngularDamping", value.rootDriveAngularDamping},
             {"rootDriveMaxAngularTorque", value.rootDriveMaxAngularTorque},
             {"partialRootBoneName", value.partialRootBoneName},
+            {"autoRecover", value.autoRecover},
+            {"recoverDelaySeconds", value.recoverDelaySeconds},
+            {"recoverDurationSeconds", value.recoverDurationSeconds},
             {"layerMask", value.filter.layerMask},
             {"enabled", value.enabled}};
 }
@@ -1592,6 +1595,9 @@ template <typename VectorT>
     value.rootDriveAngularDamping = json.value("rootDriveAngularDamping", value.rootDriveAngularDamping);
     value.rootDriveMaxAngularTorque = json.value("rootDriveMaxAngularTorque", value.rootDriveMaxAngularTorque);
     value.partialRootBoneName = json.value("partialRootBoneName", std::string{});
+    value.autoRecover = json.value("autoRecover", value.autoRecover);
+    value.recoverDelaySeconds = json.value("recoverDelaySeconds", value.recoverDelaySeconds);
+    value.recoverDurationSeconds = json.value("recoverDurationSeconds", value.recoverDurationSeconds);
     value.filter.layerMask = json.value("layerMask", value.filter.layerMask);
     value.enabled = json.value("enabled", true);
     return value;

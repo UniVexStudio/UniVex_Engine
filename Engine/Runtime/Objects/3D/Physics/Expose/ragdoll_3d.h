@@ -179,6 +179,15 @@ struct Ragdoll3DComponent final {
     std::string partialRootBoneName;
     bool enabled = true;
 
+    // ---- Recovery (standing back up after a fall) ----
+    /// When true, a body that has come to rest stands back up on its own: after `recoverDelaySeconds` of
+    /// rest the pose blends from where it lies back to the pose it was simulated from.
+    bool autoRecover = false;
+    /// Seconds of rest before an automatic recovery begins.
+    float recoverDelaySeconds = 2.0F;
+    /// Seconds the stand-up blend takes.
+    float recoverDurationSeconds = 1.6F;
+
     // ---- Runtime, never persisted ----
     bool initialized = false;
     std::vector<RagdollBoneBinding> bindings;
@@ -195,6 +204,14 @@ struct Ragdoll3DComponent final {
     /// Why the last `InitializeRagdoll3D` did not build, in words an author can act on. Empty after
     /// a successful build. Shown by the editor instead of a generic "could not start".
     std::string lastSetupError;
+
+    /// The pose the skeleton had when the simulation took over (the animated or rest pose): what a recovery
+    /// stands back up into when there is no animation driving the skeleton (the editor preview).
+    std::vector<SkeletonBonePose> recoverTargetPose;
+    /// True when a recovery blends to `recoverTargetPose`; false when it blends to the live animation.
+    bool recoverToCapturedPose = false;
+    /// How long the body has been at rest, for `autoRecover`.
+    float restSeconds = 0.0F;
 
     /// Compares authored fields only: a running ragdoll is not a different ragdoll.
     [[nodiscard]] bool operator==(const Ragdoll3DComponent& other) const noexcept {
@@ -214,7 +231,9 @@ struct Ragdoll3DComponent final {
             rootDriveAngularStiffness != other.rootDriveAngularStiffness ||
             rootDriveAngularDamping != other.rootDriveAngularDamping ||
             rootDriveMaxAngularTorque != other.rootDriveMaxAngularTorque ||
-            partialRootBoneName != other.partialRootBoneName ||
+            partialRootBoneName != other.partialRootBoneName || autoRecover != other.autoRecover ||
+            recoverDelaySeconds != other.recoverDelaySeconds ||
+            recoverDurationSeconds != other.recoverDurationSeconds ||
             bones.size() != other.bones.size()) {
             return false;
         }
@@ -336,6 +355,16 @@ bool TrimRagdollBonesToCap(std::vector<RagdollBoneSetup>& bones);
 /// and computes a grounded root position and yaw-aligned upright facing rotation for Get-Up clips.
 [[nodiscard]] bool EvaluateRagdollGetUpState(IEntityManager& entityManager, Entity entity,
                                                 RagdollGetUpState& outState, float floorYOffset = 0.0F);
+
+/// Starts standing the body back up: the current fallen pose blends into the pose it was simulated from (or
+/// into the live animation when the simulation was started by gameplay) over `recoverDurationSeconds`, with
+/// the bodies following the pose so the colliders stand up with the mesh. The ragdoll returns to
+/// `Kinematic` when it is done (an editor preview ends there). False when nothing is simulating.
+[[nodiscard]] bool BeginRagdollRecovery(IEntityManager& entityManager, Entity entity);
+
+/// True while the ragdoll is simulating or blending out, i.e. there is a fall to recover from or a recovery
+/// in progress.
+[[nodiscard]] bool IsRagdollActive(const IEntityManager& entityManager, Entity entity);
 
 /// Captures a pose snapshot and enters `RagdollMode::BlendingOut`, smoothly blending from the
 /// simulated ragdoll pose back into the live animated / Get-Up pose over `blendDurationSeconds`.

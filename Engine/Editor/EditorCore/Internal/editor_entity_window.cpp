@@ -918,6 +918,14 @@ bool Editor::PlayEntitySimulation() {
                     ragdoll.mode = Scene::RagdollMode::Simulating;
                 }
                 ragdoll.solver.Wake();
+                // Standing back up goes to the pose the entity is simulated from: nothing animates it here.
+                if (entityManager.IsAlive(ragdoll.skeleton) &&
+                    entityManager.HasComponent<Scene::Skeleton3DComponent>(ragdoll.skeleton)) {
+                    ragdoll.recoverTargetPose = Scene::GetSkeletonCurrentPose(
+                        entityManager.GetComponent<Scene::Skeleton3DComponent>(ragdoll.skeleton));
+                    ragdoll.recoverToCapturedPose = true;
+                    ragdoll.restSeconds = 0.0F;
+                }
                 ++ragdollCount;
             } else if (ragdollError.empty()) {
                 ragdollError = ragdoll.lastSetupError;

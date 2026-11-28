@@ -384,11 +384,14 @@ bool RagdollSolver::Reset(const std::span<const RagdollBody> bodies) {
     m_bodies = {};
     m_effectiveInverseInertiaLocal = {};
     m_selfCollisionMask = {};
+    m_worldContactMask = 0U;
     m_bodyCount = 0U;
     m_joints = {};
     m_jointCount = 0U;
     m_lastContactFeedbackCount = 0U;
     m_sleepTimer = 0.0F;
+    m_smoothedLinearSpeed = -1.0F;
+    m_smoothedAngularSpeed = -1.0F;
     m_sleeping = false;
     m_lastStepSeconds = kRagdollFixedStepSeconds;
     for (const RagdollBody& authored : bodies) {
@@ -574,6 +577,8 @@ void RagdollSolver::Sleep() noexcept {
 void RagdollSolver::Wake() noexcept {
     m_sleeping = false;
     m_sleepTimer = 0.0F;
+    m_smoothedLinearSpeed = -1.0F; // re-seeded from the first sample after waking
+    m_smoothedAngularSpeed = -1.0F;
 }
 
 float RagdollSolver::EffectiveInverseMass(const std::size_t bodyIndex) const noexcept {
@@ -727,8 +732,13 @@ void RagdollSolver::IntegrateVelocities(const Math::Vector3& gravity,
         const float invMass = EffectiveInverseMass(index);
         if (!(invMass > 0.0F) && Math::LengthSquared(m_effectiveInverseInertiaLocal[index]) <= 0.0F) continue;
         if (body.gravityEnabled && invMass > 0.0F) body.linearVelocity += gravity * deltaTimeSeconds;
-        const float linearFactor = 1.0F / (1.0F + std::max(0.0F, body.linearDamping) * deltaTimeSeconds);
-        const float angularFactor = 1.0F / (1.0F + std::max(0.0F, body.angularDamping) * deltaTimeSeconds);
+        const bool touching = (m_worldContactMask & (std::uint64_t{1U} << index)) != 0U;
+        const float linearFactor =
+            1.0F / (1.0F + (std::max(0.0F, body.linearDamping) + (touching ? kRagdollContactLinearDamping : 0.0F)) *
+                               deltaTimeSeconds);
+        const float angularFactor =
+            1.0F / (1.0F + (std::max(0.0F, body.angularDamping) + (touching ? kRagdollContactAngularDamping : 0.0F)) *
+                               deltaTimeSeconds);
         body.linearVelocity = body.linearVelocity * linearFactor;
         body.angularVelocity = body.angularVelocity * angularFactor;
     }
@@ -1324,21 +1334,41 @@ void RagdollSolver::UpdateSleep(const float deltaTimeSeconds,
         m_sleepTimer = 0.0F;
         return;
     }
-    float maximumLinearSquared = 0.0F;
-    float maximumAngularSquared = 0.0F;
+    // A mass-weighted average of body speeds decides, not the single fastest body: one forearm creeping at
+    // a few centimetres per second must not keep a settled ragdoll awake. Detail bodies (fingers, toes)
+    // are left out; a ragdoll made only of them is judged by all of its bodies instead.
+    float weightedLinear = 0.0F;
+    float weightedAngular = 0.0F;
+    float totalWeight = 0.0F;
     std::size_t dynamicCount = 0U;
-    for (std::size_t index = 0U; index < m_bodyCount; ++index) {
-        if (m_bodies[index].kinematic) continue;
-        ++dynamicCount;
-        maximumLinearSquared = std::max(maximumLinearSquared, Math::LengthSquared(m_bodies[index].linearVelocity));
-        maximumAngularSquared = std::max(maximumAngularSquared, Math::LengthSquared(m_bodies[index].angularVelocity));
+    for (const bool includeDetail : {false, true}) {
+        for (std::size_t index = 0U; index < m_bodyCount; ++index) {
+            if (m_bodies[index].kinematic) continue;
+            if (!includeDetail && m_bodies[index].mass <= kRagdollDetailBodyMass) continue;
+            ++dynamicCount;
+            const float weight = std::isfinite(m_bodies[index].mass) && m_bodies[index].mass > 0.0F
+                                     ? m_bodies[index].mass
+                                     : 1.0F;
+            totalWeight += weight;
+            weightedLinear += weight * Math::LengthSquared(m_bodies[index].linearVelocity);
+            weightedAngular += weight * Math::LengthSquared(m_bodies[index].angularVelocity);
+        }
+        if (dynamicCount > 0U) break;
     }
-    if (dynamicCount == 0U) {
+    if (dynamicCount == 0U || !(totalWeight > 0.0F)) {
         m_sleepTimer = 0.0F;
         return;
     }
-    if (std::sqrt(maximumLinearSquared) < settings.sleepLinearSpeed &&
-        std::sqrt(maximumAngularSquared) < settings.sleepAngularSpeed) {
+    const float meanLinearSquared = weightedLinear / totalWeight;
+    const float meanAngularSquared = weightedAngular / totalWeight;
+    if (m_smoothedLinearSpeed < 0.0F || m_smoothedAngularSpeed < 0.0F) {
+        m_smoothedLinearSpeed = std::sqrt(meanLinearSquared);
+        m_smoothedAngularSpeed = std::sqrt(meanAngularSquared);
+    }
+    const float smoothing = std::clamp(deltaTimeSeconds / kRagdollSleepSmoothingSeconds, 0.0F, 1.0F);
+    m_smoothedLinearSpeed += (std::sqrt(meanLinearSquared) - m_smoothedLinearSpeed) * smoothing;
+    m_smoothedAngularSpeed += (std::sqrt(meanAngularSquared) - m_smoothedAngularSpeed) * smoothing;
+    if (m_smoothedLinearSpeed < settings.sleepLinearSpeed && m_smoothedAngularSpeed < settings.sleepAngularSpeed) {
         m_sleepTimer += deltaTimeSeconds;
         if (m_sleepTimer >= settings.sleepDelaySeconds) Sleep();
     } else {
@@ -1361,6 +1391,12 @@ RagdollStepReport RagdollSolver::Step(const Math::Vector3& gravity, const float 
     m_lastStepSeconds = stepSeconds;
 
     PrepareEffectiveInertias(settings);
+    m_worldContactMask = 0U;
+    for (const RagdollContact& contact : contacts) {
+        if (contact.body < m_bodyCount && contact.otherBody == kInvalidRagdollBody && contact.depth > 0.0F) {
+            m_worldContactMask |= std::uint64_t{1U} << contact.body;
+        }
+    }
     IntegrateVelocities(gravity, stepSeconds);
 
     // Build combined bounded contact buffer (world contacts + optional non-adjacent self-contacts).

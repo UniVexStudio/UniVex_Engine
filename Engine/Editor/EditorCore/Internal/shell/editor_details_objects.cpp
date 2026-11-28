@@ -241,9 +241,20 @@ void EditorDetails::AddRagdollBuilder(const Scene::Entity entity) {
         m_rebuildRequested = true;
     };
 
+    auto recoverBtn = prism::make<prism::Button>("Get Up", prism::Icon::None, prism::ButtonStyle::Default);
+    recoverBtn->setTooltip("Stand the previewing ragdoll back up into the pose it started from");
+    recoverBtn->onClick = [this, entity] {
+        Scene::IEntityManager& entities = m_editor.m_services->GetEntityManager();
+        if (!Scene::BeginRagdollRecovery(entities, entity)) {
+            m_editor.m_contentStatusMessage = "Start Simulate Preview first: there is no fall to recover from.";
+        }
+        m_rebuildRequested = true;
+    };
+
     auto actionBar = prism::hbox(4.0F);
     actionBar->add(generateBtn, prism::Slot{1.0F, {}, prism::HAlign::Fill, prism::VAlign::Center});
     actionBar->add(previewBtn, prism::Slot{1.0F, {}, prism::HAlign::Fill, prism::VAlign::Center});
+    actionBar->add(recoverBtn, prism::Slot{0.0F, {}, prism::HAlign::Center, prism::VAlign::Center});
     actionBar->add(impulseBtn, prism::Slot{0.0F, {}, prism::HAlign::Center, prism::VAlign::Center});
 
     auto statusLabel = ValueLabel("-");

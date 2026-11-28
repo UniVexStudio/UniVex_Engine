@@ -924,6 +924,89 @@ TEST_F(Ragdoll3DTest, KneesAndElbowsBendTheAnatomicalWayAndRefuseTheOther) {
     EXPECT_LT(elbowBack, 12.0F) << "and is stopped when pushed backward";
 }
 
+/// Height of the named bone in world space, from the skeleton's current pose.
+[[nodiscard]] float BoneWorldHeight(const Skeleton3DComponent& skeleton, const std::string& boneName) {
+    for (std::uint32_t bone = 0U; bone < skeleton.bones.size(); ++bone) {
+        if (skeleton.bones[bone].name != boneName) continue;
+        ObjectWorldFrame frame;
+        if (TryResolveSkeletonBoneWorldFrame(skeleton, bone, ObjectWorldFrame{}, frame)) return frame.position.y;
+    }
+    return -1000.0F;
+}
+
+TEST_F(Ragdoll3DTest, GetUp_StandsTheFallenBodyBackIntoItsStartingPose) {
+    const Skeleton3DComponent mixamo = MakeFullMixamoSkeleton();
+    const Entity skeletonEntity = MakeSkeletonEntity(mixamo);
+    const Entity ragdollEntity = MakeRagdoll(skeletonEntity);
+    const float startHips = BoneWorldHeight(mixamo, "mixamorig:Hips");
+    ASSERT_TRUE(StartRagdollEditorPreview(entityManager, ragdollEntity));
+    for (int frame = 0; frame < 150; ++frame) {
+        UpdateRagdoll3DObjects(entityManager, 1.0F / 60.0F, true, 0.0F);
+    }
+    const Skeleton3DComponent& posed = entityManager.GetComponent<Skeleton3DComponent>(skeletonEntity);
+    EXPECT_LT(BoneWorldHeight(posed, "mixamorig:Hips"), startHips - 0.5F) << "it has fallen";
+
+    ASSERT_TRUE(BeginRagdollRecovery(entityManager, ragdollEntity));
+    EXPECT_EQ(entityManager.GetComponent<Ragdoll3DComponent>(ragdollEntity).mode, RagdollMode::BlendingOut);
+    // Halfway through it is neither lying down nor standing.
+    for (int frame = 0; frame < 48; ++frame) {
+        UpdateRagdoll3DObjects(entityManager, 1.0F / 60.0F, true, 0.0F);
+    }
+    const float midway = BoneWorldHeight(posed, "mixamorig:Hips");
+    EXPECT_GT(midway, 0.2F);
+    EXPECT_LT(midway, startHips - 0.1F);
+    for (int frame = 0; frame < 120; ++frame) {
+        UpdateRagdoll3DObjects(entityManager, 1.0F / 60.0F, true, 0.0F);
+    }
+    const Ragdoll3DComponent& done = entityManager.GetComponent<Ragdoll3DComponent>(ragdollEntity);
+    EXPECT_NE(done.mode, RagdollMode::BlendingOut);
+    EXPECT_FALSE(done.editorPreviewSimulating) << "the preview ends standing, so Simulate can be pressed again";
+    EXPECT_NEAR(BoneWorldHeight(posed, "mixamorig:Hips"), startHips, 0.03F);
+    EXPECT_NEAR(BoneWorldHeight(posed, "mixamorig:Head"), BoneWorldHeight(mixamo, "mixamorig:Head"), 0.05F);
+    EXPECT_NEAR(BoneWorldHeight(posed, "mixamorig:LeftFoot"), BoneWorldHeight(mixamo, "mixamorig:LeftFoot"), 0.05F);
+}
+
+TEST_F(Ragdoll3DTest, GetUp_WithoutAFallIsRefused) {
+    const Entity ragdollEntity = MakeRagdoll(MakeSkeletonEntity(MakeFullMixamoSkeleton()));
+    EXPECT_FALSE(BeginRagdollRecovery(entityManager, ragdollEntity)) << "nothing is simulating";
+    EXPECT_FALSE(IsRagdollActive(entityManager, ragdollEntity));
+}
+
+TEST_F(Ragdoll3DTest, AutoRecover_StandsUpOnItsOwnAfterTheBodyComesToRest) {
+    const Skeleton3DComponent mixamo = MakeFullMixamoSkeleton();
+    const Entity skeletonEntity = MakeSkeletonEntity(mixamo);
+    Ragdoll3DComponent setup;
+    setup.autoRecover = true;
+    setup.recoverDelaySeconds = 0.5F;
+    setup.recoverDurationSeconds = 1.0F;
+    const Entity ragdollEntity = MakeRagdoll(skeletonEntity, setup);
+    const float startHips = BoneWorldHeight(mixamo, "mixamorig:Hips");
+    ASSERT_TRUE(StartRagdollEditorPreview(entityManager, ragdollEntity));
+
+    bool fell = false;
+    bool recovered = false;
+    for (int frame = 0; frame < 60 * 20 && !recovered; ++frame) {
+        UpdateRagdoll3DObjects(entityManager, 1.0F / 60.0F, true, 0.0F);
+        const Skeleton3DComponent& posed = entityManager.GetComponent<Skeleton3DComponent>(skeletonEntity);
+        if (BoneWorldHeight(posed, "mixamorig:Hips") < startHips - 0.5F) fell = true;
+        recovered = fell && !entityManager.GetComponent<Ragdoll3DComponent>(ragdollEntity).editorPreviewSimulating;
+    }
+    EXPECT_TRUE(fell);
+    EXPECT_TRUE(recovered) << "an auto-recovering body stands back up once it has rested";
+    EXPECT_NEAR(BoneWorldHeight(entityManager.GetComponent<Skeleton3DComponent>(skeletonEntity), "mixamorig:Hips"),
+                startHips, 0.03F);
+}
+
+TEST_F(Ragdoll3DTest, RecoverySettings_AreValidated) {
+    Ragdoll3DComponent bad;
+    bad.recoverDurationSeconds = 0.0F;
+    EXPECT_FALSE(IsRagdoll3DComponentAuthoredValid(bad));
+    bad = Ragdoll3DComponent{};
+    bad.recoverDelaySeconds = -1.0F;
+    EXPECT_FALSE(IsRagdoll3DComponentAuthoredValid(bad));
+    EXPECT_TRUE(IsRagdoll3DComponentAuthoredValid(Ragdoll3DComponent{}));
+}
+
 TEST_F(Ragdoll3DTest, FullMixamoRig_PreviewStartsAndFallsOntoTheStudioFloor) {
     const Entity skeleton = MakeSkeletonEntity(MakeFullMixamoSkeleton());
     const Entity ragdollEntity = MakeRagdoll(skeleton);

@@ -122,8 +122,9 @@ constexpr std::array<HumanoidRagdollProfileEntry, 6U> kHumanoidDetailProfile{{
 }};
 
 /// Bodies at or below this mass are detail (fingers, toes): they never collide with other bodies of the
-/// same ragdoll, only with the world, so a clenched hand does not fight the wrist it hangs from.
-constexpr float kDetailBodyMassKilograms = 0.2F;
+/// same ragdoll, only with the world, so a clenched hand does not fight the wrist it hangs from, and they
+/// do not take part in the solver's sleep decision.
+constexpr float kDetailBodyMassKilograms = Physics::kRagdollDetailBodyMass;
 
 [[nodiscard]] std::string ToLowerAscii(std::string_view value) {
     std::string lowered;
@@ -449,15 +450,15 @@ void ResolveEffectiveStepSettings(const Ragdoll3DComponent& ragdoll,
         outStepSettings.stabilizeInertia = true;
         break;
     case RagdollQualityPreset::Balanced:
-        outStepSettings.velocityIterations = std::min<std::size_t>(outStepSettings.velocityIterations, 6U);
-        outStepSettings.positionIterations = std::min<std::size_t>(outStepSettings.positionIterations, 3U);
+        outStepSettings.velocityIterations = std::min<std::size_t>(outStepSettings.velocityIterations, 10U);
+        outStepSettings.positionIterations = std::min<std::size_t>(outStepSettings.positionIterations, 5U);
         outStepSettings.enableSelfCollision = ragdoll.enableSelfCollision;
         outStepSettings.stabilizeInertia = true;
         outMaxSubsteps = std::min<std::uint32_t>(outMaxSubsteps, 4U);
         break;
     case RagdollQualityPreset::Fast:
-        outStepSettings.velocityIterations = std::min<std::size_t>(outStepSettings.velocityIterations, 4U);
-        outStepSettings.positionIterations = std::min<std::size_t>(outStepSettings.positionIterations, 2U);
+        outStepSettings.velocityIterations = std::min<std::size_t>(outStepSettings.velocityIterations, 6U);
+        outStepSettings.positionIterations = std::min<std::size_t>(outStepSettings.positionIterations, 3U);
         outStepSettings.enableSelfCollision = false;
         outStepSettings.stabilizeInertia = true;
         outMaxSubsteps = std::min<std::uint32_t>(outMaxSubsteps, 2U);
@@ -801,6 +802,11 @@ bool IsRagdoll3DComponentAuthoredValid(const Ragdoll3DComponent& value) noexcept
     if (value.maxSubstepsPerFrame == 0U || value.maxSubstepsPerFrame > Physics::kMaximumRagdollSubsteps) {
         return false;
     }
+    if (!std::isfinite(value.recoverDelaySeconds) || value.recoverDelaySeconds < 0.0F ||
+        value.recoverDelaySeconds > 600.0F || !std::isfinite(value.recoverDurationSeconds) ||
+        !(value.recoverDurationSeconds > 0.0F) || value.recoverDurationSeconds > 60.0F) {
+        return false;
+    }
     for (const RagdollBoneSetup& bone : value.bones) {
         if (bone.boneName.empty()) return false;
         if (!std::isfinite(bone.mass) || bone.mass <= 0.0F) return false;
@@ -866,16 +872,16 @@ void ApplyRagdollQualityPreset(Ragdoll3DComponent& ragdoll, const RagdollQuality
         ragdoll.maxSubstepsPerFrame = Physics::kMaximumRagdollSubsteps;
         break;
     case RagdollQualityPreset::Balanced:
-        ragdoll.stepSettings.velocityIterations = 6U;
-        ragdoll.stepSettings.positionIterations = 3U;
+        ragdoll.stepSettings.velocityIterations = 10U;
+        ragdoll.stepSettings.positionIterations = 5U;
         ragdoll.stepSettings.stabilizeInertia = true;
         ragdoll.enableSelfCollision = true;
         ragdoll.enableDynamicPushback = true;
         ragdoll.maxSubstepsPerFrame = 4U;
         break;
     case RagdollQualityPreset::Fast:
-        ragdoll.stepSettings.velocityIterations = 4U;
-        ragdoll.stepSettings.positionIterations = 2U;
+        ragdoll.stepSettings.velocityIterations = 6U;
+        ragdoll.stepSettings.positionIterations = 3U;
         ragdoll.stepSettings.stabilizeInertia = true;
         ragdoll.enableSelfCollision = false;
         ragdoll.enableDynamicPushback = false;
@@ -1607,6 +1613,8 @@ bool ActivateRagdoll(IEntityManager& entityManager, const Entity entity, const R
     ragdoll.mode = mode;
     ragdoll.enabled = true;
     ragdoll.solver.Wake();
+    ragdoll.recoverToCapturedPose = false; // gameplay: a recovery stands up into the live animation
+    ragdoll.restSeconds = 0.0F;
 
     const std::size_t bodyCount = ragdoll.solver.GetBodyCount();
     for (std::size_t i = 0U; i < bodyCount; ++i) {
@@ -1735,6 +1743,22 @@ bool BeginBlendOutFromRagdoll(IEntityManager& entityManager, const Entity entity
     return true;
 }
 
+bool IsRagdollActive(const IEntityManager& entityManager, const Entity entity) {
+    if (!entityManager.IsAlive(entity) || !entityManager.HasComponent<Ragdoll3DComponent>(entity)) return false;
+    const Ragdoll3DComponent& ragdoll = entityManager.GetComponent<Ragdoll3DComponent>(entity);
+    return ragdoll.enabled && ragdoll.initialized &&
+           (ragdoll.mode == RagdollMode::Simulating || ragdoll.mode == RagdollMode::Active ||
+            ragdoll.mode == RagdollMode::BlendingOut);
+}
+
+bool BeginRagdollRecovery(IEntityManager& entityManager, const Entity entity) {
+    if (!IsRagdollActive(entityManager, entity)) return false;
+    Ragdoll3DComponent& ragdoll = entityManager.GetComponent<Ragdoll3DComponent>(entity);
+    if (ragdoll.mode == RagdollMode::BlendingOut) return true; // already standing up
+    ragdoll.restSeconds = 0.0F;
+    return BeginBlendOutFromRagdoll(entityManager, entity, ragdoll.recoverDurationSeconds);
+}
+
 bool StartRagdollEditorPreview(IEntityManager& entityManager, const Entity entity) {
     if (!entityManager.IsAlive(entity) || !entityManager.HasComponent<Ragdoll3DComponent>(entity)) {
         return false;
@@ -1757,6 +1781,10 @@ bool StartRagdollEditorPreview(IEntityManager& entityManager, const Entity entit
     const Skeleton3DComponent& skeleton = entityManager.GetComponent<Skeleton3DComponent>(ragdoll.skeleton);
     ragdoll.editorPreviewBackupPose = skeleton.pose;
     ragdoll.editorPreviewBackupMode = ragdoll.mode;
+    // A preview has no animation under it, so standing back up goes to the pose it started from.
+    ragdoll.recoverTargetPose = GetSkeletonCurrentPose(skeleton);
+    ragdoll.recoverToCapturedPose = true;
+    ragdoll.restSeconds = 0.0F;
     ragdoll.initialized = false;
     if (!InitializeRagdoll3D(entityManager, entity)) {
         ragdoll.editorPreviewBackupPose.clear();
@@ -1891,33 +1919,59 @@ std::size_t UpdateRagdoll3DObjects(IEntityManager& entityManager, const float de
             continue;
         }
 
-        // ---- Mode 2: BlendingOut (smooth Pose Snapshot -> Get-Up / live animation blend) ----
+        // ---- Mode 2: BlendingOut: the fallen pose stands back up into the target pose ----
         if (ragdoll.mode == RagdollMode::BlendingOut) {
             EnsureSkeletonPose(skeleton);
             ragdoll.blendOutElapsedSeconds += deltaTimeSeconds;
             const float duration = std::max(1.0e-4F, ragdoll.blendOutDurationSeconds);
             const float t = std::clamp(ragdoll.blendOutElapsedSeconds / duration, 0.0F, 1.0F);
-            // Smoothstep easing for natural organic get-up transition.
+            // Smoothstep easing for a natural, organic get-up.
             const float smoothT = t * t * (3.0F - 2.0F * t);
+            // The target is the pose the simulation started from (an editor preview has no animation under
+            // it), or - for gameplay - whatever the animation system just wrote into the pose this frame.
+            const bool toCaptured =
+                ragdoll.recoverToCapturedPose && ragdoll.recoverTargetPose.size() == skeleton.pose.size();
             if (ragdoll.blendOutSnapshot.valid) {
                 const std::size_t count = std::min(skeleton.pose.size(), ragdoll.blendOutSnapshot.bonePoses.size());
                 for (std::size_t i = 0U; i < count; ++i) {
+                    const SkeletonBonePose target = toCaptured ? ragdoll.recoverTargetPose[i] : skeleton.pose[i];
                     skeleton.pose[i].position =
-                        LerpVector(ragdoll.blendOutSnapshot.bonePoses[i].position, skeleton.pose[i].position, smoothT);
+                        LerpVector(ragdoll.blendOutSnapshot.bonePoses[i].position, target.position, smoothT);
                     skeleton.pose[i].rotation =
-                        SlerpQuaternion(ragdoll.blendOutSnapshot.bonePoses[i].rotation, skeleton.pose[i].rotation,
-                                           smoothT);
+                        SlerpQuaternion(ragdoll.blendOutSnapshot.bonePoses[i].rotation, target.rotation, smoothT);
+                    skeleton.pose[i].scale = target.scale;
                 }
             }
+            // The bodies stand up with the mesh, so colliders and debug capsules follow the pose.
+            SyncBodiesFromAnimatedPose(ragdoll, skeleton, skeletonFrame, deltaTimeSeconds,
+                                          /*kinematicOnlyBodies=*/false);
             ++advancedCount;
             if (t >= 1.0F) {
                 ragdoll.mode = RagdollMode::Kinematic;
                 ragdoll.blendOutSnapshot.valid = false;
+                ragdoll.recoverToCapturedPose = false;
+                ragdoll.restSeconds = 0.0F;
+                if (ragdoll.editorPreviewSimulating) {
+                    // The preview has done its job: it ends standing, so Simulate can be pressed again.
+                    ragdoll.editorPreviewSimulating = false;
+                    ragdoll.mode = ragdoll.editorPreviewBackupMode;
+                    ragdoll.editorPreviewBackupPose.clear();
+                    ragdoll.initialized = false;
+                    ragdoll.pendingSeconds = 0.0F;
+                }
             }
             continue;
         }
 
         // ---- Mode 3 & 4: Simulating (Passive) or Active (PD Motors) ----
+        // A body that has come to rest stands back up when asked to (autoRecover).
+        if (ragdoll.autoRecover && ragdoll.mode == RagdollMode::Simulating) {
+            ragdoll.restSeconds = ragdoll.solver.IsSleeping() ? ragdoll.restSeconds + deltaTimeSeconds : 0.0F;
+            if (ragdoll.restSeconds >= ragdoll.recoverDelaySeconds &&
+                BeginRagdollRecovery(entityManager, entity)) {
+                continue; // the next frame blends
+            }
+        }
         bool animatedTargetChanged = false;
         UpdatePartialAndMotorTargets(ragdoll, skeleton, skeletonFrame, deltaTimeSeconds, animatedTargetChanged);
 
