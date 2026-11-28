@@ -271,18 +271,24 @@ void ViewportSceneInteraction::ApplyOverlayState(ViewportSurface& surface,
     const univex::math::Vec3 wireColour{kColliderWireRed, kColliderWireGreen, kColliderWireBlue};
     const univex::math::Vec3 highlightColour{0.70F, 1.00F, 0.82F};
     std::vector<univex::gizmo::GizmoLine> colliderLines;
+    std::vector<bool> colliderOccluded;
     colliderLines.reserve(overlayState.colliderLines.size());
+    colliderOccluded.reserve(overlayState.colliderLines.size());
     for (const auto& line : overlayState.colliderLines) {
-        colliderLines.push_back(univex::gizmo::GizmoLine{toVec3(line.from), toVec3(line.to),
-                                                         line.highlighted ? highlightColour : wireColour,
+        const univex::math::Vec3 colour =
+            line.hasColour ? toVec3(line.colour) : (line.highlighted ? highlightColour : wireColour);
+        colliderLines.push_back(univex::gizmo::GizmoLine{toVec3(line.from), toVec3(line.to), colour,
                                                          line.highlighted ? kColliderHighlightWidthPixels
                                                                           : kColliderWireWidthPixels});
+        colliderOccluded.push_back(!line.xray);
     }
     if (overlayState.hostDrawsGizmos) {
         m_hostColliderLines = std::move(colliderLines);
+        m_hostColliderOccluded = std::move(colliderOccluded);
         renderPass.SetColliderWireframes({});
     } else {
         m_hostColliderLines.clear();
+        m_hostColliderOccluded.clear();
         renderPass.SetColliderWireframes(std::move(colliderLines));
     }
 }
@@ -481,8 +487,10 @@ void ViewportSceneInteraction::ExportViewForHost(const Editor::Editor::ViewportO
         overlayState.gizmoLines[overlayState.gizmoLines.size() - m_hostOverlayMesh.lines.size() + i].occluded = true;
     }
     append(m_hostBonesMesh);
-    for (const univex::gizmo::GizmoLine& line : m_hostColliderLines) {
-        overlayState.gizmoLines.push_back({a3(line.a), a3(line.b), a3(line.color), line.widthPx, true});
+    for (std::size_t i = 0U; i < m_hostColliderLines.size(); ++i) {
+        const univex::gizmo::GizmoLine& line = m_hostColliderLines[i];
+        const bool occluded = i < m_hostColliderOccluded.size() ? m_hostColliderOccluded[i] : true;
+        overlayState.gizmoLines.push_back({a3(line.a), a3(line.b), a3(line.color), line.widthPx, occluded});
     }
 }
 

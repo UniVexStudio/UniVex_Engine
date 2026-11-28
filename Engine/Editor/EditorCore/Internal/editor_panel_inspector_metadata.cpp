@@ -66,6 +66,8 @@
 #include "vector3.h"
 #include "bone_attachment_3d.h"
 #include "lod_group_3d.h"
+#include "ragdoll_3d.h"
+#include "scene_graph.h"
 #include "sky_3d.h"
 #include "skeleton_3d.h"
 #include "two_bone_ik_3d.h"
@@ -718,6 +720,26 @@ bool Editor::SetSelectedComponentProperty(const TypeMetadataEntry& entry,
         auto* const collider = static_cast<Scene::ColliderComponent*>(instance);
         *collider = Scene::FitColliderShape(*collider);
     }
+    if (entry.typeIndex == std::type_index(typeid(Scene::Ragdoll3DComponent))) {
+        auto* const ragdoll = static_cast<Scene::Ragdoll3DComponent*>(instance);
+        if (ragdoll != nullptr) {
+            if (property.name == "qualityPreset") {
+                Scene::ApplyRagdollQualityPreset(*ragdoll, ragdoll->qualityPreset);
+            }
+            if (property.name == "skeleton") {
+                ragdoll->bones.clear();
+                ragdoll->initialized = false;
+                if (ragdoll->skeleton != Scene::kInvalidEntity && entityManager.IsAlive(ragdoll->skeleton) &&
+                    entityManager.HasComponent<Scene::Skeleton3DComponent>(ragdoll->skeleton)) {
+                    const auto& skeleton = entityManager.GetComponent<Scene::Skeleton3DComponent>(ragdoll->skeleton);
+                    ragdoll->bones = Scene::BuildHumanoidRagdollBones(skeleton.bones);
+                    if (ragdoll->bones.size() < 2U) {
+                        ragdoll->bones = Scene::BuildGenericRagdollBones(skeleton.bones);
+                    }
+                }
+            }
+        }
+    }
     if (entry.isInstanceValid != nullptr && !entry.isInstanceValid(instance)) {
         // The component's own rule refuses this combination; put the prior value back.
         entry.assignInstance(instance, before.Get());
@@ -748,6 +770,18 @@ bool Editor::SetSelectedComponentProperty(const TypeMetadataEntry& entry,
         const auto* const camera = static_cast<const Scene::CameraComponent*>(instance);
         if (camera != nullptr && camera->current) {
             Scene::MakeCameraCurrent(entityManager, m_selectedEntity);
+        }
+    } else if (entry.typeIndex == std::type_index(typeid(Scene::Ragdoll3DComponent))) {
+        auto* const ragdoll = static_cast<Scene::Ragdoll3DComponent*>(instance);
+        if (ragdoll != nullptr && !ragdoll->editorPreviewSimulating &&
+            (property.name == "skeleton" || property.name == "qualityPreset" ||
+             property.name == "partialRootBoneName" || property.name == "mode" ||
+             property.name == "capsuleRadiusScale" || property.name == "capsuleLengthScale" ||
+             property.name == "boneMassScale" || property.name == "jointStiffness" ||
+             property.name == "jointDamping")) {
+            m_services->GetSceneGraph().Update(entityManager);
+            ragdoll->initialized = false;
+            static_cast<void>(Scene::InitializeRagdoll3D(entityManager, m_selectedEntity));
         }
     }
     return true;
@@ -787,6 +821,16 @@ bool Editor::PreviewSelectedComponentProperty(const TypeMetadataEntry& entry,
         // Refused by the component's own rule: keep the last accepted value on screen.
         entry.assignInstance(instance, previous.Get());
         return false;
+    }
+    if (entry.typeIndex == std::type_index(typeid(Scene::Ragdoll3DComponent))) {
+        auto* const ragdoll = static_cast<Scene::Ragdoll3DComponent*>(instance);
+        if (ragdoll != nullptr && !ragdoll->editorPreviewSimulating &&
+            (property.name == "capsuleRadiusScale" || property.name == "capsuleLengthScale" ||
+             property.name == "boneMassScale")) {
+            m_services->GetSceneGraph().Update(entityManager);
+            ragdoll->initialized = false;
+            static_cast<void>(Scene::InitializeRagdoll3D(entityManager, m_selectedEntity));
+        }
     }
     m_sceneDirty = true;
     return true;

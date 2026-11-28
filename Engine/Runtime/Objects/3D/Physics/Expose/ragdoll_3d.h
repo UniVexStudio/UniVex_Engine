@@ -4,6 +4,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -279,13 +280,23 @@ struct HumanoidRagdollProfileEntry final {
 [[nodiscard]] std::span<const HumanoidRagdollProfileEntry> GetHumanoidRagdollProfile() noexcept;
 
 /// Resolves the humanoid profile against `skeleton`'s bone names, producing one setup per matched
-/// bone in hierarchy order. Supports Mixamo, UE5 Mannequin, VRM/Unity Humanoid, and Blender naming.
+/// bone in hierarchy order.
 [[nodiscard]] std::vector<RagdollBoneSetup> BuildHumanoidRagdollBones(
     const std::vector<SkeletonBone>& skeletonBones);
 
-/// Builds the solver from the skeleton's current pose, applies Jolt-style inertia stabilization
+/// Generic structural fallback for non-humanoid, custom-named, or creature rigs where the humanoid
+/// name table finds fewer than two bones. Filters out finger/toe/face/IK helper bones and caps the
+/// result at `kMaximumRagdollBones`.
+[[nodiscard]] std::vector<RagdollBoneSetup> BuildGenericRagdollBones(
+    const std::vector<SkeletonBone>& skeletonBones);
+
+/// Builds the solver from the skeleton's current pose, applies inertia stabilization
 /// and non-adjacent self-collision pair filtering, and computes exact T/A-pose hinge axes.
 [[nodiscard]] bool InitializeRagdoll3D(IEntityManager& entityManager, Entity entity);
+
+/// Repositions a non-simulating ragdoll's debug/preview capsules to match its skeleton's current
+/// world transform and bone pose (used by Edit-mode collider visualization).
+[[nodiscard]] bool SyncRagdollBodiesToSkeletonPose(IEntityManager& entityManager, Entity entity);
 
 /// Seamlessly activates `mode` (`Simulating` or `Active`), initializing if needed, waking the
 /// solver, and inheriting per-bone linear + angular velocities from the last animated frames plus
@@ -323,7 +334,10 @@ struct HumanoidRagdollProfileEntry final {
 /// self-collision, dynamic Rigid3D pushback, PD Active Ragdoll motors, smart sleep, root position +
 /// rotation write-back, and smooth pose blending).
 /// When `editorPreviewOnly` is true, only ragdolls with `editorPreviewSimulating == true` advance.
+/// When `fallbackFloorPlaneY` is provided, an infinite studio floor plane at that Y height catches
+/// falling limbs even when no floor collider entity is present in the scene.
 std::size_t UpdateRagdoll3DObjects(IEntityManager& entityManager, float deltaTimeSeconds,
-                                      bool editorPreviewOnly = false);
+                                      bool editorPreviewOnly = false,
+                                      std::optional<float> fallbackFloorPlaneY = std::nullopt);
 
 } // namespace UVE::Scene

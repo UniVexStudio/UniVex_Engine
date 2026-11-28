@@ -35,8 +35,8 @@ public:
         prism::TreeView* tree = nullptr;
         /// The tree row of an entity, for selecting children.
         std::function<prism::TreeNode*(Scene::Entity)> nodeOf;
-        /// Opens the tree's "+ Add" picker for a child of the selection.
-        std::function<void()> addChild;
+        /// Opens the tree's "+ Add" picker for a child of the right-clicked entity.
+        std::function<void(Scene::Entity)> addChild;
     };
 
     /// Shows the menu for `entity` (already the selection: the tree selects the row it was opened

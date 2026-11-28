@@ -144,39 +144,104 @@ void EditorDetails::AddRagdollBuilder(const Scene::Entity entity) {
         return;
     }
 
+    const auto findOrLinkSkeleton = [this](Scene::IEntityManager& entities, const Scene::Entity ragEntity,
+                                           Scene::Ragdoll3DComponent& ragdoll) -> bool {
+        if (ragdoll.skeleton != Scene::kInvalidEntity && entities.IsAlive(ragdoll.skeleton) &&
+            entities.HasComponent<Scene::Skeleton3DComponent>(ragdoll.skeleton)) {
+            return true;
+        }
+        // Auto-discover the nearest Skeleton3D in this entity/document so Auto-Generate & Preview never fail silently.
+        Scene::Entity found = Scene::kInvalidEntity;
+        entities.ForEach<Scene::Skeleton3DComponent>(
+            [&found, ragEntity](const Scene::Entity candidate, const Scene::Skeleton3DComponent& skel) {
+                if (found == Scene::kInvalidEntity && candidate != ragEntity && !skel.bones.empty()) {
+                    found = candidate;
+                }
+            });
+        if (found == Scene::kInvalidEntity) {
+            entities.ForEach<Scene::Skeleton3DComponent>(
+                [&found, ragEntity](const Scene::Entity candidate, const Scene::Skeleton3DComponent&) {
+                    if (found == Scene::kInvalidEntity && candidate != ragEntity) {
+                        found = candidate;
+                    }
+                });
+        }
+        if (found == Scene::kInvalidEntity) {
+            m_editor.m_contentStatusMessage = "No Skeleton3D found — link a Skeleton3D in Ragdoll3D first.";
+            return false;
+        }
+        ragdoll.skeleton = found;
+        return true;
+    };
+
+    const auto ensureBonesGenerated = [this](Scene::IEntityManager& entities, Scene::Ragdoll3DComponent& ragdoll,
+                                             const bool forceRegenerate) -> bool {
+        if (ragdoll.skeleton == Scene::kInvalidEntity || !entities.IsAlive(ragdoll.skeleton) ||
+            !entities.HasComponent<Scene::Skeleton3DComponent>(ragdoll.skeleton)) {
+            return false;
+        }
+        const auto& skel = entities.GetComponent<Scene::Skeleton3DComponent>(ragdoll.skeleton);
+        if (skel.bones.empty()) {
+            m_editor.m_contentStatusMessage = "The linked Skeleton3D has no bones yet — assign a rigged Source model first.";
+            return false;
+        }
+        if (forceRegenerate || ragdoll.bones.empty()) {
+            ragdoll.bones = Scene::BuildHumanoidRagdollBones(skel.bones);
+            if (ragdoll.bones.size() < 2U) {
+                ragdoll.bones = Scene::BuildGenericRagdollBones(skel.bones);
+            }
+        }
+        return !ragdoll.bones.empty();
+    };
+
     const int category = m_grid->addCategory("Ragdoll3D / Builder & Preview", true);
 
     auto generateBtn = prism::make<prism::Button>("Auto-Generate", prism::Icon::None, prism::ButtonStyle::Default);
-    generateBtn->setTooltip("Generate humanoid capsule bodies & joint limits from the linked Skeleton3D");
-    generateBtn->onClick = [this, entity] {
+    generateBtn->setTooltip("Generate capsule bodies & joint limits from the linked Skeleton3D (humanoid or generic rig)");
+    generateBtn->onClick = [this, entity, findOrLinkSkeleton, ensureBonesGenerated] {
         Scene::IEntityManager& entities = m_editor.m_services->GetEntityManager();
         if (!entities.IsAlive(entity) || !entities.HasComponent<Scene::Ragdoll3DComponent>(entity)) return;
         Scene::Ragdoll3DComponent& ragdoll = entities.GetComponent<Scene::Ragdoll3DComponent>(entity);
         if (ragdoll.editorPreviewSimulating) {
             static_cast<void>(Scene::StopRagdollEditorPreview(entities, entity));
         }
-        if (ragdoll.skeleton != Scene::kInvalidEntity && entities.IsAlive(ragdoll.skeleton) &&
-            entities.HasComponent<Scene::Skeleton3DComponent>(ragdoll.skeleton)) {
-            const auto& skel = entities.GetComponent<Scene::Skeleton3DComponent>(ragdoll.skeleton);
-            ragdoll.bones = Scene::BuildHumanoidRagdollBones(skel.bones);
-            ragdoll.initialized = false;
-            static_cast<void>(Scene::InitializeRagdoll3D(entities, entity));
+        if (!findOrLinkSkeleton(entities, entity, ragdoll)) return;
+        if (!ensureBonesGenerated(entities, ragdoll, /*forceRegenerate=*/true)) return;
+        m_editor.m_services->GetSceneGraph().Update(entities);
+        ragdoll.initialized = false;
+        if (Scene::InitializeRagdoll3D(entities, entity)) {
             m_selectedRagdollBoneIndex = 0U;
+            m_editor.m_selectedRagdollBoneName = ragdoll.bones.empty() ? std::string() : ragdoll.bones[0].boneName;
             m_editor.m_sceneDirty = true;
-            m_rebuildRequested = true;
+            m_editor.m_contentStatusMessage =
+                "Generated " + std::to_string(ragdoll.solver.GetBodyCount()) + " ragdoll bodies.";
         }
+        m_rebuildRequested = true;
     };
 
     auto previewBtn = prism::make<prism::Button>("Simulate Preview", prism::Icon::Play, prism::ButtonStyle::Default);
     previewBtn->setCheckable(true);
     previewBtn->setTooltip("Drop and test this ragdoll live in Edit mode; turning off restores the bind pose");
-    previewBtn->onToggle = [this, entity](const bool on) {
+    previewBtn->onToggle = [this, entity, findOrLinkSkeleton, ensureBonesGenerated](const bool on) {
         Scene::IEntityManager& entities = m_editor.m_services->GetEntityManager();
         if (!entities.IsAlive(entity) || !entities.HasComponent<Scene::Ragdoll3DComponent>(entity)) return;
+        Scene::Ragdoll3DComponent& ragdoll = entities.GetComponent<Scene::Ragdoll3DComponent>(entity);
         if (on) {
-            static_cast<void>(Scene::StartRagdollEditorPreview(entities, entity));
+            if (!findOrLinkSkeleton(entities, entity, ragdoll)) {
+                m_rebuildRequested = true;
+                return;
+            }
+            if (!ensureBonesGenerated(entities, ragdoll, /*forceRegenerate=*/false)) {
+                m_rebuildRequested = true;
+                return;
+            }
+            m_editor.m_services->GetSceneGraph().Update(entities);
+            if (!Scene::StartRagdollEditorPreview(entities, entity)) {
+                m_editor.m_contentStatusMessage = "Could not start Ragdoll3D preview — check linked Skeleton3D.";
+            }
         } else {
             static_cast<void>(Scene::StopRagdollEditorPreview(entities, entity));
+            m_editor.m_services->GetSceneGraph().Update(entities);
             static_cast<void>(Scene::InitializeRagdoll3D(entities, entity));
         }
         m_rebuildRequested = true;
@@ -184,11 +249,14 @@ void EditorDetails::AddRagdollBuilder(const Scene::Entity entity) {
 
     auto impulseBtn = prism::make<prism::Button>("Poke", prism::Icon::None, prism::ButtonStyle::Default);
     impulseBtn->setTooltip("Apply a test sideways hit impulse to the ragdoll torso during preview");
-    impulseBtn->onClick = [this, entity] {
+    impulseBtn->onClick = [this, entity, findOrLinkSkeleton, ensureBonesGenerated] {
         Scene::IEntityManager& entities = m_editor.m_services->GetEntityManager();
         if (!entities.IsAlive(entity) || !entities.HasComponent<Scene::Ragdoll3DComponent>(entity)) return;
         Scene::Ragdoll3DComponent& ragdoll = entities.GetComponent<Scene::Ragdoll3DComponent>(entity);
         if (!ragdoll.editorPreviewSimulating) {
+            if (!findOrLinkSkeleton(entities, entity, ragdoll)) return;
+            if (!ensureBonesGenerated(entities, ragdoll, /*forceRegenerate=*/false)) return;
+            m_editor.m_services->GetSceneGraph().Update(entities);
             static_cast<void>(Scene::StartRagdollEditorPreview(entities, entity));
         }
         if (ragdoll.solver.GetBodyCount() > 0U) {
@@ -197,6 +265,7 @@ void EditorDetails::AddRagdollBuilder(const Scene::Entity entity) {
             static_cast<void>(Scene::ApplyRagdollImpact(entities, entity, hitPos,
                                                            Math::Vector3{18.0F, 4.0F, -12.0F}, 1.0F));
         }
+        m_rebuildRequested = true;
     };
 
     auto actionBar = prism::hbox(4.0F);
@@ -219,11 +288,13 @@ void EditorDetails::AddRagdollBuilder(const Scene::Entity entity) {
         }
         if (auto lbl = weakStatus.lock()) {
             char buf[128];
+            const char* stateText =
+                ragdoll.editorPreviewSimulating
+                    ? "Previewing"
+                    : (ragdoll.solver.IsSleeping() ? "Sleeping" : (ragdoll.initialized ? "Ready" : "Not Built"));
             std::snprintf(buf, sizeof(buf), "%zu bodies  |  %zu joints  |  %.1f kg  |  %s",
                           ragdoll.solver.GetBodyCount(), ragdoll.solver.GetJointCount(),
-                          static_cast<double>(ragdoll.solver.GetTotalMass()),
-                          ragdoll.solver.IsSleeping() ? "Sleeping"
-                                                         : (ragdoll.initialized ? "Ready" : "Not Built"));
+                          static_cast<double>(ragdoll.solver.GetTotalMass()), stateText);
             lbl->setText(buf);
         }
     };
@@ -236,11 +307,13 @@ void EditorDetails::AddRagdollBuilder(const Scene::Entity entity) {
     // Compact Per-Bone Body & Joint Limit Inspector.
     const Scene::Ragdoll3DComponent& ragdoll = em.GetComponent<Scene::Ragdoll3DComponent>(entity);
     if (ragdoll.bones.empty()) {
+        m_editor.m_selectedRagdollBoneName.clear();
         return;
     }
     if (m_selectedRagdollBoneIndex >= ragdoll.bones.size()) {
         m_selectedRagdollBoneIndex = 0U;
     }
+    m_editor.m_selectedRagdollBoneName = ragdoll.bones[m_selectedRagdollBoneIndex].boneName;
 
     std::vector<std::string> boneNames;
     boneNames.reserve(ragdoll.bones.size());
@@ -248,13 +321,92 @@ void EditorDetails::AddRagdollBuilder(const Scene::Entity entity) {
         boneNames.push_back(bone.boneName);
     }
     auto bonePicker = prism::make<prism::ComboBox>(boneNames, static_cast<int>(m_selectedRagdollBoneIndex));
-    bonePicker->onChange = [this](const int index) {
+    bonePicker->onChange = [this, entity](const int index) {
         if (index >= 0) {
             m_selectedRagdollBoneIndex = static_cast<std::size_t>(index);
+            Scene::IEntityManager& entities = m_editor.m_services->GetEntityManager();
+            if (entities.IsAlive(entity) && entities.HasComponent<Scene::Ragdoll3DComponent>(entity)) {
+                const auto& comp = entities.GetComponent<Scene::Ragdoll3DComponent>(entity);
+                if (m_selectedRagdollBoneIndex < comp.bones.size()) {
+                    m_editor.m_selectedRagdollBoneName = comp.bones[m_selectedRagdollBoneIndex].boneName;
+                }
+            }
             m_rebuildRequested = true;
         }
     };
-    m_grid->addRow(category, "Edit Bone", bonePicker, "Select a ragdoll body to tune mass, capsule size, and joint limits.");
+
+    auto addBoneBtn = prism::make<prism::Button>("+", prism::Icon::None, prism::ButtonStyle::Default);
+    addBoneBtn->setTooltip("Add another bone from the linked Skeleton3D to this ragdoll");
+    std::weak_ptr<prism::Button> weakAddBone = addBoneBtn;
+    addBoneBtn->onClick = [this, entity, weakAddBone] {
+        Scene::IEntityManager& entities = m_editor.m_services->GetEntityManager();
+        if (!entities.IsAlive(entity) || !entities.HasComponent<Scene::Ragdoll3DComponent>(entity)) return;
+        const auto& comp = entities.GetComponent<Scene::Ragdoll3DComponent>(entity);
+        if (comp.skeleton == Scene::kInvalidEntity || !entities.IsAlive(comp.skeleton) ||
+            !entities.HasComponent<Scene::Skeleton3DComponent>(comp.skeleton)) {
+            return;
+        }
+        const auto& skel = entities.GetComponent<Scene::Skeleton3DComponent>(comp.skeleton);
+        std::vector<prism::MenuItem> items;
+        for (const Scene::SkeletonBone& skelBone : skel.bones) {
+            const bool already = std::any_of(comp.bones.begin(), comp.bones.end(),
+                                             [&](const Scene::RagdollBoneSetup& b) { return b.boneName == skelBone.name; });
+            if (already || skelBone.name.empty()) continue;
+            items.push_back(prism::MenuItem::Item(skelBone.name, [this, entity, name = skelBone.name] {
+                Scene::IEntityManager& innerEm = m_editor.m_services->GetEntityManager();
+                if (!innerEm.IsAlive(entity) || !innerEm.HasComponent<Scene::Ragdoll3DComponent>(entity)) return;
+                Scene::Ragdoll3DComponent& r = innerEm.GetComponent<Scene::Ragdoll3DComponent>(entity);
+                if (r.bones.size() >= Scene::kMaximumRagdollBones) return;
+                Scene::RagdollBoneSetup setup;
+                setup.boneName = name;
+                r.bones.push_back(std::move(setup));
+                m_selectedRagdollBoneIndex = r.bones.size() - 1U;
+                m_editor.m_selectedRagdollBoneName = name;
+                if (!r.editorPreviewSimulating) {
+                    m_editor.m_services->GetSceneGraph().Update(innerEm);
+                    r.initialized = false;
+                    static_cast<void>(Scene::InitializeRagdoll3D(innerEm, entity));
+                }
+                m_editor.m_sceneDirty = true;
+                m_rebuildRequested = true;
+            }));
+        }
+        if (items.empty()) {
+            items.push_back(prism::MenuItem::Item("All skeleton bones are already in this ragdoll", {}).disabled());
+        }
+        if (auto b = weakAddBone.lock()) {
+            prism::showMenu(std::move(items), b->rect(), prism::PopupPlacement::Below);
+        }
+    };
+
+    auto removeBoneBtn = prism::make<prism::Button>("-", prism::Icon::None, prism::ButtonStyle::Default);
+    removeBoneBtn->setTooltip("Remove the selected bone collider from this ragdoll");
+    removeBoneBtn->setEnabled(ragdoll.bones.size() > 1U);
+    removeBoneBtn->onClick = [this, entity] {
+        Scene::IEntityManager& entities = m_editor.m_services->GetEntityManager();
+        if (!entities.IsAlive(entity) || !entities.HasComponent<Scene::Ragdoll3DComponent>(entity)) return;
+        Scene::Ragdoll3DComponent& comp = entities.GetComponent<Scene::Ragdoll3DComponent>(entity);
+        if (comp.bones.size() <= 1U || m_selectedRagdollBoneIndex >= comp.bones.size()) return;
+        comp.bones.erase(comp.bones.begin() + static_cast<std::ptrdiff_t>(m_selectedRagdollBoneIndex));
+        if (m_selectedRagdollBoneIndex >= comp.bones.size()) {
+            m_selectedRagdollBoneIndex = comp.bones.size() - 1U;
+        }
+        m_editor.m_selectedRagdollBoneName = comp.bones[m_selectedRagdollBoneIndex].boneName;
+        if (!comp.editorPreviewSimulating) {
+            m_editor.m_services->GetSceneGraph().Update(entities);
+            comp.initialized = false;
+            static_cast<void>(Scene::InitializeRagdoll3D(entities, entity));
+        }
+        m_editor.m_sceneDirty = true;
+        m_rebuildRequested = true;
+    };
+
+    auto boneRow = prism::hbox(4.0F);
+    boneRow->add(bonePicker, prism::Slot{1.0F, {}, prism::HAlign::Fill, prism::VAlign::Center});
+    boneRow->add(addBoneBtn, prism::Slot{0.0F, {}, prism::HAlign::Center, prism::VAlign::Center});
+    boneRow->add(removeBoneBtn, prism::Slot{0.0F, {}, prism::HAlign::Center, prism::VAlign::Center});
+    m_grid->addRow(category, "Edit Bone", boneRow,
+                   "Select a ragdoll body (highlighted gold in viewport) to tune mass, capsule size, and joint limits.");
 
     const std::size_t boneIdx = m_selectedRagdollBoneIndex;
     const Scene::RagdollBoneSetup& currentBone = ragdoll.bones[boneIdx];
@@ -271,6 +423,7 @@ void EditorDetails::AddRagdollBuilder(const Scene::Entity entity) {
             if (boneIdx >= comp.bones.size()) return;
             setter(comp.bones[boneIdx], value);
             if (!comp.editorPreviewSimulating) {
+                m_editor.m_services->GetSceneGraph().Update(entities);
                 comp.initialized = false;
                 static_cast<void>(Scene::InitializeRagdoll3D(entities, entity));
             }
@@ -316,6 +469,11 @@ void EditorDetails::AddRagdollBuilder(const Scene::Entity entity) {
         Scene::Ragdoll3DComponent& comp = entities.GetComponent<Scene::Ragdoll3DComponent>(entity);
         if (boneIdx >= comp.bones.size()) return;
         comp.bones[boneIdx].simulate = v;
+        if (!comp.editorPreviewSimulating) {
+            m_editor.m_services->GetSceneGraph().Update(entities);
+            comp.initialized = false;
+            static_cast<void>(Scene::InitializeRagdoll3D(entities, entity));
+        }
         m_editor.m_sceneDirty = true;
     };
     m_grid->addRow(category, "Simulate", simCheck);
@@ -466,11 +624,12 @@ void EditorDetails::AddSkeletonBones(const int category, const void* instance) {
     auto position = ValueLabel("-");
     auto rotation = ValueLabel("-");
     auto scale = ValueLabel("-");
-    tree->onSelect = [bones, parent, position, rotation, scale](const std::vector<prism::TreeNode*>& selected) {
+    tree->onSelect = [this, bones, parent, position, rotation, scale](const std::vector<prism::TreeNode*>& selected) {
         if (selected.empty() || selected.front()->id <= 0 || static_cast<std::size_t>(selected.front()->id) > bones.size()) {
             return;
         }
         const Scene::SkeletonBone& bone = bones[static_cast<std::size_t>(selected.front()->id - 1)];
+        m_editor.m_selectedSkeletonBone = bone.name;
         parent->setText(bone.parentIndex < 0 || static_cast<std::size_t>(bone.parentIndex) >= bones.size()
                             ? std::string("Root")
                             : bones[static_cast<std::size_t>(bone.parentIndex)].name);

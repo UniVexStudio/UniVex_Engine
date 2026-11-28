@@ -118,7 +118,7 @@ public:
 
 private:
 
-    void ShowAddMenu();
+    void ShowAddMenu(Scene::Entity explicitParent = Scene::kInvalidEntity);
     /// The command palette (Ctrl+Shift+P): every command, searchable, the recent ones first.
     void ShowCommandPalette();
     void RefreshOutliner();

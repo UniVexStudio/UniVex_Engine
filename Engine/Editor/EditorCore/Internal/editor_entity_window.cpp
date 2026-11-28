@@ -29,11 +29,14 @@
 
 
 #include "animation_sequencer_component.h"
+#include "bone_attachment_pass.h"
 #include "collider_component.h"
 #include "animation_graph_component.h"
 #include "name_component.h"
 #include "prefab_instance_component.h"
+#include "ragdoll_3d.h"
 #include "script_component.h"
+#include "spring_bone_simulator_3d.h"
 #include "blueprint_object_host.h"
 #include "blueprint_compiler.h"
 #include "blueprint_instance.h"
@@ -874,6 +877,18 @@ bool Editor::PlayEntitySimulation() {
         return false;
     }
     Scene::IEntityManager& entityManager = m_services->GetEntityManager();
+    // Stop any live Edit-mode ragdoll preview before taking the Stop-restore snapshot.
+    std::vector<Scene::Entity> previewRagdolls;
+    entityManager.ForEach<Scene::Ragdoll3DComponent>(
+        [&previewRagdolls](const Scene::Entity e, const Scene::Ragdoll3DComponent& r) {
+            if (r.editorPreviewSimulating) {
+                previewRagdolls.push_back(e);
+            }
+        });
+    for (const Scene::Entity e : previewRagdolls) {
+        static_cast<void>(Scene::StopRagdollEditorPreview(entityManager, e));
+    }
+    m_services->GetSceneGraph().Update(entityManager);
     const std::optional<Scene::SceneSnapshot> snapshot =
         m_services->GetSceneSerializer().Capture(entityManager, {root}, Asset::AssetKind::Prefab);
     if (!snapshot.has_value()) {
@@ -884,7 +899,27 @@ bool Editor::PlayEntitySimulation() {
     simulation->snapshot = *snapshot;
     simulation->dirtyBefore = m_sceneDirty;
     std::size_t failed = 0U;
+    std::size_t ragdollCount = 0U;
     for (const Scene::Entity entity : CollectEntityEditorObjects()) {
+        if (entityManager.HasComponent<Scene::Ragdoll3DComponent>(entity)) {
+            Scene::Ragdoll3DComponent& ragdoll = entityManager.GetComponent<Scene::Ragdoll3DComponent>(entity);
+            if (ragdoll.enabled && ragdoll.skeleton != Scene::kInvalidEntity &&
+                entityManager.IsAlive(ragdoll.skeleton) &&
+                entityManager.HasComponent<Scene::Skeleton3DComponent>(ragdoll.skeleton)) {
+                if (ragdoll.bones.empty()) {
+                    const auto& skel = entityManager.GetComponent<Scene::Skeleton3DComponent>(ragdoll.skeleton);
+                    ragdoll.bones = Scene::BuildHumanoidRagdollBones(skel.bones);
+                    if (ragdoll.bones.size() < 2U && !skel.bones.empty()) {
+                        ragdoll.bones = Scene::BuildGenericRagdollBones(skel.bones);
+                    }
+                }
+                ragdoll.initialized = false;
+                if (Scene::InitializeRagdoll3D(entityManager, entity)) {
+                    ragdoll.solver.Wake();
+                    ++ragdollCount;
+                }
+            }
+        }
         if (!entityManager.HasComponent<Scene::ScriptComponent>(entity)) {
             continue;
         }
@@ -930,6 +965,9 @@ bool Editor::PlayEntitySimulation() {
     m_entityEditSession->simulation = std::move(simulation);
     const std::size_t running = m_entityEditSession->simulation->scripts.size();
     m_contentStatusMessage = "Simulating: " + std::to_string(running) + (running == 1U ? " script" : " scripts") +
+                             (ragdollCount > 0U
+                                  ? ", " + std::to_string(ragdollCount) + (ragdollCount == 1U ? " ragdoll" : " ragdolls")
+                                  : std::string()) +
                              (failed > 0U ? ", " + std::to_string(failed) + " did not compile (Compile lists them)" : "") + ".";
     return true;
 }
@@ -983,6 +1021,7 @@ void Editor::TickEntitySimulation(const double deltaSeconds) {
     }
     const EntityDocumentScope scope(*this);
     Scene::IEntityManager& entityManager = m_services->GetEntityManager();
+    Scene::ISceneGraph& sceneGraph = m_services->GetSceneGraph();
     const double dt = std::min(deltaSeconds, 0.1);
     for (EntitySimulation::Script& script : m_entityEditSession->simulation->scripts) {
         if (script.instance == nullptr || !entityManager.IsAlive(script.entity)) {
@@ -995,6 +1034,15 @@ void Editor::TickEntitySimulation(const double deltaSeconds) {
         const Blueprint::Value args[] = {dt};
         static_cast<void>(script.instance->RaiseEvent("tick", args));
         script.instance->Advance(dt);
+    }
+    sceneGraph.Update(entityManager);
+    if (dt > 0.0) {
+        const float dtFloat = static_cast<float>(dt);
+        static_cast<void>(Scene::UpdateRagdoll3DObjects(entityManager, dtFloat, /*editorPreviewOnly=*/false,
+                                                        /*fallbackFloorPlaneY=*/0.0F));
+        static_cast<void>(Scene::SyncBoneAttachment3DObjects(entityManager, sceneGraph));
+        static_cast<void>(Scene::UpdateSpringBoneSimulator3DObjects(entityManager, dtFloat));
+        sceneGraph.Update(entityManager);
     }
 }
 

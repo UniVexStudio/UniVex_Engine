@@ -221,10 +221,12 @@ RagdollContactStats BuildRagdollContacts(const RagdollSolver& solver,
                                                const RagdollCollisionFilter& filter,
                                                const std::span<RagdollContact> outContacts,
                                                const std::span<const RagdollColliderMotion> colliderMotions,
-                                               const std::span<const std::size_t> candidateIndices) noexcept {
+                                               const std::span<const std::size_t> candidateIndices,
+                                               const std::optional<float> floorPlaneY) noexcept {
     RagdollContactStats stats;
     const std::size_t bodyCount = solver.GetBodyCount();
-    if (outContacts.empty() || bodyCount == 0U || colliders.empty()) return stats;
+    const bool hasFloorPlane = floorPlaneY.has_value() && std::isfinite(*floorPlaneY);
+    if (outContacts.empty() || bodyCount == 0U || (colliders.empty() && !hasFloorPlane)) return stats;
 
     const bool useCandidates = !candidateIndices.empty();
     const std::size_t loopCount = useCandidates ? candidateIndices.size() : colliders.size();
@@ -236,6 +238,38 @@ RagdollContactStats BuildRagdollContacts(const RagdollSolver& solver,
         Math::Vector3 segmentEnd{};
         ComputeRagdollCapsuleWorldSegment(body, segmentStart, segmentEnd);
         if (!Math::IsFinite(segmentStart) || !Math::IsFinite(segmentEnd)) continue;
+
+        if (hasFloorPlane) {
+            const float planeY = *floorPlaneY;
+            const auto emitFloorPoint = [&](const Math::Vector3& pt, const float depth) -> bool {
+                RagdollContact contact;
+                contact.body = static_cast<std::uint32_t>(bodyIndex);
+                contact.point = Math::Vector3{pt.x, planeY, pt.z};
+                contact.normal = Math::Vector3{0.0F, 1.0F, 0.0F};
+                contact.depth = depth;
+                contact.friction = std::clamp(body.friction, 0.0F, 1.0F);
+                contact.restitution = std::clamp(body.restitution, 0.0F, 1.0F);
+                contact.otherBody = kInvalidRagdollBody;
+                stats.hasFloorSupport = true;
+                outContacts[stats.generatedContactCount++] = contact;
+                if (stats.generatedContactCount >= outContacts.size()) {
+                    stats.truncated = true;
+                    return false;
+                }
+                return true;
+            };
+            const float depthStart = planeY - (segmentStart.y - body.radius);
+            const float depthEnd = planeY - (segmentEnd.y - body.radius);
+            if (depthStart > 0.0F && !emitFloorPoint(segmentStart, depthStart)) {
+                return stats;
+            }
+            if (depthEnd > 0.0F && Math::LengthSquared(segmentEnd - segmentStart) > 1.0e-6F &&
+                !emitFloorPoint(segmentEnd, depthEnd)) {
+                return stats;
+            }
+        }
+
+        if (colliders.empty()) continue;
 
         const Math::Vector3 bodyMin{
             std::min(segmentStart.x, segmentEnd.x) - body.radius,

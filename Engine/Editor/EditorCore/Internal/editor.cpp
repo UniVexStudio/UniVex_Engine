@@ -3048,14 +3048,16 @@ Scene::Entity Editor::CreateDocumentSceneObject(
     // New objects join the hierarchy instead of becoming document roots, and are placed before the
     // snapshot below is taken, so undo and redo restore the same place.
     Scene::Entity parentObject = explicitParent;
+    if (parentObject == Scene::kInvalidEntity || !IsDocumentEntity(parentObject)) {
+        parentObject = ResolveNewObjectParentFor(kind);
+    }
     if (m_entityDocumentActive) {
         const Scene::Entity entityRoot = GetEntityEditorRoot();
-        if (parentObject == Scene::kInvalidEntity || !IsDocumentEntity(parentObject) ||
-            parentObject == GetDocumentSceneRoot()) {
+        if (entityRoot != Scene::kInvalidEntity &&
+            (parentObject == Scene::kInvalidEntity || !IsDocumentEntity(parentObject) ||
+             parentObject == GetDocumentSceneRoot())) {
             parentObject = entityRoot;
         }
-    } else if (parentObject == Scene::kInvalidEntity || !IsDocumentEntity(parentObject)) {
-        parentObject = ResolveNewObjectParentFor(kind);
     }
 
     const Scene::Entity entity = CreateSceneObjectEntityInternal(kind);
@@ -3078,27 +3080,43 @@ Scene::Entity Editor::CreateDocumentSceneObject(
         m_services->GetSceneGraph().SetParent(entityManager, entity, parentObject);
         InvalidateHierarchyFilterCache();
 
-        // Auto-link skeleton references for BoneAttachment3D and TwoBoneIK3D if present in hierarchy
-        Scene::Entity foundSkeleton = Scene::kInvalidEntity;
-        if (entityManager.HasComponent<Scene::Skeleton3DComponent>(parentObject)) {
-            foundSkeleton = parentObject;
-        } else {
-            for (const Scene::Entity child : m_services->GetSceneGraph().GetChildren(entityManager, parentObject)) {
-                if (entityManager.HasComponent<Scene::Skeleton3DComponent>(child)) {
-                    foundSkeleton = child;
-                    break;
-                }
+        // Auto-link skeleton references for BoneAttachment3D, IK, and Ragdoll3D across parent,
+        // ancestors, and subtree descendants (handles nested Model -> Skeleton3D hierarchies).
+        const auto findSkeletonInSubtree = [&](const Scene::Entity rootCandidate) -> Scene::Entity {
+            if (rootCandidate == Scene::kInvalidEntity || !entityManager.IsAlive(rootCandidate)) {
+                return Scene::kInvalidEntity;
             }
-            if (foundSkeleton == Scene::kInvalidEntity) {
-                for (Scene::Entity cur = parentObject, p = Scene::kInvalidEntity;
-                     cur != Scene::kInvalidEntity && TryGetDocumentParent(cur, p) && p != Scene::kInvalidEntity;
-                     cur = p) {
-                    if (entityManager.HasComponent<Scene::Skeleton3DComponent>(p)) {
-                        foundSkeleton = p;
-                        break;
+            std::vector<Scene::Entity> queue{rootCandidate};
+            constexpr std::size_t kMaxVisited = 256U;
+            for (std::size_t q = 0U; q < queue.size() && q < kMaxVisited; ++q) {
+                const Scene::Entity cur = queue[q];
+                if (cur == entity || !entityManager.IsAlive(cur)) {
+                    continue;
+                }
+                if (entityManager.HasComponent<Scene::Skeleton3DComponent>(cur)) {
+                    return cur;
+                }
+                for (const Scene::Entity child : m_services->GetSceneGraph().GetChildren(entityManager, cur)) {
+                    if (queue.size() < kMaxVisited) {
+                        queue.push_back(child);
                     }
                 }
             }
+            return Scene::kInvalidEntity;
+        };
+        Scene::Entity foundSkeleton = findSkeletonInSubtree(parentObject);
+        if (foundSkeleton == Scene::kInvalidEntity) {
+            for (Scene::Entity cur = parentObject, p = Scene::kInvalidEntity;
+                 cur != Scene::kInvalidEntity && TryGetDocumentParent(cur, p) && p != Scene::kInvalidEntity;
+                 cur = p) {
+                if (entityManager.HasComponent<Scene::Skeleton3DComponent>(p)) {
+                    foundSkeleton = p;
+                    break;
+                }
+            }
+        }
+        if (foundSkeleton == Scene::kInvalidEntity && m_entityDocumentActive) {
+            foundSkeleton = findSkeletonInSubtree(GetEntityEditorRoot());
         }
         if (foundSkeleton != Scene::kInvalidEntity) {
             if (kind == Scene::Objects::SceneObjectKind::BoneAttachment3D &&
@@ -3108,6 +3126,16 @@ Scene::Entity Editor::CreateDocumentSceneObject(
                 attachment.skeleton = foundSkeleton;
                 attachment.boneIndex = Scene::kInvalidSkeletonBoneIndex;
                 attachment.boneName.clear();
+                if (!m_selectedSkeletonBone.empty() &&
+                    entityManager.HasComponent<Scene::Skeleton3DComponent>(foundSkeleton)) {
+                    std::uint32_t selectedIdx = Scene::kInvalidSkeletonBoneIndex;
+                    if (Scene::TryFindSkeletonBoneIndex(
+                            entityManager.GetComponent<Scene::Skeleton3DComponent>(foundSkeleton),
+                            m_selectedSkeletonBone, selectedIdx)) {
+                        attachment.boneName = m_selectedSkeletonBone;
+                        attachment.boneIndex = selectedIdx;
+                    }
+                }
                 entityManager.GetComponent<Scene::BoneAttachment3DComponent>(entity) = attachment;
             } else if (kind == Scene::Objects::SceneObjectKind::TwoBoneIK3D &&
                        entityManager.HasComponent<Scene::TwoBoneIK3DComponent>(entity)) {
@@ -3131,10 +3159,18 @@ Scene::Entity Editor::CreateDocumentSceneObject(
                 entityManager.GetComponent<Scene::FullBodyIK3DComponent>(entity) = solve;
             } else if (kind == Scene::Objects::SceneObjectKind::Ragdoll3D &&
                        entityManager.HasComponent<Scene::Ragdoll3DComponent>(entity)) {
+                m_services->GetSceneGraph().Update(entityManager);
                 Scene::Ragdoll3DComponent ragdoll =
                     entityManager.GetComponent<Scene::Ragdoll3DComponent>(entity);
                 ragdoll.skeleton = foundSkeleton;
                 ragdoll.bones.clear();
+                if (entityManager.HasComponent<Scene::Skeleton3DComponent>(foundSkeleton)) {
+                    const auto& skel = entityManager.GetComponent<Scene::Skeleton3DComponent>(foundSkeleton);
+                    ragdoll.bones = Scene::BuildHumanoidRagdollBones(skel.bones);
+                    if (ragdoll.bones.size() < 2U && !skel.bones.empty()) {
+                        ragdoll.bones = Scene::BuildGenericRagdollBones(skel.bones);
+                    }
+                }
                 ragdoll.initialized = false;
                 entityManager.GetComponent<Scene::Ragdoll3DComponent>(entity) = ragdoll;
                 static_cast<void>(Scene::InitializeRagdoll3D(entityManager, entity));

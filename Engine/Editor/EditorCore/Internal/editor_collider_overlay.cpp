@@ -10,12 +10,15 @@
 // translating the result into the viewport's own layout (plain float triples, no engine math
 // types), so EditorCore keeps its documented promise of not linking the viewport module.
 
+#include <array>
 #include <cstddef>
 #include <span>
+#include <string_view>
 #include <vector>
 
 #include "editor.h"
 
+#include "hierarchy_component.h"
 #include "world_transform_component.h"
 #include "character_3d.h"
 #include "collider_3d.h"
@@ -44,12 +47,38 @@ constexpr std::size_t kMaximumOverlayLines = 16384U;
     return scratch;
 }
 
+[[nodiscard]] bool IsAncestorOrSame(const Scene::IEntityManager& entities, Scene::Entity candidate,
+                                    const Scene::Entity ancestor) noexcept {
+    if (ancestor == Scene::kInvalidEntity) {
+        return false;
+    }
+    for (std::uint32_t hops = 0U; hops < 16U && candidate != Scene::kInvalidEntity && entities.IsAlive(candidate);
+         ++hops) {
+        if (candidate == ancestor) {
+            return true;
+        }
+        if (!entities.HasComponent<Scene::HierarchyComponent>(candidate)) {
+            break;
+        }
+        const Scene::Entity parent = entities.GetComponent<Scene::HierarchyComponent>(candidate).parent;
+        if (parent == candidate) {
+            break;
+        }
+        candidate = parent;
+    }
+    return false;
+}
+
 } // namespace
 
 void Editor::BuildColliderOverlay(std::vector<ViewportColliderLine>& outLines) const {
     outLines.clear();
     Scene::IEntityManager& entities = m_services->GetEntityManager();
+    Scene::ISceneGraph& sceneGraph = m_services->GetSceneGraph();
     const Scene::Entity selected = GetSelectedEntity();
+    const bool documentSimulating =
+        m_entityDocumentActive ? (GetEntitySimulationState() == EntitySimulationState::Running)
+                               : (m_playModeState == EditorPlayModeState::Playing);
 
     if (m_viewportOverlayState.collisionShapesVisible) {
         std::vector<Physics::ColliderDebugLine>& scratch = OverlayScratch();
@@ -68,50 +97,128 @@ void Editor::BuildColliderOverlay(std::vector<ViewportColliderLine>& outLines) c
             outLines.push_back(ViewportColliderLine{{line.from.x, line.from.y, line.from.z},
                                                        {line.to.x, line.to.y, line.to.z}, false});
         }
+    }
 
-        // Draw all non-selected initialized Ragdoll3D bodies when Show Collision is enabled.
-        Physics::RagdollDebugDrawOptions bulkRagdollOptions;
-        bulkRagdollOptions.style.circleSegments = 12U;
-        bulkRagdollOptions.drawBodies = true;
-        bulkRagdollOptions.drawJointCones = false;
-        entities.ForEach<Scene::Ragdoll3DComponent>(
-            [&](const Scene::Entity entity, const Scene::Ragdoll3DComponent& ragdoll) {
-                if (entity == selected || !ragdoll.enabled || !ragdoll.initialized) return;
-                const Physics::ColliderDebugBuildResult built = Physics::BuildRagdollDebugLines(
-                    ragdoll.solver, std::span<Physics::ColliderDebugLine>{scratch.data(), scratch.size()},
-                    bulkRagdollOptions);
-                for (std::size_t i = 0U; i < built.lineCount; ++i) {
-                    const Physics::ColliderDebugLine& line = scratch[i];
-                    outLines.push_back(ViewportColliderLine{{line.from.x, line.from.y, line.from.z},
-                                                               {line.to.x, line.to.y, line.to.z}, false});
+    // Collect every Ragdoll3D that should be visualized this frame:
+    // - Selected Ragdoll3D (capsules + active-bone gold highlight + orange joint cones, always X-ray)
+    // - Ragdoll3D whose linked Skeleton3D or owning ancestor is selected (capsules, always X-ray)
+    // - Ragdoll3D running live Simulate Preview (capsules, always X-ray)
+    // - Any enabled Ragdoll3D when global "Show Collision" is active
+    std::vector<Scene::Entity> visibleRagdolls;
+    entities.ForEach<Scene::Ragdoll3DComponent>(
+        [&](const Scene::Entity entity, const Scene::Ragdoll3DComponent& ragdoll) {
+            if (!ragdoll.enabled && entity != selected) {
+                return;
+            }
+            const bool directSelected = (entity == selected);
+            const bool relatedSelected =
+                selected != Scene::kInvalidEntity &&
+                (ragdoll.skeleton == selected || IsAncestorOrSame(entities, entity, selected));
+            if (directSelected || relatedSelected || ragdoll.editorPreviewSimulating ||
+                m_viewportOverlayState.collisionShapesVisible) {
+                visibleRagdolls.push_back(entity);
+            }
+        });
+
+    bool graphUpdatedForRagdoll = false;
+    std::vector<Physics::ColliderDebugLine>& highlight = HighlightScratch();
+    for (const Scene::Entity ragdollEntity : visibleRagdolls) {
+        if (!entities.IsAlive(ragdollEntity) || !entities.HasComponent<Scene::Ragdoll3DComponent>(ragdollEntity)) {
+            continue;
+        }
+        Scene::Ragdoll3DComponent& ragdoll = entities.GetComponent<Scene::Ragdoll3DComponent>(ragdollEntity);
+        const bool directSelected = (ragdollEntity == selected);
+
+        if (!ragdoll.initialized && ragdoll.skeleton != Scene::kInvalidEntity && entities.IsAlive(ragdoll.skeleton) &&
+            entities.HasComponent<Scene::Skeleton3DComponent>(ragdoll.skeleton)) {
+            if (!graphUpdatedForRagdoll) {
+                sceneGraph.Update(entities);
+                graphUpdatedForRagdoll = true;
+            }
+            if (ragdoll.bones.empty()) {
+                const auto& skel = entities.GetComponent<Scene::Skeleton3DComponent>(ragdoll.skeleton);
+                ragdoll.bones = Scene::BuildHumanoidRagdollBones(skel.bones);
+                if (ragdoll.bones.size() < 2U && !skel.bones.empty()) {
+                    ragdoll.bones = Scene::BuildGenericRagdollBones(skel.bones);
                 }
-            });
+            }
+            static_cast<void>(Scene::InitializeRagdoll3D(entities, ragdollEntity));
+        }
+
+        if (!ragdoll.initialized || ragdoll.solver.GetBodyCount() == 0U) {
+            continue;
+        }
+
+        // Keep Edit-mode capsules aligned with the character's current transform & pose.
+        if (!ragdoll.editorPreviewSimulating && !documentSimulating) {
+            if (!graphUpdatedForRagdoll) {
+                sceneGraph.Update(entities);
+                graphUpdatedForRagdoll = true;
+            }
+            static_cast<void>(Scene::SyncRagdollBodiesToSkeletonPose(entities, ragdollEntity));
+        }
+
+        const std::size_t bodyCount = ragdoll.solver.GetBodyCount();
+        Physics::ColliderDebugStyle capsuleStyle;
+        capsuleStyle.circleSegments = directSelected ? 16U : 12U;
+
+        constexpr std::array<float, 3> kCapsuleColor{0.26F, 0.96F, 0.72F};
+        constexpr std::array<float, 3> kKinematicColor{0.48F, 0.70F, 0.96F};
+        constexpr std::array<float, 3> kActiveBoneColor{1.00F, 0.84F, 0.20F};
+        constexpr std::array<float, 3> kJointConeColor{1.00F, 0.56F, 0.18F};
+
+        for (std::size_t i = 0U; i < bodyCount; ++i) {
+            const Physics::RagdollBody& body = ragdoll.solver.GetBody(i);
+            bool isActiveBone = false;
+            bool simulateBody = true;
+            if (i < ragdoll.bindings.size()) {
+                const std::size_t setupIdx = ragdoll.bindings[i].setupIndex;
+                if (setupIdx < ragdoll.bones.size()) {
+                    const Scene::RagdollBoneSetup& setup = ragdoll.bones[setupIdx];
+                    simulateBody = setup.simulate;
+                    if (directSelected && !m_selectedRagdollBoneName.empty() &&
+                        setup.boneName == m_selectedRagdollBoneName) {
+                        isActiveBone = true;
+                    }
+                }
+            }
+            Scene::ColliderComponent capsule;
+            capsule.shapeType = Scene::ColliderShapeType::Capsule;
+            capsule.radius = body.radius;
+            capsule.height = 2.0F * (std::max(0.0F, body.halfHeight) + body.radius);
+            const Physics::ColliderDebugBuildResult built = Physics::BuildColliderDebugLines(
+                capsule, body.position, body.rotation,
+                std::span<Physics::ColliderDebugLine>{highlight.data(), highlight.size()}, capsuleStyle);
+            const std::array<float, 3> colour =
+                isActiveBone ? kActiveBoneColor : (simulateBody ? kCapsuleColor : kKinematicColor);
+            const bool thick = directSelected || isActiveBone;
+            for (std::size_t l = 0U; l < built.lineCount; ++l) {
+                const Physics::ColliderDebugLine& line = highlight[l];
+                outLines.push_back(ViewportColliderLine{{line.from.x, line.from.y, line.from.z},
+                                                           {line.to.x, line.to.y, line.to.z},
+                                                           thick, /*xray=*/true, /*hasColour=*/true, colour});
+            }
+        }
+
+        if (directSelected) {
+            Physics::RagdollDebugDrawOptions jointOptions;
+            jointOptions.style = capsuleStyle;
+            jointOptions.drawBodies = false;
+            jointOptions.drawJointCones = true;
+            const Physics::ColliderDebugBuildResult jointsBuilt = Physics::BuildRagdollDebugLines(
+                ragdoll.solver, std::span<Physics::ColliderDebugLine>{highlight.data(), highlight.size()},
+                jointOptions);
+            for (std::size_t l = 0U; l < jointsBuilt.lineCount; ++l) {
+                const Physics::ColliderDebugLine& line = highlight[l];
+                outLines.push_back(ViewportColliderLine{{line.from.x, line.from.y, line.from.z},
+                                                           {line.to.x, line.to.y, line.to.z},
+                                                           false, /*xray=*/true, /*hasColour=*/true, kJointConeColor});
+            }
+        }
     }
 
     if (selected == Scene::kInvalidEntity || !entities.IsAlive(selected)) {
         return;
-    }
-
-    // Selected Ragdoll3D: always draw highlighted capsules + 3D swing cones + hinge twist arcs
-    // (initializing lazily from its linked Skeleton3D if needed so authors see capsules immediately!).
-    if (entities.HasComponent<Scene::Ragdoll3DComponent>(selected)) {
-        const Scene::Ragdoll3DComponent& ragdoll =
-            entities.GetComponent<Scene::Ragdoll3DComponent>(selected);
-        if (ragdoll.initialized && ragdoll.solver.GetBodyCount() > 0U) {
-            std::vector<Physics::ColliderDebugLine>& highlight = HighlightScratch();
-            Physics::RagdollDebugDrawOptions selectedRagdollOptions;
-            selectedRagdollOptions.style.circleSegments = 16U;
-            selectedRagdollOptions.drawBodies = true;
-            selectedRagdollOptions.drawJointCones = true;
-            const Physics::ColliderDebugBuildResult built = Physics::BuildRagdollDebugLines(
-                ragdoll.solver, std::span<Physics::ColliderDebugLine>{highlight.data(), highlight.size()},
-                selectedRagdollOptions);
-            for (std::size_t i = 0U; i < built.lineCount; ++i) {
-                const Physics::ColliderDebugLine& line = highlight[i];
-                outLines.push_back(ViewportColliderLine{{line.from.x, line.from.y, line.from.z},
-                                                           {line.to.x, line.to.y, line.to.z}, true});
-            }
-        }
     }
 
     if (!m_viewportOverlayState.collisionShapesVisible) {
@@ -131,7 +238,6 @@ void Editor::BuildColliderOverlay(std::vector<ViewportColliderLine>& outLines) c
     }
     const Scene::WorldTransformComponent& worldTransform =
         entities.GetComponent<Scene::WorldTransformComponent>(highlighted);
-    std::vector<Physics::ColliderDebugLine>& highlight = HighlightScratch();
     Scene::ColliderDebugSceneSettings settings;
     const Physics::ColliderDebugBuildResult built = Physics::BuildColliderDebugLines(
         collider, worldTransform.worldPosition, worldTransform.worldRotation,

@@ -42,6 +42,22 @@ struct StudioSettings {
     float lineSpacing = 1.0f;
 };
 
+struct PrototypeFloorSettings {
+    StudioColor tileDark{0.155f, 0.175f, 0.210f};
+    StudioColor tileLight{0.205f, 0.230f, 0.272f};
+    StudioColor minorLine{0.255f, 0.285f, 0.335f};
+    StudioColor majorLine{0.345f, 0.390f, 0.460f};
+    StudioColor blockLine{0.470f, 0.545f, 0.655f};
+    StudioColor horizonColor{0.165f, 0.190f, 0.232f};
+    /// Minimum half-extent of the camera-following infinite floor quad in metres.
+    float floorRadius = 160.0f;
+    /// Radial distance from the camera where horizon fade starts / completes (metres).
+    float fadeStart = 18.0f;
+    float fadeEnd = 92.0f;
+    /// Size of one primary prototype checkerboard tile in metres.
+    float tileSize = 1.0f;
+};
+
 class StudioBackdropRenderer {
 public:
     StudioBackdropRenderer() = default;
@@ -56,7 +72,15 @@ public:
     [[nodiscard]] static std::optional<StudioBackdropRenderer> Create(std::string& outError);
 
     void DrawBackdrop(const univex::camera::OrbitCamera& camera, int width, int height) const;
+    void DrawBackdrop(const univex::camera::OrbitCamera& camera,
+                      int width,
+                      int height,
+                      const StudioSettings& customSettings) const;
     void DrawFloor(const univex::camera::OrbitCamera& camera, int width, int height) const;
+    void DrawPrototypeFloor(const univex::camera::OrbitCamera& camera,
+                            int width,
+                            int height,
+                            const PrototypeFloorSettings& customSettings = PrototypeFloorSettings{}) const;
 
     [[nodiscard]] StudioSettings& Settings() { return settings_; }
     [[nodiscard]] const StudioSettings& Settings() const { return settings_; }
@@ -66,6 +90,7 @@ private:
 
     ShaderProgram backdropProgram_;
     ShaderProgram floorProgram_;
+    ShaderProgram prototypeFloorProgram_;
     GLuint triangleVao_ = 0;
     GLuint triangleVbo_ = 0;
     GLuint floorVao_ = 0;

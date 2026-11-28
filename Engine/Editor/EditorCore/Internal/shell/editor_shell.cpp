@@ -670,7 +670,7 @@ prism::Ref<prism::Widget> EditorShell::BuildOutliner() {
         const Scene::Entity entity = node != nullptr ? EntityForTreeId(node->id) : Scene::kInvalidEntity;
         EditorObjectMenu::Hooks hooks;
         hooks.tree = m_outliner.get();
-        hooks.addChild = [this] { ShowAddMenu(); };
+        hooks.addChild = [this](const Scene::Entity target) { ShowAddMenu(target); };
         EditorObjectMenu::Show(m_editor, entity, node, at, hooks);
     };
     // Drag an object onto another: inside it (a child), or before / after it (a sibling).
@@ -955,12 +955,12 @@ void EditorShell::ShowCommandPalette() {
                           "Run a command");
 }
 
-void EditorShell::ShowAddMenu() {
+void EditorShell::ShowAddMenu(const Scene::Entity explicitParent) {
     // GET CONTENT, PLACE OBJECTS (a flyout per group) and RECENTLY PLACED; typing searches them all.
     // Only what a level holds: a character's parts are built in an Entity, and an entity of the
     // project (a player, a character) is offered under Basic once it is in Content.
-    const auto place = [this](const SceneObjectKind kind) {
-        static_cast<void>(m_editor.CreateDocumentSceneObject(kind));
+    const auto place = [this, explicitParent](const SceneObjectKind kind) {
+        static_cast<void>(m_editor.CreateDocumentSceneObject(kind, explicitParent));
         const int key = static_cast<int>(kind);
         m_recentKinds.erase(std::remove(m_recentKinds.begin(), m_recentKinds.end(), key), m_recentKinds.end());
         m_recentKinds.insert(m_recentKinds.begin(), key);

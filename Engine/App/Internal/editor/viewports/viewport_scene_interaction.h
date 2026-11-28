@@ -210,6 +210,7 @@ private:
     univex::gizmo::GizmoMesh m_hostOverlayMesh;
     univex::gizmo::GizmoMesh m_hostBonesMesh;
     std::vector<univex::gizmo::GizmoLine> m_hostColliderLines;
+    std::vector<bool> m_hostColliderOccluded;
     std::size_t m_hostOverlayOccludedFrom = std::numeric_limits<std::size_t>::max();
 
     float m_cachedOverlayAspect = 0.0F;
