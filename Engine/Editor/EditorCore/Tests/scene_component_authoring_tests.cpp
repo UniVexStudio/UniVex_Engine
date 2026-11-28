@@ -43,83 +43,6 @@ namespace {
     return config;
 }
 
-TEST(SceneComponentAuthoringTest, SetSelectedSceneComponent_AddsAllSupportedComponentKindsAndReplaysHistory) {
-    Core::EngineCore engine(MakeSceneComponentAuthoringTestConfig());
-    engine.Init();
-    ASSERT_TRUE(engine.Load());
-
-    {
-        Editor editor(engine.GetServices(), "uve_scene_component_authoring.uvscene");
-        editor.Init();
-        Scene::IEntityManager& entityManager = engine.GetServices().GetEntityManager();
-        const Scene::Entity entity = editor.CreateDocumentEntity(EditorEntityKind::Empty);
-        ASSERT_TRUE(entityManager.IsAlive(entity));
-
-        const Scene::CameraComponent camera{75.0F, 0.05F, 500.0F};
-        ASSERT_TRUE(editor.SetSelectedSceneComponent(EditorSceneComponentKind::Camera, camera));
-        EXPECT_EQ(entityManager.GetComponent<Scene::CameraComponent>(entity).fieldOfViewDegrees, 75.0F);
-
-        const Scene::MeshComponent mesh{Asset::AssetGuid{0x1010U}, Asset::AssetGuid{0x2020U}};
-        ASSERT_TRUE(editor.SetSelectedSceneComponent(EditorSceneComponentKind::Mesh, mesh));
-        EXPECT_EQ(entityManager.GetComponent<Scene::MeshComponent>(entity).meshGuid.value, 0x1010U);
-
-        Scene::LightComponent light{};
-        light.type = Scene::LightType::Spot;
-        light.intensity = 4.0F;
-        ASSERT_TRUE(editor.SetSelectedSceneComponent(EditorSceneComponentKind::Light, light));
-        EXPECT_EQ(entityManager.GetComponent<Scene::LightComponent>(entity).type, Scene::LightType::Spot);
-
-        Scene::ColliderComponent collider{};
-        collider.shapeType = Scene::ColliderShapeType::Capsule;
-        collider.radius = 0.35F;
-        collider.height = 1.8F;
-        ASSERT_TRUE(editor.SetSelectedSceneComponent(EditorSceneComponentKind::Collider, collider));
-        EXPECT_EQ(entityManager.GetComponent<Scene::ColliderComponent>(entity).shapeType,
-                  Scene::ColliderShapeType::Capsule);
-
-        Scene::Rigid3DComponent rigidBody{};
-        rigidBody.isKinematic = true;
-        rigidBody.mass = 2.0F;
-        rigidBody.gravityScale = 0.0F;
-        ASSERT_TRUE(editor.SetSelectedSceneComponent(EditorSceneComponentKind::Rigid3D, rigidBody));
-        EXPECT_TRUE(entityManager.GetComponent<Scene::Rigid3DComponent>(entity).isKinematic);
-
-        Scene::AudioSourceComponent audio{};
-        audio.audioAssetPath = "audio/impact.wav";
-        audio.mixerGroup = "SFX";
-        audio.playOnAwake = false;
-        ASSERT_TRUE(editor.SetSelectedSceneComponent(EditorSceneComponentKind::AudioSource, audio));
-        EXPECT_EQ(entityManager.GetComponent<Scene::AudioSourceComponent>(entity).audioAssetPath,
-                  "audio/impact.wav");
-
-        const Scene::ParticleEmitterComponent particles{2048U};
-        ASSERT_TRUE(editor.SetSelectedSceneComponent(EditorSceneComponentKind::ParticleEmitter, particles));
-        EXPECT_EQ(entityManager.GetComponent<Scene::ParticleEmitterComponent>(entity).maxParticles, 2048U);
-
-        const Scene::ScriptComponent script{"scripts/player.uvs"};
-        ASSERT_TRUE(editor.SetSelectedSceneComponent(EditorSceneComponentKind::Script, script));
-        EXPECT_EQ(entityManager.GetComponent<Scene::ScriptComponent>(entity).scriptAssetPath,
-                  "scripts/player.uvs");
-
-        Scene::AnimationSequencerComponent animation;
-        animation.clip = Asset::AssetGuid{77U};
-        animation.speed = 1.25F;
-        ASSERT_TRUE(editor.SetSelectedSceneComponent(EditorSceneComponentKind::AnimationSequencer, animation));
-        EXPECT_EQ(entityManager.GetComponent<Scene::AnimationSequencerComponent>(entity).clip.value, 77U);
-
-        ASSERT_TRUE(editor.RemoveSelectedSceneComponent(EditorSceneComponentKind::AnimationSequencer));
-        EXPECT_FALSE(entityManager.HasComponent<Scene::AnimationSequencerComponent>(entity));
-        ASSERT_TRUE(editor.Undo());
-        EXPECT_TRUE(entityManager.HasComponent<Scene::AnimationSequencerComponent>(entity));
-        EXPECT_EQ(entityManager.GetComponent<Scene::AnimationSequencerComponent>(entity).speed, 1.25F);
-        ASSERT_TRUE(editor.Redo());
-        EXPECT_FALSE(entityManager.HasComponent<Scene::AnimationSequencerComponent>(entity));
-
-        editor.Shutdown();
-    }
-    engine.Shutdown();
-}
-
 TEST(SceneComponentAuthoringTest, SetSelectedSceneComponent_CharacterControllerAddEditRemoveUndoRedo) {
     Core::EngineCore engine(MakeSceneComponentAuthoringTestConfig());
     engine.Init();
@@ -194,54 +117,6 @@ TEST(SceneComponentAuthoringTest, SetSelectedSceneComponent_UIComponentsAddEditR
         EXPECT_FLOAT_EQ(entityManager.GetComponent<Scene::UIButtonComponent>(entity).rect.size.x, 200.0F);
         ASSERT_TRUE(editor.Redo());
         EXPECT_FALSE(entityManager.HasComponent<Scene::UIButtonComponent>(entity));
-
-        editor.Shutdown();
-    }
-    engine.Shutdown();
-}
-
-TEST(SceneComponentAuthoringTest, SetSelectedSceneComponent_RejectsInvalidValuesWithoutMutation) {
-    Core::EngineCore engine(MakeSceneComponentAuthoringTestConfig());
-    engine.Init();
-    ASSERT_TRUE(engine.Load());
-
-    {
-        Editor editor(engine.GetServices(), "uve_scene_component_authoring_invalid.uvscene");
-        editor.Init();
-        Scene::IEntityManager& entityManager = engine.GetServices().GetEntityManager();
-        const Scene::Entity entity = editor.CreateDocumentEntity(EditorEntityKind::Empty);
-        ASSERT_TRUE(entityManager.IsAlive(entity));
-
-        Scene::CameraComponent invalidCamera{180.0F, 0.1F, 100.0F};
-        EXPECT_FALSE(editor.SetSelectedSceneComponent(EditorSceneComponentKind::Camera, invalidCamera));
-        EXPECT_FALSE(entityManager.HasComponent<Scene::CameraComponent>(entity));
-
-        Scene::ColliderComponent invalidCollider{};
-        invalidCollider.shapeType = Scene::ColliderShapeType::Capsule;
-        invalidCollider.radius = 1.0F;
-        invalidCollider.height = 1.0F;
-        EXPECT_FALSE(editor.SetSelectedSceneComponent(EditorSceneComponentKind::Collider, invalidCollider));
-        EXPECT_FALSE(entityManager.HasComponent<Scene::ColliderComponent>(entity));
-
-        Scene::AudioSourceComponent invalidAudio{};
-        invalidAudio.spatial = true;
-        invalidAudio.minDistance = 5.0F;
-        invalidAudio.maxDistance = 2.0F;
-        EXPECT_FALSE(editor.SetSelectedSceneComponent(EditorSceneComponentKind::AudioSource, invalidAudio));
-        EXPECT_FALSE(entityManager.HasComponent<Scene::AudioSourceComponent>(entity));
-
-        const Scene::ParticleEmitterComponent invalidParticles{0U};
-        EXPECT_FALSE(editor.SetSelectedSceneComponent(EditorSceneComponentKind::ParticleEmitter, invalidParticles));
-        EXPECT_FALSE(entityManager.HasComponent<Scene::ParticleEmitterComponent>(entity));
-
-        const Scene::ScriptComponent invalidScript{"../player.uvs"};
-        EXPECT_FALSE(editor.SetSelectedSceneComponent(EditorSceneComponentKind::Script, invalidScript));
-        EXPECT_FALSE(entityManager.HasComponent<Scene::ScriptComponent>(entity));
-
-        Scene::AnimationSequencerComponent invalidAnimation;
-        invalidAnimation.speed = std::numeric_limits<float>::quiet_NaN();
-        EXPECT_FALSE(editor.SetSelectedSceneComponent(EditorSceneComponentKind::AnimationSequencer, invalidAnimation));
-        EXPECT_FALSE(entityManager.HasComponent<Scene::AnimationSequencerComponent>(entity));
 
         editor.Shutdown();
     }

@@ -31,11 +31,9 @@ enum class ContentCatalogueAction : std::uint8_t {
     /// A `.uvanimlib` asset: an empty animation library. Like Folder, it makes a file and no
     /// entities, so its item carries no objects.
     LibraryAsset,
-    /// A `.uvs` script file.
-    ScriptAsset,
     /// A `.uvmontage` Motion Montage, empty until clips are put on its slot track.
     MontageAsset,
-    /// A `.uvmaterial` material file.
+    /// A `.uvmat` (`.uvmaterial` is still read) material file.
     MaterialAsset,
     /// A `.uvshader` custom shader file.
     ShaderAsset,

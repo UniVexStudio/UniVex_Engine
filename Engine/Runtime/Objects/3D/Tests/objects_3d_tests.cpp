@@ -1779,9 +1779,9 @@ TEST(LightAudioParticleAndScriptNodePoliciesTest, DomainRulesMatchRuntimeSystems
     // Script
     ScriptComponent script{};
     EXPECT_FALSE(Script::HasScriptPath(script));
-    script.scriptAssetPath = "scripts/player_controller.uvs";
+    script.scriptAssetPath = "scripts/player_controller.uvbp";
     EXPECT_TRUE(Script::HasScriptPath(script));
-    EXPECT_TRUE(Script::IsRunnableUVScript(script));
+    EXPECT_TRUE(Script::IsRunnableBlueprint(script));
     ASSERT_TRUE(Script::TrySetExportedProperty(script, "moveSpeed", "6.5"));
     ASSERT_NE(Script::FindExportedProperty(script, "moveSpeed"), nullptr);
     EXPECT_EQ(*Script::FindExportedProperty(script, "moveSpeed"), "6.5");

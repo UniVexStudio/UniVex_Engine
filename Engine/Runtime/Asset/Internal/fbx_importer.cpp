@@ -360,9 +360,6 @@ merged model still draws it",
     // built from what the DCC tool authored instead of from a shape the engine makes up. Written only when
     // every part it names exists; otherwise the stale one, if any, goes.
     const std::filesystem::path hierarchyPath = directory / (modelStem + ".uvhierarchy");
-    const std::filesystem::path legacyNodesPath = directory / (modelStem + ".uvnodes");
-    std::error_code cleanError;
-    std::filesystem::remove(legacyNodesPath, cleanError);
     if (allPartsPublished && bundle.hierarchyKnown && !bundle.hierarchy.empty()) {
         nlohmann::json document;
         document["version"] = 1;

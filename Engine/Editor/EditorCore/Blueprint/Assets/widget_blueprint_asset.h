@@ -21,7 +21,7 @@ inline constexpr std::string_view kWidgetBlueprintExtension = ".uvwbp";
 /// A Widget Blueprint (`.uvwbp`) is a prefab envelope - its widgets as an object tree, a Canvas at
 /// the root, loaded by the prefab system like any entity asset - whose payload also carries the
 /// widget's graph under "widgetGraph". The root Canvas's Script slot names the file itself, so
-/// the engine runs the graph (as UVScript) on the widget it was made for.
+/// the engine runs the graph (as Blueprint) on the widget it was made for.
 
 /// The graph held in a Widget Blueprint's bytes. Nothing when the file is not a prefab envelope;
 /// a widget saved without a graph answers an empty one made for a Canvas.

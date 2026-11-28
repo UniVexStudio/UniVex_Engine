@@ -33,10 +33,9 @@ class BlueprintBreakpointManager final {
 public:
     std::uint32_t AddLineBreakpoint(std::uint32_t sourceLine, std::uint32_t nodeId = 0U,
                                        std::string condition = {});
-    /// Resolves the first translated source line belonging to `nodeId` in `translation` and adds a breakpoint.
-    std::optional<std::uint32_t> AddNodeBreakpoint(std::uint32_t nodeId,
-                                                      const Asset::BlueprintTranslation& translation,
-                                                      std::string condition = {});
+    /// A breakpoint on a graph's node: a graph compiles with each instruction's position being its node's id, so the
+    /// "line" of node `nodeId` is `nodeId` itself.
+    std::optional<std::uint32_t> AddNodeBreakpoint(std::uint32_t nodeId, std::string condition = {});
     bool RemoveBreakpoint(std::uint32_t breakpointId);
     bool SetBreakpointEnabled(std::uint32_t breakpointId, bool enabled);
     bool ToggleLineBreakpoint(std::uint32_t sourceLine, std::uint32_t nodeId = 0U);
@@ -143,15 +142,16 @@ struct BlueprintDebugDiagnostic final {
     std::string message;
 };
 
-/// High-level Blueprint debugger session wrapping a VM ScriptInstance and optional source-to-node map.
+/// High-level Blueprint debugger session wrapping a VM BlueprintInstance and optional position-to-node meaning.
 class BlueprintDebugSession final {
 public:
     BlueprintDebugSession() = default;
 
     /// Attaches to `instance` (which must outlive the session or be detached before destruction).
     /// Enables VM debugging on `instance` and synchronizes configured breakpoints.
-    [[nodiscard]] bool Attach(ScriptInstance& instance,
-                                 const Asset::BlueprintTranslation* translation = nullptr);
+    /// `positionsAreNodes`: the instance runs a program compiled from a graph, whose instruction positions are
+    /// node ids (so a stop reports its node).
+    [[nodiscard]] bool Attach(BlueprintInstance& instance, bool positionsAreNodes = false);
     void Detach() noexcept;
     [[nodiscard]] bool IsAttached() const noexcept { return m_instance != nullptr; }
 
@@ -185,8 +185,8 @@ private:
     void RecordResumeResult(BlueprintTraceEventKind actionKind, const ScriptDebugResumeResult& result);
     void RefreshCallStackFromSnapshot(const ScriptDebugSnapshot& snapshot);
 
-    ScriptInstance* m_instance = nullptr;
-    const Asset::BlueprintTranslation* m_translation = nullptr;
+    BlueprintInstance* m_instance = nullptr;
+    bool m_positionsAreNodes = false;
     BlueprintBreakpointManager m_breakpoints;
     std::vector<std::string> m_watchExpressions;
     BlueprintExecutionTrace m_trace;

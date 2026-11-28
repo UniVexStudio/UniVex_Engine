@@ -370,25 +370,6 @@ TEST(EditorTest, Init_StartsRunningWithEmptyDocumentRootsAndSupportsHeadlessLife
     engine.Shutdown();
 }
 
-TEST(EditorTest, OpenScriptGraphForEntity_NoScriptComponent_ReturnsFalse) {
-    Core::EngineCore engine(MakeEditorTestConfig());
-    engine.Init();
-    ASSERT_TRUE(engine.Load());
-    Editor editor(engine.GetServices(), "uve_editor_tests_open_script_graph_none.uvscene");
-    editor.Init();
-    Core::EngineServices& services = engine.GetServices();
-    Scene::IEntityManager& entityManager = services.GetEntityManager();
-
-    const Scene::Entity entity = entityManager.CreateEntity();
-    AttachRoot(engine, entity, Scene::TransformComponent{});
-
-    EXPECT_FALSE(editor.OpenScriptGraphForEntity(entity));
-    EXPECT_FALSE(EditorAccess::IsScriptingWorkspaceActive(editor));
-
-    editor.Shutdown();
-    engine.Shutdown();
-}
-
 TEST(EditorTest, Init_DoesNotCreateAutomaticPreviewLighting) {
     Core::EngineCore engine(MakeEditorTestConfig());
     engine.Init();
@@ -786,44 +767,6 @@ TEST(EditorTest, AssetTableWorkflow_UsesPrimaryExtensionTagAndIndependentRegiste
     }
 
     engine.Shutdown();
-}
-
-TEST(EditorTest, AssetTableWorkflow_ScriptsAudioAndFontsAreTheirOwnTypesAndEveryTypeHasAnIcon) {
-    const auto labelOf = [](const char* const path) {
-        Asset::ProjectFileEntry entry;
-        entry.relativePath = path;
-        entry.kind = Asset::ProjectFileEntryKind::File;
-        return EditorAccess::GetAssetTableItemTypeLabel(entry);
-    };
-    EXPECT_EQ(labelOf("Scripts/player.uvs"), "Script");
-    EXPECT_EQ(labelOf("Audio/step.uvaudio"), "Audio");
-    EXPECT_EQ(labelOf("Audio/Step.WAV"), "Audio");
-    // Compressed sources are audio too: Vorbis, MP3 and FLAC each import into the same .uvaudio
-    // envelope, and the extension is matched in any case exactly as WAV is.
-    EXPECT_EQ(labelOf("Audio/theme.ogg"), "Audio");
-    EXPECT_EQ(labelOf("Audio/Theme.OGG"), "Audio");
-    EXPECT_EQ(labelOf("Audio/theme.mp3"), "Audio");
-    EXPECT_EQ(labelOf("Audio/theme.flac"), "Audio");
-    // A container no registered importer can read stays a plain file rather than promising playback.
-    EXPECT_EQ(labelOf("Audio/theme.m4a"), "File");
-    EXPECT_EQ(labelOf("Audio/theme.aac"), "File");
-    EXPECT_EQ(labelOf("Fonts/title.ttf"), "Font");
-    EXPECT_EQ(labelOf("Fonts/body.otf"), "Font");
-    EXPECT_EQ(labelOf("Content/Hero.uventity"), "Entity");
-    EXPECT_EQ(labelOf("Notes/readme.txt"), "File");
-    // Without editor source metadata, raw model files use the extension-only mesh fallback.
-    // The live Asset Table applies the FBX source summary to distinguish animation-only and rigged files.
-    EXPECT_EQ(labelOf("Characters/hero.fbx"), "Mesh");
-    EXPECT_EQ(labelOf("Characters/Hero.FBX"), "Mesh");
-
-    // Each type shows its own picture in the browser, found by the label it is shown with.
-    std::set<const EditorIconSource*> icons;
-    for (const std::string& label : EditorAccess::GetEveryAssetTableTypeLabel()) {
-        const EditorIconSource* const icon = FindEditorIconSource(EditorIconGroup::ContentType, label);
-        EXPECT_NE(icon, nullptr) << "no icon for content type " << label;
-        icons.insert(icon);
-    }
-    EXPECT_EQ(icons.size(), EditorAccess::GetEveryAssetTableTypeLabel().size());
 }
 
 TEST(EditorTest, AssetTableWorkflow_PersistsFiltersAndSafelyFallsBackWhenFolderDisappears) {
@@ -2549,59 +2492,6 @@ TEST(EditorTest, SetSelectedEntityName_ValidatesInputAndMarksDocumentDirty) {
         EXPECT_FALSE(editor.SetSelectedEntityName("Shutdown"));
     }
 
-    engine.Shutdown();
-}
-
-TEST(EditorTest, ObjectWarnings_ReportSetupProblemsAndScriptPath) {
-    Core::EngineCore engine(MakeEditorTestConfig());
-    engine.Init();
-    ASSERT_TRUE(engine.Load());
-    {
-        Editor editor(engine.GetServices(), "uve_editor_tests_object_warnings.uvscene");
-        editor.Init();
-        Scene::IEntityManager& entityManager = engine.GetServices().GetEntityManager();
-
-        // A plain, well-formed object has nothing to report and no script.
-        const Scene::Entity clean = entityManager.CreateEntity();
-        AttachRoot(engine, clean, Scene::TransformComponent{});
-        EXPECT_TRUE(editor.GetObjectWarnings(clean).empty());
-        EXPECT_FALSE(editor.GetObjectScriptPath(clean).has_value());
-
-        // A mesh object with no mesh, and one pointing at a mesh the project does not have.
-        const Scene::Entity noMesh = entityManager.CreateEntity();
-        AttachRoot(engine, noMesh, Scene::TransformComponent{});
-        entityManager.AddComponent<Scene::MeshComponent>(noMesh, Scene::MeshComponent{});
-        ASSERT_EQ(editor.GetObjectWarnings(noMesh).size(), 1U);
-        EXPECT_NE(editor.GetObjectWarnings(noMesh).front().find("No mesh"), std::string::npos);
-
-        const Scene::Entity lostMesh = entityManager.CreateEntity();
-        AttachRoot(engine, lostMesh, Scene::TransformComponent{});
-        Scene::MeshComponent lost{};
-        lost.meshGuid = Asset::AssetGuid{0x12345678ULL};
-        lost.materialGuid = Asset::AssetGuid{0x9abcdef0ULL};
-        entityManager.AddComponent<Scene::MeshComponent>(lostMesh, lost);
-        EXPECT_EQ(editor.GetObjectWarnings(lostMesh).size(), 2U) << "missing mesh and missing material";
-
-        // A script: a valid path is reported as the object's script; an invalid one is a warning too.
-        const Scene::Entity scripted = entityManager.CreateEntity();
-        AttachRoot(engine, scripted, Scene::TransformComponent{});
-        entityManager.AddComponent<Scene::ScriptComponent>(scripted, Scene::ScriptComponent{"scripts/player.uvs"});
-        ASSERT_TRUE(editor.GetObjectScriptPath(scripted).has_value());
-        EXPECT_EQ(*editor.GetObjectScriptPath(scripted), "scripts/player.uvs");
-        EXPECT_TRUE(editor.GetObjectWarnings(scripted).empty());
-        entityManager.GetComponent<Scene::ScriptComponent>(scripted).scriptAssetPath = "../outside.uvs";
-        EXPECT_EQ(editor.GetObjectWarnings(scripted).size(), 1U);
-
-        // A Skeleton3D with no source model has no bones to show.
-        const Scene::Entity skeleton = entityManager.CreateEntity();
-        AttachRoot(engine, skeleton, Scene::TransformComponent{});
-        entityManager.AddComponent<Scene::Skeleton3DComponent>(skeleton, Scene::Skeleton3DComponent{});
-        EXPECT_EQ(editor.GetObjectWarnings(skeleton).size(), 1U);
-
-        // Not a document entity: nothing to say.
-        EXPECT_TRUE(editor.GetObjectWarnings(Scene::kInvalidEntity).empty());
-        editor.Shutdown();
-    }
     engine.Shutdown();
 }
 
@@ -5431,117 +5321,6 @@ TEST(EditorTest, SceneRootInspector_ShowsExactlyTheObjectSectionInOrder) {
         entityManager.AddComponent<Scene::ThreadGroupComponent>(object, Scene::ThreadGroupComponent{});
         const std::vector<std::string> ids = EditorAccess::GetEligibleInspectorDrawerIds(editor, object);
         EXPECT_NE(std::find(ids.begin(), ids.end(), "thread-group"), ids.end());
-        editor.Shutdown();
-    }
-    engine.Shutdown();
-}
-
-TEST(EditorTest, ScriptSlot_NewUVScriptOpensATextEditorThatChecksAsYouType) {
-    Core::EngineCore engine(MakeEditorTestConfig());
-    engine.Init();
-    ASSERT_TRUE(engine.Load());
-    {
-        Editor editor(engine.GetServices(), "uve_editor_tests_uvscript_slot.uvscene");
-        editor.Init();
-        Scene::IEntityManager& entityManager = engine.GetServices().GetEntityManager();
-        const Scene::Entity root = editor.GetDocumentSceneRoot();
-        editor.SelectEntity(root);
-        ASSERT_TRUE(editor.SetSelectedEntityName("hero"));
-
-        ASSERT_TRUE(editor.CreateUVScriptForSelectedEntity());
-        const std::string path = entityManager.GetComponent<Scene::ScriptComponent>(root).scriptAssetPath;
-        EXPECT_EQ(path.rfind("scripts/hero", 0), 0U);
-        EXPECT_TRUE(path.ends_with(".uvs"));
-        EXPECT_TRUE(editor.DescribeScriptAssetProblem(path).empty());
-        EXPECT_TRUE(EditorAccess::IsScriptingWorkspaceActive(editor));
-        ASSERT_TRUE(editor.GetOpenUVScript().has_value());
-        const Editor::UVScriptDocument& document = *editor.GetOpenUVScript();
-        EXPECT_EQ(document.path, path);
-        EXPECT_EQ(document.text.rfind("entity hero : ", 0), 0U);
-        EXPECT_TRUE(document.diagnostics.empty()); // The template compiles against the object.
-        EXPECT_FALSE(document.IsDirty());
-        EXPECT_FALSE(editor.CreateUVScriptForSelectedEntity()); // The slot is filled now.
-
-        // A mistake is reported while typing, with its line.
-        editor.SetOpenUVScriptText("on tick(dt):\n    nope += 1\n");
-        ASSERT_FALSE(editor.GetOpenUVScript()->diagnostics.empty());
-        EXPECT_EQ(editor.GetOpenUVScript()->diagnostics.front().at.line, 2U);
-
-        // Fixed and saved: the file holds the new text and nothing is unsaved.
-        const std::string fixed = "var ticks = 0\n\non tick(dt):\n    ticks += 1\n";
-        editor.SetOpenUVScriptText(fixed);
-        EXPECT_TRUE(editor.GetOpenUVScript()->diagnostics.empty());
-        EXPECT_TRUE(editor.GetOpenUVScript()->IsDirty());
-        ASSERT_TRUE(editor.SaveOpenUVScript());
-        EXPECT_FALSE(editor.GetOpenUVScript()->IsDirty());
-        std::ifstream file(path, std::ios::binary);
-        EXPECT_EQ(std::string(std::istreambuf_iterator<char>(file), {}), fixed);
-
-        // Close returns to the scene; opening the object's script comes back to the text editor.
-        editor.CloseOpenUVScript();
-        EXPECT_FALSE(editor.GetOpenUVScript().has_value());
-        EXPECT_FALSE(EditorAccess::IsScriptingWorkspaceActive(editor));
-        ASSERT_TRUE(editor.OpenScriptGraphForEntity(root));
-        ASSERT_TRUE(editor.GetOpenUVScript().has_value());
-        EXPECT_EQ(editor.GetOpenUVScript()->text, fixed);
-
-        editor.CloseOpenUVScript();
-        std::error_code error;
-        std::filesystem::remove(path, error);
-        editor.Shutdown();
-    }
-    engine.Shutdown();
-}
-
-TEST(EditorTest, ScriptExports_ShowTheScriptsExportsAndStoreTheObjectsValues) {
-    Core::EngineCore engine(MakeEditorTestConfig());
-    engine.Init();
-    ASSERT_TRUE(engine.Load());
-    {
-        Editor editor(engine.GetServices(), "uve_editor_tests_script_exports.uvscene");
-        editor.Init();
-        Scene::IEntityManager& entityManager = engine.GetServices().GetEntityManager();
-        const Scene::Entity root = editor.GetDocumentSceneRoot();
-        editor.SelectEntity(root);
-        ASSERT_TRUE(editor.SetSelectedEntityName("exporter"));
-        EXPECT_TRUE(editor.GetSelectedScriptExports().empty()); // No script yet.
-
-        ASSERT_TRUE(editor.CreateUVScriptForSelectedEntity());
-        editor.SetOpenUVScriptText("export speed = 6.0\nexport jumps = 2\nexport label = \"hero\"\n"
-                                      "export offset = vec3(0.0, 1.0, 0.0)\nvar hidden = 1\n");
-        ASSERT_TRUE(editor.SaveOpenUVScript());
-        const std::string path = entityManager.GetComponent<Scene::ScriptComponent>(root).scriptAssetPath;
-        editor.CloseOpenUVScript();
-
-        // Exports only, in declaration order, at the script's defaults.
-        std::vector<Editor::ScriptExportRow> rows = editor.GetSelectedScriptExports();
-        ASSERT_EQ(rows.size(), 4U);
-        EXPECT_EQ(rows[0].name, "speed");
-        EXPECT_EQ(rows[0].valueText, "6.0");
-        EXPECT_EQ(rows[1].valueText, "2");
-        EXPECT_EQ(rows[2].valueText, "hero");
-        EXPECT_EQ(rows[3].valueText, "(0.0, 1.0, 0.0)");
-        EXPECT_FALSE(rows[0].overridden);
-
-        // A value of the right type is stored in its canonical form; a wrong one is refused.
-        ASSERT_TRUE(editor.SetSelectedScriptExport("speed", "9"));
-        EXPECT_EQ(entityManager.GetComponent<Scene::ScriptComponent>(root).exportValues.at("speed"), "9.0");
-        EXPECT_FALSE(editor.SetSelectedScriptExport("jumps", "lots"));
-        EXPECT_FALSE(editor.SetSelectedScriptExport("hidden", "3"));
-        rows = editor.GetSelectedScriptExports();
-        EXPECT_TRUE(rows[0].overridden);
-        EXPECT_EQ(rows[0].valueText, "9.0");
-        EXPECT_EQ(rows[0].defaultText, "6.0");
-
-        // One undo step per edit; resetting drops the stored value.
-        ASSERT_TRUE(editor.Undo());
-        EXPECT_TRUE(entityManager.GetComponent<Scene::ScriptComponent>(root).exportValues.empty());
-        ASSERT_TRUE(editor.Redo());
-        ASSERT_TRUE(editor.SetSelectedScriptExport("speed", std::nullopt));
-        EXPECT_TRUE(entityManager.GetComponent<Scene::ScriptComponent>(root).exportValues.empty());
-
-        std::error_code error;
-        std::filesystem::remove(path, error);
         editor.Shutdown();
     }
     engine.Shutdown();

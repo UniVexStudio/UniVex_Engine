@@ -10,6 +10,7 @@
 #include "transform_component.h"
 
 #include "blueprint_asset.h"
+#include "blueprint_graph_lowering.h"
 #include "blueprint_nodes.h"
 #include "widget_blueprint_asset.h"
 #include "scene_object_registry.h"
@@ -57,18 +58,17 @@ namespace {
     return Asset::IsWidgetBlueprintPath(path) ? Asset::ReadWidgetBlueprintGraph(bytes) : Asset::DecodeBlueprintAsset(bytes);
 }
 
-[[nodiscard]] bool IsUVScriptFile(const std::string_view path) noexcept { return path.ends_with(".uvs"); }
 
 
 } // namespace
 
-/// The Entity Editor's Simulate: each scripted object's compiled UVScript, and the entity as it
+/// The Entity Editor's Simulate: each scripted object's compiled Blueprint, and the entity as it
 /// was when Play was pressed.
 struct EntitySimulation final {
     struct Script final {
         Scene::Entity entity = Scene::kInvalidEntity;
         std::unique_ptr<Core::BlueprintObjectHost> host;
-        std::unique_ptr<Blueprint::ScriptInstance> instance;
+        std::unique_ptr<Blueprint::BlueprintInstance> instance;
         bool ready = false;
     };
     Scene::SceneSnapshot snapshot;
@@ -175,11 +175,6 @@ bool Editor::OpenEntityEditor(const std::filesystem::path& assetPath) {
     if (m_entityEditSession.has_value() && !CloseEntityEditor(true)) {
         return false;
     }
-    if (m_openUVScript.has_value() && m_openUVScript->IsDirty()) {
-        m_contentStatusMessage = "Save or close " + std::filesystem::path{m_openUVScript->path}.filename().string() +
-                                 " first: it has unsaved text.";
-        return false;
-    }
     static_cast<void>(CommitComponentPropertyPreview());
 
     const Asset::AssetGuid guid = m_services->GetAssetDatabase().Register(assetPath);
@@ -218,7 +213,6 @@ bool Editor::OpenEntityEditor(const std::filesystem::path& assetPath) {
     m_entityEditSession->rootEntity = loadedRoot;
     m_entityEditSession->focusPending = true;
     // The script editor worked on scene objects; the entity brings its own.
-    CloseOpenUVScript();
     return true;
 }
 
@@ -305,10 +299,6 @@ bool Editor::SaveEntityEditor() {
     m_sceneDirty = false;
     // The level's copies follow every save, not only the close (done once the level is active).
     m_entityLevelRefreshPending = true;
-    if (m_openUVScript.has_value() && m_openUVScript->IsDirty() && !SaveOpenUVScript()) {
-        m_contentStatusMessage = "Saved the entity, but could not write " + m_openUVScript->path + ".";
-        return false;
-    }
     m_contentStatusMessage = "Saved " + m_entityEditSession->assetPath.filename().string() + ".";
     return true;
 }
@@ -339,7 +329,6 @@ bool Editor::RevertEntityEditor() {
     ClearHistory();
     m_sceneDirty = false;
     // Object handles are new; the script text goes back to what is on disk.
-    CloseOpenUVScript();
     m_entityEditSession->problems.clear();
     m_entityEditSession->compiled = false;
     return true;
@@ -373,7 +362,6 @@ void Editor::FinishEntityEditorClose() {
     }
     m_timeline = AnimationTimelineState{};
     m_timelineOwnsKeys = false;
-    CloseOpenUVScript();
     m_componentPropertyPreview.reset();
     if (m_entityEditSession->simulation != nullptr) {
         m_entityEditSession->simulation->scripts.clear();   // before the scene they run on goes
@@ -457,7 +445,7 @@ bool Editor::HasEntityEditorUnsavedChanges() const noexcept {
     const bool entityDirty = m_entityDocumentActive ? m_sceneDirty : m_otherDocument.sceneDirty;
     // An unsaved Blueprint counts: closing must never drop the nodes made in it.
     const bool blueprintDirty = m_openBlueprintDirty && m_openBlueprintDirty();
-    return entityDirty || blueprintDirty || (m_openUVScript.has_value() && m_openUVScript->IsDirty());
+    return entityDirty || blueprintDirty;
 }
 
 std::vector<Scene::Entity> Editor::CollectEntityEditorObjects() {
@@ -594,8 +582,6 @@ std::size_t Editor::CompileEntityEditor() {
             }
             const Scene::Objects::SceneObjectDescriptor* const descriptor =
                 Scene::Objects::FindSceneObjectDescriptor(Scene::ResolveSceneObjectKind(entityManager, entity));
-            const Asset::BlueprintTranslation translated = Asset::TranslateBlueprintToUVScript(
-                *blueprint, std::filesystem::path(path).stem().string(), descriptor != nullptr ? descriptor->displayName : "Object3D");
             const auto titled = [&blueprint](const std::uint32_t node, const std::string& message) {
                 for (const Asset::BlueprintNode& n : blueprint->nodes) {
                     if (n.id == node) {
@@ -606,45 +592,27 @@ std::size_t Editor::CompileEntityEditor() {
                 }
                 return message;
             };
-            for (const auto& [node, message] : translated.problems) {
+            Core::BlueprintObjectHost host(entityManager, nullptr, entity);
+            const Asset::BlueprintCompilation compiled = Asset::CompileBlueprintGraph(
+                *blueprint, std::filesystem::path(path).stem().string(),
+                descriptor != nullptr ? descriptor->displayName : "Object3D", host);
+            for (const auto& [node, message] : compiled.problems) {
                 EntityCompileProblem problem = base;
                 problem.blueprintNode = node;
                 problem.message = titled(node, message);
                 problems.push_back(std::move(problem));
             }
-            Core::BlueprintObjectHost host(entityManager, nullptr, entity);
-            for (const Blueprint::Diagnostic& diagnostic : Blueprint::CompileUVScriptSource(translated.source, host).diagnostics) {
+            // A graph's diagnostics name nodes: the position's `line` is the node's id.
+            for (const Blueprint::Diagnostic& diagnostic : compiled.result.diagnostics) {
                 EntityCompileProblem problem = base;
-                problem.blueprintNode = translated.NodeAtLine(diagnostic.at.line);
+                problem.blueprintNode = diagnostic.at.line;
                 problem.message = titled(problem.blueprintNode, diagnostic.message);
                 problems.push_back(std::move(problem));
             }
             continue;
         }
-        if (!IsUVScriptFile(path)) {
-            base.message = "The script is not a UVScript file (.uvs).";
-            problems.push_back(std::move(base));
-            continue;
-        }
-        // The text being edited is what the user means, saved or not.
-        std::optional<std::string> text;
-        if (m_openUVScript.has_value() && m_openUVScript->path == path) {
-            text = m_openUVScript->text;
-        } else {
-            text = ReadProjectTextFile(path);
-        }
-        if (!text.has_value()) {
-            base.message = "There is no file at " + path + ".";
-            problems.push_back(std::move(base));
-            continue;
-        }
-        Core::BlueprintObjectHost host(entityManager, nullptr, entity);
-        for (const Blueprint::Diagnostic& diagnostic : Blueprint::CompileUVScriptSource(*text, host).diagnostics) {
-            EntityCompileProblem problem = base;
-            problem.at = diagnostic.at;
-            problem.message = diagnostic.message;
-            problems.push_back(std::move(problem));
-        }
+        base.message = "The script is not a Blueprint (.uvbp).";
+        problems.push_back(std::move(base));
     }
     {
         std::vector<EntityCompileProblem> structure = CollectEntityStructureProblems();
@@ -765,7 +733,8 @@ std::vector<Editor::EntityFindRow> Editor::FindInEntityEditor(const std::string_
     return rows;
 }
 
-std::optional<std::string> Editor::ReadEntityScriptSource(const std::string& path, const Scene::Entity entity) const {
+std::optional<Editor::EntityScriptSource> Editor::ReadEntityScriptSource(const std::string& path, const Scene::Entity entity) const {
+    EntityScriptSource source;
     if (IsGraphScriptPath(path)) {
         std::optional<Asset::BlueprintAsset> blueprint =
             m_openBlueprintProvider ? m_openBlueprintProvider(path) : std::optional<Asset::BlueprintAsset>{};
@@ -781,14 +750,12 @@ std::optional<std::string> Editor::ReadEntityScriptSource(const std::string& pat
         const Scene::IEntityManager& entityManager = m_services->GetEntityManager();
         const Scene::Objects::SceneObjectDescriptor* const descriptor =
             Scene::Objects::FindSceneObjectDescriptor(Scene::ResolveSceneObjectKind(entityManager, entity));
-        return Asset::TranslateBlueprintToUVScript(*blueprint, std::filesystem::path(path).stem().string(),
-                                                      descriptor != nullptr ? descriptor->displayName : "Object3D")
-            .source;
+        source.objectName = std::filesystem::path(path).stem().string();
+        source.objectKind = descriptor != nullptr ? descriptor->displayName : "Object3D";
+        source.graph = std::move(blueprint);
+        return source;
     }
-    if (m_openUVScript.has_value() && m_openUVScript->path == path) {
-        return m_openUVScript->text;
-    }
-    return ReadProjectTextFile(path);
+    return std::nullopt; // only Blueprints run
 }
 
 const std::vector<Editor::EntityCompileProblem>& Editor::GetEntityEditorProblems() const noexcept {
@@ -809,16 +776,17 @@ std::vector<Editor::EntitySignalRow> Editor::GetEntityEditorSignals() {
             continue;
         }
         const std::string path = entityManager.GetComponent<Scene::ScriptComponent>(entity).scriptAssetPath;
-        if (!IsUVScriptFile(path) && !IsGraphScriptPath(path)) {
+        if (!IsGraphScriptPath(path)) {
             continue;
         }
-        const std::optional<std::string> text = ReadEntityScriptSource(path, entity);
-        if (!text.has_value()) {
+        const std::optional<EntityScriptSource> source = ReadEntityScriptSource(path, entity);
+        if (!source.has_value()) {
             continue;
         }
         const std::string objectName = GetEntityDisplayLabel(entity);
         // Whatever parsed is listed, even while the file has mistakes elsewhere.
-        for (const Blueprint::Handler& handler : Blueprint::ParseUVScript(*text).file.handlers) {
+        const Blueprint::File listed = Asset::LowerBlueprintGraph(*source->graph, source->objectName, source->objectKind).file;
+        for (const Blueprint::Handler& handler : listed.handlers) {
             EntitySignalRow row;
             row.entity = entity;
             row.objectName = objectName;
@@ -837,23 +805,6 @@ std::vector<Editor::EntitySignalRow> Editor::GetEntityEditorSignals() {
     }
     return rows;
 }
-
-bool Editor::GoToEntityScript(const Scene::Entity entity, const std::uint32_t line) {
-    if (!m_entityEditSession.has_value()) {
-        return false;
-    }
-    const EntityDocumentScope scope(*this);
-    SelectEntity(entity);
-    if (!OpenUVScriptForEntity(entity)) {
-        return false;
-    }
-    m_activeWorkspace = EditorWorkspace::Library; // The script lives in this window, not the main one.
-    m_entityEditSession->tab = EntityEditorTab::Scripting;
-    m_entityEditSession->forceTab = true;
-    m_uvscriptJumpLine = line;
-    return true;
-}
-
 
 // ------------------------------------------------------------------------------------ simulate
 
@@ -935,11 +886,11 @@ bool Editor::PlayEntitySimulation() {
             continue;
         }
         const Scene::ScriptComponent& component = entityManager.GetComponent<Scene::ScriptComponent>(entity);
-        if (!IsUVScriptFile(component.scriptAssetPath) && !IsGraphScriptPath(component.scriptAssetPath)) {
+        if (!IsGraphScriptPath(component.scriptAssetPath)) {
             continue;
         }
-        std::optional<std::string> text = ReadEntityScriptSource(component.scriptAssetPath, entity);
-        if (!text.has_value()) {
+        std::optional<EntityScriptSource> source = ReadEntityScriptSource(component.scriptAssetPath, entity);
+        if (!source.has_value()) {
             ++failed;
             continue;
         }
@@ -948,7 +899,7 @@ bool Editor::PlayEntitySimulation() {
         EntitySimulation* const raw = simulation.get();
         script.host = std::make_unique<Core::BlueprintObjectHost>(
             entityManager, &m_services->GetInputSystem(), entity, nullptr, nullptr,
-            [raw](const Scene::Entity other) -> Blueprint::ScriptInstance* {
+            [raw](const Scene::Entity other) -> Blueprint::BlueprintInstance* {
                 for (EntitySimulation::Script& candidate : raw->scripts) {
                     if (candidate.entity == other) {
                         return candidate.instance.get();
@@ -956,12 +907,13 @@ bool Editor::PlayEntitySimulation() {
                 }
                 return nullptr;
             });
-        const Blueprint::CompileResult compiled = Blueprint::CompileUVScriptSource(*text, *script.host);
+        const Blueprint::CompileResult compiled =
+            Asset::CompileBlueprintGraph(*source->graph, source->objectName, source->objectKind, *script.host).result;
         if (!compiled.IsSuccess()) {
             ++failed;
             continue;
         }
-        script.instance = std::make_unique<Blueprint::ScriptInstance>(compiled.program, *script.host);
+        script.instance = std::make_unique<Blueprint::BlueprintInstance>(compiled.program, *script.host);
         for (const Blueprint::FieldInfo& field : Blueprint::GetProgramFields(*compiled.program)) {
             const auto stored = component.exportValues.find(field.name);
             if (field.kind != Blueprint::FieldKind::Export || stored == component.exportValues.end()) {

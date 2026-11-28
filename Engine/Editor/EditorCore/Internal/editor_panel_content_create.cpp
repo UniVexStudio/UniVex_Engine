@@ -125,11 +125,11 @@ inline constexpr GUID kIidIFileOpenDialog{
     if (!pickFolders) {
         static constexpr COMDLG_FILTERSPEC kFilters[] = {
             {L"All Supported Assets",
-             L"*.fbx;*.gltf;*.glb;*.obj;*.png;*.jpg;*.jpeg;*.tga;*.bmp;*.hdr;*.wav;*.ogg;*.mp3;*.uvs;*.uvshader;*.glsl;*.uvanim"},
+             L"*.fbx;*.gltf;*.glb;*.obj;*.png;*.jpg;*.jpeg;*.tga;*.bmp;*.hdr;*.wav;*.ogg;*.mp3;*.uvshader;*.glsl;*.uvanim"},
             {L"3D Models & Animations (*.fbx;*.gltf;*.glb;*.obj;*.uvanim)", L"*.fbx;*.gltf;*.glb;*.obj;*.uvanim"},
             {L"Images & Textures (*.png;*.jpg;*.jpeg;*.tga;*.bmp;*.hdr)", L"*.png;*.jpg;*.jpeg;*.tga;*.bmp;*.hdr"},
             {L"Audio (*.wav;*.ogg;*.mp3)", L"*.wav;*.ogg;*.mp3"},
-            {L"Scripts & Shaders (*.uvs;*.uvshader;*.glsl)", L"*.uvs;*.uvshader;*.glsl"},
+            {L"Shaders (*.uvshader;*.glsl)", L"*.uvshader;*.glsl"},
             {L"All Files (*.*)", L"*.*"},
         };
         dialog->SetFileTypes(static_cast<UINT>(sizeof(kFilters) / sizeof(kFilters[0])), kFilters);
@@ -439,11 +439,11 @@ bool Editor::PromptImportFiles(const std::filesystem::path& targetDirectory) {
             ofn.nMaxFile = static_cast<DWORD>(buffer.size());
             ofn.lpstrTitle = L"Select Assets to Import";
             ofn.lpstrFilter =
-                L"All Supported Assets\0*.fbx;*.gltf;*.glb;*.obj;*.png;*.jpg;*.jpeg;*.tga;*.bmp;*.hdr;*.wav;*.ogg;*.mp3;*.uvs;*.uvshader;*.glsl;*.uvanim\0"
+                L"All Supported Assets\0*.fbx;*.gltf;*.glb;*.obj;*.png;*.jpg;*.jpeg;*.tga;*.bmp;*.hdr;*.wav;*.ogg;*.mp3;*.uvshader;*.glsl;*.uvanim\0"
                 L"3D Models & Animations (*.fbx;*.gltf;*.glb;*.obj;*.uvanim)\0*.fbx;*.gltf;*.glb;*.obj;*.uvanim\0"
                 L"Images & Textures (*.png;*.jpg;*.jpeg;*.tga;*.bmp;*.hdr)\0*.png;*.jpg;*.jpeg;*.tga;*.bmp;*.hdr\0"
                 L"Audio (*.wav;*.ogg;*.mp3)\0*.wav;*.ogg;*.mp3\0"
-                L"Scripts & Shaders (*.uvs;*.uvshader;*.glsl)\0*.uvs;*.uvshader;*.glsl\0"
+                L"Shaders (*.uvshader;*.glsl)\0*.uvshader;*.glsl\0"
                 L"All Files (*.*)\0*.*\0\0";
             ofn.nFilterIndex = 1;
             // NOCHANGEDIR: the project's relative paths stay valid after browsing elsewhere.
@@ -494,7 +494,7 @@ bool Editor::PromptImportFiles(const std::filesystem::path& targetDirectory) {
     request.mode = FilePickerMode::Open;
     request.allowMultiSelect = true;
     request.title = "Import Assets";
-    request.extensions = {".fbx", ".gltf", ".glb", ".obj", ".uvanim", ".png", ".jpg", ".jpeg", ".tga", ".bmp", ".hdr", ".wav", ".ogg", ".mp3", ".uvs", ".uvshader", ".glsl"};
+    request.extensions = {".fbx", ".gltf", ".glb", ".obj", ".uvanim", ".png", ".jpg", ".jpeg", ".tga", ".bmp", ".hdr", ".wav", ".ogg", ".mp3", ".uvshader", ".glsl"};
     request.onPick = [this, destDir](const std::filesystem::path& chosen) {
         static_cast<void>(ImportExternalFiles({chosen}, destDir));
     };

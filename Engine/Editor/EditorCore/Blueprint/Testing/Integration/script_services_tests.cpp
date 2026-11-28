@@ -11,7 +11,10 @@
 #include <string>
 #include <vector>
 
+#include <cstdio>
 #include <gtest/gtest.h>
+
+#include "Support/blueprint_test_graph.h"
 
 #include "camera_component.h"
 #include "collider_component.h"
@@ -41,11 +44,6 @@ Core::EngineConfig MakeServicesTestConfig() {
     return config;
 }
 
-void WriteText(Asset::IFileSystem& fileSystem, const std::string& path, const std::string& text) {
-    const auto* const bytes = reinterpret_cast<const std::byte*>(text.data());
-    ASSERT_TRUE(fileSystem.WriteFile(path, std::vector<std::byte>(bytes, bytes + text.size())));
-}
-
 TEST(ScriptServicesTest, TracesMessagesRemovalAndSaveSlotsWorkThroughTheEngine) {
     Core::EngineCore engine(MakeServicesTestConfig());
     engine.Init();
@@ -60,22 +58,54 @@ TEST(ScriptServicesTest, TracesMessagesRemovalAndSaveSlotsWorkThroughTheEngine) 
 
     // The shooter traces down onto the floor box, tells the listener, saves, and removes the doomed
     // object and then itself.
-    WriteText(fileSystem, "shooter.uvs",
-                 "var hit = false\nvar where = vec3(0.0, 0.0, 0.0)\nvar saved = false\nvar frames = 0\n"
-                 "\non tick(dt):\n"
-                 "    frames += 1\n"
-                 "    if frames == 2:\n"
-                 "        hit = trace.line(vec3(0.0, 5.0, 0.0), vec3(0.0, -5.0, 0.0))\n"
-                 "        where = trace.location()\n"
-                 "        events.emit_to(node(\"Listener\"), \"Shot\", object.name(trace.object()))\n"
-                 "        save.set_int(\"Coins\", 12)\n"
-                 "        saved = save.write(\"Slot1\")\n"
-                 "        world.destroy(node(\"Doomed\"))\n"
-                 "        world.destroy_self()\n");
-    WriteText(fileSystem, "listener.uvs",
-                 "var heard = \"\"\nvar from = \"\"\n"
-                 "\non custom_event(name, payload):\n    heard = name\n    from = payload\n");
-    WriteText(fileSystem, "doomed.uvs", "var x = 0\n\non destroyed:\n    events.emit_to(node(\"Listener\"), \"Bye\", \"Doomed\")\n");
+    using PinType = Asset::BlueprintPinType;
+    ::UVE::Tests::TestGraph shooterGraph;
+    shooterGraph.Var("hit", PinType::Bool, "false").Var("where", PinType::Vector, "0,0,0").Var("frames", PinType::Int, "0");
+    {
+        const std::uint32_t tick = shooterGraph.Node("event_tick");
+        const ::UVE::Tests::TestGraph::Increment frame = shooterGraph.AddToVariable("frames", 1);
+        const std::uint32_t second = shooterGraph.Node("get_variable", {}, "frames");
+        const std::uint32_t isSecond = shooterGraph.Node("int_equal", {"", "2"});
+        const std::uint32_t branch = shooterGraph.Node("branch");
+        const std::uint32_t trace = shooterGraph.Node("line_trace", {"", "0,5,0", "0,-5,0"});
+        const std::uint32_t setHit = shooterGraph.Node("set_variable", {}, "hit");
+        const std::uint32_t setWhere = shooterGraph.Node("set_variable", {}, "where");
+        const std::uint32_t listenerNode = shooterGraph.Node("find_object", {"Listener"});
+        const std::uint32_t hitName = shooterGraph.Node("object_get_name");
+        const std::uint32_t shot = shooterGraph.Node("call_custom_event_on", {"", "", "Shot"});
+        const std::uint32_t coins = shooterGraph.Node("save_set_int", {"", "Coins", "12"});
+        const std::uint32_t write = shooterGraph.Node("save_game", {"", "Slot1"});
+        const std::uint32_t doomed = shooterGraph.Node("find_object", {"Doomed"});
+        const std::uint32_t destroy = shooterGraph.Node("destroy_object");
+        const std::uint32_t destroySelf = shooterGraph.Node("destroy_self");
+        shooterGraph.Exec(tick, frame.set).Exec(frame.set, branch);
+        shooterGraph.Wire(second, 0U, isSecond, 0U).Wire(isSecond, 0U, branch, 1U);
+        shooterGraph.Wire(branch, 0U, trace, 0U);
+        shooterGraph.Wire(trace, 1U, setHit, 1U).Wire(trace, 2U, setWhere, 1U);
+        shooterGraph.Exec(trace, setHit).Exec(setHit, setWhere).Exec(setWhere, shot);
+        shooterGraph.Wire(listenerNode, 0U, shot, 1U).Wire(trace, 4U, hitName, 0U).Wire(hitName, 0U, shot, 3U);
+        shooterGraph.Exec(shot, coins).Exec(coins, write).Exec(write, destroy);
+        shooterGraph.Wire(doomed, 0U, destroy, 1U).Exec(destroy, destroySelf);
+    }
+    ASSERT_TRUE(fileSystem.WriteFile("shooter.uvbp", shooterGraph.Bytes()));
+    ::UVE::Tests::TestGraph listenerGraph;
+    listenerGraph.Var("heard", PinType::String, "").Var("from", PinType::String, "");
+    {
+        const std::uint32_t event = listenerGraph.Node("event_custom");
+        const std::uint32_t heard = listenerGraph.Node("set_variable", {}, "heard");
+        const std::uint32_t from = listenerGraph.Node("set_variable", {}, "from");
+        listenerGraph.Exec(event, heard).Exec(heard, from).Wire(event, 1U, heard, 1U).Wire(event, 2U, from, 1U);
+    }
+    ASSERT_TRUE(fileSystem.WriteFile("listener.uvbp", listenerGraph.Bytes()));
+    ::UVE::Tests::TestGraph doomedGraph;
+    doomedGraph.Var("x", PinType::Int, "0");
+    {
+        const std::uint32_t destroyed = doomedGraph.Node("event_destroyed");
+        const std::uint32_t target = doomedGraph.Node("find_object", {"Listener"});
+        const std::uint32_t bye = doomedGraph.Node("call_custom_event_on", {"", "", "Bye", "Doomed"});
+        doomedGraph.Exec(destroyed, bye).Wire(target, 0U, bye, 1U);
+    }
+    ASSERT_TRUE(fileSystem.WriteFile("doomed.uvbp", doomedGraph.Bytes()));
 
     const auto make = [&](const std::string& name, const std::string& script, const Math::Vector3 at) {
         const Scene::Entity entity = entities.CreateEntity();
@@ -90,9 +120,9 @@ TEST(ScriptServicesTest, TracesMessagesRemovalAndSaveSlotsWorkThroughTheEngine) 
     };
     const Scene::Entity floor = make("Floor", "", Math::Vector3{0.0F, -2.0F, 0.0F});
     entities.AddComponent<Scene::ColliderComponent>(floor, Scene::ColliderComponent{});
-    const Scene::Entity shooter = make("Shooter", "shooter.uvs", Math::Vector3{});
-    const Scene::Entity listener = make("Listener", "listener.uvs", Math::Vector3{10.0F, 0.0F, 0.0F});
-    const Scene::Entity doomed = make("Doomed", "doomed.uvs", Math::Vector3{20.0F, 0.0F, 0.0F});
+    const Scene::Entity shooter = make("Shooter", "shooter.uvbp", Math::Vector3{});
+    const Scene::Entity listener = make("Listener", "listener.uvbp", Math::Vector3{10.0F, 0.0F, 0.0F});
+    const Scene::Entity doomed = make("Doomed", "doomed.uvbp", Math::Vector3{20.0F, 0.0F, 0.0F});
 
     for (int frame = 0; frame < 30 && entities.IsAlive(shooter); ++frame) {
         engine.TickFrame();
@@ -101,8 +131,8 @@ TEST(ScriptServicesTest, TracesMessagesRemovalAndSaveSlotsWorkThroughTheEngine) 
     engine.TickFrame();
     EXPECT_FALSE(entities.IsAlive(shooter)) << "a script may remove its own object";
     EXPECT_FALSE(entities.IsAlive(doomed));
-    EXPECT_EQ(engine.FindUVScriptInstance(shooter), nullptr);
-    Blueprint::ScriptInstance* const heard = engine.FindUVScriptInstance(listener);
+    EXPECT_EQ(engine.FindBlueprintInstance(shooter), nullptr);
+    Blueprint::BlueprintInstance* const heard = engine.FindBlueprintInstance(listener);
     ASSERT_NE(heard, nullptr);
     EXPECT_EQ(heard->GetField("heard"), Blueprint::Value{std::string("Bye")}) << "the doomed object heard `destroyed`";
     EXPECT_EQ(heard->GetField("from"), Blueprint::Value{std::string("Doomed")});

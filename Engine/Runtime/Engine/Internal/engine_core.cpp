@@ -13,6 +13,7 @@
 #include "engine_core.h"
 
 #include "blueprint_asset.h"
+#include "blueprint_graph_lowering.h"
 #include "blueprint_nodes.h"
 #include "widget_blueprint_asset.h"
 
@@ -2059,8 +2060,8 @@ void EngineCore::SyncUIView3DStages(const float deltaSeconds) {
 
 namespace {
 
-[[nodiscard]] bool IsUVScriptPath(const std::string_view path) noexcept {
-    return Scene::Script::IsUVScriptPath(path);
+[[nodiscard]] bool IsBlueprintPath(const std::string_view path) noexcept {
+    return Scene::Script::IsBlueprintPath(path);
 }
 
 } // namespace
@@ -2069,49 +2070,64 @@ void EngineCore::SyncScriptRuntime() {
     // Process mode decides which scripts run this frame, and priority decides their order.
     // Running - the default - stops while the simulation is paused; PausedOnly and Always are
     // how a pause menu keeps working over a stopped world.
-    SyncUVScripts(m_simulationExecutionMode == SimulationExecutionMode::Paused);
+    SyncBlueprints(m_simulationExecutionMode == SimulationExecutionMode::Paused);
 }
 
-std::optional<std::string> EngineCore::ReadUVScriptSource(const std::string& path) const {
+std::optional<EngineCore::ScriptFile> EngineCore::LoadScriptFile(const std::string& path) const {
     const std::optional<std::vector<std::byte>> bytes = m_fileSystem->ReadFile(path);
     if (!bytes.has_value()) {
         return std::nullopt;
     }
+    ScriptFile file;
+    // FNV-1a over the file's bytes: the key a changed file is noticed by.
+    file.hash = 0xcbf29ce484222325ULL;
+    for (const std::byte byte : *bytes) {
+        file.hash = (file.hash ^ static_cast<std::uint8_t>(byte)) * 0x100000001b3ULL;
+    }
+    const std::string stem = std::filesystem::path(path).stem().string();
     if (path.ends_with(".uvbp")) {
-        // A Blueprint Class: the UVScript its graph translates to.
-        const std::optional<Asset::BlueprintAsset> blueprint = Asset::DecodeBlueprintAsset(*bytes);
+        // A Blueprint Class: compiled straight from its graph.
+        std::optional<Asset::BlueprintAsset> blueprint = Asset::DecodeBlueprintAsset(*bytes);
         if (!blueprint.has_value()) {
             return std::nullopt;
         }
-        const std::string stem = std::filesystem::path(path).stem().string();
-        return Asset::TranslateBlueprintToUVScript(*blueprint, stem, blueprint->parentKind).source;
+        file.objectName = stem;
+        file.objectKind = blueprint->parentKind;
+        file.graph = std::move(blueprint);
+        return file;
     }
     if (Asset::IsWidgetBlueprintPath(path)) {
-        // A Widget Blueprint: the UVScript its graph translates to, run on the widget's Canvas.
-        const std::optional<Asset::BlueprintAsset> graph = Asset::ReadWidgetBlueprintGraph(*bytes);
+        // A Widget Blueprint: its graph, run on the widget's Canvas.
+        std::optional<Asset::BlueprintAsset> graph = Asset::ReadWidgetBlueprintGraph(*bytes);
         if (!graph.has_value()) {
             return std::nullopt;
         }
-        const std::string stem = std::filesystem::path(path).stem().string();
-        return Asset::TranslateBlueprintToUVScript(*graph, stem, graph->parentKind).source;
+        file.objectName = stem;
+        file.objectKind = graph->parentKind;
+        file.graph = std::move(graph);
+        return file;
     }
-    return std::string(reinterpret_cast<const char*>(bytes->data()), bytes->size());
+    return std::nullopt; // only Blueprints run
 }
 
-void EngineCore::ReconcileUVScriptInstances() {
+void EngineCore::ReconcileBlueprintInstances() {
     // Edits are picked up by re-reading every script in use a few times a second: a script whose
     // text changed is dropped (and so recompiled and restarted below), and a failed one is retried.
     // The files are small and few, so this is cheaper than wiring every writer to a notification.
 #if !UVE_SHIPPING
     if (m_config.hotReloadEnabled) {
         constexpr auto kRecheckInterval = std::chrono::milliseconds(500);
-        if (const auto now = std::chrono::steady_clock::now(); now - m_uvScriptLastRecheck >= kRecheckInterval) {
-            m_uvScriptLastRecheck = now;
-            const auto readText = [this](const std::string& path) { return ReadUVScriptSource(path); };
-            std::erase_if(m_uvScripts,
-                          [&readText](const auto& entry) { return readText(entry.second.path) != entry.second.source; });
-            std::erase_if(m_uvScriptFailedSources, [this, &readText](const auto& entry) {
-                if (readText(entry.first) == entry.second) {
+        if (const auto now = std::chrono::steady_clock::now(); now - m_blueprintLastRecheck >= kRecheckInterval) {
+            m_blueprintLastRecheck = now;
+            const auto readHash = [this](const std::string& path) -> std::optional<std::uint64_t> {
+                const std::optional<ScriptFile> file = LoadScriptFile(path);
+                return file.has_value() ? std::optional<std::uint64_t>{file->hash} : std::nullopt;
+            };
+            std::erase_if(m_blueprints, [&readHash](const auto& entry) {
+                return readHash(entry.second.path) != std::optional<std::uint64_t>{entry.second.hash};
+            });
+            std::erase_if(m_blueprintFailedSources, [this, &readHash](const auto& entry) {
+                if (readHash(entry.first) == entry.second) {
                     return false;
                 }
                 std::erase_if(m_scriptReconcileFailedEntities,
@@ -2123,7 +2139,7 @@ void EngineCore::ReconcileUVScriptInstances() {
 #endif
 
     // Drop instances whose object is gone, lost its script, or now points at another file.
-    std::erase_if(m_uvScripts, [this](const auto& entry) {
+    std::erase_if(m_blueprints, [this](const auto& entry) {
         const Scene::Entity entity = entry.first;
         return !m_entityManager->IsAlive(entity) ||
                !m_entityManager->HasComponent<Scene::ScriptComponent>(entity) ||
@@ -2134,19 +2150,18 @@ void EngineCore::ReconcileUVScriptInstances() {
 
     m_entityManager->ForEach<Scene::ScriptComponent>(
         [this](const Scene::Entity entity, const Scene::ScriptComponent& component) {
-            if (!IsUVScriptPath(component.scriptAssetPath)) {
-                // Object-graph scripts were removed; say so once per object rather than run nothing
-                // silently.
+            if (!IsBlueprintPath(component.scriptAssetPath)) {
+                // Only Blueprints run; say so once per object rather than run nothing silently.
                 const auto reported = m_scriptReconcileFailedEntities.find(entity);
                 if (!component.scriptAssetPath.empty() && (reported == m_scriptReconcileFailedEntities.end() ||
                                                            reported->second != component.scriptAssetPath)) {
                     m_scriptReconcileFailedEntities.insert_or_assign(entity, component.scriptAssetPath);
-                    UVE_WARNING("EngineCore: script \"{}\" is not a UVScript (.uvs) file and will not run",
+                    UVE_WARNING("EngineCore: script \"{}\" is not a Blueprint (.uvbp) and will not run",
                              component.scriptAssetPath);
                 }
                 return;
             }
-            if (m_uvScripts.contains(entity)) {
+            if (m_blueprints.contains(entity)) {
                 return;
             }
             if (const auto failed = m_scriptReconcileFailedEntities.find(entity);
@@ -2160,16 +2175,16 @@ void EngineCore::ReconcileUVScriptInstances() {
                 m_scriptReconcileFailedEntities.insert_or_assign(entity, component.scriptAssetPath);
                 UVE_ERROR("EngineCore: script \"{}\": {}", component.scriptAssetPath, why);
             };
-            const std::optional<std::string> read = ReadUVScriptSource(component.scriptAssetPath);
+            const std::optional<ScriptFile> read = LoadScriptFile(component.scriptAssetPath);
             if (!read.has_value()) {
                 fail("cannot be read");
-                m_uvScriptFailedSources.insert_or_assign(component.scriptAssetPath, std::nullopt);
+                m_blueprintFailedSources.insert_or_assign(component.scriptAssetPath, std::nullopt);
                 return;
             }
-            const std::string& source = *read;
+            const ScriptFile& file = *read;
             auto host = std::make_unique<BlueprintObjectHost>(
                 *m_entityManager, m_inputSystem.get(), entity, m_audioSourceSystem.get(), m_audioSystem.get(),
-                [this](const Scene::Entity other) { return FindUVScriptInstance(other); });
+                [this](const Scene::Entity other) { return FindBlueprintInstance(other); });
             host->SetWidgetFactory([this](const std::string& path) { return CreateWidget(path); });
             host->SetServices(&m_scriptServices);
             host->SetCursorHandler([this](const bool show) {
@@ -2180,21 +2195,28 @@ void EngineCore::ReconcileUVScriptInstances() {
                     m_windowManager->SetCursorVisible(show);
                 }
             });
-            const Blueprint::CompileResult compiled = Blueprint::CompileUVScriptSource(source, *host);
+            // A graph's diagnostics name nodes: the position's `line` is the node's id.
+            Asset::BlueprintCompilation direct =
+                Asset::CompileBlueprintGraph(*file.graph, file.objectName, file.objectKind, *host);
+            for (const auto& [node, problem] : direct.problems) {
+                UVE_WARNING("{}: node {}: {}", component.scriptAssetPath, node, problem);
+            }
+            Blueprint::CompileResult compiled = std::move(direct.result);
             if (!compiled.IsSuccess()) {
                 for (const Blueprint::Diagnostic& diagnostic : compiled.diagnostics) {
-                    UVE_ERROR("{}:{}:{}: {}", component.scriptAssetPath, diagnostic.at.line, diagnostic.at.column,
-                              diagnostic.message);
+                    UVE_ERROR("{}: node {}: {}", component.scriptAssetPath, diagnostic.at.line, diagnostic.message);
                 }
+            }
+            if (!compiled.IsSuccess()) {
                 fail("did not compile");
-                m_uvScriptFailedSources.insert_or_assign(component.scriptAssetPath, source);
+                m_blueprintFailedSources.insert_or_assign(component.scriptAssetPath, file.hash);
                 return;
             }
-            UVScriptSlot slot;
+            BlueprintSlot slot;
             slot.path = component.scriptAssetPath;
-            slot.source = source;
+            slot.hash = file.hash;
             slot.program = compiled.program;
-            slot.instance = std::make_unique<Blueprint::ScriptInstance>(compiled.program, *host);
+            slot.instance = std::make_unique<Blueprint::BlueprintInstance>(compiled.program, *host);
             // The object's own values for the script's exports, before `ready` sees them. A value
             // for a field the script no longer exports, or of the wrong type, is skipped.
             slot.exportValues = component.exportValues;
@@ -2208,11 +2230,11 @@ void EngineCore::ReconcileUVScriptInstances() {
                 }
             }
             slot.host = std::move(host);
-            m_uvScripts.emplace(entity, std::move(slot));
+            m_blueprints.emplace(entity, std::move(slot));
         });
 }
 
-void EngineCore::SyncUVScripts(const bool simulationPaused) {
+void EngineCore::SyncBlueprints(const bool simulationPaused) {
     if (!m_scriptServices.trace) {
         FillScriptServices();
     }
@@ -2228,14 +2250,14 @@ void EngineCore::SyncUVScripts(const bool simulationPaused) {
         m_cameraShakeTarget = Scene::kInvalidEntity;
         m_cameraShakeOffset = Math::Vector3{};
     }
-    ReconcileUVScriptInstances();
+    ReconcileBlueprintInstances();
     // Add Movement Input is per frame: what the scripts ask for now replaces last frame's.
     m_entityManager->ForEach<Scene::CharacterControllerComponent>(
         [](const Scene::Entity, Scene::CharacterControllerComponent& body) { body.scriptMove = Math::Vector3{}; });
 
     std::vector<Scene::Entity> order;
-    order.reserve(m_uvScripts.size());
-    for (const auto& [entity, slot] : m_uvScripts) {
+    order.reserve(m_blueprints.size());
+    for (const auto& [entity, slot] : m_blueprints) {
         order.push_back(entity);
     }
 
@@ -2244,12 +2266,12 @@ void EngineCore::SyncUVScripts(const bool simulationPaused) {
     });
     const double dt = m_timer ? static_cast<double>(m_timer->GetDeltaTime()) : 0.0;
     for (const Scene::Entity entity : order) {
-        const auto it = m_uvScripts.find(entity);
-        if (it == m_uvScripts.end() ||
+        const auto it = m_blueprints.find(entity);
+        if (it == m_blueprints.end() ||
             !Scene::IsTicking(ResolvedTickMode(*m_sceneGraph, entity), simulationPaused)) {
             continue;
         }
-        Blueprint::ScriptInstance& instance = *it->second.instance;
+        Blueprint::BlueprintInstance& instance = *it->second.instance;
         if (!it->second.readyRaised) {
             it->second.readyRaised = true;
             static_cast<void>(instance.RaiseEvent("ready"));
@@ -2626,25 +2648,25 @@ void EngineCore::FillScriptServices() {
 void EngineCore::FinishScriptFrame(const double dt, const bool simulationPaused) {
     m_scriptGameDelta = simulationPaused ? 0.0 : dt * static_cast<double>(m_simulationSpeedScale);
     m_scriptGameTime += m_scriptGameDelta;
-    const auto instanceOf = [this](const Scene::Entity entity) -> Blueprint::ScriptInstance* {
-        const auto slot = m_uvScripts.find(entity);
-        return slot != m_uvScripts.end() ? slot->second.instance.get() : nullptr;
+    const auto instanceOf = [this](const Scene::Entity entity) -> Blueprint::BlueprintInstance* {
+        const auto slot = m_blueprints.find(entity);
+        return slot != m_blueprints.end() ? slot->second.instance.get() : nullptr;
     };
     // Timers run on game time, so a paused game's timers wait too.
     if (m_scriptGameDelta > 0.0) {
         std::vector<Scene::Entity> timed;
-        for (const auto& [entity, slot] : m_uvScripts) {
+        for (const auto& [entity, slot] : m_blueprints) {
             if (slot.host != nullptr && slot.host->HasTimers()) {
                 timed.push_back(entity);
             }
         }
         for (const Scene::Entity entity : timed) {
-            const auto slot = m_uvScripts.find(entity);
-            if (slot == m_uvScripts.end() || slot->second.host == nullptr) {
+            const auto slot = m_blueprints.find(entity);
+            if (slot == m_blueprints.end() || slot->second.host == nullptr) {
                 continue;
             }
             for (const std::string& id : slot->second.host->AdvanceTimers(m_scriptGameDelta)) {
-                if (Blueprint::ScriptInstance* const instance = instanceOf(entity)) {
+                if (Blueprint::BlueprintInstance* const instance = instanceOf(entity)) {
                     const Blueprint::Value args[] = {id};
                     static_cast<void>(instance->RaiseEvent("timer", args));
                 }
@@ -2656,7 +2678,7 @@ void EngineCore::FinishScriptFrame(const double dt, const bool simulationPaused)
         std::vector<std::tuple<Scene::Entity, std::string, std::string>> events;
         std::swap(events, m_pendingScriptEvents);
         for (const auto& [target, name, payload] : events) {
-            if (Blueprint::ScriptInstance* const instance = instanceOf(target); instance != nullptr && m_entityManager->IsAlive(target)) {
+            if (Blueprint::BlueprintInstance* const instance = instanceOf(target); instance != nullptr && m_entityManager->IsAlive(target)) {
                 const Blueprint::Value args[] = {name, payload};
                 static_cast<void>(instance->RaiseEvent("custom_event", args));
             }
@@ -2674,11 +2696,11 @@ void EngineCore::FinishScriptFrame(const double dt, const bool simulationPaused)
             for (const Scene::Entity child : m_sceneGraph->GetChildren(*m_entityManager, root)) {
                 destroy(child);
             }
-            if (Blueprint::ScriptInstance* const instance = instanceOf(root)) {
+            if (Blueprint::BlueprintInstance* const instance = instanceOf(root)) {
                 static_cast<void>(instance->RaiseEvent("destroyed"));
             }
             // The script goes with its object, before the object: no handler outlives what it drives.
-            m_uvScripts.erase(root);
+            m_blueprints.erase(root);
             m_entityManager->DestroyEntity(root);
         };
         for (const Scene::Entity entity : doomed) {
@@ -2779,7 +2801,7 @@ void EngineCore::RaiseWidgetScriptEvents() {
     // Blueprint's graph sits on its root Canvas and hears each of its buttons by name.
     const auto raise = [this](Scene::Entity widget, const std::string_view event, const std::span<const Blueprint::Value> args) {
         for (int depth = 0; depth < 256 && m_entityManager->IsAlive(widget); ++depth) {
-            if (const auto slot = m_uvScripts.find(widget); slot != m_uvScripts.end() && slot->second.instance != nullptr) {
+            if (const auto slot = m_blueprints.find(widget); slot != m_blueprints.end() && slot->second.instance != nullptr) {
                 static_cast<void>(slot->second.instance->RaiseEvent(event, args));
             }
             if (!m_entityManager->HasComponent<Scene::HierarchyComponent>(widget)) {
@@ -2847,11 +2869,11 @@ void EngineCore::RaiseWidgetScriptEvents() {
     }
 }
 
-std::optional<std::size_t> EngineCore::WriteNativeUVScripts(const std::filesystem::path& directory) const {
+std::optional<std::size_t> EngineCore::WriteNativeBlueprints(const std::filesystem::path& directory) const {
     std::error_code error;
     std::filesystem::create_directories(directory, error);
     std::unordered_set<std::uint64_t> written;
-    for (const auto& [entity, slot] : m_uvScripts) {
+    for (const auto& [entity, slot] : m_blueprints) {
         const std::uint64_t fingerprint = Blueprint::GetProgramFingerprint(*slot.program);
         if (!written.insert(fingerprint).second) {
             continue;
@@ -2859,9 +2881,9 @@ std::optional<std::size_t> EngineCore::WriteNativeUVScripts(const std::filesyste
         char suffix[24];
         std::snprintf(suffix, sizeof(suffix), "_%016llx", static_cast<unsigned long long>(fingerprint));
         const std::filesystem::path file =
-            directory / (std::filesystem::path{slot.path}.stem().string() + suffix + ".uvs.cpp");
+            directory / (std::filesystem::path{slot.path}.stem().string() + suffix + ".native.cpp");
         std::ofstream out(file, std::ios::binary | std::ios::trunc);
-        out << Blueprint::GenerateUVScriptNativeCpp(*slot.program, slot.path);
+        out << Blueprint::GenerateBlueprintNativeCpp(*slot.program, slot.path);
         if (!out) {
             UVE_ERROR("EngineCore: could not write native script \"{}\"", file.generic_string());
             return std::nullopt;
@@ -2870,9 +2892,9 @@ std::optional<std::size_t> EngineCore::WriteNativeUVScripts(const std::filesyste
     return written.size();
 }
 
-Blueprint::ScriptInstance* EngineCore::FindUVScriptInstance(const Scene::Entity entity) noexcept {
-    const auto it = m_uvScripts.find(entity);
-    return it == m_uvScripts.end() ? nullptr : it->second.instance.get();
+Blueprint::BlueprintInstance* EngineCore::FindBlueprintInstance(const Scene::Entity entity) noexcept {
+    const auto it = m_blueprints.find(entity);
+    return it == m_blueprints.end() ? nullptr : it->second.instance.get();
 }
 
 void EngineCore::SyncAnimation(const float deltaSeconds, const bool physicsStep) {
@@ -3071,8 +3093,8 @@ void EngineCore::SyncAnimation(const float deltaSeconds, const bool physicsStep)
                          : Scene::kInvalidEntity;
         }
         for (const Scene::Entity listener : {self, target}) {
-            const auto slot = m_uvScripts.find(listener);
-            if (listener == Scene::kInvalidEntity || slot == m_uvScripts.end() || slot->second.instance == nullptr) {
+            const auto slot = m_blueprints.find(listener);
+            if (listener == Scene::kInvalidEntity || slot == m_blueprints.end() || slot->second.instance == nullptr) {
                 continue;
             }
             for (const std::string& name : events) {
@@ -3136,8 +3158,8 @@ void EngineCore::SyncAnimation(const float deltaSeconds, const bool physicsStep)
                                                 ? m_entityManager->GetComponent<Scene::HierarchyComponent>(self).parent
                                                 : Scene::kInvalidEntity;
             for (const Scene::Entity listener : {self, parent}) {
-                const auto slot = m_uvScripts.find(listener);
-                if (listener == Scene::kInvalidEntity || slot == m_uvScripts.end() || slot->second.instance == nullptr) {
+                const auto slot = m_blueprints.find(listener);
+                if (listener == Scene::kInvalidEntity || slot == m_blueprints.end() || slot->second.instance == nullptr) {
                     continue;
                 }
                 const Blueprint::Value args[] = {Blueprint::Value{name}};
@@ -3612,9 +3634,9 @@ void EngineCore::UpgradeProjectContentIfNeeded() {
 }
 
 void EngineCore::SyncRagdoll3DObjects() {
-    // BUG #2 FIX: Gate normal ragdoll simulation strictly behind Running mode (scaled by
-    // m_simulationSpeedScale) so ragdolls never collapse in Edit mode or while paused, while
-    // still stepping ragdolls explicitly marked with `editorPreviewSimulating` for live Editor preview!
+    // Normal ragdoll simulation runs only in Running mode (scaled by m_simulationSpeedScale), so ragdolls never
+    // collapse in Edit mode or while paused; ragdolls marked `editorPreviewSimulating` still step for the live
+    // editor preview.
     const float rawDt = static_cast<float>(m_frameStats.deltaTimeSeconds);
     if (m_simulationExecutionMode == SimulationExecutionMode::Running) {
         static_cast<void>(Scene::UpdateRagdoll3DObjects(
@@ -3770,8 +3792,8 @@ void EngineCore::RaiseContactScriptEvent(const Scene::Entity first, const Scene:
         if (listeners[i] == Scene::kInvalidEntity || !m_entityManager->IsAlive(listeners[i])) {
             continue;
         }
-        const auto slot = m_uvScripts.find(listeners[i]);
-        if (slot == m_uvScripts.end() || slot->second.instance == nullptr) {
+        const auto slot = m_blueprints.find(listeners[i]);
+        if (slot == m_blueprints.end() || slot->second.instance == nullptr) {
             continue;
         }
         const bool otherNamed = others[i] != Scene::kInvalidEntity && m_entityManager->IsAlive(others[i]) &&
@@ -4895,7 +4917,7 @@ void EngineCore::Update() {
     }
     UVE_TRACE("Update: {} fixed step(s), alpha={}", fixedStep.stepsToRun, fixedStep.alpha);
     m_eventSystem->DispatchQueued();
-    ReconcileUVScriptInstances();
+    ReconcileBlueprintInstances();
 
     const float fixedDeltaTimeSeconds =
         m_config.fixedUpdateFps > 0.0 ? static_cast<float>(1.0 / m_config.fixedUpdateFps) : 0.0F;
@@ -5346,7 +5368,7 @@ bool EngineCore::SetApplicationBackgroundColor(const std::array<float, 4U>& colo
 }
 
 std::size_t EngineCore::GetActiveScriptInstanceCount() const noexcept {
-    return m_uvScripts.size();
+    return m_blueprints.size();
 }
 
 void EngineCore::Shutdown() {
@@ -5375,8 +5397,8 @@ void EngineCore::Shutdown() {
         static_cast<void>(m_projectSettings.Unsubscribe(sub));
     }
     m_projectSettingsSubscriptions.clear();
-    m_uvScriptFailedSources.clear();
-    m_uvScripts.clear(); // hosts point into the entity manager, so they go first
+    m_blueprintFailedSources.clear();
+    m_blueprints.clear(); // hosts point into the entity manager, so they go first
     m_vfxEntityInstances.clear();
     m_vfxDrawList.Clear();
     m_services.reset();
@@ -5592,7 +5614,7 @@ EngineServices& EngineCore::GetServices() {
 }
 
 Version EngineCore::GetEngineVersion() noexcept {
-    return Version{0, 5, 3, 0};
+    return Version{0, 5, 4, 0};
 }
 
 

@@ -666,12 +666,12 @@ def nav_seeker_3d(ic):
     arrow(ic, (36, 32), (52, 20), BRIGHT, 2.8, 7.0)
 
 
-@scene_object("navigation_region_3d", "NavigationRegion3D", "Navigation")
+@scene_object("navigation_region_3d", "NavMeshVolume3D", "Navigation")
 def navigation_region_3d(ic):
     nav_mesh_volume_3d(ic)
 
 
-@scene_object("navigation_agent_3d", "NavigationAgent3D", "Navigation")
+@scene_object("navigation_agent_3d", "NavSeeker3D", "Navigation")
 def navigation_agent_3d(ic):
     nav_seeker_3d(ic)
 
@@ -1043,7 +1043,7 @@ def comp_collider(ic):
     collider_3d(ic)
 
 
-@component_icon("component_rigid_body", "RigidBody Component")
+@component_icon("component_rigid_body", "Rigid3D Component")
 def comp_rigid_body(ic):
     rigid_3d(ic)
 

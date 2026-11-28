@@ -35,15 +35,19 @@ struct CompileResult final {
 /// Type-checks `file` against what `host` offers and compiles it. Every value's type is known here:
 /// names are resolved, operators checked, units converted (deg to radians, ms to seconds, cm and
 /// km to metres). No program is produced when there is any diagnostic.
-[[nodiscard]] CompileResult CompileUVScript(const File& file, const UVScriptHost& host);
+[[nodiscard]] CompileResult CompileBlueprintTree(const File& file, const BlueprintHost& host);
 
 /// Parses and compiles in one step; parse errors come first.
-[[nodiscard]] CompileResult CompileUVScriptSource(std::string_view source, const UVScriptHost& host);
+[[nodiscard]] CompileResult CompileBlueprintNotation(std::string_view source, const BlueprintHost& host);
 
 [[nodiscard]] std::vector<FieldInfo> GetProgramFields(const Program& program);
 
 /// Identifies the compiled code exactly: the same source compiled against a host that describes
 /// the same things gives the same fingerprint. Native code is looked up by it.
 [[nodiscard]] std::uint64_t GetProgramFingerprint(const Program& program);
+
+/// The same hash with every instruction's source position left out: two programs that run the same code give the
+/// same value however they were written down (text lines or graph node ids).
+[[nodiscard]] std::uint64_t GetProgramShapeFingerprint(const Program& program);
 
 } // namespace UVE::Blueprint

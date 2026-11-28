@@ -4239,7 +4239,7 @@ void DeclareObjectCommon(std::vector<TypeMetadataEntry>& entries) {
                      {WithCustomDrawer(Declare<&ScriptComponent::scriptAssetPath>(
                                               "scriptAssetPath", "Scripting", kPropertyTypeString),
                                           "script-slot"),
-                      // A `.uvs` script's `export` fields, drawn from the script itself; this
+                      // A Blueprint's exported variables, drawn from the Blueprint itself; this
                       // object's values are stored here, so each edit is one undo step.
                       WithCustomDrawer(Declare<&ScriptComponent::exportValues>(
                                               "exportValues", "Exports", "ScriptExportValues"),

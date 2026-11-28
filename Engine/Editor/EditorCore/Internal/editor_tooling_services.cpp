@@ -35,8 +35,8 @@ namespace {
 
 [[nodiscard]] bool IsSearchableAssetExt(const std::string& ext) {
     return ext == ".uvscene" || ext == ".uvmaterial" || ext == ".uvprefab" ||
-           ext == ".uvmatgraph" || ext == ".uvs" || ext == ".uvfx" || ext == ".uvanim" ||
-           ext == ".json" || ext == ".glsl" || ext == ".uvproj";
+           ext == ".uvmatgraph" || ext == ".uvbp" || ext == ".uvfx" || ext == ".uvanim" ||
+           ext == ".json" || ext == ".glsl" || ext == ".uvproject";
 }
 
 } // namespace
@@ -122,7 +122,7 @@ std::vector<std::string> EditorAssetDependencyIndex::FindUnusedAssets(
     std::vector<std::string> unused;
     for (const std::string& asset : allAssets) {
         const std::string ext = ToLowerCopy(std::filesystem::path(asset).extension().string());
-        if (ext == ".uvscene" || ext == ".uvproj") {
+        if (ext == ".uvscene" || ext == ".uvproject") {
             continue; // Root entry points are never flagged as unused.
         }
         const auto it = m_reverse.find(asset);

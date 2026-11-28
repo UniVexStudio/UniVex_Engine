@@ -1,6 +1,6 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
-// The value operations every UVScript program runs on, interpreted or native, and the registry of
+// The value operations every Blueprint program runs on, interpreted or native, and the registry of
 // native programs.
 
 #include "blueprint_native.h"
@@ -380,7 +380,7 @@ Value Concat(std::vector<Value>& stack, const std::size_t count) {
     return text;
 }
 
-Value CallBuiltin(UVScriptHost& host, const int builtin, const std::span<const Value> a) {
+Value CallBuiltin(BlueprintHost& host, const int builtin, const std::span<const Value> a) {
     const bool allInt = std::ranges::all_of(a, [](const Value& v) { return std::holds_alternative<std::int64_t>(v); });
     const auto integer = [&a](const std::size_t i) { return std::get<std::int64_t>(a[i]); };
     switch (static_cast<Builtin>(builtin)) {

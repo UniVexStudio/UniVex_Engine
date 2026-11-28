@@ -19,7 +19,7 @@ struct BlueprintPinSpec final {
     std::string defaultText;
 };
 
-/// How a node turns into UVScript.
+/// How a node turns into Blueprint.
 enum class BlueprintNodeRole : std::uint8_t {
     Event,        ///< starts a chain: `on <event>(args):`
     Action,       ///< one statement (`code`, `{n}` = input pin n's expression), then its exec output
@@ -53,7 +53,7 @@ struct BlueprintNodeType final {
     BlueprintNodeRole role = BlueprintNodeRole::Action;
     std::vector<BlueprintPinSpec> inputs;
     std::vector<BlueprintPinSpec> outputs;
-    /// Event: the UVScript event name.
+    /// Event: the Blueprint event name.
     std::string event;
     /// Action: the statement.
     std::string code;
@@ -83,25 +83,7 @@ struct BlueprintNodePins final {
 };
 [[nodiscard]] BlueprintNodePins ResolveBlueprintNodePins(const BlueprintAsset& blueprint, const BlueprintNode& node);
 
-/// The UVScript name of a pin type ("float", "vec3", "Object3D" ...).
+/// The written name of a pin type ("float", "vec3", "Object3D" ...).
 [[nodiscard]] std::string_view BlueprintPinTypeScriptName(BlueprintPinType type) noexcept;
-
-/// A blueprint as UVScript source, with the node behind each line (for diagnostics) and the
-/// problems found while translating (an unknown node, a loop of exec wires ...).
-struct BlueprintTranslation final {
-    std::string source;
-    /// lineNodes[line - 1]: the node that wrote that line (0 for the header and fields).
-    std::vector<std::uint32_t> lineNodes;
-    std::vector<std::pair<std::uint32_t, std::string>> problems;
-    /// The node behind a 1-based source line, or 0.
-    [[nodiscard]] std::uint32_t NodeAtLine(std::uint32_t line) const noexcept {
-        return line >= 1U && line <= lineNodes.size() ? lineNodes[line - 1U] : 0U;
-    }
-};
-
-/// Translates `blueprint` for an object named `objectName` of kind `objectKind` (its UVScript
-/// header: `entity <objectName> : <objectKind>`).
-[[nodiscard]] BlueprintTranslation TranslateBlueprintToUVScript(const BlueprintAsset& blueprint, std::string_view objectName,
-                                                                     std::string_view objectKind);
 
 } // namespace UVE::Asset

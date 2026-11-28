@@ -21,14 +21,12 @@ bool Script::HasScriptPath(const ScriptComponent& script) noexcept {
     return IsScriptComponentValid(script) && !script.scriptAssetPath.empty();
 }
 
-bool Script::IsUVScriptPath(const std::string_view scriptAssetPath) noexcept {
-    // A Blueprint Class (.uvbp) runs as the UVScript it translates to.
-    return scriptAssetPath.ends_with(kUVScriptExtension) || scriptAssetPath.ends_with(".uvbp") ||
-           scriptAssetPath.ends_with(".uvwbp");
+bool Script::IsBlueprintPath(const std::string_view scriptAssetPath) noexcept {
+    return scriptAssetPath.ends_with(".uvbp") || scriptAssetPath.ends_with(".uvwbp");
 }
 
-bool Script::IsRunnableUVScript(const ScriptComponent& script) noexcept {
-    return IsScriptComponentValid(script) && IsUVScriptPath(script.scriptAssetPath);
+bool Script::IsRunnableBlueprint(const ScriptComponent& script) noexcept {
+    return IsScriptComponentValid(script) && IsBlueprintPath(script.scriptAssetPath);
 }
 
 const std::string* Script::FindExportedProperty(

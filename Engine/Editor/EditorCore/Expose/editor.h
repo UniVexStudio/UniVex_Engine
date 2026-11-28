@@ -986,7 +986,7 @@ public:
     /// is cleared only after the scene serializer reports success.
     [[nodiscard]] bool SaveScene();
 
-    /// Saves everything with unsaved changes: the scene and the open UVScript. Returns how many
+    /// Saves everything with unsaved changes: the scene and the open entity. Returns how many
     /// were written; a failure is reported in the Content status line.
     std::size_t SaveAll();
 
@@ -1243,7 +1243,7 @@ public:
     /// Puts the make-up problems in the open entity's problem list. True when they changed.
     bool RefreshEntityStructureProblems();
     /// The Blueprint panel's unsaved graph for a `.uvbp` path, so Compile checks what is being
-    /// edited (like the open text editor for a `.uvs`). Unset or empty: the file on disk.
+    /// edited. Unset or empty: the file on disk.
     std::function<std::optional<Asset::BlueprintAsset>(const std::string& path)> m_openBlueprintProvider;
     /// Writes the Entity Editor's open Blueprint graph when it has unsaved edits (set by its window):
     /// every save of the entity saves its graph too, and Simulate and Revert keep its edits.
@@ -1262,14 +1262,14 @@ public:
         std::vector<std::string> objectPath;
     };
     std::optional<PendingBlueprintCreate> m_pendingBlueprintCreate;
-    /// Checks the whole open entity: one root, and every object's `.uvs` script (read from the
-    /// open text editor when it has unsaved text, else from disk) compiled against that object.
+    /// Checks the whole open entity: one root, and every object's Blueprint (the open graph when it has
+    /// unsaved edits, else the file) compiled against that object.
     /// Returns the problem count; the list stays until the next Compile, Revert or close.
     std::size_t CompileEntityEditor();
     /// What changed in the open entity since it was last saved (or opened): objects, components
     /// and properties, from its saved file to what the editor holds now. Empty when nothing did.
     [[nodiscard]] std::vector<EntityDiffRow> DiffEntityEditor();
-    /// Simulate: the open entity's UVScripts run on its own scene (ready once, then tick every
+    /// Simulate: the open entity's Blueprints run on its own scene (ready once, then tick every
     /// frame), the level untouched. Stop puts the entity back exactly as it was before Play.
     enum class EntitySimulationState : std::uint8_t { Stopped, Running, Paused };
     /// Starts (or resumes) the simulation; false when no entity is open or it cannot be captured.
@@ -1305,10 +1305,7 @@ public:
     };
     /// Every handler of every script in the open entity, in tree order then source order.
     [[nodiscard]] std::vector<EntitySignalRow> GetEntityEditorSignals();
-    /// Selects `entity`, opens its script in the Scripting tab and puts the caret on `line`
-    /// (1-based; 0 leaves it). False when the object has no `.uvs` script.
-    bool GoToEntityScript(Scene::Entity entity, std::uint32_t line);
-    /// Unsaved edits anywhere in the Entity Editor: the tree or the open script.
+    /// Unsaved edits anywhere in the Entity Editor: the tree or the open Blueprint.
     [[nodiscard]] bool HasEntityEditorUnsavedChanges() const noexcept;
 
     /// Stores `contentRelativePath` (a `.uventity`) as the project's Default Player and saves the
@@ -1817,35 +1814,6 @@ public:
     [[nodiscard]] const std::string& GetAssetFilter() const noexcept;
     [[nodiscard]] const std::filesystem::path& GetActiveScenePath() const noexcept;
     void SetActiveScenePath(std::filesystem::path path);
-    /// Opens `entity`'s script in the Scripting workspace (its `.uvs` file in the text editor).
-    /// False when `entity` has no Script component or its script is not a `.uvs` file - the
-    /// viewport's entity toolbar uses that to decide whether to offer "Scripting" at all.
-    [[nodiscard]] bool OpenScriptGraphForEntity(Scene::Entity entity);
-    /// "New UVScript" on the Scripting slot. Writes `scripts/<name>.uvs` (a free name) whose header
-    /// names the object and its kind, points the Script at it as one undoable edit, and opens it in
-    /// the script text editor. Refuses unless authoring is allowed, exactly one document entity is
-    /// selected, it carries a Script component and that Script is still empty.
-    [[nodiscard]] bool CreateUVScriptForSelectedEntity();
-
-    /// A `.uvs` file open in the Scripting workspace's text editor.
-    struct UVScriptDocument final {
-        std::string path;
-        /// The object the script is checked against: its components decide which properties exist.
-        Scene::Entity entity = Scene::kInvalidEntity;
-        std::string text;
-        std::string savedText;
-        /// Every problem the compiler found in `text`, in source order; empty when it compiles.
-        std::vector<Blueprint::Diagnostic> diagnostics;
-
-        [[nodiscard]] bool IsDirty() const noexcept { return text != savedText; }
-    };
-    /// Opens `entity`'s `.uvs` script in the text editor and switches to the Scripting workspace.
-    /// A missing file opens empty; saving creates it. False when the entity has no `.uvs` script.
-    [[nodiscard]] bool OpenUVScriptForEntity(Scene::Entity entity);
-    /// Opens a `.uvs` script file by path in the text editor and switches to the Scripting workspace.
-    [[nodiscard]] bool OpenUVScriptPath(const std::filesystem::path& path);
-    /// Opens the Godot-style "Create Script" modal dialog for configuring and creating a new UVScript.
-    void OpenCreateScriptModal(const std::filesystem::path& targetDirectory, Scene::Entity entity = Scene::kInvalidEntity);
     /// Opens the Godot-style "Create Shader" modal dialog for configuring and creating a new shader.
     void OpenCreateShaderModal(const std::filesystem::path& targetDirectory,
                                   std::function<void(const std::filesystem::path&)> onCreated = nullptr);
@@ -1858,29 +1826,21 @@ public:
     bool ImportExternalFiles(const std::vector<std::filesystem::path>& sourceFiles,
                                 const std::filesystem::path& targetDirectory = {},
                                 bool deleteStagedSources = false);
-    [[nodiscard]] const std::optional<UVScriptDocument>& GetOpenUVScript() const noexcept;
-    /// Replaces the open script's text and re-checks it. No effect when nothing is open.
-    void SetOpenUVScriptText(std::string text);
-    /// Writes the open script to its file. The running game picks the change up on its own.
-    [[nodiscard]] bool SaveOpenUVScript();
-    /// Closes the text editor (unsaved text is dropped) and returns to the scene.
-    void CloseOpenUVScript();
-
-    /// One `export` field of the selected object's `.uvs` script, as the Inspector shows it.
+    /// One exported variable of the selected object's Blueprint, as the Inspector shows it.
     struct ScriptExportRow final {
         std::string name;
         Blueprint::Type type;
-        /// The script's own initial value, as UVScript text.
+        /// The Blueprint's own initial value, as text.
         std::string defaultText;
         /// What this object runs with: its stored value when it has a valid one, else the default.
         std::string valueText;
         bool overridden = false;
     };
     /// The selected object's exported fields, in declaration order. Empty when the object has no
-    /// `.uvs` script, the file cannot be read, or it does not compile.
+    /// Blueprint, the file cannot be read, or it does not compile.
     [[nodiscard]] std::vector<ScriptExportRow> GetSelectedScriptExports();
-    /// Sets the selected object's value for export `name` from UVScript text, or - with no text -
-    /// goes back to the script's default. One undo step. Refuses a name the script does not
+    /// Sets the selected object's value for export `name` from text, or - with no text -
+    /// goes back to the Blueprint's default. One undo step. Refuses a name the script does not
     /// export and text that is not a value of the field's type.
     [[nodiscard]] bool SetSelectedScriptExport(const std::string& name, std::optional<std::string> text);
     /// "Quick Load" and "Load": points the selected entity's Script at an existing script asset, as
@@ -1888,10 +1848,10 @@ public:
     /// DescribeScriptAssetProblem.
     [[nodiscard]] bool AssignScriptToSelectedEntity(const std::string& path);
     /// Why `path` cannot be assigned as a script, in words fit to show beside the field; empty when
-    /// it can. A path must be project-relative and name an existing `.uvs` file.
+    /// it can. A path must be project-relative and name an existing Blueprint (`.uvbp`).
     [[nodiscard]] std::string DescribeScriptAssetProblem(const std::string& path) const;
     /// The script assets Quick Load offers, sorted: every one the document already uses, plus every
-    /// `.uvs` file in the project's scripts folder.
+    /// Blueprint in the project's scripts folder.
     [[nodiscard]] std::vector<std::string> GetKnownScriptAssetPaths() const;
     /// Metadata on the selected object. Each writes the whole entry list once through the metadata
     /// property path, so every add, edit, rename, retype or removal is exactly one undo entry.
@@ -2285,7 +2245,6 @@ private:
         Blueprint,
         /// A Widget Blueprint (`.uvwbp`): UI widgets and their graph, edited in the Widget Editor.
         WidgetBlueprint,
-        Script,
         Audio,
         Font,
         /// A Particle System (`.uvfx`): opens in the VFX / Particle Graph Editor.
@@ -2474,9 +2433,14 @@ private:
     [[nodiscard]] bool WriteProjectTextFile(const std::filesystem::path& path, std::string_view text);
     /// Reads a project file by the same rule as WriteProjectTextFile.
     [[nodiscard]] std::optional<std::string> ReadProjectTextFile(const std::filesystem::path& path) const;
-    /// The UVScript an object's Script slot runs in the Entity Editor: a .uvs as edited (saved or
-    /// not), or a Blueprint (.uvbp, the open graph or the file) translated for that object.
-    [[nodiscard]] std::optional<std::string> ReadEntityScriptSource(const std::string& path, Scene::Entity entity) const;
+    /// What an object's Script slot runs in the Entity Editor: its Blueprint graph (the open one, or the file)
+    /// with the name and kind it is compiled for.
+    struct EntityScriptSource final {
+        std::optional<Asset::BlueprintAsset> graph;
+        std::string objectName;
+        std::string objectKind;
+    };
+    [[nodiscard]] std::optional<EntityScriptSource> ReadEntityScriptSource(const std::string& path, Scene::Entity entity) const;
     [[nodiscard]] bool IsDocumentEntity(Scene::Entity entity) const noexcept;
     [[nodiscard]] bool HasSceneGraphObject(Scene::Entity entity) const noexcept;
     /// True for any live document entity in the hierarchy, spatial or not. This, not
@@ -3673,7 +3637,6 @@ private:
     /// checking reads and decodes the file.
     std::optional<std::string> m_scriptLoadCheckedPath;
     std::string m_scriptLoadProblem;
-    std::optional<UVScriptDocument> m_openUVScript;
     /// A `.uvshader` asset currently open for in-inspector editing.
     struct ShaderAssetEditState final {
         std::filesystem::path path;
@@ -3681,17 +3644,6 @@ private:
         bool isDirty = false;
     };
     std::optional<ShaderAssetEditState> m_openShaderAsset;
-    /// State of the Godot-style "Create Script" dialog.
-    struct CreateScriptModalState final {
-        bool isOpen = false;
-        bool openRequested = false;
-        std::filesystem::path targetDirectory;
-        Scene::Entity targetEntity = Scene::kInvalidEntity;
-        std::string scriptPathText = "NewScript.uvs";
-        std::string inheritsClass = "Object";
-        int templateIndex = 0;
-    };
-    CreateScriptModalState m_createScriptModal;
     /// State of the Godot-style "Create Shader" dialog.
     struct CreateShaderModalState final {
         bool isOpen = false;
@@ -3702,8 +3654,6 @@ private:
         std::function<void(const std::filesystem::path&)> onShaderCreated = nullptr;
     };
     CreateShaderModalState m_createShaderModal;
-    /// A caret move the text editor applies on its next frame (1-based line), set by GoTo.
-    std::uint32_t m_uvscriptJumpLine = 0U;
     /// The export rows the Inspector last drew, reused until the object, its script or its values
     /// change, or half a second passes (the file may have been edited).
     struct ScriptExportsCache final {

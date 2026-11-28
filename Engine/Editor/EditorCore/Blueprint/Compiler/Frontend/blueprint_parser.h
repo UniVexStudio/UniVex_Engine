@@ -18,11 +18,11 @@ struct ParseResult final {
     [[nodiscard]] bool IsSuccess() const noexcept { return diagnostics.empty(); }
 };
 
-/// Parses `.uvs` source text. The tree holds everything that parsed, even when there are
+/// Parses Blueprint notation text. The tree holds everything that parsed, even when there are
 /// diagnostics. Tabs count as four spaces. Line breaks inside (), [] are ignored.
-[[nodiscard]] ParseResult ParseUVScript(std::string_view source);
+[[nodiscard]] ParseResult ParseBlueprintNotation(std::string_view source);
 
 /// The unit suffixes a number may carry: s, ms, m, cm, km, deg, rad.
-[[nodiscard]] bool IsUVScriptUnit(std::string_view word) noexcept;
+[[nodiscard]] bool IsBlueprintNotationUnit(std::string_view word) noexcept;
 
 } // namespace UVE::Blueprint

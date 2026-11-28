@@ -16,7 +16,7 @@ namespace {
 
 /// A host with no properties and three tuple-shaped functions: `triple` and `notuple` lie about
 /// what they return, so the run-time unpacking checks have something to catch.
-class CollectionHost final : public UVScriptHost {
+class CollectionHost final : public BlueprintHost {
 public:
     std::optional<HostProperty> DescribeProperty(const std::string_view) const override { return std::nullopt; }
     std::optional<HostFunction> DescribeFunction(const std::string_view name) const override {
@@ -44,7 +44,7 @@ public:
 };
 
 [[nodiscard]] std::shared_ptr<const Program> CompileOrFail(const std::string& source, const CollectionHost& host) {
-    const CompileResult result = CompileUVScriptSource(source, host);
+    const CompileResult result = CompileBlueprintNotation(source, host);
     for (const Diagnostic& d : result.diagnostics) {
         ADD_FAILURE() << d.at.line << ":" << d.at.column << " " << d.message;
     }
@@ -54,14 +54,14 @@ public:
 [[nodiscard]] std::vector<std::string> ErrorsOf(const std::string& source) {
     CollectionHost host;
     std::vector<std::string> messages;
-    for (const Diagnostic& d : CompileUVScriptSource(source, host).diagnostics) {
+    for (const Diagnostic& d : CompileBlueprintNotation(source, host).diagnostics) {
         messages.push_back(std::to_string(d.at.line) + ": " + d.message);
     }
     return messages;
 }
 
-TEST(UVScriptCollectionsTest, ParsesCollectionLiterals) {
-    const ParseResult result = ParseUVScript(R"(var xs = [1, 2, 3]
+TEST(BlueprintCollectionsTest, ParsesCollectionLiterals) {
+    const ParseResult result = ParseBlueprintNotation(R"(var xs = [1, 2, 3]
 var trailing = [1, 2,]
 var m = {"a": 1, "b": 2}
 var t = (1, "a")
@@ -114,8 +114,8 @@ var multi = [
     EXPECT_EQ(file.fields[10].initializer->operands.size(), 2U);
 }
 
-TEST(UVScriptCollectionsTest, ParsesTupleUnpackingLets) {
-    const ParseResult result = ParseUVScript("on ready:\n    let (a, b) = pair()\n    let x = 1\n");
+TEST(BlueprintCollectionsTest, ParsesTupleUnpackingLets) {
+    const ParseResult result = ParseBlueprintNotation("on ready:\n    let (a, b) = pair()\n    let x = 1\n");
     for (const Diagnostic& d : result.diagnostics) {
         ADD_FAILURE() << d.at.line << ":" << d.at.column << " " << d.message;
     }
@@ -129,11 +129,11 @@ TEST(UVScriptCollectionsTest, ParsesTupleUnpackingLets) {
     EXPECT_EQ(body[1]->name, "x");
     EXPECT_TRUE(body[1]->names.empty());
     // Unpacked names take their types from the tuple; no annotation fits there.
-    EXPECT_FALSE(ParseUVScript("on ready:\n    let (a, b): (int, str) = pair()\n").diagnostics.empty());
+    EXPECT_FALSE(ParseBlueprintNotation("on ready:\n    let (a, b): (int, str) = pair()\n").diagnostics.empty());
 }
 
-TEST(UVScriptCollectionsTest, ParsesElementAssignment) {
-    const ParseResult result = ParseUVScript("on ready:\n    xs[0] = 1\n    m[\"k\"] += 2\n");
+TEST(BlueprintCollectionsTest, ParsesElementAssignment) {
+    const ParseResult result = ParseBlueprintNotation("on ready:\n    xs[0] = 1\n    m[\"k\"] += 2\n");
     for (const Diagnostic& d : result.diagnostics) {
         ADD_FAILURE() << d.at.line << ":" << d.at.column << " " << d.message;
     }
@@ -148,7 +148,7 @@ TEST(UVScriptCollectionsTest, ParsesElementAssignment) {
     EXPECT_EQ(body[1]->target->kind, ExprKind::Index);
 }
 
-TEST(UVScriptCollectionsTest, EmptyLiteralsNeedAType) {
+TEST(BlueprintCollectionsTest, EmptyLiteralsNeedAType) {
     EXPECT_EQ(ErrorsOf("on ready:\n    let xs = []\n"),
               (std::vector<std::string>{"2: this list is empty, so its item type is unknown - write it where the "
                                         "list is stored, as in 'let xs: list[int] = []'"}));
@@ -157,7 +157,7 @@ TEST(UVScriptCollectionsTest, EmptyLiteralsNeedAType) {
                                         "is stored, as in 'let scores: map[str, int] = {}'"}));
 }
 
-TEST(UVScriptCollectionsTest, LiteralItemsMustShareAType) {
+TEST(BlueprintCollectionsTest, LiteralItemsMustShareAType) {
     EXPECT_EQ(ErrorsOf("on ready:\n    let xs = [1, \"a\"]\n"),
               (std::vector<std::string>{"2: this list holds int, not str"}));
     EXPECT_EQ(ErrorsOf("on ready:\n    let m = {\"a\": 1, \"b\": \"x\"}\n"),
@@ -172,7 +172,7 @@ TEST(UVScriptCollectionsTest, LiteralItemsMustShareAType) {
     EXPECT_TRUE(ErrorsOf("on ready:\n    let xs = [1, 2.5]\n").empty());
 }
 
-TEST(UVScriptCollectionsTest, AnnotationsMustNameElementTypes) {
+TEST(BlueprintCollectionsTest, AnnotationsMustNameElementTypes) {
     EXPECT_EQ(ErrorsOf("on ready:\n    let xs: list = [1]\n"),
               (std::vector<std::string>{"2: write the item type, as in 'list[int]'"}));
     EXPECT_EQ(ErrorsOf("on ready:\n    let m: map[int] = {}\n"),
@@ -185,7 +185,7 @@ TEST(UVScriptCollectionsTest, AnnotationsMustNameElementTypes) {
               (std::vector<std::string>{"2: only list[...], map[...] and tuple[...] take types inside brackets"}));
 }
 
-TEST(UVScriptCollectionsTest, CollectionsMustMatchExactly) {
+TEST(BlueprintCollectionsTest, CollectionsMustMatchExactly) {
     EXPECT_EQ(ErrorsOf("on ready:\n    let xs: list[str] = [1]\n"),
               (std::vector<std::string>{"2: 'xs' needs list[str] but this is list[int]"}));
     EXPECT_EQ(ErrorsOf("on ready:\n    let xs = [1]\n    print(xs == [\"a\"])\n"),
@@ -198,7 +198,7 @@ TEST(UVScriptCollectionsTest, CollectionsMustMatchExactly) {
               (std::vector<std::string>{"3: '-' does not work on list[int]"}));
 }
 
-TEST(UVScriptCollectionsTest, IndexingIsChecked) {
+TEST(BlueprintCollectionsTest, IndexingIsChecked) {
     EXPECT_EQ(ErrorsOf("on ready:\n    let xs = [1]\n    print(xs[1.0])\n"),
               (std::vector<std::string>{"3: a list index is a whole number, not float"}));
     EXPECT_EQ(ErrorsOf("on ready:\n    let n = 1\n    print(n[0])\n"),
@@ -210,7 +210,7 @@ TEST(UVScriptCollectionsTest, IndexingIsChecked) {
               (std::vector<std::string>{"3: this (int, str) has no index 5"}));
 }
 
-TEST(UVScriptCollectionsTest, ElementAssignmentIsChecked) {
+TEST(BlueprintCollectionsTest, ElementAssignmentIsChecked) {
     EXPECT_EQ(ErrorsOf("on ready:\n    let t = (1, 2)\n    t[0] = 3\n"),
               (std::vector<std::string>{"3: a tuple cannot change - build a new one instead"}));
     EXPECT_EQ(ErrorsOf("on ready:\n    let a = [[1]]\n    a[0][1] = 2\n"),
@@ -224,21 +224,21 @@ TEST(UVScriptCollectionsTest, ElementAssignmentIsChecked) {
               (std::vector<std::string>{"3: '+=' would turn this int into float"}));
 }
 
-TEST(UVScriptCollectionsTest, UnpackingIsChecked) {
+TEST(BlueprintCollectionsTest, UnpackingIsChecked) {
     EXPECT_EQ(ErrorsOf("on ready:\n    let (a, b, c) = (1, \"x\")\n"),
               (std::vector<std::string>{"2: this (int, str) unpacks into 2, not 3"}));
     EXPECT_EQ(ErrorsOf("on ready:\n    let (a, b) = [1, 2]\n"),
               (std::vector<std::string>{"2: only a tuple unpacks into names, not list[int]"}));
 }
 
-TEST(UVScriptCollectionsTest, ForWalksRangesListsAndMaps) {
+TEST(BlueprintCollectionsTest, ForWalksRangesListsAndMaps) {
     EXPECT_EQ(ErrorsOf("on ready:\n    for x in 1:\n        pass\n"),
               (std::vector<std::string>{"2: 'for' walks a range, a list or a map's keys - not int"}));
     EXPECT_EQ(ErrorsOf("on ready:\n    for x in (1, 2):\n        pass\n"),
               (std::vector<std::string>{"2: a tuple unpacks with 'let (a, b) = ...' instead of a loop"}));
 }
 
-TEST(UVScriptCollectionsTest, BuiltinsAreChecked) {
+TEST(BlueprintCollectionsTest, BuiltinsAreChecked) {
     EXPECT_EQ(ErrorsOf("on ready:\n    print(push({\"a\": 1}, 2))\n"),
               (std::vector<std::string>{"2: 'push' adds to a list, not map[str, int]"}));
     EXPECT_EQ(ErrorsOf("on ready:\n    print(push([1], \"a\"))\n"),
@@ -263,7 +263,7 @@ TEST(UVScriptCollectionsTest, BuiltinsAreChecked) {
               (std::vector<std::string>{"3: write 'xs.push(value)' - push adds one value"}));
 }
 
-TEST(UVScriptCollectionsTest, ReadsLiteralsAndNestedElements) {
+TEST(BlueprintCollectionsTest, ReadsLiteralsAndNestedElements) {
     CollectionHost host;
     const auto program = CompileOrFail(R"(on ready:
     let xs = [10, 20, 30]
@@ -276,12 +276,12 @@ TEST(UVScriptCollectionsTest, ReadsLiteralsAndNestedElements) {
 )",
                                           host);
     ASSERT_NE(program, nullptr);
-    ScriptInstance instance(program, host);
+    BlueprintInstance instance(program, host);
     ASSERT_TRUE(instance.RaiseEvent("ready")) << instance.GetLastError();
     EXPECT_EQ(host.printed, (std::vector<std::string>{"10", "30", "20", "1", "2"}));
 }
 
-TEST(UVScriptCollectionsTest, LengthPushKeysContainsRemove) {
+TEST(BlueprintCollectionsTest, LengthPushKeysContainsRemove) {
     CollectionHost host;
     const auto program = CompileOrFail(R"(on ready:
     let xs = [1, 2]
@@ -301,13 +301,13 @@ TEST(UVScriptCollectionsTest, LengthPushKeysContainsRemove) {
 )",
                                           host);
     ASSERT_NE(program, nullptr);
-    ScriptInstance instance(program, host);
+    BlueprintInstance instance(program, host);
     ASSERT_TRUE(instance.RaiseEvent("ready")) << instance.GetLastError();
     EXPECT_EQ(host.printed, (std::vector<std::string>{"2", "4", "[1, 2, 3]", "[1, 2]", "[b, a]", "true", "false",
                                                        "true", "true", "[2, 3]", "{a: 1}"}));
 }
 
-TEST(UVScriptCollectionsTest, MethodFormsAndSugarStatement) {
+TEST(BlueprintCollectionsTest, MethodFormsAndSugarStatement) {
     CollectionHost host;
     const auto program = CompileOrFail(R"(on ready:
     let xs = [1]
@@ -329,13 +329,13 @@ TEST(UVScriptCollectionsTest, MethodFormsAndSugarStatement) {
 )",
                                           host);
     ASSERT_NE(program, nullptr);
-    ScriptInstance instance(program, host);
+    BlueprintInstance instance(program, host);
     ASSERT_TRUE(instance.RaiseEvent("ready")) << instance.GetLastError();
     EXPECT_EQ(host.printed, (std::vector<std::string>{"1", "true", "3", "[1, 2]", "[1, 3]", "[3]", "[k]", "1", "{}",
                                                        "0"}));
 }
 
-TEST(UVScriptCollectionsTest, AssignsElements) {
+TEST(BlueprintCollectionsTest, AssignsElements) {
     CollectionHost host;
     const auto program = CompileOrFail(R"(on ready:
     let xs = [1, 2, 3]
@@ -350,12 +350,12 @@ TEST(UVScriptCollectionsTest, AssignsElements) {
 )",
                                           host);
     ASSERT_NE(program, nullptr);
-    ScriptInstance instance(program, host);
+    BlueprintInstance instance(program, host);
     ASSERT_TRUE(instance.RaiseEvent("ready")) << instance.GetLastError();
     EXPECT_EQ(host.printed, (std::vector<std::string>{"[9, 2, 10]", "{a: 5, b: 2}"}));
 }
 
-TEST(UVScriptCollectionsTest, CopiesNeverAlias) {
+TEST(BlueprintCollectionsTest, CopiesNeverAlias) {
     CollectionHost host;
     const auto program = CompileOrFail(R"(on ready:
     let a = [1, 2]
@@ -370,12 +370,12 @@ TEST(UVScriptCollectionsTest, CopiesNeverAlias) {
 )",
                                           host);
     ASSERT_NE(program, nullptr);
-    ScriptInstance instance(program, host);
+    BlueprintInstance instance(program, host);
     ASSERT_TRUE(instance.RaiseEvent("ready")) << instance.GetLastError();
     EXPECT_EQ(host.printed, (std::vector<std::string>{"[1, 2]", "[9, 2]", "1"}));
 }
 
-TEST(UVScriptCollectionsTest, ForWalksListsAndMaps) {
+TEST(BlueprintCollectionsTest, ForWalksListsAndMaps) {
     CollectionHost host;
     const auto program = CompileOrFail(R"(on ready:
     let sum = 0
@@ -400,12 +400,12 @@ TEST(UVScriptCollectionsTest, ForWalksListsAndMaps) {
 )",
                                           host);
     ASSERT_NE(program, nullptr);
-    ScriptInstance instance(program, host);
+    BlueprintInstance instance(program, host);
     ASSERT_TRUE(instance.RaiseEvent("ready")) << instance.GetLastError();
     EXPECT_EQ(host.printed, (std::vector<std::string>{"6", "ab", "1", "6"}));
 }
 
-TEST(UVScriptCollectionsTest, ForSeesASnapshot) {
+TEST(BlueprintCollectionsTest, ForSeesASnapshot) {
     CollectionHost host;
     const auto program = CompileOrFail(R"(on ready:
     let xs = [1, 2, 3]
@@ -416,12 +416,12 @@ TEST(UVScriptCollectionsTest, ForSeesASnapshot) {
 )",
                                           host);
     ASSERT_NE(program, nullptr);
-    ScriptInstance instance(program, host);
+    BlueprintInstance instance(program, host);
     ASSERT_TRUE(instance.RaiseEvent("ready")) << instance.GetLastError();
     EXPECT_EQ(host.printed, (std::vector<std::string>{"1", "2", "3", "6"}));
 }
 
-TEST(UVScriptCollectionsTest, UnpacksTuplesFromFunctions) {
+TEST(BlueprintCollectionsTest, UnpacksTuplesFromFunctions) {
     CollectionHost host;
     const auto program = CompileOrFail(R"(fn pair() -> tuple[int, str]:
     return (7, "seven")
@@ -437,12 +437,12 @@ on ready:
 )",
                                           host);
     ASSERT_NE(program, nullptr);
-    ScriptInstance instance(program, host);
+    BlueprintInstance instance(program, host);
     ASSERT_TRUE(instance.RaiseEvent("ready")) << instance.GetLastError();
     EXPECT_EQ(host.printed, (std::vector<std::string>{"7", "seven", "7", "seven", "(7, seven)"}));
 }
 
-TEST(UVScriptCollectionsTest, ConcatenatesAndCompares) {
+TEST(BlueprintCollectionsTest, ConcatenatesAndCompares) {
     CollectionHost host;
     const auto program = CompileOrFail(R"(on ready:
     print([1, 2] + [3])
@@ -456,13 +456,13 @@ TEST(UVScriptCollectionsTest, ConcatenatesAndCompares) {
 )",
                                           host);
     ASSERT_NE(program, nullptr);
-    ScriptInstance instance(program, host);
+    BlueprintInstance instance(program, host);
     ASSERT_TRUE(instance.RaiseEvent("ready")) << instance.GetLastError();
     EXPECT_EQ(host.printed, (std::vector<std::string>{"[1, 2, 3]", "true", "false", "true", "true", "true", "true",
                                                        "true"}));
 }
 
-TEST(UVScriptCollectionsTest, FormatsCollectionsInStrings) {
+TEST(BlueprintCollectionsTest, FormatsCollectionsInStrings) {
     CollectionHost host;
     const auto program = CompileOrFail(R"(on ready:
     let xs = [1, 2]
@@ -473,12 +473,12 @@ TEST(UVScriptCollectionsTest, FormatsCollectionsInStrings) {
 )",
                                           host);
     ASSERT_NE(program, nullptr);
-    ScriptInstance instance(program, host);
+    BlueprintInstance instance(program, host);
     ASSERT_TRUE(instance.RaiseEvent("ready")) << instance.GetLastError();
     EXPECT_EQ(host.printed, (std::vector<std::string>{"xs=[1, 2] len=2", "{a: [1]}", "(1,)", "()"}));
 }
 
-TEST(UVScriptCollectionsTest, ReportsIndexErrorsAtRunTime) {
+TEST(BlueprintCollectionsTest, ReportsIndexErrorsAtRunTime) {
     CollectionHost host;
     const auto outOfRange = CompileOrFail(R"(on ready:
     let xs = [1, 2]
@@ -487,7 +487,7 @@ TEST(UVScriptCollectionsTest, ReportsIndexErrorsAtRunTime) {
 )",
                                              host);
     ASSERT_NE(outOfRange, nullptr);
-    ScriptInstance first(outOfRange, host);
+    BlueprintInstance first(outOfRange, host);
     EXPECT_FALSE(first.RaiseEvent("ready"));
     EXPECT_EQ(first.GetLastError(), "line 4: index 5 is out of range for a list of 2");
 
@@ -498,27 +498,27 @@ TEST(UVScriptCollectionsTest, ReportsIndexErrorsAtRunTime) {
 )",
                                           host);
     ASSERT_NE(missing, nullptr);
-    ScriptInstance second(missing, host);
+    BlueprintInstance second(missing, host);
     EXPECT_FALSE(second.RaiseEvent("ready"));
     EXPECT_EQ(second.GetLastError(), "line 4: the map has no key 'b'");
 }
 
-TEST(UVScriptCollectionsTest, ReportsUnpackErrorsAtRunTime) {
+TEST(BlueprintCollectionsTest, ReportsUnpackErrorsAtRunTime) {
     CollectionHost host;
     const auto wrongSize = CompileOrFail("on ready:\n    let (a, b) = triple()\n    print(a)\n", host);
     ASSERT_NE(wrongSize, nullptr);
-    ScriptInstance first(wrongSize, host);
+    BlueprintInstance first(wrongSize, host);
     EXPECT_FALSE(first.RaiseEvent("ready"));
     EXPECT_EQ(first.GetLastError(), "line 2: this tuple holds 3, not 2");
 
     const auto notTuple = CompileOrFail("on ready:\n    let (a, b) = notuple()\n    print(a)\n", host);
     ASSERT_NE(notTuple, nullptr);
-    ScriptInstance second(notTuple, host);
+    BlueprintInstance second(notTuple, host);
     EXPECT_FALSE(second.RaiseEvent("ready"));
     EXPECT_EQ(second.GetLastError(), "line 2: only a tuple unpacks into names, not a list");
 }
 
-TEST(UVScriptCollectionsTest, InferredTypesUnifyNumbers) {
+TEST(BlueprintCollectionsTest, InferredTypesUnifyNumbers) {
     CollectionHost host;
     const auto program = CompileOrFail(R"(on ready:
     let xs = [1, 2.5]
@@ -529,12 +529,12 @@ TEST(UVScriptCollectionsTest, InferredTypesUnifyNumbers) {
 )",
                                           host);
     ASSERT_NE(program, nullptr);
-    ScriptInstance instance(program, host);
+    BlueprintInstance instance(program, host);
     ASSERT_TRUE(instance.RaiseEvent("ready")) << instance.GetLastError();
     EXPECT_EQ(host.printed, (std::vector<std::string>{"[1.0, 2.5]", "{a: 1.0, b: 2.5}", "1.0"}));
 }
 
-TEST(UVScriptCollectionsTest, AnnotatedEmptiesStartEmpty) {
+TEST(BlueprintCollectionsTest, AnnotatedEmptiesStartEmpty) {
     CollectionHost host;
     const auto program = CompileOrFail(R"(var empty_field: list[int]
 
@@ -557,12 +557,12 @@ on ready:
 )",
                                           host);
     ASSERT_NE(program, nullptr);
-    ScriptInstance instance(program, host);
+    BlueprintInstance instance(program, host);
     ASSERT_TRUE(instance.RaiseEvent("ready")) << instance.GetLastError();
     EXPECT_EQ(host.printed, (std::vector<std::string>{"0", "0", "0", "0", "0", "[1]"}));
 }
 
-TEST(UVScriptCollectionsTest, FingerprintsDistinguishElementTypes) {
+TEST(BlueprintCollectionsTest, FingerprintsDistinguishElementTypes) {
     CollectionHost host;
     const auto ints = CompileOrFail("var xs: list[int] = []\n", host);
     const auto strs = CompileOrFail("var xs: list[str] = []\n", host);
@@ -574,18 +574,18 @@ TEST(UVScriptCollectionsTest, FingerprintsDistinguishElementTypes) {
     EXPECT_EQ(GetProgramFingerprint(*ints), GetProgramFingerprint(*intsAgain));
 }
 
-TEST(UVScriptCollectionsTest, NativeCodegenCoversCollectionsAndStrLength) {
+TEST(BlueprintCollectionsTest, NativeCodegenCoversCollectionsAndStrLength) {
     CollectionHost host;
     const auto strLength = CompileOrFail("fn f() -> int:\n    return length(\"abc\")\n", host);
     ASSERT_NE(strLength, nullptr);
-    const std::string typed = GenerateUVScriptNativeCpp(*strLength, "strlen.uvs");
+    const std::string typed = GenerateBlueprintNativeCpp(*strLength, "strlen.bpn");
     // A str's length stays in typed code, counting characters rather than a magnitude.
     EXPECT_NE(typed.find("std::int64_t T0(Context& c)"), std::string::npos);
     EXPECT_NE(typed.find(".size())"), std::string::npos);
 
     const auto lists = CompileOrFail("fn f() -> int:\n    let xs = [1]\n    return xs[0]\n", host);
     ASSERT_NE(lists, nullptr);
-    const std::string boxed = GenerateUVScriptNativeCpp(*lists, "lists.uvs");
+    const std::string boxed = GenerateBlueprintNativeCpp(*lists, "lists.bpn");
     EXPECT_NE(boxed.find("BuildList"), std::string::npos);
     EXPECT_NE(boxed.find("GetIndex"), std::string::npos);
 }

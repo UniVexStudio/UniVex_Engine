@@ -630,9 +630,9 @@ class EngineBuilder:
                     subprocess.run(cmd, check=True)
 
             # Build Blueprint native compiler tool
-            uvsc_exe = bin_dir / "uvsc"
+            uvbc_exe = bin_dir / "uvbc"
             bp_dir = self.repo_root / "Engine" / "Editor" / "EditorCore" / "Blueprint"
-            uvsc_main = bp_dir / "Compiler" / "Backend" / "blueprint_compiler_main.cpp"
+            uvbc_main = bp_dir / "Compiler" / "Backend" / "blueprint_compiler_main.cpp"
             bp_srcs = [
                 p for sub in ("Compiler", "Runtime")
                 for p in (bp_dir / sub).rglob("*.cpp")
@@ -647,27 +647,27 @@ class EngineBuilder:
                 bp_dir / "Runtime" / "ObjectBinding",
             ]
 
-            rebuild_uvsc = not uvsc_exe.exists()
-            if not rebuild_uvsc:
-                uvsc_mtime = uvsc_exe.stat().st_mtime
-                if uvsc_main.stat().st_mtime > uvsc_mtime or any(s.stat().st_mtime > uvsc_mtime for s in bp_srcs):
-                    rebuild_uvsc = True
+            rebuild_uvbc = not uvbc_exe.exists()
+            if not rebuild_uvbc:
+                uvbc_mtime = uvbc_exe.stat().st_mtime
+                if uvbc_main.stat().st_mtime > uvbc_mtime or any(s.stat().st_mtime > uvbc_mtime for s in bp_srcs):
+                    rebuild_uvbc = True
 
-            if rebuild_uvsc and uvsc_main.exists():
+            if rebuild_uvbc and uvbc_main.exists():
                 inc_flags = [f"-I{gen_dir}"] + [f"-I{d}" for d in bp_incs]
-                cmd = [cxx, "-std=c++23", "-O2"] + inc_flags + [str(s) for s in bp_srcs] + [str(uvsc_main), "-o", str(uvsc_exe)]
+                cmd = [cxx, "-std=c++23", "-O2"] + inc_flags + [str(s) for s in bp_srcs] + [str(uvbc_main), "-o", str(uvbc_exe)]
                 subprocess.run(cmd, check=True)
 
             # Generate native Blueprint script sources
             host_file = bp_native_dir / "fake_object.uvhost"
-            script_names = ["player.uvs", "math.uvs", "waits.uvs", "errors.uvs", "methods.uvs", "collections.uvs"]
+            script_names = ["player.bpn", "math.bpn", "waits.bpn", "errors.bpn", "methods.bpn", "collections.bpn"]
             gen_script_dir = bp_native_dir / "generated"
             gen_script_dir.mkdir(parents=True, exist_ok=True)
             for sname in script_names:
                 ssrc = bp_native_dir / sname
                 sdst = gen_script_dir / f"{sname}.cpp"
-                if uvsc_exe.exists() and host_file.exists() and ssrc.exists() and (not sdst.exists() or ssrc.stat().st_mtime > sdst.stat().st_mtime or host_file.stat().st_mtime > sdst.stat().st_mtime):
-                    subprocess.run([str(uvsc_exe), "--host", str(host_file), "--out", str(sdst), str(ssrc)], check=True)
+                if uvbc_exe.exists() and host_file.exists() and ssrc.exists() and (not sdst.exists() or ssrc.stat().st_mtime > sdst.stat().st_mtime or host_file.stat().st_mtime > sdst.stat().st_mtime):
+                    subprocess.run([str(uvbc_exe), "--host", str(host_file), "--out", str(sdst), str(ssrc)], check=True)
 
         return [gen_dir, retarget_gen, ui_gen, editor_gen, vp_render_gen.parent, vp_render_gen]
 
@@ -947,7 +947,7 @@ class EngineBuilder:
                 f'UVE_TEST_PLUGIN_VALID_PATH="{bin_dir / "libuve_test_plugin_valid.so"}"',
                 f'UVE_TEST_PLUGIN_BAD_PROTOCOL_PATH="{bin_dir / "libuve_test_plugin_bad_protocol.so"}"',
                 f'UVE_TEST_PLUGIN_NO_ENTRY_PATH="{bin_dir / "libuve_test_plugin_no_entry.so"}"',
-                f'UVE_UVSCRIPT_NATIVE_DIR="{self.repo_root / "Engine" / "Editor" / "EditorCore" / "Blueprint" / "Testing" / "Compiler" / "native"}"',
+                f'UVE_BLUEPRINT_NATIVE_DIR="{self.repo_root / "Engine" / "Editor" / "EditorCore" / "Blueprint" / "Testing" / "Compiler" / "native"}"',
             ])
 
         print(f"\n[UVBT] ================================================================")

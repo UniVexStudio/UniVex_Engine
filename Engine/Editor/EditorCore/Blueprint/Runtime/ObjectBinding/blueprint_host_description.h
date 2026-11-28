@@ -13,7 +13,7 @@
 namespace UVE::Blueprint {
 
 /// A host that only describes: what an object offers, read from text, for compiling a script where no
-/// object exists (uvsc at build time). It cannot run a script. One declaration per line, `#` comments:
+/// object exists (uvbc at build time). It cannot run a script. One declaration per line, `#` comments:
 ///
 ///     property velocity vec3
 ///     property grounded bool readonly
@@ -21,7 +21,7 @@ namespace UVE::Blueprint {
 ///     event tick(float)
 ///
 /// Types are bool, int, float, str, vec3 and none; any other name is an object kind.
-class DescribedHost final : public UVScriptHost {
+class DescribedHost final : public BlueprintHost {
 public:
     /// Nothing, with `error` set ("line 3: ..."), when the text is not a valid description.
     [[nodiscard]] static std::optional<DescribedHost> Parse(std::string_view text, std::string& error);

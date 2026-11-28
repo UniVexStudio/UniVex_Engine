@@ -43,8 +43,8 @@ fn heal(amount: int) -> bool:
     return health >= max_health
 )";
 
-TEST(UVScriptParserTest, ParsesAWholeEntityScript) {
-    const ParseResult result = ParseUVScript(kPlayer);
+TEST(BlueprintParserTest, ParsesAWholeEntityScript) {
+    const ParseResult result = ParseBlueprintNotation(kPlayer);
     for (const Diagnostic& d : result.diagnostics) {
         ADD_FAILURE() << d.at.line << ":" << d.at.column << " " << d.message;
     }
@@ -92,8 +92,8 @@ TEST(UVScriptParserTest, ParsesAWholeEntityScript) {
     EXPECT_EQ(heal.body[2]->kind, StmtKind::Return);
 }
 
-TEST(UVScriptParserTest, BindsOperatorsByPrecedence) {
-    const ParseResult result = ParseUVScript("fn f():\n    return 1 + 2 * 3 == 7 and not a or b\n");
+TEST(BlueprintParserTest, BindsOperatorsByPrecedence) {
+    const ParseResult result = ParseBlueprintNotation("fn f():\n    return 1 + 2 * 3 == 7 and not a or b\n");
     ASSERT_TRUE(result.IsSuccess());
     const Expr& root = *result.file.functions[0].body[0]->value;
     ASSERT_EQ(root.text, "or");
@@ -107,8 +107,8 @@ TEST(UVScriptParserTest, BindsOperatorsByPrecedence) {
     EXPECT_EQ(conjunction.operands[1]->text, "not");
 }
 
-TEST(UVScriptParserTest, SplitsStringInterpolation) {
-    const ParseResult result = ParseUVScript("on ready:\n    print(\"hp {hp} / {max_hp} {{ok}}\")\n");
+TEST(BlueprintParserTest, SplitsStringInterpolation) {
+    const ParseResult result = ParseBlueprintNotation("on ready:\n    print(\"hp {hp} / {max_hp} {{ok}}\")\n");
     ASSERT_TRUE(result.IsSuccess());
     const Expr& text = *result.file.handlers[0].body[0]->value->operands[1];
     ASSERT_EQ(text.kind, ExprKind::String);
@@ -117,8 +117,8 @@ TEST(UVScriptParserTest, SplitsStringInterpolation) {
     EXPECT_EQ(text.operands[1]->text, "max_hp");
 }
 
-TEST(UVScriptParserTest, ReportsErrorsWithLinesAndKeepsGoing) {
-    const ParseResult result = ParseUVScript(
+TEST(BlueprintParserTest, ReportsErrorsWithLinesAndKeepsGoing) {
+    const ParseResult result = ParseBlueprintNotation(
         "entity Door\n"            // 1: missing ": Kind"
         "on open:\n"
         "    let = 3\n"             // 3: missing name
@@ -139,29 +139,29 @@ TEST(UVScriptParserTest, ReportsErrorsWithLinesAndKeepsGoing) {
     EXPECT_EQ(result.file.handlers[0].body[0]->value->unit, "deg");
 }
 
-TEST(UVScriptParserTest, RejectsBadIndentationAndStrayCode) {
-    EXPECT_FALSE(ParseUVScript("on ready:\n        a = 1\n    b = 2\n").IsSuccess());
-    EXPECT_FALSE(ParseUVScript("x = 1\n").IsSuccess());
-    EXPECT_FALSE(ParseUVScript("on ready:\n    print(\"open\n").IsSuccess());
-    EXPECT_FALSE(ParseUVScript("on ready:\npass\n").IsSuccess());
+TEST(BlueprintParserTest, RejectsBadIndentationAndStrayCode) {
+    EXPECT_FALSE(ParseBlueprintNotation("on ready:\n        a = 1\n    b = 2\n").IsSuccess());
+    EXPECT_FALSE(ParseBlueprintNotation("x = 1\n").IsSuccess());
+    EXPECT_FALSE(ParseBlueprintNotation("on ready:\n    print(\"open\n").IsSuccess());
+    EXPECT_FALSE(ParseBlueprintNotation("on ready:\npass\n").IsSuccess());
 }
 
-TEST(UVScriptParserTest, JoinsLinesInsideBracketsAndReadsUnits) {
-    const ParseResult result = ParseUVScript("on ready:\n    move(1,\n         2)\n    wait 150 ms\n");
+TEST(BlueprintParserTest, JoinsLinesInsideBracketsAndReadsUnits) {
+    const ParseResult result = ParseBlueprintNotation("on ready:\n    move(1,\n         2)\n    wait 150 ms\n");
     ASSERT_TRUE(result.IsSuccess());
     EXPECT_EQ(result.file.handlers[0].body[0]->value->operands.size(), 3U);
     EXPECT_EQ(result.file.handlers[0].body[1]->value->unit, "ms");
-    EXPECT_TRUE(IsUVScriptUnit("rad"));
-    EXPECT_FALSE(IsUVScriptUnit("hours"));
+    EXPECT_TRUE(IsBlueprintNotationUnit("rad"));
+    EXPECT_FALSE(IsBlueprintNotationUnit("hours"));
 }
 
-TEST(UVScriptParserTest, RejectsDeeplyNestedExpressionsWithoutStackOverflow) {
+TEST(BlueprintParserTest, RejectsDeeplyNestedExpressionsWithoutStackOverflow) {
     std::string source = "on ready:\n    let x = ";
     source.append(200U, '(');
     source += "1";
     source.append(200U, ')');
     source += "\n";
-    const ParseResult result = ParseUVScript(source);
+    const ParseResult result = ParseBlueprintNotation(source);
     EXPECT_FALSE(result.IsSuccess());
     ASSERT_FALSE(result.diagnostics.empty());
 }

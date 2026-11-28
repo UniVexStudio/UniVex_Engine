@@ -19,7 +19,7 @@
 namespace UVE::Blueprint::Tests {
 namespace {
 
-class DebuggerHost final : public UVScriptHost {
+class DebuggerHost final : public BlueprintHost {
 public:
     std::optional<HostProperty> DescribeProperty(std::string_view) const override {
         return std::nullopt;
@@ -54,18 +54,18 @@ constexpr const char* kFunctionSource =
     "    return y + 1\n";
 
 std::shared_ptr<const Program> Compile(const std::string& source, const DebuggerHost& host) {
-    const CompileResult result = CompileUVScriptSource(source, host);
+    const CompileResult result = CompileBlueprintNotation(source, host);
     for (const Diagnostic& diagnostic : result.diagnostics) {
         ADD_FAILURE() << diagnostic.at.line << ": " << diagnostic.message;
     }
     return result.program;
 }
 
-TEST(UVScriptDebuggerTest, BreakpointPausesBeforeCallAndContinueReturnsResult) {
+TEST(BlueprintDebuggerTest, BreakpointPausesBeforeCallAndContinueReturnsResult) {
     DebuggerHost host;
     const auto program = Compile(kFunctionSource, host);
     ASSERT_NE(program, nullptr);
-    ScriptInstance instance(program, host, Execution::Interpreted);
+    BlueprintInstance instance(program, host, Execution::Interpreted);
     ASSERT_TRUE(instance.EnableDebugger());
     ASSERT_TRUE(instance.SetDebuggerBreakpoints(std::array<std::uint32_t, 3>{0U, 6U, 6U}));
 
@@ -98,11 +98,11 @@ TEST(UVScriptDebuggerTest, BreakpointPausesBeforeCallAndContinueReturnsResult) {
     EXPECT_EQ(instance.ContinueDebug().state, ScriptDebugState::NotPaused);
 }
 
-TEST(UVScriptDebuggerTest, StepIntoEntersCalleeAndStepOverReturnsToCaller) {
+TEST(BlueprintDebuggerTest, StepIntoEntersCalleeAndStepOverReturnsToCaller) {
     DebuggerHost host;
     const auto program = Compile(kFunctionSource, host);
     ASSERT_NE(program, nullptr);
-    ScriptInstance instance(program, host, Execution::Interpreted);
+    BlueprintInstance instance(program, host, Execution::Interpreted);
     ASSERT_TRUE(instance.SetDebuggerBreakpoints(std::array<std::uint32_t, 1>{6U}));
     const std::array<Value, 1> input{std::int64_t{41}};
     EXPECT_EQ(instance.Call("outer", input), std::nullopt);
@@ -123,11 +123,11 @@ TEST(UVScriptDebuggerTest, StepIntoEntersCalleeAndStepOverReturnsToCaller) {
     EXPECT_EQ(snapshot->callDepth, 1U);
 }
 
-TEST(UVScriptDebuggerTest, StepOverDoesNotPauseInsideCallee) {
+TEST(BlueprintDebuggerTest, StepOverDoesNotPauseInsideCallee) {
     DebuggerHost host;
     const auto program = Compile(kFunctionSource, host);
     ASSERT_NE(program, nullptr);
-    ScriptInstance instance(program, host, Execution::Interpreted);
+    BlueprintInstance instance(program, host, Execution::Interpreted);
     ASSERT_TRUE(instance.SetDebuggerBreakpoints(std::array<std::uint32_t, 1>{6U}));
     const std::array<Value, 1> input{std::int64_t{41}};
     EXPECT_EQ(instance.Call("outer", input), std::nullopt);
@@ -140,7 +140,7 @@ TEST(UVScriptDebuggerTest, StepOverDoesNotPauseInsideCallee) {
     EXPECT_EQ(instance.ContinueDebug().state, ScriptDebugState::Completed);
 }
 
-TEST(UVScriptDebuggerTest, EventBreakpointAndWaitResumeThroughDebugger) {
+TEST(BlueprintDebuggerTest, EventBreakpointAndWaitResumeThroughDebugger) {
     DebuggerHost host;
     const auto program = Compile(
         "on ready:\n"
@@ -148,7 +148,7 @@ TEST(UVScriptDebuggerTest, EventBreakpointAndWaitResumeThroughDebugger) {
         "    wait 0.5 s\n"
         "    print(\"after\")\n", host);
     ASSERT_NE(program, nullptr);
-    ScriptInstance instance(program, host, Execution::Interpreted);
+    BlueprintInstance instance(program, host, Execution::Interpreted);
     ASSERT_TRUE(instance.SetDebuggerBreakpoints(std::array<std::uint32_t, 2>{2U, 4U}));
     EXPECT_TRUE(instance.RaiseEvent("ready"));
     ASSERT_TRUE(instance.IsDebugPaused());
@@ -166,11 +166,11 @@ TEST(UVScriptDebuggerTest, EventBreakpointAndWaitResumeThroughDebugger) {
     EXPECT_EQ(instance.GetWaitingCount(), 0U);
 }
 
-TEST(UVScriptDebuggerTest, DisableAbandonsPauseAndClearsBreakpoints) {
+TEST(BlueprintDebuggerTest, DisableAbandonsPauseAndClearsBreakpoints) {
     DebuggerHost host;
     const auto program = Compile("on ready:\n    print(\"done\")\n", host);
     ASSERT_NE(program, nullptr);
-    ScriptInstance instance(program, host, Execution::Interpreted);
+    BlueprintInstance instance(program, host, Execution::Interpreted);
     ASSERT_TRUE(instance.SetDebuggerBreakpoints(std::array<std::uint32_t, 1>{2U}));
     ASSERT_TRUE(instance.RaiseEvent("ready"));
     ASSERT_TRUE(instance.IsDebugPaused());
@@ -185,7 +185,7 @@ TEST(UVScriptDebuggerTest, DisableAbandonsPauseAndClearsBreakpoints) {
     EXPECT_EQ(host.printed, (std::vector<std::string>{"done"}));
 }
 
-TEST(UVScriptDebuggerTest, LoopBreakpointHitsEveryIterationAndCanBeClearedWhilePaused) {
+TEST(BlueprintDebuggerTest, LoopBreakpointHitsEveryIterationAndCanBeClearedWhilePaused) {
     DebuggerHost host;
     const auto program = Compile(
         "fn run() -> int:\n"
@@ -194,7 +194,7 @@ TEST(UVScriptDebuggerTest, LoopBreakpointHitsEveryIterationAndCanBeClearedWhileP
         "        i += 1\n"
         "    return i\n", host);
     ASSERT_NE(program, nullptr);
-    ScriptInstance instance(program, host, Execution::Interpreted);
+    BlueprintInstance instance(program, host, Execution::Interpreted);
     ASSERT_TRUE(instance.SetDebuggerBreakpoints(std::array<std::uint32_t, 1>{4U}));
     EXPECT_EQ(instance.Call("run"), std::nullopt);
     for (std::int64_t i = 0; i < 3; ++i) {
@@ -215,11 +215,11 @@ TEST(UVScriptDebuggerTest, LoopBreakpointHitsEveryIterationAndCanBeClearedWhileP
     }
 }
 
-TEST(UVScriptDebuggerTest, RuntimeFailureClearsPauseAndNextCallCanSucceed) {
+TEST(BlueprintDebuggerTest, RuntimeFailureClearsPauseAndNextCallCanSucceed) {
     DebuggerHost host;
     const auto program = Compile("fn divide(x: int) -> float:\n    return 10 / x\n", host);
     ASSERT_NE(program, nullptr);
-    ScriptInstance instance(program, host, Execution::Interpreted);
+    BlueprintInstance instance(program, host, Execution::Interpreted);
     ASSERT_TRUE(instance.SetDebuggerBreakpoints(std::array<std::uint32_t, 1>{2U}));
     EXPECT_EQ(instance.Call("divide", std::array<Value, 1>{std::int64_t{0}}), std::nullopt);
     EXPECT_EQ(instance.ContinueDebug().state, ScriptDebugState::Failed);
@@ -230,11 +230,11 @@ TEST(UVScriptDebuggerTest, RuntimeFailureClearsPauseAndNextCallCanSucceed) {
     EXPECT_TRUE(instance.GetLastError().empty());
 }
 
-TEST(UVScriptDebuggerTest, MultipleWaitingHandlersAreNotLostWhenOnePauses) {
+TEST(BlueprintDebuggerTest, MultipleWaitingHandlersAreNotLostWhenOnePauses) {
     DebuggerHost host;
     const auto program = Compile("on ready:\n    wait 0.5 s\n    print(\"done\")\n", host);
     ASSERT_NE(program, nullptr);
-    ScriptInstance instance(program, host, Execution::Interpreted);
+    BlueprintInstance instance(program, host, Execution::Interpreted);
     ASSERT_TRUE(instance.SetDebuggerBreakpoints(std::array<std::uint32_t, 1>{3U}));
     ASSERT_TRUE(instance.RaiseEvent("ready"));
     ASSERT_TRUE(instance.RaiseEvent("ready"));
@@ -252,11 +252,11 @@ TEST(UVScriptDebuggerTest, MultipleWaitingHandlersAreNotLostWhenOnePauses) {
     EXPECT_EQ(host.printed, (std::vector<std::string>{"done", "done"}));
 }
 
-TEST(UVScriptDebuggerTest, ExplicitCalleeBreakpointInterruptsStepOver) {
+TEST(BlueprintDebuggerTest, ExplicitCalleeBreakpointInterruptsStepOver) {
     DebuggerHost host;
     const auto program = Compile(kFunctionSource, host);
     ASSERT_NE(program, nullptr);
-    ScriptInstance instance(program, host, Execution::Interpreted);
+    BlueprintInstance instance(program, host, Execution::Interpreted);
     ASSERT_TRUE(instance.SetDebuggerBreakpoints(std::array<std::uint32_t, 2>{3U, 6U}));
     EXPECT_EQ(instance.Call("outer", std::array<Value, 1>{std::int64_t{41}}), std::nullopt);
     EXPECT_EQ(instance.StepOverDebug().state, ScriptDebugState::Paused);
@@ -268,12 +268,12 @@ TEST(UVScriptDebuggerTest, ExplicitCalleeBreakpointInterruptsStepOver) {
     EXPECT_EQ(instance.ContinueDebug().state, ScriptDebugState::Completed);
 }
 
-TEST(UVScriptDebuggerTest, DebuggerRejectsSameInstanceReentryFromHostCallback) {
+TEST(BlueprintDebuggerTest, DebuggerRejectsSameInstanceReentryFromHostCallback) {
     DebuggerHost host;
     const auto program = Compile("on ready:\n    print(\"done\")\n"
                                     "fn run() -> int:\n    return 7\n", host);
     ASSERT_NE(program, nullptr);
-    ScriptInstance instance(program, host, Execution::Interpreted);
+    BlueprintInstance instance(program, host, Execution::Interpreted);
     ASSERT_TRUE(instance.EnableDebugger());
     host.onPrint = [&instance] {
         EXPECT_EQ(instance.Call("run"), std::nullopt);
@@ -288,20 +288,20 @@ TEST(UVScriptDebuggerTest, DebuggerRejectsSameInstanceReentryFromHostCallback) {
     EXPECT_EQ(std::get<std::int64_t>(*result), 7);
 }
 
-TEST(UVScriptDebuggerTest, NativeExecutionRejectsDebuggerAndExplicitInterpreterAcceptsIt) {
+TEST(BlueprintDebuggerTest, NativeExecutionRejectsDebuggerAndExplicitInterpreterAcceptsIt) {
     DebuggerHost host;
-    std::ifstream file(std::string{UVE_UVSCRIPT_NATIVE_DIR} + "/math.uvs");
+    std::ifstream file(std::string{UVE_BLUEPRINT_NATIVE_DIR} + "/math.bpn");
     ASSERT_TRUE(file.is_open());
     const std::string source{std::istreambuf_iterator<char>{file}, std::istreambuf_iterator<char>{}};
     const auto program = Compile(source, host);
     ASSERT_NE(program, nullptr);
-    ScriptInstance native(program, host);
+    BlueprintInstance native(program, host);
     ASSERT_TRUE(native.IsNative());
     EXPECT_FALSE(native.EnableDebugger());
     EXPECT_FALSE(native.SetDebuggerBreakpoints(std::array<std::uint32_t, 1>{6U}));
     EXPECT_FALSE(native.IsDebuggerEnabled());
     EXPECT_EQ(native.StepIntoDebug().state, ScriptDebugState::NotPaused);
-    ScriptInstance interpreted(program, host, Execution::Interpreted);
+    BlueprintInstance interpreted(program, host, Execution::Interpreted);
     ASSERT_FALSE(interpreted.IsNative());
     EXPECT_TRUE(interpreted.EnableDebugger());
 }

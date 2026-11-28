@@ -58,7 +58,7 @@ enum class AssetKind : std::uint32_t {
     MotionMontage = 16,
     /// `.uvmontagelib`: a named list of montages a MontageSequencer can link to.
     MontageLibrary = 17,
-    /// `.uvbp`: a Blueprint Class, an object's gameplay as a graph (runs as UVScript).
+    /// `.uvbp`: a Blueprint Class, an object's gameplay as a graph (runs as Blueprint).
     Blueprint = 18,
     /// `.uvfx`: a Particle System asset defining emitters, module graphs, curves and renderers.
     ParticleSystem = 19,

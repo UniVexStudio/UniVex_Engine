@@ -19,6 +19,7 @@
 #include "blueprint_host.h"
 #include "blueprint_instance.h"
 #include "blueprint_node_categories.h"
+#include "blueprint_graph_lowering.h"
 #include "blueprint_nodes.h"
 #include "blueprint_platform.h"
 #include "blueprint_resources.h"
@@ -53,7 +54,7 @@ public:
     std::vector<Core::BlueprintGraphEvent> events;
 };
 
-class MinimalDebugHost final : public UVScriptHost {
+class MinimalDebugHost final : public BlueprintHost {
 public:
     std::optional<HostProperty> DescribeProperty(std::string_view) const override { return std::nullopt; }
     std::optional<HostFunction> DescribeFunction(std::string_view) const override { return std::nullopt; }
@@ -209,10 +210,10 @@ TEST(BlueprintDebugUnitTest, DebugSessionBreakpointsWatchAndTrace) {
         "    return doubled + counter\n";
 
     MinimalDebugHost host;
-    const CompileResult compiled = CompileUVScriptSource(kSource, host);
+    const CompileResult compiled = CompileBlueprintNotation(kSource, host);
     ASSERT_TRUE(compiled.IsSuccess());
 
-    ScriptInstance instance(compiled.program, host, Execution::Interpreted);
+    BlueprintInstance instance(compiled.program, host, Execution::Interpreted);
     Debug::BlueprintDebugSession session;
     const std::uint32_t bpId = session.Breakpoints().AddLineBreakpoint(3U, 42U);
     ASSERT_NE(bpId, 0U);
@@ -256,8 +257,8 @@ TEST(BlueprintResourcesAndPlatformUnitTest, ThemesIconsTemplatesAndPlatformPaths
         const Asset::BlueprintAsset asset = Resources::InstantiateBlueprintTemplate(tmpl.kind);
         EXPECT_TRUE(Asset::IsBlueprintAssetValid(asset)) << tmpl.id;
         EXPECT_TRUE(Assets::ValidateBlueprintAssetDetailed(asset).IsValid()) << tmpl.id;
-        const auto translation = Asset::TranslateBlueprintToUVScript(asset, "TestObj", asset.parentKind);
-        EXPECT_TRUE(translation.problems.empty()) << tmpl.id;
+        const auto lowered = Asset::LowerBlueprintGraph(asset, "TestObj", asset.parentKind);
+        EXPECT_TRUE(lowered.problems.empty()) << tmpl.id;
     }
 
     const auto caps = Platform::GetCurrentBlueprintPlatformCapabilities();

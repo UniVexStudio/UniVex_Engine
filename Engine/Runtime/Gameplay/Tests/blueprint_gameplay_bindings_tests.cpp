@@ -20,7 +20,7 @@
 namespace UVE::Scene::Tests {
 namespace {
 
-class UVScriptGameplayBindingsTest : public ::testing::Test {
+class BlueprintGameplayBindingsTest : public ::testing::Test {
 protected:
     Memory::MemoryManager memoryManager;
     Events::EventSystem eventSystem;
@@ -46,7 +46,7 @@ protected:
 
     [[nodiscard]] std::shared_ptr<const Blueprint::Program> CompileOrFail(
         const std::string& source, Core::BlueprintObjectHost& host) {
-        const Blueprint::CompileResult result = Blueprint::CompileUVScriptSource(source, host);
+        const Blueprint::CompileResult result = Blueprint::CompileBlueprintNotation(source, host);
         for (const Blueprint::Diagnostic& d : result.diagnostics) {
             ADD_FAILURE() << d.at.line << ":" << d.at.column << " " << d.message;
         }
@@ -54,7 +54,7 @@ protected:
     }
 };
 
-TEST_F(UVScriptGameplayBindingsTest, Host_DescribesAttributesSurfaceOnlyWithComponent) {
+TEST_F(BlueprintGameplayBindingsTest, Host_DescribesAttributesSurfaceOnlyWithComponent) {
     const Entity pooled = MakePooled(10.0F, 10.0F);
     Core::BlueprintObjectHost host{entityManager, nullptr, pooled};
     for (const char* name : {"attributes.has", "attributes.get", "attributes.max"}) {
@@ -80,12 +80,12 @@ TEST_F(UVScriptGameplayBindingsTest, Host_DescribesAttributesSurfaceOnlyWithComp
         EXPECT_FALSE(bare.DescribeFunction(name).has_value()) << name;
     }
     const Blueprint::CompileResult compiled =
-        Blueprint::CompileUVScriptSource("on ready:\n    print(attributes.get(\"stamina\"))\n", bare);
+        Blueprint::CompileBlueprintNotation("on ready:\n    print(attributes.get(\"stamina\"))\n", bare);
     ASSERT_EQ(compiled.diagnostics.size(), 1U);
     EXPECT_EQ(compiled.diagnostics[0].message, "there is no function 'attributes.get'");
 }
 
-TEST_F(UVScriptGameplayBindingsTest, Host_DescribesTagsSurfaceOnlyWithComponent) {
+TEST_F(BlueprintGameplayBindingsTest, Host_DescribesTagsSurfaceOnlyWithComponent) {
     const Entity tagged = MakeTagged({"undead"});
     Core::BlueprintObjectHost host{entityManager, nullptr, tagged};
     for (const char* name : {"tags.has", "tags.add", "tags.remove"}) {
@@ -102,7 +102,7 @@ TEST_F(UVScriptGameplayBindingsTest, Host_DescribesTagsSurfaceOnlyWithComponent)
     }
 }
 
-TEST_F(UVScriptGameplayBindingsTest, Script_DamagesHealsAndReadsPools) {
+TEST_F(BlueprintGameplayBindingsTest, Script_DamagesHealsAndReadsPools) {
     const Entity pooled = MakePooled(10.0F, 10.0F);
     Core::BlueprintObjectHost host{entityManager, nullptr, pooled};
     const auto program = CompileOrFail(R"(on ready:
@@ -123,7 +123,7 @@ fn has_mana() -> bool:
 )",
                                           host);
     ASSERT_NE(program, nullptr);
-    Blueprint::ScriptInstance instance(program, host);
+    Blueprint::BlueprintInstance instance(program, host);
     ASSERT_TRUE(instance.RaiseEvent("ready")) << instance.GetLastError();
     // 10 - 3 + 1, pinned at 0 by the overkill, then pinned at the ceiling by the overheal.
     EXPECT_FLOAT_EQ(entityManager.GetComponent<GameplayAttributesComponent>(pooled).attributes[0].current, 10.0F);
@@ -132,7 +132,7 @@ fn has_mana() -> bool:
     EXPECT_FALSE(std::get<bool>(*instance.Call("has_mana")));
 }
 
-TEST_F(UVScriptGameplayBindingsTest, Script_ManagesTags) {
+TEST_F(BlueprintGameplayBindingsTest, Script_ManagesTags) {
     const Entity tagged = MakeTagged({"undead"});
     Core::BlueprintObjectHost host{entityManager, nullptr, tagged};
     const auto program = CompileOrFail(R"(on ready:
@@ -148,7 +148,7 @@ fn is_undead() -> bool:
 )",
                                           host);
     ASSERT_NE(program, nullptr);
-    Blueprint::ScriptInstance instance(program, host);
+    Blueprint::BlueprintInstance instance(program, host);
     ASSERT_TRUE(instance.RaiseEvent("ready")) << instance.GetLastError();
     EXPECT_EQ(entityManager.GetComponent<GameplayTagComponent>(tagged).tags,
               (std::vector<std::string>{"boss", "flammable"}));
@@ -156,7 +156,7 @@ fn is_undead() -> bool:
     EXPECT_FALSE(std::get<bool>(*instance.Call("is_undead")));
 }
 
-TEST_F(UVScriptGameplayBindingsTest, Host_FailsClosedOnMissingIdsAndBadAmounts) {
+TEST_F(BlueprintGameplayBindingsTest, Host_FailsClosedOnMissingIdsAndBadAmounts) {
     const Entity pooled = MakePooled(5.0F, 10.0F);
     Core::BlueprintObjectHost host{entityManager, nullptr, pooled};
     const std::array<Blueprint::Value, 1> missing{Blueprint::Value{std::string{"mana"}}};

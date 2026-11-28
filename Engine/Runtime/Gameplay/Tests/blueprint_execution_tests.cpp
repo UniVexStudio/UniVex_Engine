@@ -1,8 +1,11 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
+#include <algorithm>
 #include <cstdint>
 #include <filesystem>
+#include <map>
 #include <memory>
+#include <optional>
 #include <set>
 #include <string>
 #include <utility>
@@ -39,6 +42,7 @@
 #include "transform_component.h"
 #include "ragdoll_3d.h"
 #include "blueprint_compiler.h"
+#include "blueprint_graph_lowering.h"
 #include "blueprint_instance.h"
 #include "blueprint_object_host.h"
 
@@ -87,24 +91,23 @@ protected:
         return entity;
     }
 
-    /// Translates and compiles; every diagnostic fails the test with the source around it.
+    /// Compiles `blueprint` from its graph; every problem and diagnostic fails the test, naming the node.
     void ExpectCompiles(const BlueprintAsset& blueprint, const std::string& what) {
         const Entity entity = MakeEverything();
         Core::BlueprintObjectHost host{entityManager, nullptr, entity};
-        const Asset::BlueprintTranslation translated = Asset::TranslateBlueprintToUVScript(blueprint, "BP_Test", "Character3D");
-        for (const auto& [node, problem] : translated.problems) {
+        const Asset::BlueprintCompilation compiled = Asset::CompileBlueprintGraph(blueprint, "BP_Test", "Character3D", host);
+        for (const auto& [node, problem] : compiled.problems) {
             ADD_FAILURE() << what << ": node " << node << ": " << problem;
         }
-        const Blueprint::CompileResult result = Blueprint::CompileUVScriptSource(translated.source, host);
-        for (const Blueprint::Diagnostic& d : result.diagnostics) {
-            ADD_FAILURE() << what << " line " << d.at.line << ": " << d.message << "\n" << translated.source;
+        for (const Blueprint::Diagnostic& d : compiled.result.diagnostics) {
+            ADD_FAILURE() << what << " node " << d.at.line << ": " << d.message;
         }
     }
 
     /// A graph made to run: its host (with `services`), its program and a running instance.
     struct Running final {
         std::unique_ptr<Core::BlueprintObjectHost> host;
-        std::unique_ptr<Blueprint::ScriptInstance> instance;
+        std::unique_ptr<Blueprint::BlueprintInstance> instance;
         [[nodiscard]] Blueprint::Value Field(const std::string& name) const {
             return instance->GetField(name).value_or(Blueprint::Value{});
         }
@@ -113,13 +116,12 @@ protected:
         Running run;
         run.host = std::make_unique<Core::BlueprintObjectHost>(entityManager, nullptr, entity);
         run.host->SetServices(services);
-        const std::string source = Asset::TranslateBlueprintToUVScript(blueprint, "BP", "Object3D").source;
-        const Blueprint::CompileResult compiled = Blueprint::CompileUVScriptSource(source, *run.host);
+        const Blueprint::CompileResult compiled = Asset::CompileBlueprintGraph(blueprint, "BP", "Object3D", *run.host).result;
         for (const Blueprint::Diagnostic& d : compiled.diagnostics) {
-            ADD_FAILURE() << "line " << d.at.line << ": " << d.message << "\n" << source;
+            ADD_FAILURE() << "node " << d.at.line << ": " << d.message;
         }
         if (compiled.IsSuccess()) {
-            run.instance = std::make_unique<Blueprint::ScriptInstance>(compiled.program, *run.host);
+            run.instance = std::make_unique<Blueprint::BlueprintInstance>(compiled.program, *run.host);
         }
         return run;
     }
@@ -133,46 +135,61 @@ protected:
     }
 };
 
-TEST_F(BlueprintTest, EveryNodeOfThePaletteTranslatesToUVScriptThatCompiles) {
+/// A small graph that uses `type` the way the editor would: an event reaching it, or its value stored in a variable.
+/// Empty for the variable nodes, which have their own test.
+[[nodiscard]] std::optional<BlueprintAsset> PaletteGraph(const Asset::BlueprintNodeType& type) {
+    BlueprintAsset blueprint;
+    const auto node = [](const std::uint32_t id, const std::string& key, const std::string& variable = "") {
+        BlueprintNode made;
+        made.id = id;
+        made.type = key;
+        made.variable = variable;
+        return made;
+    };
+    if (type.role == BlueprintNodeRole::Event) {
+        blueprint.nodes = {node(1U, type.key)};
+        return blueprint;
+    }
+    if (type.role == BlueprintNodeRole::GetVariable || type.role == BlueprintNodeRole::SetVariable) {
+        return std::nullopt;
+    }
+    blueprint.nodes.push_back(node(1U, "event_tick"));
+    // An array input is wired from a variable of its type (Add, Remove and Clear change it in place).
+    const std::uint32_t arrayPin = type.role == BlueprintNodeRole::Pure ? 0U : 1U;
+    const bool takesArray = arrayPin < type.inputs.size() && Asset::IsBlueprintArrayType(type.inputs[arrayPin].type);
+    if (takesArray) {
+        blueprint.variables.push_back({"items", type.inputs[arrayPin].type, "", false});
+        blueprint.nodes.push_back(node(9U, "get_variable", "items"));
+        blueprint.wires.push_back(BlueprintWire{9U, 0U, 2U, arrayPin});
+    }
+    const bool needsObject = type.key == "hide_object" || type.key == "show_object" || type.key == "is_valid" ||
+                             type.key == "ui_add_to_viewport";
+    if (type.role == BlueprintNodeRole::Pure) {
+        // Its first output stored in a variable of that type.
+        blueprint.variables.push_back({"result", type.outputs.front().type, "", false});
+        blueprint.nodes.push_back(node(2U, type.key));
+        blueprint.nodes.push_back(node(3U, "set_variable", "result"));
+        blueprint.wires.push_back(BlueprintWire{1U, 0U, 3U, 0U});
+        blueprint.wires.push_back(BlueprintWire{2U, 0U, 3U, 1U});
+    } else {
+        blueprint.nodes.push_back(node(2U, type.key));
+        blueprint.wires.push_back(BlueprintWire{1U, 0U, 2U, 0U});
+        if (needsObject) {
+            BlueprintNode find = node(3U, "find_object");
+            find.inputValues = {"Door"};
+            blueprint.nodes.push_back(find);
+            blueprint.wires.push_back(BlueprintWire{3U, 0U, 2U, 1U});
+        }
+    }
+    return blueprint;
+}
+
+TEST_F(BlueprintTest, EveryNodeOfThePaletteCompilesFromItsGraph) {
     for (const Asset::BlueprintNodeType& type : Asset::GetBlueprintNodeTypes()) {
-        BlueprintAsset blueprint;
-        if (type.role == BlueprintNodeRole::Event) {
-            blueprint.nodes = {Node(1U, type.key)};
-            ExpectCompiles(blueprint, type.key);
-            continue;
+        const std::optional<BlueprintAsset> blueprint = PaletteGraph(type);
+        if (blueprint.has_value()) {
+            ExpectCompiles(*blueprint, type.key);
         }
-        if (type.role == BlueprintNodeRole::GetVariable || type.role == BlueprintNodeRole::SetVariable) {
-            continue;   // the next test
-        }
-        blueprint.nodes.push_back(Node(1U, "event_tick"));
-        // An array input is wired from a variable of its type (Add, Remove and Clear change it in place).
-        const std::uint32_t arrayPin = type.role == BlueprintNodeRole::Pure ? 0U : 1U;
-        const bool takesArray = arrayPin < type.inputs.size() && Asset::IsBlueprintArrayType(type.inputs[arrayPin].type);
-        if (takesArray) {
-            blueprint.variables.push_back({"items", type.inputs[arrayPin].type, "", false});
-            blueprint.nodes.push_back(Node(9U, "get_variable", "items"));
-            blueprint.wires.push_back(BlueprintWire{9U, 0U, 2U, arrayPin});
-        }
-        const bool needsObject = type.key == "hide_object" || type.key == "show_object" || type.key == "is_valid" ||
-                                 type.key == "ui_add_to_viewport";
-        if (type.role == BlueprintNodeRole::Pure) {
-            // Its first output stored in a variable of that type.
-            blueprint.variables.push_back({"result", type.outputs.front().type, "", false});
-            blueprint.nodes.push_back(Node(2U, type.key));
-            blueprint.nodes.push_back(Node(3U, "set_variable", "result"));
-            blueprint.wires.push_back(BlueprintWire{1U, 0U, 3U, 0U});
-            blueprint.wires.push_back(BlueprintWire{2U, 0U, 3U, 1U});
-        } else {
-            blueprint.nodes.push_back(Node(2U, type.key));
-            blueprint.wires.push_back(BlueprintWire{1U, 0U, 2U, 0U});
-            if (needsObject) {
-                BlueprintNode find = Node(3U, "find_object");
-                find.inputValues = {"Door"};
-                blueprint.nodes.push_back(find);
-                blueprint.wires.push_back(BlueprintWire{3U, 0U, 2U, 1U});
-            }
-        }
-        ExpectCompiles(blueprint, type.key);
     }
 }
 
@@ -201,11 +218,20 @@ TEST_F(BlueprintTest, VariablesBecomeFieldsAndExposedOnesExports) {
                        Node(4U, "int_add")};
     blueprint.nodes[3].inputValues = {"", "1"};
     blueprint.wires = {BlueprintWire{1U, 0U, 2U, 0U}, BlueprintWire{3U, 0U, 4U, 0U}, BlueprintWire{4U, 0U, 2U, 1U}};
-    const Asset::BlueprintTranslation translated = Asset::TranslateBlueprintToUVScript(blueprint, "BP_Player", "Player3D");
-    EXPECT_NE(translated.source.find("entity BP_Player : Player3D"), std::string::npos);
-    EXPECT_NE(translated.source.find("export speed: float = 6.0"), std::string::npos);
-    EXPECT_NE(translated.source.find("var jumps: int = 0"), std::string::npos);
-    EXPECT_NE(translated.source.find("jumps = ((jumps + 1))"), std::string::npos) << translated.source;
+    // The variables become fields; the exposed ones exports.
+    const Entity self = MakeEverything();
+    Core::BlueprintObjectHost host{entityManager, nullptr, self};
+    const Blueprint::CompileResult compiledVariables =
+        Asset::CompileBlueprintGraph(blueprint, "BP_Player", "Player3D", host).result;
+    ASSERT_TRUE(compiledVariables.IsSuccess());
+    std::map<std::string, Blueprint::FieldKind> kinds;
+    for (const Blueprint::FieldInfo& field : Blueprint::GetProgramFields(*compiledVariables.program)) {
+        kinds[field.name] = field.kind;
+    }
+    EXPECT_EQ(kinds.at("speed"), Blueprint::FieldKind::Export);
+    EXPECT_EQ(kinds.at("offset"), Blueprint::FieldKind::Export);
+    EXPECT_EQ(kinds.at("jumps"), Blueprint::FieldKind::Var);
+    EXPECT_EQ(kinds.at("label"), Blueprint::FieldKind::Var);
     ExpectCompiles(blueprint, "variables");
 }
 
@@ -215,16 +241,19 @@ TEST_F(BlueprintTest, FlowNodesNestTheirChains) {
                        Node(6U, "input_pressed")};
     blueprint.wires = {BlueprintWire{1U, 0U, 2U, 0U}, BlueprintWire{6U, 0U, 2U, 1U}, BlueprintWire{2U, 0U, 3U, 0U},
                        BlueprintWire{2U, 1U, 4U, 0U}, BlueprintWire{4U, 0U, 5U, 0U}};
-    const Asset::BlueprintTranslation translated = Asset::TranslateBlueprintToUVScript(blueprint, "BP", "Object3D");
-    EXPECT_NE(translated.source.find("if (input.pressed(\"Jump\")):"), std::string::npos) << translated.source;
-    EXPECT_NE(translated.source.find("else:"), std::string::npos);
-    EXPECT_NE(translated.source.find("for i4 in 0..(9 + 1):"), std::string::npos) << "Last Index is inclusive";
-    // The print inside the loop is attributed to its node.
-    bool found = false;
-    for (std::uint32_t line = 1U; line <= translated.lineNodes.size(); ++line) {
-        found = found || translated.NodeAtLine(line) == 5U;
-    }
-    EXPECT_TRUE(found);
+    // The print inside the loop is attributed to its node: the program has an instruction for node 5.
+    const Entity self = MakeEverything();
+    Core::BlueprintObjectHost host{entityManager, nullptr, self};
+    const Asset::BlueprintLowering lowered = Asset::LowerBlueprintGraph(blueprint, "BP", "Object3D");
+    ASSERT_EQ(lowered.file.handlers.size(), 1U);
+    const Blueprint::Stmt& branch = *lowered.file.handlers[0].body[0];
+    ASSERT_EQ(branch.kind, Blueprint::StmtKind::If);
+    EXPECT_EQ(branch.at.line, 2U) << "a statement carries its node's id";
+    EXPECT_FALSE(branch.elseBody.empty()) << "the False wire makes an else";
+    const Blueprint::Stmt& loop = *branch.elseBody[0];
+    ASSERT_EQ(loop.kind, Blueprint::StmtKind::For);
+    ASSERT_EQ(loop.body.size(), 1U);
+    EXPECT_EQ(loop.body[0]->at.line, 5U);
     ExpectCompiles(blueprint, "flow");
 }
 
@@ -236,10 +265,9 @@ TEST_F(BlueprintTest, AReadyBlueprintRunsAndMovesItsObject) {
     blueprint.wires = {BlueprintWire{1U, 0U, 2U, 0U}};
     const Entity entity = MakeEverything();
     Core::BlueprintObjectHost host{entityManager, nullptr, entity};
-    const Blueprint::CompileResult compiled =
-        Blueprint::CompileUVScriptSource(Asset::TranslateBlueprintToUVScript(blueprint, "BP", "Object3D").source, host);
+    const Blueprint::CompileResult compiled = Asset::CompileBlueprintGraph(blueprint, "BP", "Object3D", host).result;
     ASSERT_TRUE(compiled.IsSuccess());
-    Blueprint::ScriptInstance instance(compiled.program, host);
+    Blueprint::BlueprintInstance instance(compiled.program, host);
     static_cast<void>(instance.RaiseEvent("ready", {}));
     const TransformComponent& transform = entityManager.GetComponent<TransformComponent>(entity);
     EXPECT_FLOAT_EQ(transform.localPosition.x, 1.0F);
@@ -254,10 +282,9 @@ TEST_F(BlueprintTest, AddMovementInputAndJumpSteerTheCharacter) {
     blueprint.wires = {BlueprintWire{1U, 0U, 2U, 0U}, BlueprintWire{3U, 0U, 2U, 1U}, BlueprintWire{2U, 0U, 4U, 0U}};
     const Entity entity = MakeEverything();
     Core::BlueprintObjectHost host{entityManager, nullptr, entity};
-    const Blueprint::CompileResult compiled =
-        Blueprint::CompileUVScriptSource(Asset::TranslateBlueprintToUVScript(blueprint, "BP", "Character3D").source, host);
+    const Blueprint::CompileResult compiled = Asset::CompileBlueprintGraph(blueprint, "BP", "Character3D", host).result;
     ASSERT_TRUE(compiled.IsSuccess());
-    Blueprint::ScriptInstance instance(compiled.program, host);
+    Blueprint::BlueprintInstance instance(compiled.program, host);
     const Blueprint::Value dt[] = {0.016};
     ASSERT_TRUE(instance.RaiseEvent("tick", dt));
     const CharacterControllerComponent& body = entityManager.GetComponent<CharacterControllerComponent>(entity);
@@ -277,10 +304,9 @@ TEST_F(BlueprintTest, RotationNodesTurnTheObject) {
     blueprint.wires = {BlueprintWire{1U, 0U, 2U, 0U}};
     const Entity entity = MakeEverything();
     Core::BlueprintObjectHost host{entityManager, nullptr, entity};
-    const Blueprint::CompileResult compiled =
-        Blueprint::CompileUVScriptSource(Asset::TranslateBlueprintToUVScript(blueprint, "BP", "Object3D").source, host);
+    const Blueprint::CompileResult compiled = Asset::CompileBlueprintGraph(blueprint, "BP", "Object3D", host).result;
     ASSERT_TRUE(compiled.IsSuccess());
-    Blueprint::ScriptInstance instance(compiled.program, host);
+    Blueprint::BlueprintInstance instance(compiled.program, host);
     ASSERT_TRUE(instance.RaiseEvent("ready", {}));
     // A quarter turn left about up: forward (-Z) now points along -X.
     const Math::Vector3 forward = Math::RotateVector(entityManager.GetComponent<TransformComponent>(entity).localRotation,
@@ -727,10 +753,13 @@ TEST_F(BlueprintTest, NetworkingNodesDelegateToEngineRuntimeNetworking) {
         BlueprintWire{4U, 0U, 5U, 1U},
     };
 
-    const Asset::BlueprintTranslation translated = Asset::TranslateBlueprintToUVScript(asset, "BP_Net", "Object3D");
-    ASSERT_TRUE(translated.problems.empty());
-    EXPECT_NE(translated.source.find("relay.peer_count()"), std::string::npos);
-    EXPECT_NE(translated.source.find("lobby.room()"), std::string::npos);
+    {
+        const Entity self = MakeEverything();
+        Core::BlueprintObjectHost host{entityManager, nullptr, self};
+        const Asset::BlueprintCompilation compiled = Asset::CompileBlueprintGraph(asset, "BP_Net", "Object3D", host);
+        ASSERT_TRUE(compiled.problems.empty());
+        ASSERT_TRUE(compiled.result.IsSuccess());
+    }
 
     const Running run = Run(asset, MakeEverything());
     ASSERT_NE(run.instance, nullptr);

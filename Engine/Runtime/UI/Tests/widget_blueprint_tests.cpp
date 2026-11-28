@@ -6,6 +6,7 @@
 #include <gtest/gtest.h>
 
 #include "blueprint_asset.h"
+#include "blueprint_graph_lowering.h"
 #include "blueprint_nodes.h"
 #include "canvas_component.h"
 #include "entity_manager.h"
@@ -72,13 +73,12 @@ protected:
     }
 
     [[nodiscard]] Blueprint::CompileResult Compile(const BlueprintAsset& graph, Core::BlueprintObjectHost& host) {
-        const Asset::BlueprintTranslation translated = Asset::TranslateBlueprintToUVScript(graph, "WBP_Hud", "Canvas");
-        EXPECT_TRUE(translated.problems.empty()) << translated.source;
-        Blueprint::CompileResult compiled = Blueprint::CompileUVScriptSource(translated.source, host);
-        for (const Blueprint::Diagnostic& d : compiled.diagnostics) {
-            ADD_FAILURE() << "line " << d.at.line << ": " << d.message << "\n" << translated.source;
+        Asset::BlueprintCompilation compilation = Asset::CompileBlueprintGraph(graph, "WBP_Hud", "Canvas", host);
+        EXPECT_TRUE(compilation.problems.empty());
+        for (const Blueprint::Diagnostic& d : compilation.result.diagnostics) {
+            ADD_FAILURE() << "node " << d.at.line << ": " << d.message;
         }
-        return compiled;
+        return std::move(compilation.result);
     }
 
     [[nodiscard]] std::string TextOf(const std::string& name) {
@@ -102,7 +102,7 @@ TEST_F(WidgetBlueprintTest, AButtonClickRunsOnlyItsOwnEvent) {
     Core::BlueprintObjectHost host{entityManager, nullptr, root};
     const Blueprint::CompileResult compiled = Compile(graph, host);
     ASSERT_TRUE(compiled.IsSuccess());
-    Blueprint::ScriptInstance instance(compiled.program, host);
+    Blueprint::BlueprintInstance instance(compiled.program, host);
     static_cast<void>(instance.RaiseEvent("ready"));
 
     const Blueprint::Value other[] = {std::string{"Quit"}};
@@ -128,7 +128,7 @@ TEST_F(WidgetBlueprintTest, AWidgetReachesOnlyItsOwnWidgetsByName) {
     Core::BlueprintObjectHost host{entityManager, nullptr, second};
     const Blueprint::CompileResult compiled = Compile(graph, host);
     ASSERT_TRUE(compiled.IsSuccess());
-    Blueprint::ScriptInstance instance(compiled.program, host);
+    Blueprint::BlueprintInstance instance(compiled.program, host);
     static_cast<void>(instance.RaiseEvent("ready"));
     int mine = 0;
     int untouched = 0;
@@ -157,10 +157,9 @@ TEST_F(WidgetBlueprintTest, CreateWidgetThenAddToViewportShowsIt) {
     graph.nodes = {Node(1U, "event_ready"), Node(2U, "ui_create_widget", {"", "Content/UI/WBP_Hud.uvwbp"}),
                    Node(3U, "ui_add_to_viewport", {"", "", "5"})};
     graph.wires = {BlueprintWire{1U, 0U, 2U, 0U}, BlueprintWire{2U, 0U, 3U, 0U}, BlueprintWire{2U, 1U, 3U, 1U}};
-    const Asset::BlueprintTranslation translated = Asset::TranslateBlueprintToUVScript(graph, "BP_Player", "Object3D");
-    const Blueprint::CompileResult compiled = Blueprint::CompileUVScriptSource(translated.source, host);
-    ASSERT_TRUE(compiled.IsSuccess()) << translated.source;
-    Blueprint::ScriptInstance instance(compiled.program, host);
+    const Blueprint::CompileResult compiled = Asset::CompileBlueprintGraph(graph, "BP_Player", "Object3D", host).result;
+    ASSERT_TRUE(compiled.IsSuccess());
+    Blueprint::BlueprintInstance instance(compiled.program, host);
     static_cast<void>(instance.RaiseEvent("ready"));
     EXPECT_EQ(asked, "Content/UI/WBP_Hud.uvwbp");
     ASSERT_NE(made, kInvalidEntity);
@@ -189,7 +188,7 @@ TEST_F(WidgetBlueprintTest, ShowMouseCursorAndAComboBoxChoiceReachTheGame) {
                    BlueprintWire{5U, 0U, 7U, 0U}, BlueprintWire{6U, 0U, 7U, 2U}};
     const Blueprint::CompileResult compiled = Compile(graph, host);
     ASSERT_TRUE(compiled.IsSuccess());
-    Blueprint::ScriptInstance instance(compiled.program, host);
+    Blueprint::BlueprintInstance instance(compiled.program, host);
     static_cast<void>(instance.RaiseEvent("ready"));
     ASSERT_EQ(shown.size(), 1U);
     EXPECT_TRUE(shown.front());
@@ -220,7 +219,7 @@ TEST_F(WidgetBlueprintTest, ShowScreenShowsOneScreenAndHidesTheOthers) {
     Core::BlueprintObjectHost host{entityManager, nullptr, root};
     const Blueprint::CompileResult compiled = Compile(graph, host);
     ASSERT_TRUE(compiled.IsSuccess());
-    Blueprint::ScriptInstance instance(compiled.program, host);
+    Blueprint::BlueprintInstance instance(compiled.program, host);
     const Blueprint::Value clicked[] = {std::string{"Open"}};
     static_cast<void>(instance.RaiseEvent("ui_clicked", clicked));
     EXPECT_FALSE(entityManager.GetComponent<CanvasComponent>(main).visible);

@@ -52,7 +52,6 @@ TEST(ContentCatalogueTest, EveryItemIsCreatableAndGroupsAreInOrder) {
         // Folder and LibraryAsset make a file, not entities, so none of their items carry objects.
         if (item.action == ContentCatalogueAction::Folder ||
             item.action == ContentCatalogueAction::LibraryAsset ||
-            item.action == ContentCatalogueAction::ScriptAsset ||
             item.action == ContentCatalogueAction::MaterialAsset ||
             item.action == ContentCatalogueAction::ShaderAsset) {
             EXPECT_TRUE(item.objects.empty());
@@ -485,84 +484,6 @@ TEST(ContentCatalogueEditorTest, EntityEditorClonedAssetSwitchAndSafeReturnToLev
         EXPECT_NE(editor.GetDocumentSceneRoot(), Scene::kInvalidEntity);
         EXPECT_FALSE(editor.GetDocumentRoots().empty());
 
-        editor.Shutdown();
-    }
-    engine.Shutdown();
-}
-
-TEST(ContentCatalogueEditorTest, EntityEditorCompilesScriptsListsSignalsAndGoesToProblems) {
-    const std::filesystem::path root = ::UVE::Tests::MakeTestCaseDirectory("entity_editor_scripts");
-    const std::filesystem::path content = root / "Content";
-    std::filesystem::create_directories(content);
-
-    Core::EngineCore engine(MakeCatalogueEditorConfig(root));
-    engine.Init();
-    ASSERT_TRUE(engine.Load());
-    {
-        Editor editor(engine.GetServices(), root / "main.uvscene", 100U, &engine);
-        editor.Init();
-        const auto created = editor.CreateContentCatalogueItem("character", content);
-        ASSERT_TRUE(created.has_value());
-        EXPECT_FALSE(editor.HasEntityEditorCompiled());
-        EXPECT_EQ(editor.CompileEntityEditor(), 0U) << "nothing open, nothing to compile";
-        ASSERT_TRUE(editor.OpenEntityEditor(*created));
-        EXPECT_EQ(editor.GetEntityEditorTab(), Editor::EntityEditorTab::Viewport);
-
-        // A body arrives empty - +Add makes one object and puts nothing inside it - so the mesh
-        // that hangs under it is authored here, the way an author spends their first minute with a
-        // new character. Everything below is unchanged by that.
-        const Scene::Entity child = editor.CreateDocumentSceneObject(Kind::MeshInstance3D);
-        ASSERT_NE(child, Scene::kInvalidEntity);
-
-        // A fresh Character has no scripts: it compiles clean and answers to nothing.
-        EXPECT_EQ(editor.CompileEntityEditor(), 0U);
-        EXPECT_TRUE(editor.HasEntityEditorCompiled());
-        EXPECT_TRUE(editor.GetEntityEditorSignals().empty());
-
-        // New UVScript on the root: its handlers are the entity's signals.
-        const Scene::Entity entityRoot = editor.GetEntityEditorRoot();
-        editor.SelectEntity(entityRoot);
-        ASSERT_TRUE(editor.CreateUVScriptForSelectedEntity());
-        ASSERT_TRUE(editor.GetOpenUVScript().has_value());
-        std::vector<Editor::EntitySignalRow> signals = editor.GetEntityEditorSignals();
-        ASSERT_EQ(signals.size(), 2U);
-        EXPECT_EQ(signals[0].event, "ready");
-        EXPECT_EQ(signals[1].event, "tick");
-        EXPECT_EQ(signals[1].params, "(dt)");
-        EXPECT_EQ(signals[1].entity, entityRoot);
-        EXPECT_GT(signals[1].line, signals[0].line);
-
-        // Unsaved text is what Compile checks: a mistake on line 3 is found there.
-        editor.SetOpenUVScriptText("on ready:\n    pass\n\non tick(dt):\n    nope += 1\n");
-        EXPECT_TRUE(editor.HasEntityEditorUnsavedChanges());
-        ASSERT_GE(editor.CompileEntityEditor(), 1U);
-        const Editor::EntityCompileProblem problem = editor.GetEntityEditorProblems().front();
-        EXPECT_EQ(problem.entity, entityRoot);
-        EXPECT_EQ(problem.at.line, 5U);
-        EXPECT_FALSE(problem.scriptPath.empty());
-
-        // Going to a problem selects the object and shows its script.
-        editor.ClearSelection();
-        ASSERT_TRUE(editor.GoToEntityScript(problem.entity, problem.at.line));
-        EXPECT_EQ(editor.GetSelectedEntity(), entityRoot);
-        EXPECT_EQ(editor.GetEntityEditorTab(), Editor::EntityEditorTab::Scripting);
-
-        // A script file that is gone is a problem, not a crash.
-        engine.GetServices().GetEntityManager().GetComponent<Scene::ScriptComponent>(child).scriptAssetPath =
-            "scripts/missing.uvs";
-        editor.SetOpenUVScriptText("on ready:\n    pass\n");
-        ASSERT_EQ(editor.CompileEntityEditor(), 1U);
-        EXPECT_EQ(editor.GetEntityEditorProblems().front().entity, child);
-        EXPECT_EQ(editor.GetEntityEditorProblems().front().at.line, 0U);
-
-        // Save writes the script with the entity; Revert clears Compile's list.
-        ASSERT_TRUE(editor.SaveEntityEditor());
-        EXPECT_FALSE(editor.HasEntityEditorUnsavedChanges());
-        ASSERT_TRUE(editor.RevertEntityEditor());
-        EXPECT_FALSE(editor.HasEntityEditorCompiled());
-        EXPECT_TRUE(editor.GetEntityEditorProblems().empty());
-        ASSERT_TRUE(editor.CloseEntityEditor(false));
-        EXPECT_FALSE(editor.GetOpenUVScript().has_value()) << "the script went with the entity";
         editor.Shutdown();
     }
     engine.Shutdown();

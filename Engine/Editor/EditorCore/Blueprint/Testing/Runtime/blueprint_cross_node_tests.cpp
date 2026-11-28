@@ -23,10 +23,10 @@ namespace {
 
 struct ScriptSlot final {
     std::unique_ptr<Core::BlueprintObjectHost> host;
-    std::unique_ptr<Blueprint::ScriptInstance> instance;
+    std::unique_ptr<Blueprint::BlueprintInstance> instance;
 };
 
-class UVScriptCrossNodeTest : public ::testing::Test {
+class BlueprintCrossNodeTest : public ::testing::Test {
 protected:
     Memory::MemoryManager memoryManager;
     Events::EventSystem eventSystem;
@@ -41,11 +41,11 @@ protected:
         entityManager.AddComponent<NameComponent>(entity, named);
         auto host = std::make_unique<Core::BlueprintObjectHost>(
             entityManager, nullptr, entity, nullptr, nullptr,
-            [this](const Entity other) -> Blueprint::ScriptInstance* {
+            [this](const Entity other) -> Blueprint::BlueprintInstance* {
                 const auto it = scripts.find(other);
                 return it == scripts.end() ? nullptr : it->second.instance.get();
             });
-        const Blueprint::CompileResult compiled = Blueprint::CompileUVScriptSource(source, *host);
+        const Blueprint::CompileResult compiled = Blueprint::CompileBlueprintNotation(source, *host);
         lastDiagnostics.clear();
         for (const Blueprint::Diagnostic& diagnostic : compiled.diagnostics) {
             lastDiagnostics.push_back(std::to_string(diagnostic.at.line) + ": " + diagnostic.message);
@@ -53,12 +53,12 @@ protected:
         if (!compiled.IsSuccess()) {
             return kInvalidEntity;
         }
-        auto instance = std::make_unique<Blueprint::ScriptInstance>(compiled.program, *host);
+        auto instance = std::make_unique<Blueprint::BlueprintInstance>(compiled.program, *host);
         scripts.emplace(entity, ScriptSlot{std::move(host), std::move(instance)});
         return entity;
     }
 
-    Blueprint::ScriptInstance& Instance(const Entity entity) {
+    Blueprint::BlueprintInstance& Instance(const Entity entity) {
         return *scripts.find(entity)->second.instance;
     }
 
@@ -77,7 +77,7 @@ protected:
     }
 };
 
-TEST_F(UVScriptCrossNodeTest, CallsAnotherNodesScriptFunction) {
+TEST_F(BlueprintCrossNodeTest, CallsAnotherNodesScriptFunction) {
     const Entity target = AddScripted("Target", "var hp = 100\n\nfn take_damage(amount: int):\n    hp -= amount\n");
     ASSERT_NE(target, kInvalidEntity) << ::testing::PrintToString(lastDiagnostics);
     const Entity caller =
@@ -92,7 +92,7 @@ TEST_F(UVScriptCrossNodeTest, CallsAnotherNodesScriptFunction) {
     EXPECT_EQ(Field(target, "hp"), 70);
 }
 
-TEST_F(UVScriptCrossNodeTest, HideAndShowReachObjectsWithoutScripts) {
+TEST_F(BlueprintCrossNodeTest, HideAndShowReachObjectsWithoutScripts) {
     const Entity prop = entityManager.CreateEntity();
     NameComponent named;
     named.name = "Prop";
@@ -123,7 +123,7 @@ TEST_F(UVScriptCrossNodeTest, HideAndShowReachObjectsWithoutScripts) {
     EXPECT_FALSE(entityManager.HasComponent<VisibilityComponent>(plain));
 }
 
-TEST_F(UVScriptCrossNodeTest, MissingTargetsAndMethodsFailClosed) {
+TEST_F(BlueprintCrossNodeTest, MissingTargetsAndMethodsFailClosed) {
     const Entity target = AddScripted("Target", "var hp = 100\n\nfn take_damage(amount: int):\n    hp -= amount\n");
     ASSERT_NE(target, kInvalidEntity) << ::testing::PrintToString(lastDiagnostics);
     const Entity caller = AddScripted("Caller",
@@ -152,7 +152,7 @@ TEST_F(UVScriptCrossNodeTest, MissingTargetsAndMethodsFailClosed) {
     EXPECT_FALSE(entityManager.HasComponent<VisibilityComponent>(recycled));
 }
 
-TEST_F(UVScriptCrossNodeTest, ScriptFunctionOverridesBuiltinHide) {
+TEST_F(BlueprintCrossNodeTest, ScriptFunctionOverridesBuiltinHide) {
     const Entity target =
         AddScripted("Target", "var hidden_calls = 0\n\nfn hide():\n    hidden_calls += 1\n");
     ASSERT_NE(target, kInvalidEntity) << ::testing::PrintToString(lastDiagnostics);
@@ -164,7 +164,7 @@ TEST_F(UVScriptCrossNodeTest, ScriptFunctionOverridesBuiltinHide) {
     EXPECT_FALSE(entityManager.HasComponent<VisibilityComponent>(target));
 }
 
-TEST_F(UVScriptCrossNodeTest, PingPongCallsTerminateAtTheDepthCap) {
+TEST_F(BlueprintCrossNodeTest, PingPongCallsTerminateAtTheDepthCap) {
     const Entity a = AddScripted("A",
                                        "var calls = 0\n\nfn ping():\n    calls += 1\n    node(\"B\").pong()\n");
     ASSERT_NE(a, kInvalidEntity) << ::testing::PrintToString(lastDiagnostics);

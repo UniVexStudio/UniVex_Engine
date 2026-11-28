@@ -12,10 +12,10 @@ Blueprint visual scripting, graph model, node catalog, compiler, virtual machine
 | Folder | Active Files | Responsibilities |
 |---|---|---|
 | `Core/` | `blueprint_core_types.{h,cpp}` | Graph model (`Node`, `Pin`, `Graph`, `Connection`), `TypeSystem`, `Reflection`, `Metadata`, `Identifiers`, `Events`, `Interfaces`, `Diagnostics`, `Utilities` |
-| `Nodes/` | `blueprint_nodes.{h,cpp}`, `blueprint_node_categories.{h,cpp}`, `Networking/blueprint_networking_nodes.{h,cpp}` | Complete Blueprint node catalog, UVScript translator, domain classification/search, and Networking RPC/Lobby/Relay node specs |
-| `Compiler/` | `Frontend/` (`blueprint_ast.h`, `blueprint_parser.{h,cpp}`), `Intermediate/` (`blueprint_program.h`), `Backend/` (`blueprint_compiler.{h,cpp}`, `blueprint_codegen.{h,cpp}`, `blueprint_compiler_main.cpp`) | Lexer, parser, type checker, bytecode compiler, and native C++ codegen (`uvsc`) |
+| `Nodes/` | `blueprint_nodes.{h,cpp}`, `blueprint_graph_lowering.{h,cpp}`, `blueprint_node_categories.{h,cpp}`, `Networking/blueprint_networking_nodes.{h,cpp}` | Complete Blueprint node catalog, graph lowering (a graph compiles straight to the compiler's syntax tree), domain classification/search, and Networking RPC/Lobby/Relay node specs |
+| `Compiler/` | `Frontend/` (`blueprint_ast.h`, `blueprint_parser.{h,cpp}`), `Intermediate/` (`blueprint_program.h`), `Backend/` (`blueprint_compiler.{h,cpp}`, `blueprint_codegen.{h,cpp}`, `blueprint_compiler_main.cpp`) | Lexer and parser (the notation node templates are written in), type checker, bytecode compiler, and native C++ codegen (`uvbc`) |
 | `Runtime/` | `VirtualMachine/` (`blueprint_instance.{h,cpp}`), `Variables/` (`blueprint_value.{h,cpp}`), `ObjectBinding/` (`blueprint_host.h`, `blueprint_host_description.{h,cpp}`, `blueprint_native.{h,cpp}`) | Bytecode VM execution, Blueprint typed values, and host reflection/native bindings |
-| `Editor/` | `editor_blueprint_panel.{h,cpp}`, `editor_panel_blueprint_script.cpp`, `blueprint_editor_services.{h,cpp}` | Blueprint graph PRISM panel, script panel, UndoRedo, Clipboard, Search, NodePalette, Shortcuts, Visualization, Accessibility (compiled by `EditorCoreModule`; Entity Editor & Entity Class windows live in `Internal/shell/entity/`) |
+| `Editor/` | `editor_blueprint_panel.{h,cpp}`, `blueprint_editor_services.{h,cpp}` | Blueprint graph PRISM panel, UndoRedo, Clipboard, Search, NodePalette, Shortcuts, Visualization, Accessibility (compiled by `EditorCoreModule`; Entity Editor & Entity Class windows live in `Internal/shell/entity/`) |
 | `Serialization/` | `blueprint_asset.cpp`, `widget_blueprint_asset.cpp`, `blueprint_serialization.{h,cpp}` | `.uvbp` / `.uvwbp` persistence, pin/node/wire/library JSON serialization, schema versioning, migration pipeline, import/export |
 | `Assets/` | `blueprint_asset.h`, `widget_blueprint_asset.h`, `blueprint_asset_types.{h,cpp}`, `blueprint_asset_registry.{h,cpp}` | Blueprint Class, Widget Blueprint, FunctionLibrary, MacroLibrary, Interface definitions, asset registry, dependency resolver, and detailed validation |
 | `Plugins/` | `blueprint_plugin_api.{h,cpp}` | Plugin API versioning/compatibility, extension interface, `.uvbpplugin` manifest validation & discovery, dependency-ordered loading & node registration |
@@ -26,4 +26,4 @@ Blueprint visual scripting, graph model, node catalog, compiler, virtual machine
 | `Testing/` | `Unit/`, `Compiler/`, `Runtime/`, `Integration/`, `Serialization/`, `Plugins/`, `Performance/`, `Editor/` | Automated GoogleTest suites covering all Blueprint subsystems |
 
 ## Compatibility
-Existing `.uvbp`, `.uvwbp`, and `.uvs` script/blueprint files remain supported without breaking existing scenes or assets.
+Existing `.uvbp` and `.uvwbp` files remain supported without breaking existing scenes or assets.

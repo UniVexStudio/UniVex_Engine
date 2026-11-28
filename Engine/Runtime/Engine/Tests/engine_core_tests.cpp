@@ -28,6 +28,8 @@
 #include <GL/gl.h>
 #include <gtest/gtest.h>
 
+#include "Support/blueprint_test_graph.h"
+
 #include "thread_group_component.h"
 
 #include "localization.h"
@@ -1481,91 +1483,127 @@ TEST(EngineCoreTest, FileSystem_ReachableAndReadWriteRoundTripAfterInit) {
     engine.Shutdown();
 }
 
-TEST(EngineCoreTest, UVScriptEntity_CompilesOnceRaisesReadyThenTicksEveryFrame) {
+namespace {
+
+using ::UVE::Tests::TestGraph;
+using PinType = Asset::BlueprintPinType;
+
+/// A graph that counts: `readies` once at ready and `ticks` every frame.
+[[nodiscard]] TestGraph MakeCounterGraph() {
+    TestGraph graph;
+    graph.Var("readies", PinType::Int, "0").Var("ticks", PinType::Int, "0");
+    const std::uint32_t ready = graph.Node("event_ready");
+    graph.Exec(ready, graph.AddToVariable("readies", 1).set);
+    const std::uint32_t tick = graph.Node("event_tick");
+    graph.Exec(tick, graph.AddToVariable("ticks", 1).set);
+    return graph;
+}
+
+/// A graph that does not compile: it sets a variable it never declared.
+[[nodiscard]] TestGraph MakeBrokenGraph() {
+    TestGraph graph;
+    const std::uint32_t tick = graph.Node("event_tick");
+    graph.Exec(tick, graph.SetVariable("missing", "1"));
+    return graph;
+}
+
+} // namespace
+
+TEST(EngineCoreTest, BlueprintEntity_CompilesOnceRaisesReadyThenTicksEveryFrame) {
     EngineCore engine(MakeTestConfig());
     engine.Init();
     ASSERT_TRUE(engine.Load());
 
     Asset::IFileSystem& fileSystem = engine.GetServices().GetFileSystem();
-    const std::filesystem::path mountDirectory = "uve_engine_core_tests_uvs_mount";
+    const std::filesystem::path mountDirectory = "uve_engine_core_tests_blueprint_mount";
     std::filesystem::remove_all(mountDirectory);
     std::filesystem::create_directories(mountDirectory);
     fileSystem.MountDirectory("", mountDirectory, 0);
-    const auto write = [&](const char* path, const std::string& text) {
-        const auto* const bytes = reinterpret_cast<const std::byte*>(text.data());
-        ASSERT_TRUE(fileSystem.WriteFile(path, std::vector<std::byte>(bytes, bytes + text.size())));
+    const auto write = [&](const char* path, const TestGraph& graph) {
+        ASSERT_TRUE(fileSystem.WriteFile(path, graph.Bytes()));
     };
-    write("counter.uvs", "var readies = 0\nvar ticks = 0\n\non ready:\n    readies += 1\n\n"
-                         "on tick(dt):\n    ticks += 1\n");
-    write("broken.uvs", "on tick(dt):\n    ticks += 1\n");
+    write("counter.uvbp", MakeCounterGraph());
+    write("broken.uvbp", MakeBrokenGraph());
 
     Scene::IEntityManager& entityManager = engine.GetServices().GetEntityManager();
     const Scene::Entity entity = entityManager.CreateEntity();
-    entityManager.AddComponent<Scene::ScriptComponent>(entity, Scene::ScriptComponent{"counter.uvs"});
+    entityManager.AddComponent<Scene::ScriptComponent>(entity, Scene::ScriptComponent{"counter.uvbp"});
 
     engine.TickFrame();
     engine.TickFrame();
     engine.TickFrame();
-    Blueprint::ScriptInstance* const instance = engine.FindUVScriptInstance(entity);
+    Blueprint::BlueprintInstance* const instance = engine.FindBlueprintInstance(entity);
     ASSERT_NE(instance, nullptr);
     EXPECT_EQ(instance->GetField("readies"), Blueprint::Value{std::int64_t{1}});
     EXPECT_EQ(instance->GetField("ticks"), Blueprint::Value{std::int64_t{3}});
     EXPECT_EQ(engine.GetActiveScriptInstanceCount(), 1U);
 
-    // An unknown name does not compile: no instance, and it is not retried every frame.
-    entityManager.GetComponent<Scene::ScriptComponent>(entity).scriptAssetPath = "broken.uvs";
+    // A graph that does not compile: no instance, and it is not retried every frame.
+    entityManager.GetComponent<Scene::ScriptComponent>(entity).scriptAssetPath = "broken.uvbp";
     engine.TickFrame();
     engine.TickFrame();
-    EXPECT_EQ(engine.FindUVScriptInstance(entity), nullptr);
+    EXPECT_EQ(engine.FindBlueprintInstance(entity), nullptr);
 
-    // Pointing back at a good script starts it fresh.
-    entityManager.GetComponent<Scene::ScriptComponent>(entity).scriptAssetPath = "counter.uvs";
+    // Pointing back at a good Blueprint starts it fresh.
+    entityManager.GetComponent<Scene::ScriptComponent>(entity).scriptAssetPath = "counter.uvbp";
     engine.TickFrame();
-    ASSERT_NE(engine.FindUVScriptInstance(entity), nullptr);
-    EXPECT_EQ(engine.FindUVScriptInstance(entity)->GetField("ticks"), Blueprint::Value{std::int64_t{1}});
+    ASSERT_NE(engine.FindBlueprintInstance(entity), nullptr);
+    EXPECT_EQ(engine.FindBlueprintInstance(entity)->GetField("ticks"), Blueprint::Value{std::int64_t{1}});
 
-    // Saving new text restarts the script within half a second - no path change needed. The same
-    // goes for a script that failed: fixing the file is enough.
-    write("counter.uvs", "var version = 2\n");
+    // Saving a changed graph restarts it within half a second - no path change needed. The same
+    // goes for one that failed: fixing the file is enough.
+    TestGraph version;
+    version.Var("version", PinType::Int, "2");
+    write("counter.uvbp", version);
     std::this_thread::sleep_for(std::chrono::milliseconds(600));
     engine.TickFrame();
     engine.TickFrame();
-    ASSERT_NE(engine.FindUVScriptInstance(entity), nullptr);
-    EXPECT_EQ(engine.FindUVScriptInstance(entity)->GetField("version"), Blueprint::Value{std::int64_t{2}});
+    ASSERT_NE(engine.FindBlueprintInstance(entity), nullptr);
+    EXPECT_EQ(engine.FindBlueprintInstance(entity)->GetField("version"), Blueprint::Value{std::int64_t{2}});
 
-    entityManager.GetComponent<Scene::ScriptComponent>(entity).scriptAssetPath = "broken.uvs";
+    entityManager.GetComponent<Scene::ScriptComponent>(entity).scriptAssetPath = "broken.uvbp";
     engine.TickFrame();
-    EXPECT_EQ(engine.FindUVScriptInstance(entity), nullptr);
-    write("broken.uvs", "var fixed = true\n");
+    EXPECT_EQ(engine.FindBlueprintInstance(entity), nullptr);
+    TestGraph fixed;
+    fixed.Var("fixed", PinType::Bool, "true");
+    write("broken.uvbp", fixed);
     std::this_thread::sleep_for(std::chrono::milliseconds(600));
     engine.TickFrame();
     engine.TickFrame();
-    ASSERT_NE(engine.FindUVScriptInstance(entity), nullptr);
-    EXPECT_EQ(engine.FindUVScriptInstance(entity)->GetField("fixed"), Blueprint::Value{true});
+    ASSERT_NE(engine.FindBlueprintInstance(entity), nullptr);
+    EXPECT_EQ(engine.FindBlueprintInstance(entity)->GetField("fixed"), Blueprint::Value{true});
 
     entityManager.RemoveComponent<Scene::ScriptComponent>(entity);
     engine.TickFrame();
-    EXPECT_EQ(engine.FindUVScriptInstance(entity), nullptr);
+    EXPECT_EQ(engine.FindBlueprintInstance(entity), nullptr);
 
     // The object's own export values are in place before `ready` runs; changing them restarts it.
-    write("exports.uvs", "export speed = 1.0\nvar seen = 0.0\n\non ready:\n    seen = speed\n");
+    TestGraph exports;
+    exports.Var("speed", PinType::Float, "1.0", /*exposed=*/true).Var("seen", PinType::Float, "0.0");
+    {
+        const std::uint32_t ready = exports.Node("event_ready");
+        const std::uint32_t speed = exports.Node("get_variable", {}, "speed");
+        const std::uint32_t seen = exports.Node("set_variable", {}, "seen");
+        exports.Exec(ready, seen).Wire(speed, 0U, seen, 1U);
+    }
+    write("exports.uvbp", exports);
     const Scene::Entity exporter = entityManager.CreateEntity();
     entityManager.AddComponent<Scene::ScriptComponent>(
-        exporter, Scene::ScriptComponent{"exports.uvs", {{"speed", "7.5"}, {"gone", "1"}}});
+        exporter, Scene::ScriptComponent{"exports.uvbp", {{"speed", "7.5"}, {"gone", "1"}}});
     engine.TickFrame();
-    ASSERT_NE(engine.FindUVScriptInstance(exporter), nullptr);
-    EXPECT_EQ(engine.FindUVScriptInstance(exporter)->GetField("seen"), Blueprint::Value{7.5});
+    ASSERT_NE(engine.FindBlueprintInstance(exporter), nullptr);
+    EXPECT_EQ(engine.FindBlueprintInstance(exporter)->GetField("seen"), Blueprint::Value{7.5});
     entityManager.GetComponent<Scene::ScriptComponent>(exporter).exportValues["speed"] = "2.0";
     engine.TickFrame();
-    ASSERT_NE(engine.FindUVScriptInstance(exporter), nullptr);
-    EXPECT_EQ(engine.FindUVScriptInstance(exporter)->GetField("seen"), Blueprint::Value{2.0});
+    ASSERT_NE(engine.FindBlueprintInstance(exporter), nullptr);
+    EXPECT_EQ(engine.FindBlueprintInstance(exporter)->GetField("seen"), Blueprint::Value{2.0});
 
     // Release builds: the running programs are written out as C++, one file per distinct program.
     {
         const std::filesystem::path nativeDirectory = mountDirectory / "native";
-        const std::optional<std::size_t> written = engine.WriteNativeUVScripts(nativeDirectory);
+        const std::optional<std::size_t> written = engine.WriteNativeBlueprints(nativeDirectory);
         ASSERT_TRUE(written.has_value());
-        EXPECT_EQ(*written, 1U); // only the exports script is running at this point
+        EXPECT_EQ(*written, 1U); // only the exports Blueprint is running at this point
         std::size_t files = 0U;
         for (const auto& entry : std::filesystem::directory_iterator(nativeDirectory)) {
             ++files;
@@ -1578,20 +1616,25 @@ TEST(EngineCoreTest, UVScriptEntity_CompilesOnceRaisesReadyThenTicksEveryFrame) 
     }
 
     // An object with a transform moves itself through `position`.
-    write("mover.uvs", "on tick(dt):\n    position.x += 2.0\n");
-    const Scene::Entity mover = entityManager.CreateEntity();
-    entityManager.AddComponent<Scene::TransformComponent>(mover, Scene::TransformComponent{});
-    entityManager.AddComponent<Scene::ScriptComponent>(mover, Scene::ScriptComponent{"mover.uvs"});
+    TestGraph mover;
+    {
+        const std::uint32_t tick = mover.Node("event_tick");
+        mover.Exec(tick, mover.Node("add_position", {"", "2,0,0"}));
+    }
+    write("mover.uvbp", mover);
+    const Scene::Entity moving = entityManager.CreateEntity();
+    entityManager.AddComponent<Scene::TransformComponent>(moving, Scene::TransformComponent{});
+    entityManager.AddComponent<Scene::ScriptComponent>(moving, Scene::ScriptComponent{"mover.uvbp"});
     engine.TickFrame();
     engine.TickFrame();
-    ASSERT_NE(engine.FindUVScriptInstance(mover), nullptr);
-    EXPECT_FLOAT_EQ(entityManager.GetComponent<Scene::TransformComponent>(mover).localPosition.x, 4.0F);
+    ASSERT_NE(engine.FindBlueprintInstance(moving), nullptr);
+    EXPECT_FLOAT_EQ(entityManager.GetComponent<Scene::TransformComponent>(moving).localPosition.x, 4.0F);
 
     std::filesystem::remove_all(mountDirectory);
     engine.Shutdown();
 }
 
-TEST(EngineCoreTest, ScriptComponentEntity_FindsAProjectScriptOnceItIsWritten) {
+TEST(EngineCoreTest, ScriptComponentEntity_FindsAProjectBlueprintOnceItIsWritten) {
     // No manual mount: the project directory itself is mounted at the VFS root, so an object's
     // project-relative script path resolves to the file the editor wrote beside the scene.
     const std::filesystem::path projectRoot = "uve_engine_core_tests_project_root";
@@ -1605,16 +1648,20 @@ TEST(EngineCoreTest, ScriptComponentEntity_FindsAProjectScriptOnceItIsWritten) {
 
     Scene::IEntityManager& entityManager = engine.GetServices().GetEntityManager();
     const Scene::Entity entity = entityManager.CreateEntity();
-    // An object-graph script no longer runs at all.
-    entityManager.AddComponent<Scene::ScriptComponent>(entity, Scene::ScriptComponent{"scripts/old.uvscript"});
+    // Only a Blueprint runs: any other kind of file is ignored.
+    entityManager.AddComponent<Scene::ScriptComponent>(entity, Scene::ScriptComponent{"scripts/old.txt"});
     engine.TickFrame();
     EXPECT_EQ(engine.GetActiveScriptInstanceCount(), 0U);
 
-    // A `.uvs` script that does not exist yet fails, and runs once the file is written.
-    entityManager.GetComponent<Scene::ScriptComponent>(entity).scriptAssetPath = "scripts/main.uvs";
+    // A Blueprint that does not exist yet fails, and runs once the file is written.
+    entityManager.GetComponent<Scene::ScriptComponent>(entity).scriptAssetPath = "scripts/main.uvbp";
     engine.TickFrame();
     EXPECT_EQ(engine.GetActiveScriptInstanceCount(), 0U);
-    std::ofstream(projectRoot / "scripts" / "main.uvs", std::ios::binary) << "var ticks = 0\n";
+    TestGraph main;
+    main.Var("ticks", PinType::Int, "0");
+    const std::vector<std::byte> bytes = main.Bytes();
+    std::ofstream(projectRoot / "scripts" / "main.uvbp", std::ios::binary)
+        .write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
     std::this_thread::sleep_for(std::chrono::milliseconds(600));
     engine.TickFrame();
     engine.TickFrame();
@@ -2652,10 +2699,16 @@ TEST(EngineCoreTest, AnimationSequencer_SendsClipEventsToTheScriptOfTheObjectItA
     std::filesystem::remove_all(mountDirectory);
     std::filesystem::create_directories(mountDirectory);
     fileSystem.MountDirectory("", mountDirectory, 0);
-    const std::string script = "var steps = 0\nvar last = \"\"\n\non animation_event(name):\n    steps += 1\n"
-                               "    last = name\n";
-    const auto* const bytes = reinterpret_cast<const std::byte*>(script.data());
-    ASSERT_TRUE(fileSystem.WriteFile("feet.uvs", std::vector<std::byte>(bytes, bytes + script.size())));
+    // steps += 1 and last = <the event's name>, on every animation event.
+    TestGraph feet;
+    feet.Var("steps", PinType::Int, "0").Var("last", PinType::String, "");
+    {
+        const std::uint32_t event = feet.Node("event_animation");
+        const TestGraph::Increment step = feet.AddToVariable("steps", 1);
+        const std::uint32_t last = feet.Node("set_variable", {}, "last");
+        feet.Exec(event, step.set).Exec(step.set, last).Wire(event, 1U, last, 1U);
+    }
+    ASSERT_TRUE(fileSystem.WriteFile("feet.uvbp", feet.Bytes()));
 
     // A one-second object clip with two footsteps.
     Asset::AnimationClipAsset clip;
@@ -2673,7 +2726,7 @@ TEST(EngineCoreTest, AnimationSequencer_SendsClipEventsToTheScriptOfTheObjectItA
 
     const Scene::Entity character = entityManager.CreateEntity();
     sceneGraph.AttachTransform(entityManager, character, Scene::TransformComponent{});
-    entityManager.AddComponent<Scene::ScriptComponent>(character, Scene::ScriptComponent{"feet.uvs"});
+    entityManager.AddComponent<Scene::ScriptComponent>(character, Scene::ScriptComponent{"feet.uvbp"});
     const Scene::Entity player = entityManager.CreateEntity();
     Scene::AnimationSequencerObjectDefinition definition;
     definition.player.clip = guid;
@@ -2688,7 +2741,7 @@ TEST(EngineCoreTest, AnimationSequencer_SendsClipEventsToTheScriptOfTheObjectItA
         engine.TickFrame();
     }
     ASSERT_TRUE(entityManager.GetComponent<Scene::AnimationSequencerComponent>(player).finished);
-    Blueprint::ScriptInstance* const instance = engine.FindUVScriptInstance(character);
+    Blueprint::BlueprintInstance* const instance = engine.FindBlueprintInstance(character);
     ASSERT_NE(instance, nullptr);
     EXPECT_EQ(instance->GetField("steps"), Blueprint::Value{std::int64_t{2}}) << "each footstep once";
     EXPECT_EQ(instance->GetField("last"), Blueprint::Value{std::string{"step_right"}});
@@ -2711,11 +2764,22 @@ TEST(EngineCoreTest, MontageSequencer_PlaysAMontageFromTheScriptAndSendsItsNotif
     std::filesystem::remove_all(mountDirectory);
     std::filesystem::create_directories(mountDirectory);
     fileSystem.MountDirectory("", mountDirectory, 0);
-    const std::string script = "var hits = 0\nvar ended = \"\"\n\non ready:\n    montage.play(\"Attack\")\n\n"
-                               "on montage_notify(name):\n    if name == \"hit\":\n        hits += 1\n\n"
-                               "on montage_ended(name):\n    ended = name\n";
-    const auto* const bytes = reinterpret_cast<const std::byte*>(script.data());
-    ASSERT_TRUE(fileSystem.WriteFile("fighter.uvs", std::vector<std::byte>(bytes, bytes + script.size())));
+    // Plays "Attack" at ready; counts the "hit" notifies; keeps the name of the montage that ended.
+    TestGraph fighter;
+    fighter.Var("hits", PinType::Int, "0").Var("ended", PinType::String, "");
+    {
+        const std::uint32_t ready = fighter.Node("event_ready");
+        fighter.Exec(ready, fighter.Node("montage_play", {"", "Attack"}));
+        const std::uint32_t notify = fighter.Node("event_montage_notify");
+        const std::uint32_t isHit = fighter.Node("string_equal", {"", "hit"});
+        const std::uint32_t branch = fighter.Node("branch");
+        const TestGraph::Increment hit = fighter.AddToVariable("hits", 1);
+        fighter.Wire(notify, 1U, isHit, 0U).Wire(isHit, 0U, branch, 1U).Exec(notify, branch).Exec(branch, hit.set);
+        const std::uint32_t endedEvent = fighter.Node("event_montage_ended");
+        const std::uint32_t ended = fighter.Node("set_variable", {}, "ended");
+        fighter.Exec(endedEvent, ended).Wire(endedEvent, 1U, ended, 1U);
+    }
+    ASSERT_TRUE(fileSystem.WriteFile("fighter.uvbp", fighter.Bytes()));
 
     // A half-second swing of the hips, in a montage with one "hit" notify.
     Asset::AnimationClipAsset clip;
@@ -2741,7 +2805,7 @@ TEST(EngineCoreTest, MontageSequencer_PlaysAMontageFromTheScriptAndSendsItsNotif
 
     const Scene::Entity character = entityManager.CreateEntity();
     sceneGraph.AttachTransform(entityManager, character, Scene::TransformComponent{});
-    entityManager.AddComponent<Scene::ScriptComponent>(character, Scene::ScriptComponent{"fighter.uvs"});
+    entityManager.AddComponent<Scene::ScriptComponent>(character, Scene::ScriptComponent{"fighter.uvbp"});
     const Scene::Entity skeletonEntity = entityManager.CreateEntity();
     Scene::Skeleton3DObjectDefinition skeletonDefinition;
     Scene::SkeletonBone hips;
@@ -2764,12 +2828,12 @@ TEST(EngineCoreTest, MontageSequencer_PlaysAMontageFromTheScriptAndSendsItsNotif
         engine.TickFrame();
         const auto& pose = entityManager.GetComponent<Scene::Skeleton3DComponent>(skeletonEntity).pose;
         posedMidway = posedMidway || (!pose.empty() && pose[0].position.y > 1.05F);
-        Blueprint::ScriptInstance* const instance = engine.FindUVScriptInstance(character);
+        Blueprint::BlueprintInstance* const instance = engine.FindBlueprintInstance(character);
         if (instance != nullptr && instance->GetField("ended") == Blueprint::Value{std::string{"Attack"}}) {
             break;
         }
     }
-    Blueprint::ScriptInstance* const instance = engine.FindUVScriptInstance(character);
+    Blueprint::BlueprintInstance* const instance = engine.FindBlueprintInstance(character);
     ASSERT_NE(instance, nullptr);
     EXPECT_EQ(instance->GetField("ended"), Blueprint::Value{std::string{"Attack"}});
     EXPECT_EQ(instance->GetField("hits"), Blueprint::Value{std::int64_t{1}}) << "the hit notify once";

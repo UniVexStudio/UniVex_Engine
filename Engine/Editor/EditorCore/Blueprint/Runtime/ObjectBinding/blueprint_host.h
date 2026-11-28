@@ -26,9 +26,9 @@ struct HostFunction final {
 /// compiler asks the Describe* questions, a running script the others.
 ///
 /// A name may be dotted ("input.axis") - `input.axis(...)` in a script is looked up whole.
-class UVScriptHost {
+class BlueprintHost {
 public:
-    virtual ~UVScriptHost() = default;
+    virtual ~BlueprintHost() = default;
 
     // ---- compile time: what exists, and its type
 

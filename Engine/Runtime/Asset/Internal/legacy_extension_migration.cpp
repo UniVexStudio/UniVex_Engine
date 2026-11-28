@@ -19,7 +19,7 @@ namespace UVE::Asset {
 namespace {
 
 // Longest names first, so ".uveshadercache" is not read as ".uveshader" + "cache" in text.
-constexpr std::array<std::pair<std::string_view, std::string_view>, 25> kRenamedExtensions{{
+constexpr std::array<std::pair<std::string_view, std::string_view>, 24> kRenamedExtensions{{
     {".uveshadercache", ".uvshadercache"},
     {".uveimportcache", ".uvimportcache"},
     {".uvesettings", ".uvsettings"},
@@ -27,7 +27,6 @@ constexpr std::array<std::pair<std::string_view, std::string_view>, 25> kRenamed
     {".uveditor", ".uvproject"},
     {".uveprefab", ".uvprefab"},
     {".uveentity", ".uventity"},
-    {".uvescript", ".uvscript"},
     {".uveshader", ".uvshader"},
     {".uvebundle", ".uvbundle"},
     {".uvescene", ".uvscene"},

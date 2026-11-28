@@ -34,7 +34,7 @@ namespace UVE::Editor {
 /// Utilities). Its Details tab has the class (target object, file) and the variables.
 ///
 /// While it is open the graph is the truth: edits are kept in it (with its own undo) and written
-/// to the file by Save; Compile translates it to UVScript and checks it against the target object,
+/// to the file by Save; Compile translates it to Blueprint and checks it against the target object,
 /// each problem marked on its node.
 class EditorBlueprintPanel final {
 public:

@@ -1227,7 +1227,7 @@ Value BlueprintObjectHost::CallFunction(const std::string_view name, const std::
         // The engine writes a character parameter (speed, direction, in air, grounded) every frame:
         // a script's value would be gone at once, so it is refused.
         if (parameter->source != Scene::AnimationParameterSource::Script) {
-            UVE_WARNING("UVScript: animation parameter '{}' is set by the character, not by scripts", parameter->name);
+            UVE_WARNING("Blueprint: animation parameter '{}' is set by the character, not by scripts", parameter->name);
             return Value{false};
         }
         const auto number = [](const Value& value) {
@@ -2065,7 +2065,7 @@ void BlueprintObjectHost::CallMethod(const ObjectRef target, const std::string_v
     }
     // The target's own script first: a `fn hide()` there overrides the built-in below.
     if (m_resolver) {
-        if (Blueprint::ScriptInstance* const instance = m_resolver(entity);
+        if (Blueprint::BlueprintInstance* const instance = m_resolver(entity);
             instance != nullptr && instance->HasFunction(method, args.size())) {
             static_cast<void>(instance->Call(method, args));
             return;

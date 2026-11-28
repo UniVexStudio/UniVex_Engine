@@ -104,7 +104,7 @@ struct RpcSignature final {
     Blueprint::Type result;
 };
 
-class UVScriptRpcBindingsTest : public ::testing::Test {
+class BlueprintRpcBindingsTest : public ::testing::Test {
 protected:
     Memory::MemoryManager memoryManager;
     Events::EventSystem eventSystem;
@@ -112,26 +112,26 @@ protected:
 
     [[nodiscard]] std::shared_ptr<const Blueprint::Program> CompileOrFail(
         const std::string& source, Core::BlueprintObjectHost& host) {
-        const Blueprint::CompileResult result = Blueprint::CompileUVScriptSource(source, host);
+        const Blueprint::CompileResult result = Blueprint::CompileBlueprintNotation(source, host);
         for (const Blueprint::Diagnostic& d : result.diagnostics) {
             ADD_FAILURE() << d.at.line << ":" << d.at.column << " " << d.message;
         }
         return result.program;
     }
 
-    [[nodiscard]] std::int64_t CallInt(Blueprint::ScriptInstance& instance,
+    [[nodiscard]] std::int64_t CallInt(Blueprint::BlueprintInstance& instance,
                                           const std::string& function) {
         return std::get<std::int64_t>(*instance.Call(function));
     }
 
-    [[nodiscard]] std::int64_t CallInt(Blueprint::ScriptInstance& instance,
+    [[nodiscard]] std::int64_t CallInt(Blueprint::BlueprintInstance& instance,
                                           const std::string& function, const std::int64_t id) {
         const std::array<Blueprint::Value, 1> args{Blueprint::Value{id}};
         return std::get<std::int64_t>(*instance.Call(function, args));
     }
 };
 
-TEST_F(UVScriptRpcBindingsTest, Host_DescribesRpcSurfaceUngated) {
+TEST_F(BlueprintRpcBindingsTest, Host_DescribesRpcSurfaceUngated) {
     // Ungated means ungated: a bare entity with no peer at all still describes every name,
     // and every call through them fails closed at run time instead.
     Core::BlueprintObjectHost host{entityManager, nullptr, entityManager.CreateEntity()};
@@ -179,7 +179,7 @@ TEST_F(UVScriptRpcBindingsTest, Host_DescribesRpcSurfaceUngated) {
                                                       Blueprint::Type::Bool()}));
 }
 
-TEST_F(UVScriptRpcBindingsTest, Host_FailsClosedWithoutPeer) {
+TEST_F(BlueprintRpcBindingsTest, Host_FailsClosedWithoutPeer) {
     Core::BlueprintObjectHost host{entityManager, nullptr, entityManager.CreateEntity()};
     const std::array<Blueprint::Value, 1> begin{Blueprint::Value{std::string{"add"}}};
     EXPECT_EQ(std::get<std::int64_t>(host.CallFunction("rpc.begin", begin)), 0);
@@ -201,7 +201,7 @@ TEST_F(UVScriptRpcBindingsTest, Host_FailsClosedWithoutPeer) {
     EXPECT_EQ(std::get<std::string>(host.CallFunction("rpc.error", id)), "");
 }
 
-TEST_F(UVScriptRpcBindingsTest, Script_SendsCallAndReadsResult) {
+TEST_F(BlueprintRpcBindingsTest, Script_SendsCallAndReadsResult) {
     ScriptRpcPair pair = MakeScriptRpc();
     ASSERT_TRUE(pair.server.RegisterMethod("add", AddHandler()));
     ASSERT_TRUE(pair.Establish(1000U));
@@ -209,7 +209,7 @@ TEST_F(UVScriptRpcBindingsTest, Script_SendsCallAndReadsResult) {
     // The game loop in miniature: the sink records the completion and raises the event on
     // the instance, exactly as a running game would from its own response sink.
     std::vector<std::pair<std::uint32_t, bool>> responses;
-    Blueprint::ScriptInstance* live = nullptr;
+    Blueprint::BlueprintInstance* live = nullptr;
     Core::RpcResponseSink sink = [&](const std::uint32_t id, const bool ok) {
         responses.emplace_back(id, ok);
         if (live != nullptr) {
@@ -228,7 +228,7 @@ TEST_F(UVScriptRpcBindingsTest, Script_SendsCallAndReadsResult) {
                                      std::move(sink)};
     const auto program = CompileOrFail(kRpcScript, host);
     ASSERT_NE(program, nullptr);
-    Blueprint::ScriptInstance instance(program, host);
+    Blueprint::BlueprintInstance instance(program, host);
     live = &instance;
 
     const std::int64_t call = CallInt(instance, "send");
@@ -251,7 +251,7 @@ TEST_F(UVScriptRpcBindingsTest, Script_SendsCallAndReadsResult) {
     EXPECT_TRUE(instance.RaiseEvent("rpc_response", eventArgs));
 }
 
-TEST_F(UVScriptRpcBindingsTest, Script_SeesErrorsPendingAndCancel) {
+TEST_F(BlueprintRpcBindingsTest, Script_SeesErrorsPendingAndCancel) {
     ScriptRpcPair pair = MakeScriptRpc();
     ASSERT_TRUE(pair.server.RegisterMethod("add", AddHandler()));
     ASSERT_TRUE(pair.Establish(1000U));
@@ -269,7 +269,7 @@ TEST_F(UVScriptRpcBindingsTest, Script_SeesErrorsPendingAndCancel) {
                                      }};
     const auto program = CompileOrFail(kRpcScript, host);
     ASSERT_NE(program, nullptr);
-    Blueprint::ScriptInstance instance(program, host);
+    Blueprint::BlueprintInstance instance(program, host);
 
     const std::int64_t bad = CallInt(instance, "send_bad");
     EXPECT_NE(bad, 0);
@@ -302,7 +302,7 @@ TEST_F(UVScriptRpcBindingsTest, Script_SeesErrorsPendingAndCancel) {
     EXPECT_EQ(pair.client.Stats().responsesIgnoredStale, 1U);
 }
 
-TEST_F(UVScriptRpcBindingsTest, Host_CancelsPendingCallsOnDestruction) {
+TEST_F(BlueprintRpcBindingsTest, Host_CancelsPendingCallsOnDestruction) {
     ScriptRpcPair pair = MakeScriptRpc();
     ASSERT_TRUE(pair.server.RegisterMethod("add", AddHandler()));
     ASSERT_TRUE(pair.Establish(1000U));

@@ -2,7 +2,7 @@
 
 #pragma once
 
-// The runtime that C++ generated from UVScript (see uvscript_codegen_uve.h) is compiled against.
+// The runtime that C++ generated from Blueprint (see blueprint_codegen.h) is compiled against.
 // Generated code is a translation of a program's bytecode into straight C++ - no instruction fetch,
 // no dispatch loop - that calls the same value operations the interpreter uses, so a script behaves
 // the same whichever way it runs. Nothing here is meant to be called by hand.
@@ -43,7 +43,7 @@ enum class Status : std::uint8_t {
 /// instruction budget and the current source line, for the same errors the interpreter reports.
 struct Context final {
     std::vector<Value>& fields;
-    UVScriptHost& host;
+    BlueprintHost& host;
     std::size_t budget = 0U;
     std::size_t depth = 0U;
     std::uint32_t line = 0U;
@@ -144,6 +144,6 @@ void Unpack(std::vector<Value>& stack, std::size_t count);
 /// Formats and joins the last `count` values of `stack`, removing them.
 [[nodiscard]] Value Concat(std::vector<Value>& stack, std::size_t count);
 /// A built-in (`sqrt`, `print`, ...) by its compiler id.
-[[nodiscard]] Value CallBuiltin(UVScriptHost& host, int builtin, std::span<const Value> args);
+[[nodiscard]] Value CallBuiltin(BlueprintHost& host, int builtin, std::span<const Value> args);
 
 } // namespace UVE::Blueprint::Native

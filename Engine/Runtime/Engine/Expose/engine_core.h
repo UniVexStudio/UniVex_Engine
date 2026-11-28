@@ -55,6 +55,7 @@
 #include "engine_state.h"
 #include "frame_stats.h"
 #include "dynamic_render_resolution.h"
+#include "blueprint_asset.h"
 #include "blueprint_object_host.h"
 #include "blueprint_instance.h"
 #include "engine_version.h"
@@ -315,19 +316,19 @@ public:
     /// first tick) to still exit correctly when the user closes the window.
     [[nodiscard]] bool IsQuitRequested() const noexcept { return m_quitRequested; }
 
-    /// Diagnostic hook: how many objects are running a `.uvs` script right now (compiled and
+    /// Diagnostic hook: how many objects are running a Blueprint right now (compiled and
     /// started by SyncScriptRuntime()).
     [[nodiscard]] std::size_t GetActiveScriptInstanceCount() const noexcept;
 
-    /// Test/diagnostic hook: the `.uvs` instance running on `entity`, or null when it has none
+    /// Test/diagnostic hook: the Blueprint instance running on `entity`, or null when it has none
     /// (no script, not compiled yet, or compile failed).
-    [[nodiscard]] Blueprint::ScriptInstance* FindUVScriptInstance(Scene::Entity entity) noexcept;
+    [[nodiscard]] Blueprint::BlueprintInstance* FindBlueprintInstance(Scene::Entity entity) noexcept;
 
-    /// Release builds: writes the C++ for every distinct `.uvs` program running right now into
-    /// `directory` (`<script>_<fingerprint>.uvs.cpp`), compiled against each object's real host, so
+    /// Release builds: writes the C++ for every distinct Blueprint program running right now into
+    /// `directory` (`<blueprint>_<fingerprint>.native.cpp`), compiled against each object's real host, so
     /// adding those files to the game makes the same scripts run native there. Returns how many
     /// files were written, or nothing if one could not be.
-    [[nodiscard]] std::optional<std::size_t> WriteNativeUVScripts(const std::filesystem::path& directory) const;
+    [[nodiscard]] std::optional<std::size_t> WriteNativeBlueprints(const std::filesystem::path& directory) const;
 
     /// Diagnostic/test hook: the collision enter/exit transitions computed by
     /// SyncCollisionLifecycle() on the most recent Update() call.
@@ -573,8 +574,8 @@ private:
     /// resource is touched here - rendering that batch is a later phase.
     void SyncUIRuntime();
 
-    /// Runs every object's `.uvs` script for this frame (see SyncUVScripts). An object whose script
-    /// path is not a `.uvs` file is reported once in m_scriptReconcileFailedEntities and skipped.
+    /// Runs every object's Blueprint for this frame (see SyncBlueprints). An object whose script
+    /// path is not a Blueprint is reported once in m_scriptReconcileFailedEntities and skipped.
     void SyncScriptRuntime();
     /// Makes a Widget Blueprint's widgets (hidden) for a script's `ui.create`.
     [[nodiscard]] Scene::Entity CreateWidget(const std::string& path);
@@ -594,12 +595,19 @@ private:
     /// Takes off a Stage what must not act from it: cameras, scripts, bodies, suns, environments.
     void StripWidgetStage(Scene::Entity stage);
     /// Compiles each object's text script once, drops the
-    void SyncUVScripts(bool simulationPaused);
-    /// Reconciles script components with instances in m_uvScripts so event receivers are ready
+    void SyncBlueprints(bool simulationPaused);
+    /// Reconciles script components with instances in m_blueprints so event receivers are ready
     /// before any physics or animation step evaluates.
-    void ReconcileUVScriptInstances();
-    /// A script slot's source: a .uvs file's text, or the UVScript a .uvbp Blueprint translates to.
-    [[nodiscard]] std::optional<std::string> ReadUVScriptSource(const std::string& path) const;
+    void ReconcileBlueprintInstances();
+    /// What a script slot runs: a Blueprint graph (.uvbp, or a widget's .uvwbp), compiled straight from the graph.
+    /// `hash` identifies the file's bytes, so a changed or reappearing file is noticed.
+    struct ScriptFile final {
+        std::uint64_t hash = 0U;
+        std::optional<Asset::BlueprintAsset> graph;
+        std::string objectName;
+        std::string objectKind;
+    };
+    [[nodiscard]] std::optional<ScriptFile> LoadScriptFile(const std::string& path) const;
 
     /// Steps every Character3D (CharacterControllerComponent) once per fixed step: velocity
     /// from the built-in movement when it is on (keyboard, with air control, coyote time and a
@@ -668,7 +676,7 @@ private:
     /// previous tick's via m_collisionLifecycleTracker, storing the resulting enter/exit
     /// transitions in m_collisionLifecycleReport, before scripts run so they see this tick's
     /// results. The stored report is drained to scripts after the tick loop (see
-    /// SyncUVScripts), never here: slots do not exist before the first tick, so raising here
+    /// SyncBlueprints), never here: slots do not exist before the first tick, so raising here
     /// would drop every frame-1 enter.
     void SyncCollisionLifecycle();
     /// Raises one contact event to both parties' scripts - each hears the other object's name.
@@ -1001,19 +1009,19 @@ private:
     /// declared after it and reset only once the system is gone.
     std::unique_ptr<Core::RaycastAudioOcclusion> m_audioOcclusion;
     std::unordered_map<Scene::Entity, std::string> m_scriptReconcileFailedEntities;
-    /// An object running a `.uvs` script: the path it was compiled from, so a changed path recompiles.
-    struct UVScriptSlot final {
+    /// An object running a Blueprint: the path it was compiled from, so a changed path recompiles.
+    struct BlueprintSlot final {
         std::string path;
-        /// The text it was compiled from; a file that now reads differently is recompiled.
-        std::string source;
+        /// The hash of the file it was compiled from; a file that now reads differently is recompiled.
+        std::uint64_t hash = 0U;
         /// The object's export values it started with; changing them restarts the script.
         std::map<std::string, std::string> exportValues;
         std::shared_ptr<const Blueprint::Program> program;
         std::unique_ptr<BlueprintObjectHost> host;
-        std::unique_ptr<Blueprint::ScriptInstance> instance;
+        std::unique_ptr<Blueprint::BlueprintInstance> instance;
         bool readyRaised = false;
     };
-    std::unordered_map<Scene::Entity, UVScriptSlot> m_uvScripts;
+    std::unordered_map<Scene::Entity, BlueprintSlot> m_blueprints;
     /// What every script reaches beyond its object (filled in by FillScriptServices).
     ScriptServices m_scriptServices;
     /// Script messages waiting for the end of this frame's handlers: target, name, payload.
@@ -1040,12 +1048,12 @@ private:
     void FillScriptServices();
     /// Raises queued messages and timers, then removes what scripts destroyed.
     void FinishScriptFrame(double dt, bool simulationPaused);
-    /// The text of each `.uvs` path that failed (none when it could not be read), so an edit to it -
+    /// The hash of each script path that failed (none when it could not be read), so an edit to it -
     /// or the file appearing - is retried.
-    std::unordered_map<std::string, std::optional<std::string>> m_uvScriptFailedSources;
-    /// When `.uvs` files were last re-read for edits. Wall time, not frame time: a paused or
+    std::unordered_map<std::string, std::optional<std::uint64_t>> m_blueprintFailedSources;
+    /// When Blueprint files were last re-read for edits. Wall time, not frame time: a paused or
     /// fixed-step game still picks up a saved script.
-    std::chrono::steady_clock::time_point m_uvScriptLastRecheck{};
+    std::chrono::steady_clock::time_point m_blueprintLastRecheck{};
     /// Clips the animation objects play, by asset guid. Declared after m_assetManager so the handles
     /// release before the manager is destroyed; clips no object references any more are dropped
     /// each frame.

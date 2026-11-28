@@ -1,7 +1,7 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
-// The Inspector rows for a `.uvs` script's `export` fields. The script decides which fields exist
-// and their types and defaults; the object stores only the values it changes, as UVScript text in
+// The Inspector rows for a Blueprint's exported variables. The Blueprint decides which fields exist
+// and their types and defaults; the object stores only the values it changes, as text in
 // its Script component. So each edit is one ordinary undoable property edit, and a script that
 // renames or retypes a field simply stops showing the old value instead of breaking the scene.
 
@@ -20,7 +20,9 @@
 #include <variant>
 #include <vector>
 
+#include "blueprint_graph_lowering.h"
 #include "blueprint_object_host.h"
+#include "script.h"
 #include "i_entity_manager.h"
 #include "blueprint_compiler.h"
 #include "blueprint_instance.h"
@@ -60,20 +62,21 @@ std::vector<Editor::ScriptExportRow> Editor::GetSelectedScriptExports() {
         return {};
     }
     const Scene::ScriptComponent& script = entityManager.GetComponent<Scene::ScriptComponent>(entity);
-    if (!script.scriptAssetPath.ends_with(".uvs")) {
+    if (!Scene::Script::IsBlueprintPath(script.scriptAssetPath)) {
         return {};
     }
-    const std::optional<std::string> source = ReadProjectTextFile(script.scriptAssetPath);
-    if (!source.has_value()) {
+    const std::optional<EntityScriptSource> source = ReadEntityScriptSource(script.scriptAssetPath, entity);
+    if (!source.has_value() || !source->graph.has_value()) {
         return {};
     }
     Core::BlueprintObjectHost host(entityManager, nullptr, entity);
-    const Blueprint::CompileResult compiled = Blueprint::CompileUVScriptSource(*source, host);
+    const Blueprint::CompileResult compiled =
+        Asset::CompileBlueprintGraph(*source->graph, source->objectName, source->objectKind, host).result;
     if (!compiled.IsSuccess()) {
         return {};
     }
     // The defaults are whatever the field initializers produce, so a throwaway instance runs them.
-    const Blueprint::ScriptInstance defaults(compiled.program, host);
+    const Blueprint::BlueprintInstance defaults(compiled.program, host);
     std::vector<ScriptExportRow> rows;
     for (const Blueprint::FieldInfo& field : Blueprint::GetProgramFields(*compiled.program)) {
         if (field.kind != Blueprint::FieldKind::Export) {

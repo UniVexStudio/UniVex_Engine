@@ -19,7 +19,7 @@
 namespace UVE::Scene::Tests {
 namespace {
 
-class UVScriptPhysicsForcesTest : public ::testing::Test {
+class BlueprintPhysicsForcesTest : public ::testing::Test {
 protected:
     Memory::MemoryManager memoryManager;
     Events::EventSystem eventSystem;
@@ -40,7 +40,7 @@ protected:
     }
 };
 
-TEST_F(UVScriptPhysicsForcesTest, ApplyForce_StoresPersistentForceUntilChanged) {
+TEST_F(BlueprintPhysicsForcesTest, ApplyForce_StoresPersistentForceUntilChanged) {
     const Entity body = MakeRigid(2.0F, false, Math::Vector3{});
     EXPECT_TRUE(Rigid3D::ApplyForce(entityManager, body, Math::Vector3{1.0F, 2.0F, 3.0F}));
     EXPECT_EQ(entityManager.GetComponent<Rigid3DComponent>(body).force,
@@ -55,7 +55,7 @@ TEST_F(UVScriptPhysicsForcesTest, ApplyForce_StoresPersistentForceUntilChanged) 
                                            Math::Vector3{1.0F, 0.0F, 0.0F}));
 }
 
-TEST_F(UVScriptPhysicsForcesTest, ApplyImpulse_ScalesByInverseMass) {
+TEST_F(BlueprintPhysicsForcesTest, ApplyImpulse_ScalesByInverseMass) {
     const Entity body = MakeRigid(2.0F, false, Math::Vector3{1.0F, 1.0F, 1.0F});
     EXPECT_TRUE(Rigid3D::ApplyImpulse(entityManager, body, Math::Vector3{4.0F, -2.0F, 0.0F}));
     EXPECT_EQ(entityManager.GetComponent<Rigid3DComponent>(body).velocity,
@@ -71,7 +71,7 @@ TEST_F(UVScriptPhysicsForcesTest, ApplyImpulse_ScalesByInverseMass) {
     EXPECT_FALSE(Rigid3D::ApplyImpulse(entityManager, body, Math::Vector3{nan, 0.0F, 0.0F}));
 }
 
-TEST_F(UVScriptPhysicsForcesTest, ApplyTorque_StoresPersistentTorque) {
+TEST_F(BlueprintPhysicsForcesTest, ApplyTorque_StoresPersistentTorque) {
     const Entity body = MakeRigid(1.0F, false, Math::Vector3{});
     EXPECT_TRUE(Rigid3D::ApplyTorque(entityManager, body, Math::Vector3{0.0F, 0.0F, 5.0F}));
     EXPECT_EQ(entityManager.GetComponent<Rigid3DComponent>(body).torque,
@@ -80,7 +80,7 @@ TEST_F(UVScriptPhysicsForcesTest, ApplyTorque_StoresPersistentTorque) {
                                             Math::Vector3{0.0F, 0.0F, 5.0F}));
 }
 
-TEST_F(UVScriptPhysicsForcesTest, IntegrateLinearVelocity_AddsUnscaledForceAcceleration) {
+TEST_F(BlueprintPhysicsForcesTest, IntegrateLinearVelocity_AddsUnscaledForceAcceleration) {
     const auto pushed = Rigid3D::IntegrateLinearVelocity(Math::Vector3{}, Math::Vector3{}, 1.0F, 0.0F,
                                                                0.5F, Math::Vector3{0.0F, 10.0F, 0.0F}, 0.5F);
     ASSERT_TRUE(pushed.has_value());
@@ -102,7 +102,7 @@ TEST_F(UVScriptPhysicsForcesTest, IntegrateLinearVelocity_AddsUnscaledForceAccel
                      .has_value());
 }
 
-TEST_F(UVScriptPhysicsForcesTest, Host_DescribesPhysicsSurfaceOnlyOnRigidBodies) {
+TEST_F(BlueprintPhysicsForcesTest, Host_DescribesPhysicsSurfaceOnlyOnRigidBodies) {
     const Entity body = MakeRigid(1.0F, false, Math::Vector3{});
     const Core::BlueprintObjectHost host{entityManager, nullptr, body};
     for (const char* name : {"physics.apply_force", "physics.apply_impulse", "physics.apply_torque"}) {
@@ -124,7 +124,7 @@ TEST_F(UVScriptPhysicsForcesTest, Host_DescribesPhysicsSurfaceOnlyOnRigidBodies)
     EXPECT_FALSE(bare.DescribeProperty("velocity").has_value());
 }
 
-TEST_F(UVScriptPhysicsForcesTest, Host_CallFunction_AppliesForcesWithoutInput) {
+TEST_F(BlueprintPhysicsForcesTest, Host_CallFunction_AppliesForcesWithoutInput) {
     const Entity body = MakeRigid(2.0F, false, Math::Vector3{});
     Core::BlueprintObjectHost host{entityManager, nullptr, body};
 
@@ -144,7 +144,7 @@ TEST_F(UVScriptPhysicsForcesTest, Host_CallFunction_AppliesForcesWithoutInput) {
               (Math::Vector3{0.0F, 0.0F, 5.0F}));
 }
 
-TEST_F(UVScriptPhysicsForcesTest, Host_VelocityProperty_RoundTripsWithCharacterPriority) {
+TEST_F(BlueprintPhysicsForcesTest, Host_VelocityProperty_RoundTripsWithCharacterPriority) {
     const Entity body = MakeRigid(1.0F, false, Math::Vector3{});
     Core::BlueprintObjectHost host{entityManager, nullptr, body};
     host.SetProperty("velocity", Vec3Arg(1.0, 2.0, 3.0));

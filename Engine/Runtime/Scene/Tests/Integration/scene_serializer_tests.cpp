@@ -1886,7 +1886,7 @@ TEST(ParticleEmitterComponent, ConsumeParticleEmitterAutoEmitCount_StopsAtTheBud
 
 TEST_F(SceneSerializerTest, Restore_ScriptSavedBeforeExportValuesLoadsWithNone) {
     const std::string payloadText =
-        R"({"entities":[{"localId":0,"components":{"ScriptComponent":{"scriptAssetPath":"scripts/a.uvs"}}}]})";
+        R"({"entities":[{"localId":0,"components":{"ScriptComponent":{"scriptAssetPath":"scripts/a.uvbp"}}}]})";
     const auto* const payloadBytes = reinterpret_cast<const std::byte*>(payloadText.data());
     const SceneSnapshot snapshot{
         Asset::EncodeUveFileEnvelope(SceneAssetType::Scene,
@@ -1894,15 +1894,15 @@ TEST_F(SceneSerializerTest, Restore_ScriptSavedBeforeExportValuesLoadsWithNone) 
         SceneAssetType::Scene};
     const std::vector<Entity> roots = serializer.Restore(entityManager, snapshot);
     ASSERT_EQ(roots.size(), 1U);
-    EXPECT_EQ(entityManager.GetComponent<ScriptComponent>(roots.front()).scriptAssetPath, "scripts/a.uvs");
+    EXPECT_EQ(entityManager.GetComponent<ScriptComponent>(roots.front()).scriptAssetPath, "scripts/a.uvbp");
     EXPECT_TRUE(entityManager.GetComponent<ScriptComponent>(roots.front()).exportValues.empty());
 }
 
 TEST(ScriptComponent, IsScriptComponentValid_BoundsExportValues) {
-    EXPECT_TRUE(IsScriptComponentValid(ScriptComponent{"scripts/a.uvs", {{"speed", "1.0"}}}));
-    EXPECT_FALSE(IsScriptComponentValid(ScriptComponent{"scripts/a.uvs", {{"", "1.0"}}}));
+    EXPECT_TRUE(IsScriptComponentValid(ScriptComponent{"scripts/a.uvbp", {{"speed", "1.0"}}}));
+    EXPECT_FALSE(IsScriptComponentValid(ScriptComponent{"scripts/a.uvbp", {{"", "1.0"}}}));
     EXPECT_FALSE(IsScriptComponentValid(
-        ScriptComponent{"scripts/a.uvs", {{"speed", std::string(kMaximumScriptExportValueBytes + 1U, 'x')}}}));
+        ScriptComponent{"scripts/a.uvbp", {{"speed", std::string(kMaximumScriptExportValueBytes + 1U, 'x')}}}));
 }
 
 TEST_F(SceneSerializerTest, Restore_InvalidScriptPayload_RollsBackCreatedEntities) {

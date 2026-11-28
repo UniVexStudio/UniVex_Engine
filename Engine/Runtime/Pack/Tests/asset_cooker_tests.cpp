@@ -35,7 +35,7 @@ protected:
         ASSERT_TRUE(Asset::SaveTextureAsset(texture,root/"content/hero.uvtex"));
         Asset::AssetDatabase db;guid=db.Register("content/hero.uvtex"); ASSERT_TRUE(db.Save(root/".uvassetdb"));
         std::ofstream(root/"content/authoring.png")<<"not runtime content";
-        std::ofstream(root/"content/player.uvs")<<"var speed = 1\n";
+        std::ofstream(root/"content/player.glsl")<<"void main() {}\n";
     }
     void TearDown() override {std::filesystem::remove_all(root);std::filesystem::remove_all(output);}
 };
@@ -43,7 +43,7 @@ TEST_F(AssetCookerTest, AndroidProfileBoundsTexturesPreservesGuidAndRelocatesWit
     const auto cooked=CookProjectAssets(root/"game.uvproject",output,CookTarget::Android);
     ASSERT_TRUE(cooked.success)<<cooked.message;
     EXPECT_FALSE(std::filesystem::exists(output/"content/authoring.png"));
-    EXPECT_TRUE(std::filesystem::exists(output/"content/player.uvs"));
+    EXPECT_TRUE(std::filesystem::exists(output/"content/player.glsl"));
     Asset::TextureAsset texture;
     ASSERT_TRUE(Asset::LoadTextureAsset(output/"content/hero.uvtex",texture));
     EXPECT_LE(texture.width,1024U); EXPECT_LE(texture.height,1024U);
@@ -80,7 +80,7 @@ TEST_F(AssetCookerTest, MissingRegistryEntryAndEscapingSymlinkFailClosed) {
     Asset::TextureAsset v;v.width=1;v.height=1;v.pixels.resize(4);
     ASSERT_TRUE(Asset::SaveTextureAsset(v,root/"content/hero.uvtex"));
     std::error_code error;
-    std::filesystem::create_symlink(root/"game.uvproject",root/"content/escape.uvs",error);
+    std::filesystem::create_symlink(root/"game.uvproject",root/"content/escape.glsl",error);
     if(error) GTEST_SKIP()<<"Symlink creation unavailable";
     EXPECT_FALSE(CookProjectAssets(root/"game.uvproject",output,CookTarget::Windows).success);
 }

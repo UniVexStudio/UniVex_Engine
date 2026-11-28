@@ -154,7 +154,7 @@ struct Header final {
     SourceLocation at;
 };
 
-/// A whole `.uvs` file, in source order within each list.
+/// A whole Blueprint, in source order within each list.
 struct File final {
     std::optional<Header> header;
     std::vector<Field> fields;
