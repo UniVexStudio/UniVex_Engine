@@ -271,7 +271,14 @@ void EditorDetails::AddRagdollBuilder(const Scene::Entity entity) {
             }
         }
         if (auto lbl = weakStatus.lock()) {
-            char buf[128];
+            char buf[192];
+            // How many bones of the rig this ragdoll drives, so a mesh that does not follow it can be told
+            // apart from a ragdoll that is bound to a different skeleton than the one the mesh uses.
+            std::size_t rigBones = 0U;
+            if (ragdoll.skeleton != Scene::kInvalidEntity && entities.IsAlive(ragdoll.skeleton) &&
+                entities.HasComponent<Scene::Skeleton3DComponent>(ragdoll.skeleton)) {
+                rigBones = entities.GetComponent<Scene::Skeleton3DComponent>(ragdoll.skeleton).bones.size();
+            }
             const char* stateText =
                 ragdoll.editorPreviewSimulating
                     ? "Previewing"
@@ -279,9 +286,9 @@ void EditorDetails::AddRagdollBuilder(const Scene::Entity entity) {
             if (!ragdoll.initialized && !ragdoll.lastSetupError.empty()) {
                 lbl->setText("Not Built  |  " + ragdoll.lastSetupError);
             } else {
-                std::snprintf(buf, sizeof(buf), "%zu bodies  |  %zu joints  |  %.1f kg  |  %s",
+                std::snprintf(buf, sizeof(buf), "%zu bodies  |  %zu joints  |  %.1f kg  |  rig %zu bones  |  %s",
                               ragdoll.solver.GetBodyCount(), ragdoll.solver.GetJointCount(),
-                              static_cast<double>(ragdoll.solver.GetTotalMass()), stateText);
+                              static_cast<double>(ragdoll.solver.GetTotalMass()), rigBones, stateText);
                 lbl->setText(buf);
             }
         }
