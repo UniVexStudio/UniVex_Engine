@@ -1613,7 +1613,13 @@ bool ActivateRagdoll(IEntityManager& entityManager, const Entity entity, const R
     ragdoll.mode = mode;
     ragdoll.enabled = true;
     ragdoll.solver.Wake();
-    ragdoll.recoverToCapturedPose = false; // gameplay: a recovery stands up into the live animation
+    // A simulation session that already captured its start pose (entity or editor simulation) keeps it. Otherwise
+    // a recovery stands up into the live animation - and, if nothing is animating, into the pose it fell from.
+    if (!ragdoll.recoverToCapturedPose && entityManager.IsAlive(ragdoll.skeleton) &&
+        entityManager.HasComponent<Skeleton3DComponent>(ragdoll.skeleton)) {
+        ragdoll.recoverTargetPose =
+            GetSkeletonCurrentPose(entityManager.GetComponent<Skeleton3DComponent>(ragdoll.skeleton));
+    }
     ragdoll.restSeconds = 0.0F;
 
     const std::size_t bodyCount = ragdoll.solver.GetBodyCount();
@@ -1938,6 +1944,19 @@ std::size_t UpdateRagdoll3DObjects(IEntityManager& entityManager, const float de
             const float smoothT = t * t * (3.0F - 2.0F * t);
             // The target is the pose the simulation started from (an editor preview has no animation under
             // it), or - for gameplay - whatever the animation system just wrote into the pose this frame.
+            if (!ragdoll.recoverToCapturedPose && ragdoll.blendOutSnapshot.valid &&
+                ragdoll.blendOutElapsedSeconds <= deltaTimeSeconds * 1.001F &&
+                ragdoll.recoverTargetPose.size() == skeleton.pose.size() &&
+                ragdoll.blendOutSnapshot.bonePoses.size() == skeleton.pose.size()) {
+                // Still showing exactly the fallen pose on the first step: nothing is animating this skeleton,
+                // so the body stands up into the pose it started from instead of staying where it fell.
+                bool untouched = true;
+                for (std::size_t i = 0U; i < skeleton.pose.size() && untouched; ++i) {
+                    const Math::Vector3 d = skeleton.pose[i].position - ragdoll.blendOutSnapshot.bonePoses[i].position;
+                    untouched = d.x * d.x + d.y * d.y + d.z * d.z < 1.0e-10F;
+                }
+                if (untouched) ragdoll.recoverToCapturedPose = true;
+            }
             const bool toCaptured =
                 ragdoll.recoverToCapturedPose && ragdoll.recoverTargetPose.size() == skeleton.pose.size();
             if (ragdoll.blendOutSnapshot.valid) {

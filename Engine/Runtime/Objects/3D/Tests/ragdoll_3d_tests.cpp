@@ -6,7 +6,6 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
-#include <cstdio>
 #include <limits>
 #include <optional>
 #include <string>
@@ -920,8 +919,6 @@ TEST_F(Ragdoll3DTest, KneesAndElbowsBendTheAnatomicalWayAndRefuseTheOther) {
     const float kneeFront = bend(30.0F, "mixamorig:LeftLeg", "mixamorig:LeftUpLeg", "mixamorig:LeftLeg", legPins);
     const float elbowFront = bend(4.0F, "mixamorig:LeftForeArm", "mixamorig:LeftArm", "mixamorig:LeftForeArm", armPins);
     const float elbowBack = bend(-4.0F, "mixamorig:LeftForeArm", "mixamorig:LeftArm", "mixamorig:LeftForeArm", armPins);
-    std::printf("BEND knee back=%.1f front=%.1f | elbow front=%.1f back=%.1f\n", static_cast<double>(kneeBack),
-                static_cast<double>(kneeFront), static_cast<double>(elbowFront), static_cast<double>(elbowBack));
     EXPECT_GT(kneeBack, 30.0F) << "the knee folds backward";
     EXPECT_LT(kneeFront, 12.0F) << "and is stopped when pushed forward";
     EXPECT_GT(elbowFront, 30.0F) << "the elbow folds forward";
@@ -1185,7 +1182,14 @@ TEST_F(Ragdoll3DTest, BlueprintHost_GoLimpFallGetUpAndDeactivate) {
 
     ASSERT_TRUE(std::get<bool>(host.CallFunction("ragdoll.get_up", {})));
     EXPECT_EQ(entityManager.GetComponent<Ragdoll3DComponent>(ragdollEntity).mode, RagdollMode::BlendingOut);
+    for (int frame = 0; frame < 240; ++frame) {
+        UpdateRagdoll3DObjects(entityManager, 1.0F / 60.0F, false, 0.0F);
+    }
+    EXPECT_EQ(entityManager.GetComponent<Ragdoll3DComponent>(ragdollEntity).mode, RagdollMode::Kinematic);
+    EXPECT_NEAR(BoneWorldHeight(entityManager.GetComponent<Skeleton3DComponent>(skeletonEntity), "mixamorig:Hips"),
+                startHips, 0.05F) << "a scripted get up really stands the body back up";
 
+    ASSERT_TRUE(std::get<bool>(host.CallFunction("ragdoll.activate", {})));
     ASSERT_TRUE(std::get<bool>(host.CallFunction("ragdoll.deactivate", {})));
     EXPECT_EQ(entityManager.GetComponent<Ragdoll3DComponent>(ragdollEntity).mode, RagdollMode::Kinematic);
     EXPECT_FALSE(std::get<bool>(host.CallFunction("ragdoll.is_active", {})));
