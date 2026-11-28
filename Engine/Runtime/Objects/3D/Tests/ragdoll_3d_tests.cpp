@@ -1235,5 +1235,61 @@ TEST_F(Ragdoll3DTest, BlueprintHost_AHitShovesTheBody) {
 }
 
 
+// ---- Editing the mode or preset must never pull the bodies off the bones -----------------------
+
+TEST_F(Ragdoll3DTest, EditingModeOrPreset_KeepsEveryBodyOnItsBoneAtAnyRigScale) {
+    for (const float scale : {1.0F, 0.01F}) {
+        for (const RagdollMode mode : {RagdollMode::Kinematic, RagdollMode::Active, RagdollMode::Simulating,
+                                       RagdollMode::BlendingOut}) {
+            for (const RagdollQualityPreset preset :
+                 {RagdollQualityPreset::High, RagdollQualityPreset::Balanced, RagdollQualityPreset::Fast}) {
+                Skeleton3DComponent mixamo = MakeFullMixamoSkeleton();
+                for (SkeletonBone& bone : mixamo.bones) bone.localPosition = bone.localPosition * scale;
+                const Entity skeletonEntity = entityManager.CreateEntity();
+                entityManager.AddComponent<TransformComponent>(skeletonEntity, TransformComponent{});
+                WorldTransformComponent world;
+                world.worldScale = Math::Vector3{1.0F, 1.0F, 1.0F};
+                world.dirty = false;
+                entityManager.AddComponent<WorldTransformComponent>(skeletonEntity, world);
+                entityManager.AddComponent<Skeleton3DComponent>(skeletonEntity, mixamo);
+                const Entity ragdollEntity = MakeRagdoll(skeletonEntity);
+                ASSERT_TRUE(InitializeRagdoll3D(entityManager, ragdollEntity)) << scale;
+
+                Ragdoll3DComponent& ragdoll = entityManager.GetComponent<Ragdoll3DComponent>(ragdollEntity);
+                std::vector<Math::Vector3> reference;
+                for (std::size_t i = 0U; i < ragdoll.solver.GetBodyCount(); ++i) {
+                    reference.push_back(ragdoll.solver.GetBody(i).position);
+                }
+                const float hipsBefore =
+                    BoneWorldHeight(entityManager.GetComponent<Skeleton3DComponent>(skeletonEntity), "mixamorig:Hips");
+
+                // What the inspector does for an edit of `mode` or `qualityPreset`.
+                ragdoll.mode = mode;
+                ragdoll.qualityPreset = preset;
+                ApplyRagdollQualityPreset(ragdoll, preset);
+                ragdoll.initialized = false;
+                ASSERT_TRUE(InitializeRagdoll3D(entityManager, ragdollEntity));
+                for (int frame = 0; frame < 30; ++frame) {
+                    UpdateRagdoll3DObjects(entityManager, 1.0F / 60.0F, /*editorPreviewOnly=*/true);
+                }
+                ASSERT_TRUE(SyncRagdollBodiesToSkeletonPose(entityManager, ragdollEntity));
+
+                float worst = 0.0F;
+                ASSERT_EQ(ragdoll.solver.GetBodyCount(), reference.size());
+                for (std::size_t i = 0U; i < reference.size(); ++i) {
+                    worst = std::max(worst, std::sqrt(Math::LengthSquared(ragdoll.solver.GetBody(i).position -
+                                                                             reference[i])));
+                }
+                EXPECT_LT(worst, 0.001F * std::max(scale, 0.1F))
+                    << "mode " << static_cast<int>(mode) << " preset " << static_cast<int>(preset) << " scale "
+                    << scale << ": a body moved off its bone by " << worst;
+                const float hipsAfter =
+                    BoneWorldHeight(entityManager.GetComponent<Skeleton3DComponent>(skeletonEntity), "mixamorig:Hips");
+                EXPECT_NEAR(hipsAfter, hipsBefore, 1.0e-4F) << "the mesh pose must not move while only editing";
+            }
+        }
+    }
+}
+
 } // namespace
 } // namespace UVE::Scene::Tests

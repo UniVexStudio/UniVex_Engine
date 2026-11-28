@@ -1,5 +1,7 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
+#include <algorithm>
+#include <typeindex>
 #include <cmath>
 #include <cstdint>
 #include <filesystem>
@@ -15,12 +17,18 @@
 #include "engine_core.h"
 #include "hierarchy_component.h"
 #include "ragdoll_3d.h"
+#include "scene_component_metadata.h"
 #include "scene_object_type.h"
 #include "skeleton_3d.h"
 
 namespace UVE::Editor::Tests {
 
 struct EditorAccess final {
+    [[nodiscard]] static bool SetSelectedComponentProperty(Editor& editor, const Core::TypeMetadataEntry& entry,
+                                                           const Core::TypeMetadataProperty& property,
+                                                           const void* value) {
+        return editor.SetSelectedComponentProperty(entry, property, value);
+    }
     static void BuildColliderOverlay(const Editor& editor,
                                      std::vector<Editor::ViewportColliderLine>& outLines) {
         editor.BuildColliderOverlay(outLines);
@@ -238,6 +246,136 @@ TEST(EntityEditorParentingRagdollTest, SimulateAndPreview_StepsRagdollOnStudioFl
                 });
             EXPECT_TRUE(foundRestoredSkeleton);
         }
+
+        ASSERT_TRUE(editor.CloseEntityEditor(false));
+        editor.Shutdown();
+    }
+    engine.Shutdown();
+}
+
+/// How far the bodies are from the bones the mesh is skinned to: the bodies are moved onto the pose (what the
+/// overlay does while idle) and the distance each one travelled is the mismatch.
+[[nodiscard]] float BodyToPoseMismatch(Scene::IEntityManager& entities, const Scene::Entity ragdollEntity) {
+    Scene::Ragdoll3DComponent& ragdoll = entities.GetComponent<Scene::Ragdoll3DComponent>(ragdollEntity);
+    std::vector<Math::Vector3> before;
+    for (std::size_t i = 0U; i < ragdoll.solver.GetBodyCount(); ++i) {
+        before.push_back(ragdoll.solver.GetBody(i).position);
+    }
+    const Scene::Ragdoll3DComponent saved = ragdoll;
+    if (!Scene::SyncRagdollBodiesToSkeletonPose(entities, ragdollEntity)) return 1.0e9F;
+    float worst = 0.0F;
+    for (std::size_t i = 0U; i < before.size(); ++i) {
+        worst = std::max(worst, std::sqrt(Math::LengthSquared(ragdoll.solver.GetBody(i).position - before[i])));
+    }
+    ragdoll = saved;
+    return worst;
+}
+
+TEST(EntityEditorParentingRagdollTest, EditingModeOrPreset_LeavesTheCapsulesOnTheMesh) {
+    const std::filesystem::path scratch = ::UVE::Tests::MakeTestCaseDirectory("entity_editor_ragdoll_edit");
+    const std::filesystem::path content = scratch / "Content";
+    std::filesystem::create_directories(content);
+
+    Core::EngineCore engine(MakeEntityEditorRagdollTestConfig(scratch, content));
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    {
+        Editor editor(engine.GetServices(), scratch / "main.uvscene", 100U, &engine);
+        editor.SetDocumentSceneFactory([&engine] { return engine.CreateDocumentScene(); });
+        editor.Init();
+        const auto created = editor.CreateContentCatalogueItem("character", content);
+        ASSERT_TRUE(created.has_value());
+        ASSERT_TRUE(editor.OpenEntityEditor(*created));
+        const Scene::Entity entityRoot = editor.GetEntityEditorRoot();
+
+        Scene::Entity ragdollEntity = Scene::kInvalidEntity;
+        {
+            const Editor::EntityDocumentScope scope(editor);
+            Scene::IEntityManager& entities = editor.GetActiveServices().GetEntityManager();
+            editor.SelectEntity(entityRoot);
+            const Scene::Entity skeletonEntity =
+                editor.CreateDocumentSceneObject(Scene::Objects::SceneObjectKind::Skeleton3D);
+            PopulateTestHumanoidSkeleton(entities.GetComponent<Scene::Skeleton3DComponent>(skeletonEntity));
+            editor.SelectEntity(skeletonEntity);
+            ragdollEntity = editor.CreateDocumentSceneObject(Scene::Objects::SceneObjectKind::Ragdoll3D);
+            ASSERT_NE(ragdollEntity, Scene::kInvalidEntity);
+            editor.SelectEntity(ragdollEntity);
+        }
+        const Core::TypeMetadataEntry* const entry =
+            Scene::FindSceneComponentMetadata(std::type_index(typeid(Scene::Ragdoll3DComponent)));
+        ASSERT_NE(entry, nullptr);
+        const auto property = [&](const std::string& name) -> const Core::TypeMetadataProperty& {
+            return *std::find_if(entry->properties.begin(), entry->properties.end(),
+                                 [&](const auto& candidate) { return candidate.name == name; });
+        };
+        const auto edit = [&](const char* label, const bool previewing = false) {
+            for (const std::int64_t mode : {0, 1, 2, 3, 2}) {
+                for (const std::int64_t preset : {0, 1, 2}) {
+                    if (previewing) {
+                        const Editor::EntityDocumentScope scope(editor);
+                        Scene::IEntityManager& entities = editor.GetActiveServices().GetEntityManager();
+                        if (!entities.GetComponent<Scene::Ragdoll3DComponent>(ragdollEntity).editorPreviewSimulating) {
+                            ASSERT_TRUE(Scene::StartRagdollEditorPreview(entities, ragdollEntity));
+                        }
+                        for (int frame = 0; frame < 40; ++frame) {
+                            Scene::UpdateRagdoll3DObjects(entities, 1.0F / 60.0F, true, 0.0F);
+                        }
+                    }
+                    {
+                        const Editor::EntityDocumentScope scope(editor);
+                        const auto modeValue = static_cast<Scene::RagdollMode>(mode);
+                        const auto presetValue = static_cast<Scene::RagdollQualityPreset>(preset);
+                        static_cast<void>(EditorAccess::SetSelectedComponentProperty(editor, *entry,
+                                                                                      property("mode"), &modeValue));
+                        static_cast<void>(EditorAccess::SetSelectedComponentProperty(
+                            editor, *entry, property("qualityPreset"), &presetValue));
+                        EXPECT_EQ(static_cast<std::int64_t>(
+                                      editor.GetActiveServices().GetEntityManager()
+                                          .GetComponent<Scene::Ragdoll3DComponent>(ragdollEntity).mode),
+                                  mode)
+                            << label << ": the edit must stick";
+                    }
+                    for (int frame = 0; frame < 20; ++frame) {
+                        if (editor.GetEntitySimulationState() == Editor::EntitySimulationState::Running) {
+                            editor.TickEntitySimulation(1.0 / 60.0);
+                        } else {
+                            const Editor::EntityDocumentScope tickScope(editor);
+                            Scene::UpdateRagdoll3DObjects(editor.GetActiveServices().GetEntityManager(),
+                                                          1.0F / 60.0F, /*editorPreviewOnly=*/true, 0.0F);
+                        }
+                    }
+                    const Editor::EntityDocumentScope scope(editor);
+                    Scene::IEntityManager& entities = editor.GetActiveServices().GetEntityManager();
+                    const Scene::Ragdoll3DComponent& state = entities.GetComponent<Scene::Ragdoll3DComponent>(ragdollEntity);
+                    EXPECT_LT(BodyToPoseMismatch(entities, ragdollEntity), 0.02F)
+                        << label << ": mode " << mode << " preset " << preset << " now mode "
+                        << static_cast<int>(state.mode) << " initialized " << state.initialized << " preview "
+                        << state.editorPreviewSimulating << " bodies " << state.solver.GetBodyCount()
+                        << " bindings " << state.bindings.size() << " error '" << state.lastSetupError << "'";
+                }
+            }
+        };
+        edit("idle");
+        edit("while previewing", /*previewing=*/true);
+        {
+            const Editor::EntityDocumentScope scope(editor);
+            static_cast<void>(Scene::StopRagdollEditorPreview(editor.GetActiveServices().GetEntityManager(), ragdollEntity));
+        }
+        ASSERT_TRUE(editor.PlayEntitySimulation());
+        for (int frame = 0; frame < 60; ++frame) editor.TickEntitySimulation(1.0 / 60.0);
+        edit("while simulating");
+        ASSERT_TRUE(editor.StopEntitySimulation());
+        {
+            // Stopping restores the document, so the ragdoll is found again and selected again.
+            const Editor::EntityDocumentScope scope(editor);
+            Scene::IEntityManager& entities = editor.GetActiveServices().GetEntityManager();
+            ragdollEntity = Scene::kInvalidEntity;
+            entities.ForEach<Scene::Ragdoll3DComponent>(
+                [&](const Scene::Entity found, const Scene::Ragdoll3DComponent&) { ragdollEntity = found; });
+            ASSERT_NE(ragdollEntity, Scene::kInvalidEntity);
+            editor.SelectEntity(ragdollEntity);
+        }
+        edit("after stop");
 
         ASSERT_TRUE(editor.CloseEntityEditor(false));
         editor.Shutdown();
