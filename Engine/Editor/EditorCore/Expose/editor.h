@@ -2474,9 +2474,15 @@ private:
     [[nodiscard]] bool WriteProjectTextFile(const std::filesystem::path& path, std::string_view text);
     /// Reads a project file by the same rule as WriteProjectTextFile.
     [[nodiscard]] std::optional<std::string> ReadProjectTextFile(const std::filesystem::path& path) const;
-    /// The UVScript an object's Script slot runs in the Entity Editor: a .uvs as edited (saved or
-    /// not), or a Blueprint (.uvbp, the open graph or the file) translated for that object.
-    [[nodiscard]] std::optional<std::string> ReadEntityScriptSource(const std::string& path, Scene::Entity entity) const;
+    /// What an object's Script slot runs in the Entity Editor: a .uvs's text as edited (saved or not), or a
+    /// Blueprint graph (.uvbp, the open graph or the file) with the name and kind it is compiled for.
+    struct EntityScriptSource final {
+        std::optional<std::string> text;
+        std::optional<Asset::BlueprintAsset> graph;
+        std::string objectName;
+        std::string objectKind;
+    };
+    [[nodiscard]] std::optional<EntityScriptSource> ReadEntityScriptSource(const std::string& path, Scene::Entity entity) const;
     [[nodiscard]] bool IsDocumentEntity(Scene::Entity entity) const noexcept;
     [[nodiscard]] bool HasSceneGraphObject(Scene::Entity entity) const noexcept;
     /// True for any live document entity in the hierarchy, spatial or not. This, not

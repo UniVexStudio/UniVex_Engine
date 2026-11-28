@@ -27,7 +27,8 @@
 namespace UVE::Editor {
 namespace {
 
-[[nodiscard]] bool IsUVScriptPath(const std::string_view path) noexcept { return Scene::Script::IsUVScriptPath(path); }
+/// A UVScript text file: `.uvs` only (`Scene::Script::IsUVScriptPath` also accepts Blueprint graphs).
+[[nodiscard]] bool IsUVScriptPath(const std::string_view path) noexcept { return path.ends_with(Scene::Script::kUVScriptExtension); }
 
 /// Every problem in the document's text. Checked against the object while it exists - its
 /// components decide which properties are in scope - and only parsed once it is gone.
@@ -73,7 +74,7 @@ bool Editor::OpenUVScriptPath(const std::filesystem::path& path) {
         return false;
     }
     const std::string pathStr = path.generic_string();
-    if (!Scene::Script::IsUVScriptPath(pathStr)) {
+    if (!IsUVScriptPath(pathStr)) {
         return false;
     }
     if (!m_openUVScript.has_value() || m_openUVScript->path != pathStr) {

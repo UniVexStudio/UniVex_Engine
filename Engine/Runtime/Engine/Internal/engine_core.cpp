@@ -13,6 +13,7 @@
 #include "engine_core.h"
 
 #include "blueprint_asset.h"
+#include "blueprint_graph_lowering.h"
 #include "blueprint_nodes.h"
 #include "widget_blueprint_asset.h"
 
@@ -2072,30 +2073,42 @@ void EngineCore::SyncScriptRuntime() {
     SyncUVScripts(m_simulationExecutionMode == SimulationExecutionMode::Paused);
 }
 
-std::optional<std::string> EngineCore::ReadUVScriptSource(const std::string& path) const {
+std::optional<EngineCore::ScriptFile> EngineCore::LoadScriptFile(const std::string& path) const {
     const std::optional<std::vector<std::byte>> bytes = m_fileSystem->ReadFile(path);
     if (!bytes.has_value()) {
         return std::nullopt;
     }
+    ScriptFile file;
+    // FNV-1a over the file's bytes: the key a changed file is noticed by.
+    file.hash = 0xcbf29ce484222325ULL;
+    for (const std::byte byte : *bytes) {
+        file.hash = (file.hash ^ static_cast<std::uint8_t>(byte)) * 0x100000001b3ULL;
+    }
+    const std::string stem = std::filesystem::path(path).stem().string();
     if (path.ends_with(".uvbp")) {
-        // A Blueprint Class: the UVScript its graph translates to.
-        const std::optional<Asset::BlueprintAsset> blueprint = Asset::DecodeBlueprintAsset(*bytes);
+        // A Blueprint Class: compiled straight from its graph.
+        std::optional<Asset::BlueprintAsset> blueprint = Asset::DecodeBlueprintAsset(*bytes);
         if (!blueprint.has_value()) {
             return std::nullopt;
         }
-        const std::string stem = std::filesystem::path(path).stem().string();
-        return Asset::TranslateBlueprintToUVScript(*blueprint, stem, blueprint->parentKind).source;
+        file.objectName = stem;
+        file.objectKind = blueprint->parentKind;
+        file.graph = std::move(blueprint);
+        return file;
     }
     if (Asset::IsWidgetBlueprintPath(path)) {
-        // A Widget Blueprint: the UVScript its graph translates to, run on the widget's Canvas.
-        const std::optional<Asset::BlueprintAsset> graph = Asset::ReadWidgetBlueprintGraph(*bytes);
+        // A Widget Blueprint: its graph, run on the widget's Canvas.
+        std::optional<Asset::BlueprintAsset> graph = Asset::ReadWidgetBlueprintGraph(*bytes);
         if (!graph.has_value()) {
             return std::nullopt;
         }
-        const std::string stem = std::filesystem::path(path).stem().string();
-        return Asset::TranslateBlueprintToUVScript(*graph, stem, graph->parentKind).source;
+        file.objectName = stem;
+        file.objectKind = graph->parentKind;
+        file.graph = std::move(graph);
+        return file;
     }
-    return std::string(reinterpret_cast<const char*>(bytes->data()), bytes->size());
+    file.text.assign(reinterpret_cast<const char*>(bytes->data()), bytes->size());
+    return file;
 }
 
 void EngineCore::ReconcileUVScriptInstances() {
@@ -2107,11 +2120,15 @@ void EngineCore::ReconcileUVScriptInstances() {
         constexpr auto kRecheckInterval = std::chrono::milliseconds(500);
         if (const auto now = std::chrono::steady_clock::now(); now - m_uvScriptLastRecheck >= kRecheckInterval) {
             m_uvScriptLastRecheck = now;
-            const auto readText = [this](const std::string& path) { return ReadUVScriptSource(path); };
-            std::erase_if(m_uvScripts,
-                          [&readText](const auto& entry) { return readText(entry.second.path) != entry.second.source; });
-            std::erase_if(m_uvScriptFailedSources, [this, &readText](const auto& entry) {
-                if (readText(entry.first) == entry.second) {
+            const auto readHash = [this](const std::string& path) -> std::optional<std::uint64_t> {
+                const std::optional<ScriptFile> file = LoadScriptFile(path);
+                return file.has_value() ? std::optional<std::uint64_t>{file->hash} : std::nullopt;
+            };
+            std::erase_if(m_uvScripts, [&readHash](const auto& entry) {
+                return readHash(entry.second.path) != std::optional<std::uint64_t>{entry.second.hash};
+            });
+            std::erase_if(m_uvScriptFailedSources, [this, &readHash](const auto& entry) {
+                if (readHash(entry.first) == entry.second) {
                     return false;
                 }
                 std::erase_if(m_scriptReconcileFailedEntities,
@@ -2160,13 +2177,13 @@ void EngineCore::ReconcileUVScriptInstances() {
                 m_scriptReconcileFailedEntities.insert_or_assign(entity, component.scriptAssetPath);
                 UVE_ERROR("EngineCore: script \"{}\": {}", component.scriptAssetPath, why);
             };
-            const std::optional<std::string> read = ReadUVScriptSource(component.scriptAssetPath);
+            const std::optional<ScriptFile> read = LoadScriptFile(component.scriptAssetPath);
             if (!read.has_value()) {
                 fail("cannot be read");
                 m_uvScriptFailedSources.insert_or_assign(component.scriptAssetPath, std::nullopt);
                 return;
             }
-            const std::string& source = *read;
+            const ScriptFile& file = *read;
             auto host = std::make_unique<BlueprintObjectHost>(
                 *m_entityManager, m_inputSystem.get(), entity, m_audioSourceSystem.get(), m_audioSystem.get(),
                 [this](const Scene::Entity other) { return FindUVScriptInstance(other); });
@@ -2180,19 +2197,37 @@ void EngineCore::ReconcileUVScriptInstances() {
                     m_windowManager->SetCursorVisible(show);
                 }
             });
-            const Blueprint::CompileResult compiled = Blueprint::CompileUVScriptSource(source, *host);
-            if (!compiled.IsSuccess()) {
-                for (const Blueprint::Diagnostic& diagnostic : compiled.diagnostics) {
-                    UVE_ERROR("{}:{}:{}: {}", component.scriptAssetPath, diagnostic.at.line, diagnostic.at.column,
-                              diagnostic.message);
+            Blueprint::CompileResult compiled;
+            if (file.graph.has_value()) {
+                // A graph's diagnostics name nodes: the position's `line` is the node's id.
+                Asset::BlueprintCompilation direct =
+                    Asset::CompileBlueprintGraph(*file.graph, file.objectName, file.objectKind, *host);
+                for (const auto& [node, problem] : direct.problems) {
+                    UVE_WARNING("{}: node {}: {}", component.scriptAssetPath, node, problem);
                 }
+                compiled = std::move(direct.result);
+                if (!compiled.IsSuccess()) {
+                    for (const Blueprint::Diagnostic& diagnostic : compiled.diagnostics) {
+                        UVE_ERROR("{}: node {}: {}", component.scriptAssetPath, diagnostic.at.line, diagnostic.message);
+                    }
+                }
+            } else {
+                compiled = Blueprint::CompileUVScriptSource(file.text, *host);
+                if (!compiled.IsSuccess()) {
+                    for (const Blueprint::Diagnostic& diagnostic : compiled.diagnostics) {
+                        UVE_ERROR("{}:{}:{}: {}", component.scriptAssetPath, diagnostic.at.line, diagnostic.at.column,
+                                  diagnostic.message);
+                    }
+                }
+            }
+            if (!compiled.IsSuccess()) {
                 fail("did not compile");
-                m_uvScriptFailedSources.insert_or_assign(component.scriptAssetPath, source);
+                m_uvScriptFailedSources.insert_or_assign(component.scriptAssetPath, file.hash);
                 return;
             }
             UVScriptSlot slot;
             slot.path = component.scriptAssetPath;
-            slot.source = source;
+            slot.hash = file.hash;
             slot.program = compiled.program;
             slot.instance = std::make_unique<Blueprint::ScriptInstance>(compiled.program, *host);
             // The object's own values for the script's exports, before `ready` sees them. A value

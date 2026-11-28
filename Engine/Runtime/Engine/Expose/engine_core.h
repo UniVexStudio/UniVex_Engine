@@ -55,6 +55,7 @@
 #include "engine_state.h"
 #include "frame_stats.h"
 #include "dynamic_render_resolution.h"
+#include "blueprint_asset.h"
 #include "blueprint_object_host.h"
 #include "blueprint_instance.h"
 #include "engine_version.h"
@@ -598,8 +599,16 @@ private:
     /// Reconciles script components with instances in m_uvScripts so event receivers are ready
     /// before any physics or animation step evaluates.
     void ReconcileUVScriptInstances();
-    /// A script slot's source: a .uvs file's text, or the UVScript a .uvbp Blueprint translates to.
-    [[nodiscard]] std::optional<std::string> ReadUVScriptSource(const std::string& path) const;
+    /// What a script slot runs: a Blueprint graph (.uvbp, or a widget's .uvwbp) compiled straight from its graph, or a
+    /// .uvs file's text. `hash` identifies the file's bytes, so a changed or reappearing file is noticed.
+    struct ScriptFile final {
+        std::uint64_t hash = 0U;
+        std::string text;
+        std::optional<Asset::BlueprintAsset> graph;
+        std::string objectName;
+        std::string objectKind;
+    };
+    [[nodiscard]] std::optional<ScriptFile> LoadScriptFile(const std::string& path) const;
 
     /// Steps every Character3D (CharacterControllerComponent) once per fixed step: velocity
     /// from the built-in movement when it is on (keyboard, with air control, coyote time and a
@@ -1004,8 +1013,8 @@ private:
     /// An object running a `.uvs` script: the path it was compiled from, so a changed path recompiles.
     struct UVScriptSlot final {
         std::string path;
-        /// The text it was compiled from; a file that now reads differently is recompiled.
-        std::string source;
+        /// The hash of the file it was compiled from; a file that now reads differently is recompiled.
+        std::uint64_t hash = 0U;
         /// The object's export values it started with; changing them restarts the script.
         std::map<std::string, std::string> exportValues;
         std::shared_ptr<const Blueprint::Program> program;
@@ -1040,9 +1049,9 @@ private:
     void FillScriptServices();
     /// Raises queued messages and timers, then removes what scripts destroyed.
     void FinishScriptFrame(double dt, bool simulationPaused);
-    /// The text of each `.uvs` path that failed (none when it could not be read), so an edit to it -
+    /// The hash of each script path that failed (none when it could not be read), so an edit to it -
     /// or the file appearing - is retried.
-    std::unordered_map<std::string, std::optional<std::string>> m_uvScriptFailedSources;
+    std::unordered_map<std::string, std::optional<std::uint64_t>> m_uvScriptFailedSources;
     /// When `.uvs` files were last re-read for edits. Wall time, not frame time: a paused or
     /// fixed-step game still picks up a saved script.
     std::chrono::steady_clock::time_point m_uvScriptLastRecheck{};

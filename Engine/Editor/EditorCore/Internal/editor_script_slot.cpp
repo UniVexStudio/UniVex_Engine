@@ -76,7 +76,8 @@ struct ScriptPathProperty final {
     return property == entry->properties.cend() ? ScriptPathProperty{} : ScriptPathProperty{entry, &*property};
 }
 
-[[nodiscard]] bool IsUVScriptPath(const std::string_view path) noexcept { return Scene::Script::IsUVScriptPath(path); }
+/// A UVScript text file: `.uvs` only (`Scene::Script::IsUVScriptPath` also accepts Blueprint graphs).
+[[nodiscard]] bool IsUVScriptPath(const std::string_view path) noexcept { return path.ends_with(kUVScriptExtension); }
 
 /// A free script path for `stem`: not a file that exists, and not a path another object already
 /// names (it may not have been saved yet). Bounded, so a folder full of collisions gives up
