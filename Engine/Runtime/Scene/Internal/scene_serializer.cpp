@@ -3667,7 +3667,12 @@ void RollbackRestoredEntities(IEntityManager& entityManager, std::vector<Entity>
 
 [[nodiscard]] std::optional<std::vector<Entity>> DecodeScenePayload(
     IEntityManager& entityManager, const std::vector<std::byte>& payloadBuffer,
-    const std::string_view sourceDescription, const std::optional<std::size_t> expectedRootCount = std::nullopt) {
+    const std::string_view sourceDescription, const std::optional<std::size_t> expectedRootCount = std::nullopt,
+    const bool keepUnrestorable = false) {
+    // `keepUnrestorable` is for files read from disk, which may come from another engine version: a
+    // component this build cannot restore is parked on the entity (and written back on save) instead
+    // of refusing the file. In-memory snapshots (undo, Stop Play) were written by this build moments
+    // ago, so anything that fails to restore there is a real fault and stays all-or-nothing.
     const std::string payloadText(reinterpret_cast<const char*>(payloadBuffer.data()), payloadBuffer.size());
     nlohmann::json payload;
     try {
@@ -3774,6 +3779,11 @@ void RollbackRestoredEntities(IEntityManager& entityManager, std::vector<Entity>
                 }
                 if (GetRegistrationsByName().find(std::string{CanonicalComponentName(componentName)}) ==
                     GetRegistrationsByName().end()) {
+                    if (!keepUnrestorable) {
+                        UVE_ERROR("SceneSerializer: \"{}\" references unknown component type \"{}\"",
+                                  sourceDescription, componentName);
+                        return std::nullopt;
+                    }
                     // A type this engine no longer has (or does not have yet). The rest of the
                     // entity still loads; the component itself is kept verbatim for re-saving.
                     UVE_WARNING("SceneSerializer: \"{}\" references unknown component type \"{}\"; "
@@ -4044,6 +4054,9 @@ void RollbackRestoredEntities(IEntityManager& entityManager, std::vector<Entity>
                     }
                 }
               } catch (const std::exception& componentError) {
+                if (!keepUnrestorable) {
+                    throw;
+                }
                 // One component that cannot be restored - an unknown type, a field an older
                 // version wrote differently, a value today's validator refuses - no longer costs
                 // the whole file. It is kept verbatim and written back on save.
@@ -4182,7 +4195,8 @@ std::vector<Entity> SceneSerializer::Load(IEntityManager& entityManager,
     }
     const std::optional<std::vector<Entity>> restored = DecodeScenePayload(
         entityManager, payload, path.string(),
-        header.assetType == SceneAssetType::Prefab ? std::optional<std::size_t>{1U} : std::nullopt);
+        header.assetType == SceneAssetType::Prefab ? std::optional<std::size_t>{1U} : std::nullopt,
+        /*keepUnrestorable=*/true);
     return restored.value_or(std::vector<Entity>{});
 }
 

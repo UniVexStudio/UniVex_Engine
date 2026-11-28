@@ -1151,8 +1151,10 @@ bool PrepareRagdoll3D(IEntityManager& entityManager, const Entity entity, const 
     if (regenerateBones || ragdoll.bones.empty()) {
         ragdoll.bones = BuildAutoRagdollBones(skeleton.bones);
         ragdoll.initialized = false;
-        if (ragdoll.bones.empty()) {
-            ragdoll.lastSetupError = "No bones on this skeleton could be matched to ragdoll bodies.";
+        if (ragdoll.bones.size() < 2U) {
+            ragdoll.bones.clear();
+            ragdoll.lastSetupError = "Fewer than two bones on this skeleton could be matched to ragdoll bodies. "
+                                     "Add the bones to simulate by hand.";
             return false;
         }
     }
@@ -1199,8 +1201,12 @@ bool InitializeRagdoll3D(IEntityManager& entityManager, const Entity entity) {
 
     if (component.bones.empty()) {
         component.bones = BuildAutoRagdollBones(skeleton.bones);
-        if (component.bones.empty()) {
-            return fail("No bones on this skeleton could be matched to ragdoll bodies.");
+        if (component.bones.size() < 2U) {
+            // One body is not an articulated ragdoll, and keeping it would stop the next attempt
+            // from generating a list (an empty one is what asks for generation).
+            component.bones.clear();
+            return fail("Fewer than two bones on this skeleton could be matched to ragdoll bodies. "
+                        "Add the bones to simulate by hand.");
         }
     }
     // An oversized list (authored by hand, or by an older generator) is trimmed to the structural
@@ -1214,7 +1220,7 @@ bool InitializeRagdoll3D(IEntityManager& entityManager, const Entity entity) {
     // swapped, or the ragdoll was copied between characters). Rebuild it for the rig it is on now.
     if (resolvedSetupIndices.empty()) {
         std::vector<RagdollBoneSetup> regenerated = BuildAutoRagdollBones(skeleton.bones);
-        if (!regenerated.empty()) {
+        if (regenerated.size() >= 2U) {
             component.bones = std::move(regenerated);
             resolveSetups(resolvedSetupIndices, resolvedBoneIndices);
         }
