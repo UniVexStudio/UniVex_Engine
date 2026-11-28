@@ -58,7 +58,6 @@ public class EditorCoreModule : ModuleRules
             "Blueprint/Debug/",
             "Blueprint/Nodes/",
             "Blueprint/Platform/",
-            "Blueprint/Plugins/",
             "Blueprint/Profiling/",
             "Blueprint/Resources/",
             "Blueprint/Runtime/",

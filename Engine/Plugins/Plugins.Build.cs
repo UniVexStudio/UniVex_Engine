@@ -10,6 +10,7 @@ public class PluginsModule : ModuleRules
 
         PublicDependencyModuleNames.AddRange(new string[] {
             "Asset",
+            "Blueprint",
         });
 
         PrivateDependencyModuleNames.AddRange(new string[] {

@@ -614,7 +614,7 @@ class EngineBuilder:
             sel_out.write_text(text, encoding="utf-8")
 
         # 6. Test artifacts (co-located inside module Tests/ and Engine/Editor/EditorCore/Blueprint/Testing/)
-        plugin_fixtures_dir = self.repo_root / "Engine" / "Runtime" / "Plugins" / "Tests" / "Fixtures"
+        plugin_fixtures_dir = self.repo_root / "Engine" / "Plugins" / "Tests" / "Fixtures"
         bp_native_dir = self.repo_root / "Engine" / "Editor" / "EditorCore" / "Blueprint" / "Testing" / "Compiler" / "native"
         if (plugin_fixtures_dir.is_dir() or bp_native_dir.is_dir()) and bin_dir is not None:
             # Build test plugins
@@ -623,7 +623,7 @@ class EngineBuilder:
                 (plugin_fixtures_dir / "uve_test_plugin_bad_protocol.cpp", bin_dir / "libuve_test_plugin_bad_protocol.so"),
                 (plugin_fixtures_dir / "uve_test_plugin_no_entry.cpp", bin_dir / "libuve_test_plugin_no_entry.so"),
             ]
-            plugin_inc = self.repo_root / "Engine" / "Runtime" / "Plugins" / "Expose"
+            plugin_inc = self.repo_root / "Engine" / "Plugins" / "Expose"
             for src, dst in plugin_fixtures:
                 if src.exists() and (not dst.exists() or src.stat().st_mtime > dst.stat().st_mtime):
                     cmd = [cxx, "-std=c++23", "-fPIC", "-shared", f"-I{plugin_inc}", str(src), "-o", str(dst)]

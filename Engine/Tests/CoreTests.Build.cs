@@ -104,7 +104,7 @@ public class CoreTestsModule : ModuleRules
             "../Runtime/Pack/Tests",
             "../Runtime/Physics/Tests",
             "../Runtime/Platform/Tests",
-            "../Runtime/Plugins/Tests",
+            "../Plugins/Tests",
             "../Runtime/ProjectCheck/Tests",
             "../Runtime/RHI/Tests",
             "../Runtime/RHI/OpenGL/Tests",

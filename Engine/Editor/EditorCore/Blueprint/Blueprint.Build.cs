@@ -21,7 +21,6 @@ public class BlueprintModule : ModuleRules
             "Nodes/Categories",
             "Nodes/Networking",
             "Platform",
-            "Plugins",
             "Profiling",
             "Resources",
             "Serialization",
