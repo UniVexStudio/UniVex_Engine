@@ -22,6 +22,7 @@
 #include "blueprint_networking_nodes.h"
 #include "blueprint_node_builder.h"
 #include "blueprint_physics_nodes.h"
+#include "blueprint_ragdoll_nodes.h"
 #include "blueprint_rendering_nodes.h"
 #include "blueprint_transform_nodes.h"
 #include "blueprint_ui_nodes.h"
@@ -52,6 +53,8 @@ void AssignScopes(std::vector<BlueprintNodeType>& all) {
         }
         if (c == "Character" || n.key == "is_grounded") {
             n.needs = "CharacterController";
+        } else if (n.key.starts_with("ragdoll_")) {
+            n.needs = "Ragdoll3D";
         } else if (n.key.starts_with("apply_")) {
             n.needs = "Rigid3D";
         } else if (c == "Audio") {
@@ -123,6 +126,7 @@ void RegisterNetworkingCatalogueNodes(std::vector<BlueprintNodeType>& out) {
     Blueprint::Nodes::RegisterUtilitiesBlueprintNodes(all);
     Blueprint::Nodes::RegisterTransformBlueprintNodes(all);
     Blueprint::Nodes::RegisterPhysicsBlueprintNodes(all);
+    Blueprint::Nodes::RegisterRagdollBlueprintNodes(all);
     Blueprint::Nodes::RegisterInputBlueprintNodes(all);
     Blueprint::Nodes::RegisterCharacterBlueprintNodes(all);
     Blueprint::Nodes::RegisterRenderingBlueprintNodes(all);

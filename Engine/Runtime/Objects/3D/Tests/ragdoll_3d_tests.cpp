@@ -1,17 +1,21 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
 #include <limits>
+#include <optional>
 #include <string>
 #include <vector>
 
 #include <gtest/gtest.h>
 
+#include "blueprint_object_host.h"
+#include "blueprint_value.h"
 #include "collider_component.h"
 #include "hierarchy_component.h"
 #include "rigid_3d_component.h"
@@ -1120,6 +1124,112 @@ TEST_F(Ragdoll3DTest, FindNearestSkeleton_PrefersItsOwnCharacterOverAnother) {
     EXPECT_FALSE(entityManager.GetComponent<Ragdoll3DComponent>(loose).lastSetupError.empty());
     static_cast<void>(villainSkeleton);
 }
+
+TEST_F(Ragdoll3DTest, BlueprintHost_DescribesRagdollFunctionsOnlyWhereThereIsARagdoll) {
+    const Entity ragdollEntity = MakeRagdoll(MakeSkeletonEntity(MakeFullMixamoSkeleton()));
+    const Core::BlueprintObjectHost host{entityManager, nullptr, ragdollEntity};
+    for (const char* name : {"ragdoll.activate", "ragdoll.activate_powered", "ragdoll.deactivate", "ragdoll.get_up",
+                             "ragdoll.is_active", "ragdoll.is_at_rest", "ragdoll.is_lying"}) {
+        const std::optional<Blueprint::HostFunction> described = host.DescribeFunction(name);
+        ASSERT_TRUE(described.has_value()) << name;
+        EXPECT_TRUE(described->params.empty()) << name;
+        EXPECT_EQ(described->result.kind, Blueprint::Type::Kind::Bool) << name;
+    }
+    const std::optional<Blueprint::HostFunction> hit = host.DescribeFunction("ragdoll.hit");
+    ASSERT_TRUE(hit.has_value());
+    EXPECT_EQ(hit->params.size(), 2U);
+    const std::optional<Blueprint::HostFunction> blend = host.DescribeFunction("ragdoll.get_blend");
+    ASSERT_TRUE(blend.has_value());
+    EXPECT_EQ(blend->result.kind, Blueprint::Type::Kind::Float);
+
+    const Core::BlueprintObjectHost bare{entityManager, nullptr, entityManager.CreateEntity()};
+    EXPECT_FALSE(bare.DescribeFunction("ragdoll.activate").has_value());
+    EXPECT_FALSE(bare.DescribeFunction("ragdoll.hit").has_value());
+}
+
+TEST_F(Ragdoll3DTest, BlueprintHost_ADriverOnTheCharacterReachesTheRagdollUnderIt) {
+    // A character's script lives on the character; the ragdoll is a child of it.
+    const Entity character = entityManager.CreateEntity();
+    entityManager.AddComponent<TransformComponent>(character, TransformComponent{});
+    const Entity skeletonEntity = MakeSkeletonEntity(MakeFullMixamoSkeleton());
+    Ragdoll3DComponent setup;
+    setup.skeleton = skeletonEntity;
+    const Entity ragdollEntity = entityManager.CreateEntity();
+    entityManager.AddComponent<Ragdoll3DComponent>(ragdollEntity, setup);
+    HierarchyComponent link;
+    link.parent = character;
+    entityManager.AddComponent<HierarchyComponent>(ragdollEntity, link);
+
+    Core::BlueprintObjectHost host{entityManager, nullptr, character};
+    ASSERT_TRUE(host.DescribeFunction("ragdoll.activate").has_value());
+    EXPECT_FALSE(std::get<bool>(host.CallFunction("ragdoll.is_active", {})));
+    EXPECT_TRUE(std::get<bool>(host.CallFunction("ragdoll.activate", {})));
+    EXPECT_TRUE(std::get<bool>(host.CallFunction("ragdoll.is_active", {})));
+    EXPECT_EQ(entityManager.GetComponent<Ragdoll3DComponent>(ragdollEntity).mode, RagdollMode::Simulating);
+}
+
+TEST_F(Ragdoll3DTest, BlueprintHost_GoLimpFallGetUpAndDeactivate) {
+    const Skeleton3DComponent mixamo = MakeFullMixamoSkeleton();
+    const Entity skeletonEntity = MakeSkeletonEntity(mixamo);
+    const Entity ragdollEntity = MakeRagdoll(skeletonEntity);
+    Core::BlueprintObjectHost host{entityManager, nullptr, ragdollEntity};
+    const float startHips = BoneWorldHeight(mixamo, "mixamorig:Hips");
+
+    EXPECT_FALSE(std::get<bool>(host.CallFunction("ragdoll.get_up", {}))) << "nothing has fallen yet";
+    ASSERT_TRUE(std::get<bool>(host.CallFunction("ragdoll.activate", {})));
+    for (int frame = 0; frame < 150; ++frame) {
+        UpdateRagdoll3DObjects(entityManager, 1.0F / 60.0F, false, 0.0F);
+    }
+    EXPECT_LT(BoneWorldHeight(entityManager.GetComponent<Skeleton3DComponent>(skeletonEntity), "mixamorig:Hips"),
+              startHips - 0.5F);
+
+    ASSERT_TRUE(std::get<bool>(host.CallFunction("ragdoll.get_up", {})));
+    EXPECT_EQ(entityManager.GetComponent<Ragdoll3DComponent>(ragdollEntity).mode, RagdollMode::BlendingOut);
+
+    ASSERT_TRUE(std::get<bool>(host.CallFunction("ragdoll.deactivate", {})));
+    EXPECT_EQ(entityManager.GetComponent<Ragdoll3DComponent>(ragdollEntity).mode, RagdollMode::Kinematic);
+    EXPECT_FALSE(std::get<bool>(host.CallFunction("ragdoll.is_active", {})));
+    EXPECT_FALSE(std::get<bool>(host.CallFunction("ragdoll.deactivate", {}))) << "already handed back";
+}
+
+TEST_F(Ragdoll3DTest, BlueprintHost_SettingsAreWrittenAndBadNumbersRefused) {
+    const Entity ragdollEntity = MakeRagdoll(MakeSkeletonEntity(MakeFullMixamoSkeleton()));
+    Core::BlueprintObjectHost host{entityManager, nullptr, ragdollEntity};
+    const Ragdoll3DComponent& ragdoll = entityManager.GetComponent<Ragdoll3DComponent>(ragdollEntity);
+
+    const std::array<Blueprint::Value, 1U> half{Blueprint::Value{0.5}};
+    EXPECT_TRUE(std::get<bool>(host.CallFunction("ragdoll.set_blend", half)));
+    EXPECT_FLOAT_EQ(ragdoll.physicsBlendWeight, 0.5F);
+    EXPECT_DOUBLE_EQ(std::get<double>(host.CallFunction("ragdoll.get_blend", {})), 0.5);
+    const std::array<Blueprint::Value, 1U> tooMuch{Blueprint::Value{7.0}};
+    EXPECT_TRUE(std::get<bool>(host.CallFunction("ragdoll.set_blend", tooMuch)));
+    EXPECT_FLOAT_EQ(ragdoll.physicsBlendWeight, 1.0F) << "clamped";
+    const std::array<Blueprint::Value, 1U> notANumber{Blueprint::Value{std::numeric_limits<double>::quiet_NaN()}};
+    EXPECT_FALSE(std::get<bool>(host.CallFunction("ragdoll.set_blend", notANumber)));
+    EXPECT_FLOAT_EQ(ragdoll.physicsBlendWeight, 1.0F);
+
+    const std::array<Blueprint::Value, 1U> yes{Blueprint::Value{true}};
+    EXPECT_TRUE(std::get<bool>(host.CallFunction("ragdoll.set_auto_recover", yes)));
+    EXPECT_TRUE(ragdoll.autoRecover);
+    const std::array<Blueprint::Value, 1U> stiff{Blueprint::Value{300.0}};
+    EXPECT_TRUE(std::get<bool>(host.CallFunction("ragdoll.set_motor_stiffness", stiff)));
+    EXPECT_FLOAT_EQ(ragdoll.motorStiffness, 300.0F);
+}
+
+TEST_F(Ragdoll3DTest, BlueprintHost_AHitShovesTheBody) {
+    const Entity skeletonEntity = MakeSkeletonEntity(MakeFullMixamoSkeleton());
+    const Entity ragdollEntity = MakeRagdoll(skeletonEntity);
+    Core::BlueprintObjectHost host{entityManager, nullptr, ragdollEntity};
+    ASSERT_TRUE(std::get<bool>(host.CallFunction("ragdoll.activate", {})));
+    const Ragdoll3DComponent& ragdoll = entityManager.GetComponent<Ragdoll3DComponent>(ragdollEntity);
+    ASSERT_GT(ragdoll.solver.GetBodyCount(), 0U);
+    const Math::Vector3 before = ragdoll.solver.GetBody(0U).linearVelocity;
+
+    const std::array<Blueprint::Value, 1U> shove{Blueprint::Value{Blueprint::Vec3Value{0.0, 0.0, 400.0}}};
+    EXPECT_TRUE(std::get<bool>(host.CallFunction("ragdoll.apply_impulse", shove)));
+    EXPECT_GT(ragdoll.solver.GetBody(0U).linearVelocity.z, before.z + 0.5F);
+}
+
 
 } // namespace
 } // namespace UVE::Scene::Tests

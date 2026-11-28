@@ -32,6 +32,7 @@
 #include "light_component.h"
 #include "name_component.h"
 #include "rigid_3d_component.h"
+#include "ragdoll_3d.h"
 #include "transform_component.h"
 #include "visibility_component.h"
 #include "world_transform_component.h"
@@ -433,7 +434,47 @@ std::optional<HostProperty> BlueprintObjectHost::DescribeProperty(const std::str
     return std::nullopt;
 }
 
+namespace {
+
+/// The Ragdoll3D a script on `host` drives: the host's own, or the first one in its subtree (a character's
+/// ragdoll sits under its skeleton, not on the character itself).
+[[nodiscard]] Scene::Entity FindRagdollFor(Scene::IEntityManager& entityManager, const Scene::Entity host) {
+    if (!entityManager.IsAlive(host)) return Scene::kInvalidEntity;
+    if (entityManager.HasComponent<Scene::Ragdoll3DComponent>(host)) return host;
+    Scene::Entity found = Scene::kInvalidEntity;
+    entityManager.ForEach<Scene::Ragdoll3DComponent>([&](const Scene::Entity candidate, Scene::Ragdoll3DComponent&) {
+        if (found != Scene::kInvalidEntity) return;
+        Scene::Entity cursor = candidate;
+        for (std::size_t depth = 0U; depth < 64U && cursor != Scene::kInvalidEntity; ++depth) {
+            if (cursor == host) {
+                found = candidate;
+                return;
+            }
+            cursor = entityManager.HasComponent<Scene::HierarchyComponent>(cursor)
+                         ? entityManager.GetComponent<Scene::HierarchyComponent>(cursor).parent
+                         : Scene::kInvalidEntity;
+        }
+    });
+    return found;
+}
+
+} // namespace
+
 std::optional<HostFunction> BlueprintObjectHost::DescribeFunction(const std::string_view name) const {
+    if (name.starts_with("ragdoll.") && FindRagdollFor(m_entityManager, m_entity) != Scene::kInvalidEntity) {
+        if (name == "ragdoll.activate" || name == "ragdoll.activate_powered" || name == "ragdoll.deactivate" ||
+            name == "ragdoll.get_up" || name == "ragdoll.is_active" || name == "ragdoll.is_at_rest" ||
+            name == "ragdoll.is_lying") {
+            return HostFunction{{}, Type::Bool()};
+        }
+        if (name == "ragdoll.apply_impulse") return HostFunction{{Type::Vec3()}, Type::Bool()};
+        if (name == "ragdoll.hit") return HostFunction{{Type::Vec3(), Type::Vec3()}, Type::Bool()};
+        if (name == "ragdoll.set_blend" || name == "ragdoll.set_motor_stiffness") {
+            return HostFunction{{Type::Float()}, Type::Bool()};
+        }
+        if (name == "ragdoll.set_auto_recover") return HostFunction{{Type::Bool()}, Type::Bool()};
+        if (name == "ragdoll.get_blend") return HostFunction{{}, Type::Float()};
+    }
     if (m_entityManager.HasComponent<Scene::Rigid3DComponent>(m_entity) &&
         (name == "physics.apply_force" || name == "physics.apply_impulse" || name == "physics.apply_torque")) {
         return HostFunction{{Type::Vec3()}, Type::Bool()};
@@ -968,6 +1009,68 @@ void BlueprintObjectHost::SetProperty(const std::string_view name, const Value& 
 }
 
 Value BlueprintObjectHost::CallFunction(const std::string_view name, const std::span<const Value> args) {
+    // Ragdoll needs no input system either, so it routes before the null-input early-out below.
+    if (name.starts_with("ragdoll.")) {
+        const Scene::Entity ragdollEntity = FindRagdollFor(m_entityManager, m_entity);
+        if (ragdollEntity == Scene::kInvalidEntity) {
+            return Value{false};
+        }
+        Scene::Ragdoll3DComponent& ragdoll = m_entityManager.GetComponent<Scene::Ragdoll3DComponent>(ragdollEntity);
+        if (name == "ragdoll.activate") {
+            return Value{Scene::ActivateRagdoll(m_entityManager, ragdollEntity, Scene::RagdollMode::Simulating)};
+        }
+        if (name == "ragdoll.activate_powered") {
+            return Value{Scene::ActivateRagdoll(m_entityManager, ragdollEntity, Scene::RagdollMode::Active)};
+        }
+        if (name == "ragdoll.deactivate") {
+            return Value{Scene::DeactivateRagdoll(m_entityManager, ragdollEntity)};
+        }
+        if (name == "ragdoll.get_up") {
+            return Value{Scene::BeginRagdollRecovery(m_entityManager, ragdollEntity)};
+        }
+        if (name == "ragdoll.is_active") {
+            return Value{Scene::IsRagdollActive(m_entityManager, ragdollEntity)};
+        }
+        if (name == "ragdoll.is_at_rest") {
+            return Value{Scene::IsRagdollActive(m_entityManager, ragdollEntity) && ragdoll.solver.IsSleeping()};
+        }
+        if (name == "ragdoll.is_lying") {
+            Scene::RagdollGetUpState state;
+            return Value{Scene::EvaluateRagdollGetUpState(m_entityManager, ragdollEntity, state) &&
+                         (state.orientation == Scene::RagdollLyingOrientation::FaceUp ||
+                          state.orientation == Scene::RagdollLyingOrientation::FaceDown)};
+        }
+        if (name == "ragdoll.apply_impulse") {
+            // A shove on the whole body: the hit lands on the pelvis, the first body.
+            if (ragdoll.solver.GetBodyCount() == 0U) return Value{false};
+            return Value{Scene::ApplyRagdollImpact(m_entityManager, ragdollEntity,
+                                                   ragdoll.solver.GetBody(0U).position, ToEngine(args[0]), 10.0F)};
+        }
+        if (name == "ragdoll.hit") {
+            return Value{Scene::ApplyRagdollImpact(m_entityManager, ragdollEntity, ToEngine(args[0]),
+                                                   ToEngine(args[1]), 0.5F)};
+        }
+        if (name == "ragdoll.set_blend") {
+            const double blend = std::get<double>(args[0]);
+            if (!std::isfinite(blend)) return Value{false};
+            ragdoll.physicsBlendWeight = static_cast<float>(std::clamp(blend, 0.0, 1.0));
+            return Value{true};
+        }
+        if (name == "ragdoll.get_blend") {
+            return Value{static_cast<double>(ragdoll.physicsBlendWeight)};
+        }
+        if (name == "ragdoll.set_auto_recover") {
+            ragdoll.autoRecover = std::get<bool>(args[0]);
+            return Value{true};
+        }
+        if (name == "ragdoll.set_motor_stiffness") {
+            const double stiffness = std::get<double>(args[0]);
+            if (!std::isfinite(stiffness)) return Value{false};
+            ragdoll.motorStiffness = static_cast<float>(std::max(0.0, stiffness));
+            return Value{true};
+        }
+        return Value{false};
+    }
     // Physics needs no input system, so it routes before the null-input early-out below.
     if (name == "physics.apply_force") {
         return Scene::Rigid3D::ApplyForce(m_entityManager, m_entity, ToEngine(args[0]));

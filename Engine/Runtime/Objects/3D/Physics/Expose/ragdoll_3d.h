@@ -362,6 +362,10 @@ bool TrimRagdollBonesToCap(std::vector<RagdollBoneSetup>& bones);
 /// `Kinematic` when it is done (an editor preview ends there). False when nothing is simulating.
 [[nodiscard]] bool BeginRagdollRecovery(IEntityManager& entityManager, Entity entity);
 
+/// Hands the skeleton back to the animation at once (no blend): the ragdoll returns to `Kinematic`. False
+/// when it was not simulating.
+[[nodiscard]] bool DeactivateRagdoll(IEntityManager& entityManager, Entity entity);
+
 /// True while the ragdoll is simulating or blending out, i.e. there is a fall to recover from or a recovery
 /// in progress.
 [[nodiscard]] bool IsRagdollActive(const IEntityManager& entityManager, Entity entity);

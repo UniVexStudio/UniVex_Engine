@@ -34,6 +34,7 @@
 #include "blueprint_input_nodes.h"
 #include "blueprint_math_nodes.h"
 #include "blueprint_physics_nodes.h"
+#include "blueprint_ragdoll_nodes.h"
 #include "blueprint_rendering_nodes.h"
 #include "blueprint_transform_nodes.h"
 #include "blueprint_ui_nodes.h"
@@ -282,12 +283,13 @@ TEST(BlueprintNodesUnitTest, PerCategoryNodeModulesRegisterUniqueCompleteCatalog
         void (*registerFn)(std::vector<Asset::BlueprintNodeType>&);
         std::size_t expectedCount;
     };
-    constexpr std::array<CategoryModuleCheck, 17> kModules{{
+    constexpr std::array<CategoryModuleCheck, 18> kModules{{
         {"Events", &Nodes::RegisterEventsBlueprintNodes, 20U},
         {"Flow", &Nodes::RegisterFlowBlueprintNodes, 18U},
         {"Utilities", &Nodes::RegisterUtilitiesBlueprintNodes, 63U},
         {"Transform", &Nodes::RegisterTransformBlueprintNodes, 19U},
         {"Physics", &Nodes::RegisterPhysicsBlueprintNodes, 6U},
+        {"Ragdoll", &Nodes::RegisterRagdollBlueprintNodes, 13U},
         {"Input", &Nodes::RegisterInputBlueprintNodes, 6U},
         {"Character", &Nodes::RegisterCharacterBlueprintNodes, 8U},
         {"Rendering", &Nodes::RegisterRenderingBlueprintNodes, 13U},
@@ -309,7 +311,7 @@ TEST(BlueprintNodesUnitTest, PerCategoryNodeModulesRegisterUniqueCompleteCatalog
         EXPECT_EQ(local.size(), mod.expectedCount) << mod.label;
         categorySum += local.size();
     }
-    EXPECT_EQ(categorySum, 334U);
+    EXPECT_EQ(categorySum, 347U);
 
     const auto& all = Asset::GetBlueprintNodeTypes();
     EXPECT_GT(all.size(), categorySum);

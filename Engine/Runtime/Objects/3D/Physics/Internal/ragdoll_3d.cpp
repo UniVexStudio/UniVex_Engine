@@ -1751,6 +1751,15 @@ bool IsRagdollActive(const IEntityManager& entityManager, const Entity entity) {
             ragdoll.mode == RagdollMode::BlendingOut);
 }
 
+bool DeactivateRagdoll(IEntityManager& entityManager, const Entity entity) {
+    if (!IsRagdollActive(entityManager, entity)) return false;
+    Ragdoll3DComponent& ragdoll = entityManager.GetComponent<Ragdoll3DComponent>(entity);
+    ragdoll.mode = RagdollMode::Kinematic;
+    ragdoll.blendOutSnapshot.valid = false;
+    ragdoll.restSeconds = 0.0F;
+    return true;
+}
+
 bool BeginRagdollRecovery(IEntityManager& entityManager, const Entity entity) {
     if (!IsRagdollActive(entityManager, entity)) return false;
     Ragdoll3DComponent& ragdoll = entityManager.GetComponent<Ragdoll3DComponent>(entity);
