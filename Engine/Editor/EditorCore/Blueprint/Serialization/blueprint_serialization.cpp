@@ -502,11 +502,7 @@ BlueprintMigrationResult BlueprintMigrationRegistry::MigrateJson(
 // Import & Export
 // ---------------------------------------------------------------------------
 
-std::string ExportBlueprintAsset(const Asset::BlueprintAsset& blueprint, const BlueprintExportFormat format,
-                                    const std::string_view objectName) {
-    if (format == BlueprintExportFormat::UVScriptSource) {
-        return Asset::TranslateBlueprintToUVScript(blueprint, objectName, blueprint.parentKind).source;
-    }
+std::string ExportBlueprintAsset(const Asset::BlueprintAsset& blueprint, const BlueprintExportFormat format) {
     const std::string pretty = Asset::SerializeBlueprintAsset(blueprint);
     if (format == BlueprintExportFormat::JsonCompact) {
         try {

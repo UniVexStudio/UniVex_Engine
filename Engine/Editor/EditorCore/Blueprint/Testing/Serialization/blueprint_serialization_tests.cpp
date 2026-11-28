@@ -113,10 +113,6 @@ TEST(BlueprintSerializationTest, LegacyV0MigrationAndExportImport) {
     ASSERT_TRUE(roundTrip.IsSuccess());
     EXPECT_FALSE(roundTrip.migrated);
     EXPECT_EQ(*roundTrip.asset, starter);
-
-    const std::string script = Serialization::ExportBlueprintAsset(
-        starter, Serialization::BlueprintExportFormat::UVScriptSource, "DoorTrigger");
-    EXPECT_NE(script.find("entity DoorTrigger : Object3D"), std::string::npos);
 }
 
 } // namespace

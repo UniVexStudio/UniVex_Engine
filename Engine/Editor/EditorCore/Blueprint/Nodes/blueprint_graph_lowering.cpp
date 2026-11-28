@@ -20,6 +20,7 @@ namespace {
 namespace B = Blueprint;
 using T = BlueprintPinType;
 using Role = BlueprintNodeRole;
+using Pin = BlueprintPinSpec;
 
 [[nodiscard]] std::string Identifier(std::string_view text) {
     std::string out;
@@ -830,6 +831,53 @@ private:
 };
 
 } // namespace
+
+std::string_view BlueprintPinTypeScriptName(const BlueprintPinType type) noexcept {
+    switch (type) {
+        case BlueprintPinType::Bool: return "bool";
+        case BlueprintPinType::Int: return "int";
+        case BlueprintPinType::Float: return "float";
+        case BlueprintPinType::Vector: return "vec3";
+        case BlueprintPinType::String: return "str";
+        case BlueprintPinType::Object: return "Object3D";
+        case BlueprintPinType::ObjectArray: return "list[Object3D]";
+        case BlueprintPinType::IntArray: return "list[int]";
+        case BlueprintPinType::FloatArray: return "list[float]";
+        case BlueprintPinType::StringArray: return "list[str]";
+        case BlueprintPinType::Exec: break;
+    }
+    return "none";
+}
+
+BlueprintNodePins ResolveBlueprintNodePins(const BlueprintAsset& blueprint, const BlueprintNode& node) {
+    BlueprintNodePins pins;
+    const BlueprintNodeType* const type = FindBlueprintNodeType(node.type);
+    if (type == nullptr) {
+        return pins;
+    }
+    pins.inputs = type->inputs;
+    pins.outputs = type->outputs;
+    if (type->role == BlueprintNodeRole::GetVariable || type->role == BlueprintNodeRole::SetVariable) {
+        const auto variable = std::find_if(blueprint.variables.begin(), blueprint.variables.end(),
+                                           [&node](const BlueprintVariable& v) { return v.name == node.variable; });
+        const BlueprintPinType value = variable != blueprint.variables.end() ? variable->type : T::Float;
+        const std::string name = variable != blueprint.variables.end() ? variable->name : node.variable;
+        for (Pin& pin : pins.inputs) {
+            if (pin.type != T::Exec) {
+                pin.type = value;
+                pin.name = name;
+                pin.defaultText = variable != blueprint.variables.end() ? variable->defaultText : std::string{};
+            }
+        }
+        for (Pin& pin : pins.outputs) {
+            if (pin.type != T::Exec) {
+                pin.type = value;
+                pin.name = name;
+            }
+        }
+    }
+    return pins;
+}
 
 BlueprintLowering LowerBlueprintGraph(const BlueprintAsset& blueprint, const std::string_view objectName,
                                       const std::string_view objectKind) {

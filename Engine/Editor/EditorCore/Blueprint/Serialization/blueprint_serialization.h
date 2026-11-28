@@ -103,7 +103,6 @@ private:
 enum class BlueprintExportFormat : std::uint8_t {
     JsonPretty = 0,
     JsonCompact,
-    UVScriptSource,
 };
 
 struct BlueprintImportResult final {
@@ -117,8 +116,7 @@ struct BlueprintImportResult final {
 };
 
 [[nodiscard]] std::string ExportBlueprintAsset(const Asset::BlueprintAsset& blueprint,
-                                                  BlueprintExportFormat format,
-                                                  std::string_view objectName = "BlueprintObject");
+                                                  BlueprintExportFormat format);
 
 [[nodiscard]] BlueprintImportResult ImportBlueprintFromJson(
     std::string_view jsonText, const BlueprintMigrationRegistry* customRegistry = nullptr);

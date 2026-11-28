@@ -100,17 +100,11 @@ std::uint32_t BlueprintBreakpointManager::AddLineBreakpoint(const std::uint32_t 
     return id;
 }
 
-std::optional<std::uint32_t> BlueprintBreakpointManager::AddNodeBreakpoint(
-    const std::uint32_t nodeId, const Asset::BlueprintTranslation& translation, std::string condition) {
+std::optional<std::uint32_t> BlueprintBreakpointManager::AddNodeBreakpoint(const std::uint32_t nodeId, std::string condition) {
     if (nodeId == 0U) {
         return std::nullopt;
     }
-    for (std::size_t i = 0U; i < translation.lineNodes.size(); ++i) {
-        if (translation.lineNodes[i] == nodeId) {
-            return AddLineBreakpoint(static_cast<std::uint32_t>(i + 1U), nodeId, std::move(condition));
-        }
-    }
-    return std::nullopt;
+    return AddLineBreakpoint(nodeId, nodeId, std::move(condition));
 }
 
 bool BlueprintBreakpointManager::RemoveBreakpoint(const std::uint32_t breakpointId) {
@@ -219,15 +213,14 @@ std::string BlueprintExecutionTrace::FormatSummary() const {
 // BlueprintDebugSession
 // ---------------------------------------------------------------------------
 
-bool BlueprintDebugSession::Attach(ScriptInstance& instance,
-                                         const Asset::BlueprintTranslation* const translation) {
+bool BlueprintDebugSession::Attach(ScriptInstance& instance, const bool positionsAreNodes) {
     if (!instance.EnableDebugger()) {
         m_diagnostics.push_back(BlueprintDebugDiagnostic{
             0U, 0U, "Could not enable debugger (instance may be running linked native code)."});
         return false;
     }
     m_instance = &instance;
-    m_translation = translation;
+    m_positionsAreNodes = positionsAreNodes;
     m_callStack.clear();
     return SyncBreakpoints();
 }
@@ -237,7 +230,7 @@ void BlueprintDebugSession::Detach() noexcept {
         m_instance->DisableDebugger();
         m_instance = nullptr;
     }
-    m_translation = nullptr;
+    m_positionsAreNodes = false;
     m_callStack.clear();
 }
 
@@ -268,7 +261,7 @@ bool BlueprintDebugSession::RemoveWatch(const std::string_view expression) {
 }
 
 std::uint32_t BlueprintDebugSession::NodeForLine(const std::uint32_t line) const noexcept {
-    return m_translation != nullptr ? m_translation->NodeAtLine(line) : 0U;
+    return m_positionsAreNodes ? line : 0U;
 }
 
 void BlueprintDebugSession::RefreshCallStackFromSnapshot(const ScriptDebugSnapshot& snapshot) {
