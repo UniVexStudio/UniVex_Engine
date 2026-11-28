@@ -900,24 +900,27 @@ bool Editor::PlayEntitySimulation() {
     simulation->dirtyBefore = m_sceneDirty;
     std::size_t failed = 0U;
     std::size_t ragdollCount = 0U;
+    std::string ragdollError;
     for (const Scene::Entity entity : CollectEntityEditorObjects()) {
-        if (entityManager.HasComponent<Scene::Ragdoll3DComponent>(entity)) {
+        if (entityManager.HasComponent<Scene::Ragdoll3DComponent>(entity) &&
+            entityManager.GetComponent<Scene::Ragdoll3DComponent>(entity).enabled) {
+            // Same preparation the Details "Simulate Preview" runs: link the nearest skeleton and
+            // generate bones when needed. A ragdoll left Kinematic would not fall, so simulation
+            // drops it for the session; the snapshot restores the authored mode on Stop.
+            bool built = Scene::PrepareRagdoll3D(entityManager, entity);
             Scene::Ragdoll3DComponent& ragdoll = entityManager.GetComponent<Scene::Ragdoll3DComponent>(entity);
-            if (ragdoll.enabled && ragdoll.skeleton != Scene::kInvalidEntity &&
-                entityManager.IsAlive(ragdoll.skeleton) &&
-                entityManager.HasComponent<Scene::Skeleton3DComponent>(ragdoll.skeleton)) {
-                if (ragdoll.bones.empty()) {
-                    const auto& skel = entityManager.GetComponent<Scene::Skeleton3DComponent>(ragdoll.skeleton);
-                    ragdoll.bones = Scene::BuildHumanoidRagdollBones(skel.bones);
-                    if (ragdoll.bones.size() < 2U && !skel.bones.empty()) {
-                        ragdoll.bones = Scene::BuildGenericRagdollBones(skel.bones);
-                    }
-                }
+            if (built) {
                 ragdoll.initialized = false;
-                if (Scene::InitializeRagdoll3D(entityManager, entity)) {
-                    ragdoll.solver.Wake();
-                    ++ragdollCount;
+                built = Scene::InitializeRagdoll3D(entityManager, entity);
+            }
+            if (built) {
+                if (ragdoll.mode == Scene::RagdollMode::Kinematic) {
+                    ragdoll.mode = Scene::RagdollMode::Simulating;
                 }
+                ragdoll.solver.Wake();
+                ++ragdollCount;
+            } else if (ragdollError.empty()) {
+                ragdollError = ragdoll.lastSetupError;
             }
         }
         if (!entityManager.HasComponent<Scene::ScriptComponent>(entity)) {
@@ -968,7 +971,8 @@ bool Editor::PlayEntitySimulation() {
                              (ragdollCount > 0U
                                   ? ", " + std::to_string(ragdollCount) + (ragdollCount == 1U ? " ragdoll" : " ragdolls")
                                   : std::string()) +
-                             (failed > 0U ? ", " + std::to_string(failed) + " did not compile (Compile lists them)" : "") + ".";
+                             (failed > 0U ? ", " + std::to_string(failed) + " did not compile (Compile lists them)" : "") + "." +
+                             (ragdollError.empty() ? std::string() : " Ragdoll3D: " + ragdollError);
     return true;
 }
 

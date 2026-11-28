@@ -27,6 +27,12 @@ public:
     /// Resolve a shipped relative catalog against its package root. Rejects escapes, missing
     /// files and symlinks leaving the root; failure preserves the previous registry.
     [[nodiscard]] bool RootPaths(const std::filesystem::path& root);
+    /// Re-points registry entries whose file is gone because the project folder moved (another
+    /// drive, a renamed folder, a copy on another machine). An entry is moved only when the part of
+    /// its stored path after a folder named like `contentRoot` exists under `contentRoot` today -
+    /// so GUIDs stay attached to their files and old entity references keep resolving. Returns the
+    /// number of entries moved; the caller saves the registry when it is not zero.
+    std::size_t RelocateMovedContent(const std::filesystem::path& contentRoot);
     bool Load(const std::filesystem::path& path) override;
     bool Save() override;
     bool Save(const std::filesystem::path& path) override;

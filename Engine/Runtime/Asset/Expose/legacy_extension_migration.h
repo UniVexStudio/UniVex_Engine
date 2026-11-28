@@ -4,6 +4,7 @@
 
 #include <cstddef>
 #include <filesystem>
+#include <string>
 #include <string_view>
 
 namespace UVE::Asset {
@@ -31,6 +32,10 @@ LegacyMigrationReport MigrateLegacyContent(const std::filesystem::path& root);
 
 /// Replaces legacy extensions written inside a text file - the asset registry lists paths - and
 /// saves it. Returns true when the file changed.
+/// Rewrites every legacy `.uve*` extension in `text` to its `.uv*` name, in place, matching only
+/// whole extensions (".uvescene" but not ".uvescenery"). Returns true when anything changed.
+bool RewriteLegacyExtensionsInText(std::string& text);
+
 bool RewriteLegacyExtensionsInTextFile(const std::filesystem::path& file);
 
 } // namespace UVE::Asset

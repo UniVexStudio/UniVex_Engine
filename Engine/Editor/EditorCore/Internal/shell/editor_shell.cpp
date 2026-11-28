@@ -370,6 +370,55 @@ private:
     bool m_hot = false;
 };
 
+/// The level viewport's drop target for content dragged from the Asset Table. It wraps the view
+/// and its gizmo layer, so a drop anywhere over the picture lands where the pointer is.
+class ViewportDrop final : public prism::Overlay {
+public:
+    explicit ViewportDrop(EditorShell& shell) : m_shell(shell) {}
+    bool onDragEnter(const prism::DragDropEvent& e) override { return onDragOver(e); }
+    bool onDragOver(const prism::DragDropEvent& e) override {
+        const bool accepts = Accepts(e);
+        m_shell.PreviewViewportDrop(accepts ? std::optional<prism::Vec2>{e.pos} : std::nullopt);
+        if (accepts != m_hot) {
+            m_hot = accepts;
+            invalidate();
+        }
+        return accepts;
+    }
+    void onDragLeave() override {
+        m_shell.PreviewViewportDrop(std::nullopt);
+        m_hot = false;
+        invalidate();
+    }
+    bool onDrop(const prism::DragDropEvent& e) override {
+        m_hot = false;
+        invalidate();
+        if (!Accepts(e)) {
+            m_shell.PreviewViewportDrop(std::nullopt);
+            return false;
+        }
+        const std::string* path = e.operation->getPayload<std::string>();
+        return path != nullptr && m_shell.DropContentOnViewport(*path, e.pos);
+    }
+    void paint(prism::Canvas& c) override {
+        prism::Overlay::paint(c);
+        if (m_hot) {
+            c.strokeRoundRect(rect(), 3.0F, prism::theme().highlight, 2);
+        }
+    }
+
+private:
+    [[nodiscard]] bool Accepts(const prism::DragDropEvent& e) const {
+        if (!e.operation || e.operation->tag() != EditorAssetTable::kDragTag) {
+            return false;
+        }
+        const std::string* path = e.operation->getPayload<std::string>();
+        return path != nullptr && m_shell.CanPlaceDroppedContent(*path);
+    }
+    EditorShell& m_shell;
+    bool m_hot = false;
+};
+
 } // namespace
 
 prism::Ref<prism::Widget> EditorShell::BuildTitleBar() {
@@ -729,7 +778,8 @@ prism::Ref<prism::Widget> EditorShell::BuildViewport() {
     m_gizmos = prism::make<EditorViewportGizmos>(m_editor);
     m_cameraScreen = prism::make<CameraScreen>();
     m_cameraScreen->setVisible(false);
-    auto stack = prism::make<prism::Overlay>();
+    // Content dragged from the Asset Table can be dropped straight into the view.
+    auto stack = prism::make<ViewportDrop>(*this);
     stack->add(m_viewport);
     stack->add(m_gizmos);
     stack->add(m_cameraScreen);
@@ -789,22 +839,33 @@ prism::Ref<prism::Widget> EditorShell::BuildDockBar() {
     return border;
 }
 
-bool EditorShell::DropContentOnOutliner(const std::string& relativePath, const prism::Vec2 at) {
-    // Entity assets and models dropped on a row go under that row's object (else where a new
-    // object goes), through the same calls as the Asset Table's "Place in Scene".
-    const Asset::ProjectFileSnapshot snapshot = m_editor.m_services->GetProjectFileIndex().GetSnapshot();
-    const std::filesystem::path relative(relativePath);
-    Scene::Entity parent = Scene::kInvalidEntity;
-    if (m_outliner) {
-        if (const prism::TreeNode* node = m_outliner->nodeAt(at); node != nullptr) {
-            parent = EntityForTreeId(node->id);
-        }
-    }
-    std::string extension = relative.extension().string();
+namespace {
+
+[[nodiscard]] std::string LowerExtension(const std::filesystem::path& path) {
+    std::string extension = path.extension().string();
     std::transform(extension.begin(), extension.end(), extension.begin(),
                    [](const unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    return extension;
+}
+
+} // namespace
+
+bool EditorShell::CanPlaceDroppedContent(const std::string& relativePath) const {
+    const std::filesystem::path relative(relativePath);
+    const std::string extension = LowerExtension(relative);
+    return extension == ".uventity" || extension == ".uvprefab" || extension == ".uvmodel" ||
+           extension == ".uvanim" || Editor::IsModelSourcePath(relative);
+}
+
+bool EditorShell::PlaceDroppedContent(const std::string& relativePath, const Scene::Entity parent,
+                                      const std::string_view surface) {
+    // Entity assets and models go through the same calls as the Asset Table's "Place in Scene".
+    const Asset::ProjectFileSnapshot snapshot = m_editor.m_services->GetProjectFileIndex().GetSnapshot();
+    const std::filesystem::path relative(relativePath);
+    const std::string extension = LowerExtension(relative);
     const std::filesystem::path clipSource =
         extension == ".uvanim" ? m_editor.FindAnimationClipSource(relative) : std::filesystem::path{};
+    m_editor.m_contentStatusMessage.clear();
     Scene::Entity placed = Scene::kInvalidEntity;
     if (extension == ".uventity" || extension == ".uvprefab") {
         placed = m_editor.PlaceEntityAsset(snapshot.contentRoot / relative, parent);
@@ -814,13 +875,43 @@ bool EditorShell::DropContentOnOutliner(const std::string& relativePath, const p
         // The Asset Table lists an animation-only file as its clips: one places the file, playing it.
         placed = m_editor.PlaceModelSource(clipSource, parent, relative);
     } else {
-        m_editor.m_contentStatusMessage = "Only entity assets and models can be placed in the Outliner.";
-        return false;
+        m_editor.m_contentStatusMessage =
+            "Only entity assets and models can be placed in the " + std::string{surface} + ".";
     }
+    // A drop point is for this placement only, whether or not it happened.
+    m_editor.m_nextPlacementPoint.reset();
     if (placed == Scene::kInvalidEntity && m_editor.m_contentStatusMessage.empty()) {
         m_editor.m_contentStatusMessage = "Could not place " + relative.filename().string() + ".";
     }
     return placed != Scene::kInvalidEntity;
+}
+
+bool EditorShell::DropContentOnOutliner(const std::string& relativePath, const prism::Vec2 at) {
+    // Dropped on a row, content goes under that row's object (else where a new object goes).
+    Scene::Entity parent = Scene::kInvalidEntity;
+    if (m_outliner) {
+        if (const prism::TreeNode* node = m_outliner->nodeAt(at); node != nullptr) {
+            parent = EntityForTreeId(node->id);
+        }
+    }
+    return PlaceDroppedContent(relativePath, parent, "Outliner");
+}
+
+bool EditorShell::DropContentOnViewport(const std::string& relativePath, const prism::Vec2 at) {
+    PreviewViewportDrop(std::nullopt);
+    if (m_gizmos) {
+        if (const std::optional<std::array<float, 3>> point = m_gizmos->WorldPointUnder(at)) {
+            m_editor.m_nextPlacementPoint = Math::Vector3{(*point)[0], (*point)[1], (*point)[2]};
+        }
+    }
+    return PlaceDroppedContent(relativePath, Scene::kInvalidEntity, "viewport");
+}
+
+void EditorShell::PreviewViewportDrop(const std::optional<prism::Vec2> at) {
+    if (!m_gizmos) {
+        return;
+    }
+    m_gizmos->SetDropPreview(at.has_value() ? m_gizmos->WorldPointUnder(*at) : std::nullopt);
 }
 
 void EditorShell::ApplyLayoutPreset(const int preset) {

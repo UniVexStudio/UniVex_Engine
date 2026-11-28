@@ -142,15 +142,27 @@ Entity ResolvePlayCharacter(IEntityManager& entityManager) {
     if (possessed != kInvalidEntity) {
         return possessed;
     }
-    Entity player = kInvalidEntity;
+    // A body already meant for a player (Player-kind controller, or none at all) is preferred over
+    // an AI-kind one, so a level with a hero and a crowd of NPCs plays the hero. Only when every
+    // character is AI-kind does the first of them stand in, so a lone Character3D still playtests.
+    Entity preferred = kInvalidEntity;
+    Entity anyBody = kInvalidEntity;
     entityManager.ForEach<CharacterControllerComponent>(
-        [&entityManager, &player](const Entity entity, CharacterControllerComponent&) {
-            if (player == kInvalidEntity && entityManager.HasComponent<TransformComponent>(entity) &&
-                entityManager.HasComponent<HierarchyComponent>(entity)) {
-                player = entity;
+        [&entityManager, &preferred, &anyBody](const Entity entity, CharacterControllerComponent&) {
+            if (!entityManager.HasComponent<TransformComponent>(entity) ||
+                !entityManager.HasComponent<HierarchyComponent>(entity)) {
+                return;
+            }
+            const bool aiDriven = entityManager.HasComponent<ControllerComponent>(entity) &&
+                                  entityManager.GetComponent<ControllerComponent>(entity).kind == ControllerKind::AI;
+            if (!aiDriven && (preferred == kInvalidEntity || IsEarlierEntity(entity, preferred))) {
+                preferred = entity;
+            }
+            if (anyBody == kInvalidEntity || IsEarlierEntity(entity, anyBody)) {
+                anyBody = entity;
             }
         });
-    return player;
+    return preferred != kInvalidEntity ? preferred : anyBody;
 }
 
 Entity FindPlayerCamera(IEntityManager& entityManager, const Entity player) {

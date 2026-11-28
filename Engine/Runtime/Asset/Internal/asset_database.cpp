@@ -145,6 +145,62 @@ bool AssetDatabase::Load(const std::filesystem::path& path) {
     }
 }
 
+std::size_t AssetDatabase::RelocateMovedContent(const std::filesystem::path& contentRoot) {
+    const std::lock_guard<std::mutex> lock(m_impl->mutex);
+    std::error_code error;
+    if (contentRoot.empty() || !std::filesystem::is_directory(contentRoot, error)) {
+        return 0U;
+    }
+    const std::filesystem::path normalizedRoot = contentRoot.lexically_normal();
+    std::filesystem::path rootName = normalizedRoot.filename();
+    if (rootName.empty()) {
+        rootName = normalizedRoot.parent_path().filename();
+    }
+    if (rootName.empty()) {
+        return 0U;
+    }
+    std::size_t moved = 0U;
+    for (auto& [guid, storedPath] : m_impl->guidToPath) {
+        if (storedPath.empty() || std::filesystem::exists(storedPath, error)) {
+            continue;
+        }
+        // The tail after the LAST folder named like the content root: "D:/Old/MyGame/Content/Props/a.uventity"
+        // becomes "Props/a.uventity" under today's content root.
+        std::vector<std::filesystem::path> parts(storedPath.begin(), storedPath.end());
+        std::size_t anchorIndex = parts.size();
+        for (std::size_t index = 0U; index < parts.size(); ++index) {
+            if (parts[index] == rootName) {
+                anchorIndex = index;
+            }
+        }
+        if (anchorIndex + 1U >= parts.size()) {
+            continue;
+        }
+        std::filesystem::path candidate = normalizedRoot;
+        for (std::size_t index = anchorIndex + 1U; index < parts.size(); ++index) {
+            candidate /= parts[index];
+        }
+        if (!std::filesystem::is_regular_file(candidate, error)) {
+            continue;
+        }
+        const std::string oldKey = AssetPathIdentityKey(storedPath);
+        if (const auto it = m_impl->pathToGuid.find(oldKey); it != m_impl->pathToGuid.end() && it->second == guid) {
+            m_impl->pathToGuid.erase(it);
+        }
+        storedPath = candidate.lexically_normal();
+        const std::string newKey = AssetPathIdentityKey(storedPath);
+        if (const auto it = m_impl->pathToGuid.find(newKey); it == m_impl->pathToGuid.end() || guid.value < it->second.value) {
+            m_impl->pathToGuid.insert_or_assign(newKey, guid);
+        }
+        ++moved;
+    }
+    if (moved > 0U) {
+        UVE_INFO("AssetDatabase: re-pointed {} registry entr{} at the project's current content folder \"{}\"",
+                 moved, moved == 1U ? "y" : "ies", normalizedRoot.string());
+    }
+    return moved;
+}
+
 bool AssetDatabase::RootPaths(const std::filesystem::path& root) {
     const std::lock_guard<std::mutex> lock(m_impl->mutex);
     std::error_code error;

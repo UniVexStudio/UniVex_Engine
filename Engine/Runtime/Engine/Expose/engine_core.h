@@ -641,6 +641,9 @@ private:
     /// clip must see the ragdoll win the pose for the frame, and a skinned mesh must follow it in
     /// the same frame rather than a frame behind the body that is falling.
     void SyncRagdoll3DObjects();
+    /// Runs the scene-document upgrade (retired component names, legacy asset paths) once per
+    /// project and upgrade revision, backing up every file it rewrites under Saved/UpgradeBackup.
+    void UpgradeProjectContentIfNeeded();
 
     /// Positions every root follow camera from its target through Scene::UpdateCameraFollow() -
     /// that function owns the skip rules (parked, dead, transformless, parented) and the pose

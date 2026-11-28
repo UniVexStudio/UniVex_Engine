@@ -689,5 +689,184 @@ TEST_F(Ragdoll3DTest, UpdateRagdoll3DObjects_IgnoresOwningAncestorCharacterColli
     EXPECT_GT(pelvisPos.y, -0.05F);
 }
 
+// ---- Full production rigs ---------------------------------------------------------------------
+
+/// The standard 65-bone Mixamo export: spine chain, neck, head + end, shoulders, arms, hands with
+/// four bones per finger (and "_End" leaves), legs, feet and toes. Laid out as a rough T-pose so
+/// every bone has length.
+[[nodiscard]] Skeleton3DComponent MakeFullMixamoSkeleton() {
+    Skeleton3DComponent skeleton;
+    skeleton.skeletonAssetPath = "MixamoFull.fbx";
+    const auto add = [&skeleton](const std::string& name, const std::int32_t parent, const Math::Vector3 position) {
+        SkeletonBone bone;
+        bone.name = "mixamorig:" + name;
+        bone.parentIndex = parent;
+        bone.localPosition = position;
+        skeleton.bones.push_back(bone);
+        return static_cast<std::int32_t>(skeleton.bones.size() - 1U);
+    };
+    const std::int32_t hips = add("Hips", -1, {0.0F, 1.0F, 0.0F});
+    const std::int32_t spine = add("Spine", hips, {0.0F, 0.1F, 0.0F});
+    const std::int32_t spine1 = add("Spine1", spine, {0.0F, 0.12F, 0.0F});
+    const std::int32_t spine2 = add("Spine2", spine1, {0.0F, 0.13F, 0.0F});
+    const std::int32_t neck = add("Neck", spine2, {0.0F, 0.15F, 0.0F});
+    const std::int32_t head = add("Head", neck, {0.0F, 0.1F, 0.0F});
+    add("HeadTop_End", head, {0.0F, 0.18F, 0.0F});
+    for (const float side : {1.0F, -1.0F}) {
+        const std::string s = side > 0.0F ? "Left" : "Right";
+        const std::int32_t shoulder = add(s + "Shoulder", spine2, {side * 0.06F, 0.12F, 0.0F});
+        const std::int32_t arm = add(s + "Arm", shoulder, {side * 0.12F, 0.0F, 0.0F});
+        const std::int32_t foreArm = add(s + "ForeArm", arm, {side * 0.27F, 0.0F, 0.0F});
+        const std::int32_t hand = add(s + "Hand", foreArm, {side * 0.26F, 0.0F, 0.0F});
+        for (const char* finger : {"Thumb", "Index", "Middle", "Ring", "Pinky"}) {
+            std::int32_t parent = hand;
+            for (int joint = 1; joint <= 4; ++joint) {
+                const std::string name = s + "Hand" + finger + (joint == 4 ? std::string{"4"} : std::to_string(joint));
+                parent = add(name, parent, {side * 0.03F, 0.0F, 0.0F});
+            }
+        }
+        const std::int32_t upLeg = add(s + "UpLeg", hips, {side * 0.09F, -0.05F, 0.0F});
+        const std::int32_t leg = add(s + "Leg", upLeg, {0.0F, -0.42F, 0.0F});
+        const std::int32_t foot = add(s + "Foot", leg, {0.0F, -0.4F, 0.0F});
+        const std::int32_t toe = add(s + "ToeBase", foot, {0.0F, -0.05F, 0.1F});
+        add(s + "Toe_End", toe, {0.0F, 0.0F, 0.06F});
+    }
+    return skeleton;
+}
+
+[[nodiscard]] bool ContainsBone(const std::vector<RagdollBoneSetup>& bones, const std::string& name) {
+    return std::any_of(bones.begin(), bones.end(),
+                       [&name](const RagdollBoneSetup& bone) { return bone.boneName == name; });
+}
+
+TEST_F(Ragdoll3DTest, FullMixamoRig_GeneratesAStructuralBodyWithinTheSolverLimit) {
+    const Skeleton3DComponent mixamo = MakeFullMixamoSkeleton();
+    ASSERT_EQ(mixamo.bones.size(), 65U);
+
+    const std::vector<RagdollBoneSetup> built = BuildHumanoidRagdollBones(mixamo.bones);
+    EXPECT_LE(built.size(), static_cast<std::size_t>(kMaximumRagdollBones))
+        << "a fingered rig used to generate ~60 bodies, which the solver refuses outright";
+    EXPECT_EQ(built.size(), 20U) << "hips, 3 spine, neck, head, and 2x(shoulder, arm, forearm, hand, thigh, leg, foot)";
+    EXPECT_TRUE(ContainsBone(built, "mixamorig:Hips"));
+    EXPECT_TRUE(ContainsBone(built, "mixamorig:Head"));
+    EXPECT_TRUE(ContainsBone(built, "mixamorig:LeftHand"));
+    EXPECT_TRUE(ContainsBone(built, "mixamorig:RightFoot"));
+    for (const RagdollBoneSetup& bone : built) {
+        EXPECT_EQ(bone.boneName.find("Thumb"), std::string::npos) << bone.boneName;
+        EXPECT_EQ(bone.boneName.find("Index"), std::string::npos) << bone.boneName;
+        EXPECT_EQ(bone.boneName.find("Pinky"), std::string::npos) << bone.boneName;
+        EXPECT_EQ(bone.boneName.find("_End"), std::string::npos) << bone.boneName;
+    }
+    EXPECT_EQ(BuildAutoRagdollBones(mixamo.bones).size(), built.size());
+}
+
+TEST_F(Ragdoll3DTest, FullMixamoRig_PreviewStartsAndFallsOntoTheStudioFloor) {
+    const Entity skeleton = MakeSkeletonEntity(MakeFullMixamoSkeleton());
+    const Entity ragdollEntity = MakeRagdoll(skeleton);
+    ASSERT_TRUE(StartRagdollEditorPreview(entityManager, ragdollEntity))
+        << entityManager.GetComponent<Ragdoll3DComponent>(ragdollEntity).lastSetupError;
+    Ragdoll3DComponent& ragdoll = entityManager.GetComponent<Ragdoll3DComponent>(ragdollEntity);
+    EXPECT_TRUE(ragdoll.lastSetupError.empty());
+    EXPECT_EQ(ragdoll.solver.GetBodyCount(), 20U);
+    EXPECT_GT(ragdoll.solver.GetJointCount(), 0U);
+
+    const float startY = ragdoll.solver.GetBody(0U).position.y;
+    for (int frame = 0; frame < 120; ++frame) {
+        UpdateRagdoll3DObjects(entityManager, 1.0F / 60.0F, /*editorPreviewOnly=*/true, /*fallbackFloorPlaneY=*/0.0F);
+    }
+    const float endY = ragdoll.solver.GetBody(0U).position.y;
+    EXPECT_LT(endY, startY - 0.2F) << "the preview must actually simulate";
+    EXPECT_GT(endY, -0.05F) << "the studio floor catches it";
+    EXPECT_TRUE(StopRagdollEditorPreview(entityManager, ragdollEntity));
+}
+
+TEST_F(Ragdoll3DTest, OversizedAuthoredBoneList_IsTrimmedNotRefused) {
+    // A list written by the old uncapped generator: every Mixamo bone the profile used to match,
+    // fingers included.
+    const Skeleton3DComponent mixamo = MakeFullMixamoSkeleton();
+    Ragdoll3DComponent authored;
+    for (const SkeletonBone& bone : mixamo.bones) {
+        if (bone.name.find("_End") != std::string::npos || bone.name.find("Toe") != std::string::npos) continue;
+        RagdollBoneSetup setup;
+        setup.boneName = bone.name;
+        setup.mass = bone.name.find("Hand") != std::string::npos && bone.name.size() > 18U ? 0.5F : 3.0F;
+        authored.bones.push_back(setup);
+    }
+    ASSERT_GT(authored.bones.size(), static_cast<std::size_t>(kMaximumRagdollBones));
+
+    std::vector<RagdollBoneSetup> trimmed = authored.bones;
+    EXPECT_TRUE(TrimRagdollBonesToCap(trimmed));
+    EXPECT_EQ(trimmed.size(), static_cast<std::size_t>(kMaximumRagdollBones));
+    EXPECT_TRUE(ContainsBone(trimmed, "mixamorig:Hips"));
+    EXPECT_TRUE(ContainsBone(trimmed, "mixamorig:LeftUpLeg"));
+    std::vector<RagdollBoneSetup> again = trimmed;
+    EXPECT_FALSE(TrimRagdollBonesToCap(again)) << "trimming is idempotent";
+
+    const Entity skeleton = MakeSkeletonEntity(mixamo);
+    const Entity ragdollEntity = MakeRagdoll(skeleton, authored);
+    EXPECT_TRUE(InitializeRagdoll3D(entityManager, ragdollEntity))
+        << entityManager.GetComponent<Ragdoll3DComponent>(ragdollEntity).lastSetupError;
+    EXPECT_LE(entityManager.GetComponent<Ragdoll3DComponent>(ragdollEntity).solver.GetBodyCount(),
+              Physics::kMaximumRagdollBodies);
+}
+
+TEST_F(Ragdoll3DTest, SetupFailures_SayWhy) {
+    const Entity unlinked = MakeRagdoll(kInvalidEntity);
+    EXPECT_FALSE(InitializeRagdoll3D(entityManager, unlinked));
+    EXPECT_NE(entityManager.GetComponent<Ragdoll3DComponent>(unlinked).lastSetupError.find("Skeleton3D"),
+              std::string::npos);
+
+    Ragdoll3DComponent zeroBlend;
+    zeroBlend.physicsBlendWeight = 0.0F;
+    const Entity blended = MakeRagdoll(MakeSkeletonEntity(MakeHumanoidSkeleton()), zeroBlend);
+    EXPECT_FALSE(StartRagdollEditorPreview(entityManager, blended));
+    EXPECT_NE(entityManager.GetComponent<Ragdoll3DComponent>(blended).lastSetupError.find("Blend"),
+              std::string::npos);
+
+    // Bone names from a different rig are regenerated for the rig the ragdoll is on now.
+    Ragdoll3DComponent stale;
+    RagdollBoneSetup ghost;
+    ghost.boneName = "SomeOtherRig_Pelvis";
+    stale.bones = {ghost};
+    const Entity restale = MakeRagdoll(MakeSkeletonEntity(MakeHumanoidSkeleton()), stale);
+    EXPECT_TRUE(InitializeRagdoll3D(entityManager, restale));
+    EXPECT_TRUE(ContainsBone(entityManager.GetComponent<Ragdoll3DComponent>(restale).bones, "pelvis"));
+}
+
+TEST_F(Ragdoll3DTest, FindNearestSkeleton_PrefersItsOwnCharacterOverAnother) {
+    const auto attach = [this](const Entity child, const Entity parent) {
+        if (!entityManager.HasComponent<HierarchyComponent>(child)) {
+            entityManager.AddComponent<HierarchyComponent>(child, HierarchyComponent{});
+        }
+        entityManager.GetComponent<HierarchyComponent>(child).parent = parent;
+    };
+    const Entity level = entityManager.CreateEntity();
+    entityManager.AddComponent<HierarchyComponent>(level, HierarchyComponent{});
+
+    const Entity heroRoot = entityManager.CreateEntity();
+    attach(heroRoot, level);
+    const Entity heroSkeleton = MakeSkeletonEntity(MakeHumanoidSkeleton());
+    attach(heroSkeleton, heroRoot);
+    const Entity heroRagdoll = MakeRagdoll(kInvalidEntity);
+    attach(heroRagdoll, heroRoot);
+
+    const Entity villainRoot = entityManager.CreateEntity();
+    attach(villainRoot, level);
+    const Entity villainSkeleton = MakeSkeletonEntity(MakeHumanoidSkeleton());
+    attach(villainSkeleton, villainRoot);
+
+    EXPECT_EQ(FindNearestSkeleton3D(entityManager, heroRagdoll), heroSkeleton);
+    EXPECT_TRUE(PrepareRagdoll3D(entityManager, heroRagdoll));
+    EXPECT_EQ(entityManager.GetComponent<Ragdoll3DComponent>(heroRagdoll).skeleton, heroSkeleton);
+
+    // Directly under the level, beside both characters, the choice is ambiguous: never guessed.
+    const Entity loose = MakeRagdoll(kInvalidEntity);
+    attach(loose, level);
+    EXPECT_EQ(FindNearestSkeleton3D(entityManager, loose), kInvalidEntity);
+    EXPECT_FALSE(PrepareRagdoll3D(entityManager, loose));
+    EXPECT_FALSE(entityManager.GetComponent<Ragdoll3DComponent>(loose).lastSetupError.empty());
+    static_cast<void>(villainSkeleton);
+}
+
 } // namespace
 } // namespace UVE::Scene::Tests

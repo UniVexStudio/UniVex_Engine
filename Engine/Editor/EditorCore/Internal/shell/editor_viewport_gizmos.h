@@ -8,6 +8,7 @@
 #include "prism/Widget.h"
 
 #include <array>
+#include <optional>
 #include <cstdint>
 #include <utility>
 #include <vector>
@@ -44,6 +45,12 @@ public:
     void ApplyTouchControllerToState(Editor::ViewportOverlayState& state);
     /// Pixels the navigation gizmo wants the view orbited by this frame (consumed on read).
     [[nodiscard]] std::array<float, 2> TakeOrbitRequest();
+    /// The world point under canvas point `p`: the scene surface there (from the last frame's
+    /// depth), else where the ray meets the ground plane Y=0. Empty when the view has no camera yet
+    /// or the ray points away from both.
+    [[nodiscard]] std::optional<std::array<float, 3>> WorldPointUnder(prism::Vec2 p) const;
+    /// Marks where dragged content would land (or clears it with nullopt); drawn as a small marker.
+    void SetDropPreview(std::optional<std::array<float, 3>> worldPoint);
 
     void paint(prism::Canvas& c) override;
     bool onMouseDown(const prism::MouseEvent& e) override;
@@ -112,6 +119,7 @@ private:
     std::array<float, 2> m_orbitRequest{0.0F, 0.0F};
     // Scene depth (occlusion), the ground grid and the selection outline band for this view.
     prism::GizmoDepth m_depth;
+    std::optional<std::array<float, 3>> m_dropPreview;
     std::vector<float> m_depthCopy;
     std::vector<Editor::ViewportOverlayState::GizmoLine> m_lines;
     std::vector<Editor::ViewportOverlayState::GizmoTriangle> m_triangles;

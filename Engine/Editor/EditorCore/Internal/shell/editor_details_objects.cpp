@@ -144,69 +144,38 @@ void EditorDetails::AddRagdollBuilder(const Scene::Entity entity) {
         return;
     }
 
-    const auto findOrLinkSkeleton = [this](Scene::IEntityManager& entities, const Scene::Entity ragEntity,
-                                           Scene::Ragdoll3DComponent& ragdoll) -> bool {
-        if (ragdoll.skeleton != Scene::kInvalidEntity && entities.IsAlive(ragdoll.skeleton) &&
-            entities.HasComponent<Scene::Skeleton3DComponent>(ragdoll.skeleton)) {
+    // Links the nearest skeleton and fills the bone list when needed; on failure the status bar
+    // carries the ragdoll's own reason, so the author knows what to change.
+    const auto prepare = [this](Scene::IEntityManager& entities, const Scene::Entity ragEntity,
+                                const bool regenerate) -> bool {
+        if (Scene::PrepareRagdoll3D(entities, ragEntity, regenerate)) {
             return true;
         }
-        // Auto-discover the nearest Skeleton3D in this entity/document so Auto-Generate & Preview never fail silently.
-        Scene::Entity found = Scene::kInvalidEntity;
-        entities.ForEach<Scene::Skeleton3DComponent>(
-            [&found, ragEntity](const Scene::Entity candidate, const Scene::Skeleton3DComponent& skel) {
-                if (found == Scene::kInvalidEntity && candidate != ragEntity && !skel.bones.empty()) {
-                    found = candidate;
-                }
-            });
-        if (found == Scene::kInvalidEntity) {
-            entities.ForEach<Scene::Skeleton3DComponent>(
-                [&found, ragEntity](const Scene::Entity candidate, const Scene::Skeleton3DComponent&) {
-                    if (found == Scene::kInvalidEntity && candidate != ragEntity) {
-                        found = candidate;
-                    }
-                });
-        }
-        if (found == Scene::kInvalidEntity) {
-            m_editor.m_contentStatusMessage = "No Skeleton3D found — link a Skeleton3D in Ragdoll3D first.";
-            return false;
-        }
-        ragdoll.skeleton = found;
-        return true;
+        m_editor.m_contentStatusMessage =
+            entities.GetComponent<Scene::Ragdoll3DComponent>(ragEntity).lastSetupError;
+        return false;
     };
-
-    const auto ensureBonesGenerated = [this](Scene::IEntityManager& entities, Scene::Ragdoll3DComponent& ragdoll,
-                                             const bool forceRegenerate) -> bool {
-        if (ragdoll.skeleton == Scene::kInvalidEntity || !entities.IsAlive(ragdoll.skeleton) ||
-            !entities.HasComponent<Scene::Skeleton3DComponent>(ragdoll.skeleton)) {
-            return false;
-        }
-        const auto& skel = entities.GetComponent<Scene::Skeleton3DComponent>(ragdoll.skeleton);
-        if (skel.bones.empty()) {
-            m_editor.m_contentStatusMessage = "The linked Skeleton3D has no bones yet — assign a rigged Source model first.";
-            return false;
-        }
-        if (forceRegenerate || ragdoll.bones.empty()) {
-            ragdoll.bones = Scene::BuildHumanoidRagdollBones(skel.bones);
-            if (ragdoll.bones.size() < 2U) {
-                ragdoll.bones = Scene::BuildGenericRagdollBones(skel.bones);
-            }
-        }
-        return !ragdoll.bones.empty();
+    const auto reportSetupError = [this](const Scene::Ragdoll3DComponent& ragdoll) {
+        m_editor.m_contentStatusMessage = ragdoll.lastSetupError.empty()
+                                              ? std::string("Ragdoll3D could not be built.")
+                                              : "Ragdoll3D: " + ragdoll.lastSetupError;
     };
 
     const int category = m_grid->addCategory("Ragdoll3D / Builder & Preview", true);
 
     auto generateBtn = prism::make<prism::Button>("Auto-Generate", prism::Icon::None, prism::ButtonStyle::Default);
     generateBtn->setTooltip("Generate capsule bodies & joint limits from the linked Skeleton3D (humanoid or generic rig)");
-    generateBtn->onClick = [this, entity, findOrLinkSkeleton, ensureBonesGenerated] {
+    generateBtn->onClick = [this, entity, prepare, reportSetupError] {
         Scene::IEntityManager& entities = m_editor.m_services->GetEntityManager();
         if (!entities.IsAlive(entity) || !entities.HasComponent<Scene::Ragdoll3DComponent>(entity)) return;
         Scene::Ragdoll3DComponent& ragdoll = entities.GetComponent<Scene::Ragdoll3DComponent>(entity);
         if (ragdoll.editorPreviewSimulating) {
             static_cast<void>(Scene::StopRagdollEditorPreview(entities, entity));
         }
-        if (!findOrLinkSkeleton(entities, entity, ragdoll)) return;
-        if (!ensureBonesGenerated(entities, ragdoll, /*forceRegenerate=*/true)) return;
+        if (!prepare(entities, entity, /*regenerate=*/true)) {
+            m_rebuildRequested = true;
+            return;
+        }
         m_editor.m_services->GetSceneGraph().Update(entities);
         ragdoll.initialized = false;
         if (Scene::InitializeRagdoll3D(entities, entity)) {
@@ -215,6 +184,8 @@ void EditorDetails::AddRagdollBuilder(const Scene::Entity entity) {
             m_editor.m_sceneDirty = true;
             m_editor.m_contentStatusMessage =
                 "Generated " + std::to_string(ragdoll.solver.GetBodyCount()) + " ragdoll bodies.";
+        } else {
+            reportSetupError(ragdoll);
         }
         m_rebuildRequested = true;
     };
@@ -222,22 +193,21 @@ void EditorDetails::AddRagdollBuilder(const Scene::Entity entity) {
     auto previewBtn = prism::make<prism::Button>("Simulate Preview", prism::Icon::Play, prism::ButtonStyle::Default);
     previewBtn->setCheckable(true);
     previewBtn->setTooltip("Drop and test this ragdoll live in Edit mode; turning off restores the bind pose");
-    previewBtn->onToggle = [this, entity, findOrLinkSkeleton, ensureBonesGenerated](const bool on) {
+    previewBtn->onToggle = [this, entity, prepare, reportSetupError](const bool on) {
         Scene::IEntityManager& entities = m_editor.m_services->GetEntityManager();
         if (!entities.IsAlive(entity) || !entities.HasComponent<Scene::Ragdoll3DComponent>(entity)) return;
         Scene::Ragdoll3DComponent& ragdoll = entities.GetComponent<Scene::Ragdoll3DComponent>(entity);
         if (on) {
-            if (!findOrLinkSkeleton(entities, entity, ragdoll)) {
-                m_rebuildRequested = true;
-                return;
-            }
-            if (!ensureBonesGenerated(entities, ragdoll, /*forceRegenerate=*/false)) {
+            if (!prepare(entities, entity, /*regenerate=*/false)) {
                 m_rebuildRequested = true;
                 return;
             }
             m_editor.m_services->GetSceneGraph().Update(entities);
             if (!Scene::StartRagdollEditorPreview(entities, entity)) {
-                m_editor.m_contentStatusMessage = "Could not start Ragdoll3D preview — check linked Skeleton3D.";
+                reportSetupError(ragdoll);
+            } else {
+                m_editor.m_contentStatusMessage =
+                    "Ragdoll3D preview: " + std::to_string(ragdoll.solver.GetBodyCount()) + " bodies simulating.";
             }
         } else {
             static_cast<void>(Scene::StopRagdollEditorPreview(entities, entity));
@@ -249,15 +219,18 @@ void EditorDetails::AddRagdollBuilder(const Scene::Entity entity) {
 
     auto impulseBtn = prism::make<prism::Button>("Poke", prism::Icon::None, prism::ButtonStyle::Default);
     impulseBtn->setTooltip("Apply a test sideways hit impulse to the ragdoll torso during preview");
-    impulseBtn->onClick = [this, entity, findOrLinkSkeleton, ensureBonesGenerated] {
+    impulseBtn->onClick = [this, entity, prepare, reportSetupError] {
         Scene::IEntityManager& entities = m_editor.m_services->GetEntityManager();
         if (!entities.IsAlive(entity) || !entities.HasComponent<Scene::Ragdoll3DComponent>(entity)) return;
         Scene::Ragdoll3DComponent& ragdoll = entities.GetComponent<Scene::Ragdoll3DComponent>(entity);
         if (!ragdoll.editorPreviewSimulating) {
-            if (!findOrLinkSkeleton(entities, entity, ragdoll)) return;
-            if (!ensureBonesGenerated(entities, ragdoll, /*forceRegenerate=*/false)) return;
+            if (!prepare(entities, entity, /*regenerate=*/false)) return;
             m_editor.m_services->GetSceneGraph().Update(entities);
-            static_cast<void>(Scene::StartRagdollEditorPreview(entities, entity));
+            if (!Scene::StartRagdollEditorPreview(entities, entity)) {
+                reportSetupError(ragdoll);
+                m_rebuildRequested = true;
+                return;
+            }
         }
         if (ragdoll.solver.GetBodyCount() > 0U) {
             const std::size_t targetIdx = ragdoll.solver.GetBodyCount() > 1U ? 1U : 0U;
@@ -292,10 +265,14 @@ void EditorDetails::AddRagdollBuilder(const Scene::Entity entity) {
                 ragdoll.editorPreviewSimulating
                     ? "Previewing"
                     : (ragdoll.solver.IsSleeping() ? "Sleeping" : (ragdoll.initialized ? "Ready" : "Not Built"));
-            std::snprintf(buf, sizeof(buf), "%zu bodies  |  %zu joints  |  %.1f kg  |  %s",
-                          ragdoll.solver.GetBodyCount(), ragdoll.solver.GetJointCount(),
-                          static_cast<double>(ragdoll.solver.GetTotalMass()), stateText);
-            lbl->setText(buf);
+            if (!ragdoll.initialized && !ragdoll.lastSetupError.empty()) {
+                lbl->setText("Not Built  |  " + ragdoll.lastSetupError);
+            } else {
+                std::snprintf(buf, sizeof(buf), "%zu bodies  |  %zu joints  |  %.1f kg  |  %s",
+                              ragdoll.solver.GetBodyCount(), ragdoll.solver.GetJointCount(),
+                              static_cast<double>(ragdoll.solver.GetTotalMass()), stateText);
+                lbl->setText(buf);
+            }
         }
     };
     syncRow->editor = actionBar.get();

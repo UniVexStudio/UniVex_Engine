@@ -182,6 +182,7 @@
 #include "spring_arm_3d.h"
 #include "spring_bone_simulator_3d.h"
 #include "ragdoll_3d.h"
+#include "scene_content_upgrade.h"
 #include "sprite_3d.h"
 #include "state_tree_3d.h"
 #include "vehicle_3d.h"
@@ -465,6 +466,7 @@ void EngineCore::Init() {
     }
     static_cast<void>(Asset::MigrateLegacyContent(m_config.projectContentRoot));
     static_cast<void>(Asset::RewriteLegacyExtensionsInTextFile(m_config.assetDatabaseFilePath));
+    UpgradeProjectContentIfNeeded();
 
     // Load the project and user stores before constructing any system that consumes the effective
     // EngineConfig fields. The application-supplied config remains the base; valid settings then
@@ -694,6 +696,10 @@ void EngineCore::Init() {
     if (m_config.cookedAssetPaths && !catalogLoaded) throw std::runtime_error("Cooked asset catalog unavailable");
     if (m_config.cookedAssetPaths && !assetDatabase->RootPaths(m_config.projectRootDirectory))
         throw std::runtime_error("Invalid cooked asset catalog paths");
+    if (catalogLoaded && !m_config.cookedAssetPaths &&
+        assetDatabase->RelocateMovedContent(m_config.projectContentRoot) > 0U) {
+        static_cast<void>(assetDatabase->Save());
+    }
     m_assetDatabase = std::move(assetDatabase);
 
     // ProjectFileIndex tenth: holds only an explicit configured content-root
@@ -3569,6 +3575,39 @@ void EngineCore::SyncBoneAttachment3DObjects() {
         *m_entityManager, static_cast<float>(m_frameStats.deltaTimeSeconds)));
 }
 
+void EngineCore::UpgradeProjectContentIfNeeded() {
+    // Bump when UpgradeSceneContent learns a new rewrite: every project then runs it once more.
+    // The engine version alone is not enough - fix builds of one version can add rewrites.
+    constexpr int kContentUpgradeRevision = 1;
+    const std::filesystem::path& projectRoot = m_config.projectRootDirectory;
+    if (projectRoot.empty() || projectRoot == std::filesystem::path{"."}) {
+        return; // no project (tests, tools): nothing to upgrade and nowhere to keep a backup
+    }
+    std::error_code error;
+    if (!std::filesystem::is_directory(m_config.projectContentRoot, error)) {
+        return;
+    }
+    const std::filesystem::path marker = projectRoot / "Saved" / "ContentUpgrade.revision";
+    {
+        std::ifstream in(marker);
+        int stored = 0;
+        if (in >> stored && stored >= kContentUpgradeRevision) {
+            return;
+        }
+    }
+    const std::filesystem::path backupRoot =
+        projectRoot / "Saved" / "UpgradeBackup" / ("revision-" + std::to_string(kContentUpgradeRevision));
+    const Scene::SceneContentUpgradeReport report =
+        Scene::UpgradeSceneContent(m_config.projectContentRoot, backupRoot);
+    if (report.failed > 0U) {
+        // Leave the marker unwritten so the next open tries the files that failed again.
+        return;
+    }
+    std::filesystem::create_directories(marker.parent_path(), error);
+    std::ofstream out(marker, std::ios::trunc);
+    out << kContentUpgradeRevision << '\n';
+}
+
 void EngineCore::SyncRagdoll3DObjects() {
     // BUG #2 FIX: Gate normal ragdoll simulation strictly behind Running mode (scaled by
     // m_simulationSpeedScale) so ragdolls never collapse in Edit mode or while paused, while
@@ -3578,8 +3617,24 @@ void EngineCore::SyncRagdoll3DObjects() {
         static_cast<void>(Scene::UpdateRagdoll3DObjects(
             *m_entityManager, rawDt * m_simulationSpeedScale, /*editorPreviewOnly=*/false));
     } else {
+        // An Edit-mode preview in a level with nothing to land on would fall out of view at once.
+        // The Entity Editor already gives its preview a studio floor at Y=0; a level gets the same
+        // floor only when it has no collider of its own, so authored ground always wins.
+        bool hasPreview = false;
+        m_entityManager->ForEach<Scene::Ragdoll3DComponent>(
+            [&hasPreview](const Scene::Entity, const Scene::Ragdoll3DComponent& ragdoll) {
+                hasPreview = hasPreview || ragdoll.editorPreviewSimulating;
+            });
+        if (!hasPreview) {
+            return;
+        }
+        bool hasWorldCollider = false;
+        m_entityManager->ForEach<Scene::ColliderComponent>(
+            [&hasWorldCollider](const Scene::Entity, const Scene::ColliderComponent&) { hasWorldCollider = true; });
+        const std::optional<float> previewFloor =
+            hasWorldCollider ? std::nullopt : std::optional<float>{0.0F};
         static_cast<void>(Scene::UpdateRagdoll3DObjects(
-            *m_entityManager, rawDt, /*editorPreviewOnly=*/true));
+            *m_entityManager, rawDt, /*editorPreviewOnly=*/true, previewFloor));
     }
 }
 

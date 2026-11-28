@@ -77,6 +77,7 @@
 #include "camera_component.h"
 #include "character_controller_component.h"
 #include "collider_component.h"
+#include "unresolved_components_component.h"
 #include "all_objects_3d.h"
 #include "preview_lighting.h"
 #include "all_objects_canvas.h"
@@ -628,6 +629,16 @@ bool Editor::ApplyPlayEntrySpawn() {
     }
     if (player == Scene::kInvalidEntity) {
         return false;
+    }
+    // A body with no shape has nothing to stand on: the character step lets it fall through the
+    // level, and the play view - which follows the player - falls with it. The authored scene stays
+    // the author's (a shape is a Collider3D they add), so the player gets the standard capsule for
+    // this session only; Stop restores the snapshot taken before Play, which never had it.
+    if (Scene::ResolveCharacterShapeEntity(entityManager, sceneGraph, player) == Scene::kInvalidEntity) {
+        entityManager.AddComponent<Scene::ColliderComponent>(player,
+                                                             Scene::Character3DObjectDefinition::MakeDefaultCollider());
+        m_contentStatusMessage =
+            "Player has no Collider3D; using a temporary capsule while playing. Add a Collider3D to keep one.";
     }
     Scene::MakePlayerCameraCurrent(entityManager, player);
 
@@ -1216,8 +1227,15 @@ Scene::Entity Editor::PlaceEntityAsset(const std::filesystem::path& path, Scene:
     std::transform(extension.begin(), extension.end(), extension.begin(),
                    [](const unsigned char character) { return static_cast<char>(std::tolower(character)); });
     std::error_code error;
-    if (!IsAuthoringCommandAllowed() || (extension != ".uventity" && extension != ".uvprefab") ||
-        !std::filesystem::is_regular_file(path, error)) {
+    const std::string fileName = path.filename().string();
+    if (!IsAuthoringCommandAllowed()) {
+        m_nextPlacementPoint.reset();
+        m_contentStatusMessage = "Stop Play before placing " + fileName + ".";
+        return Scene::kInvalidEntity;
+    }
+    if ((extension != ".uventity" && extension != ".uvprefab") || !std::filesystem::is_regular_file(path, error)) {
+        m_nextPlacementPoint.reset();
+        m_contentStatusMessage = fileName + " is not an entity asset on disk.";
         return Scene::kInvalidEntity;
     }
     if (parent == Scene::kInvalidEntity || !IsDocumentEntity(parent)) {
@@ -1232,6 +1250,9 @@ Scene::Entity Editor::PlaceEntityAsset(const std::filesystem::path& path, Scene:
     const Scene::Entity root = m_services->GetPrefabSystem().Instantiate(
         entityManager, m_services->GetSceneGraph(), m_services->GetAssetDatabase(), guid, parent);
     if (root == Scene::kInvalidEntity) {
+        m_nextPlacementPoint.reset();
+        m_contentStatusMessage = "Could not place " + fileName +
+                                 ": the file is damaged or has no single root object (details in the Output Log).";
         return Scene::kInvalidEntity;
     }
     if (entityManager.HasComponent<Scene::NameComponent>(root)) {
@@ -1255,6 +1276,8 @@ Scene::Entity Editor::PlaceEntityAsset(const std::filesystem::path& path, Scene:
         DestroyDocumentSubtree(root);
         RestoreSelection(selectionBefore);
         m_sceneDirty = dirtyBefore;
+        m_contentStatusMessage = "Could not place " + fileName +
+                                 ": one of its components holds values this version refuses (details in the Output Log).";
         return Scene::kInvalidEntity;
     }
     SelectEntity(root);
@@ -1262,6 +1285,35 @@ Scene::Entity Editor::PlaceEntityAsset(const std::filesystem::path& path, Scene:
     RecordHistory(SceneObjectCreationHistoryEntry{*snapshot, Scene::ResolveSceneObjectKind(entityManager, root),
                                                       root, selectionBefore, CaptureSelectionSnapshot(),
                                                       dirtyBefore, true, parent});
+    // An asset from an older engine places, but say what of it could not be restored so the
+    // author is not left wondering why part of it is missing.
+    std::vector<std::string> unresolvedNames;
+    std::vector<Scene::Entity> placedSubtree{root};
+    for (std::size_t index = 0U; index < placedSubtree.size(); ++index) {
+        for (const Scene::Entity child : m_services->GetSceneGraph().GetChildren(entityManager, placedSubtree[index])) {
+            placedSubtree.push_back(child);
+        }
+    }
+    for (const Scene::Entity entity : placedSubtree) {
+        if (!entityManager.HasComponent<Scene::UnresolvedComponentsComponent>(entity)) {
+            continue;
+        }
+        for (const auto& [name, unusedJson] : entityManager.GetComponent<Scene::UnresolvedComponentsComponent>(entity).entries) {
+            static_cast<void>(unusedJson);
+            if (std::find(unresolvedNames.begin(), unresolvedNames.end(), name) == unresolvedNames.end()) {
+                unresolvedNames.push_back(name);
+            }
+        }
+    }
+    if (unresolvedNames.empty()) {
+        m_contentStatusMessage = "Placed " + fileName + ".";
+    } else {
+        std::string list;
+        for (const std::string& name : unresolvedNames) {
+            list += (list.empty() ? "" : ", ") + name;
+        }
+        m_contentStatusMessage = "Placed " + fileName + ". Kept but not restored (not available in this version): " + list + ".";
+    }
     return root;
 }
 
@@ -3166,10 +3218,7 @@ Scene::Entity Editor::CreateDocumentSceneObject(
                 ragdoll.bones.clear();
                 if (entityManager.HasComponent<Scene::Skeleton3DComponent>(foundSkeleton)) {
                     const auto& skel = entityManager.GetComponent<Scene::Skeleton3DComponent>(foundSkeleton);
-                    ragdoll.bones = Scene::BuildHumanoidRagdollBones(skel.bones);
-                    if (ragdoll.bones.size() < 2U && !skel.bones.empty()) {
-                        ragdoll.bones = Scene::BuildGenericRagdollBones(skel.bones);
-                    }
+                    ragdoll.bones = Scene::BuildAutoRagdollBones(skel.bones);
                 }
                 ragdoll.initialized = false;
                 entityManager.GetComponent<Scene::Ragdoll3DComponent>(entity) = ragdoll;
@@ -4574,7 +4623,12 @@ bool Editor::IsAllowedOutlinerParent(const Scene::Entity entity, const Scene::En
 }
 
 void Editor::PlaceNewDocumentObject(const Scene::Entity entity) {
-    if (m_newObjectPlacement != EditorNewObjectPlacement::ViewFocus || !m_viewportCameraFocus.has_value()) {
+    const std::optional<Math::Vector3> dropPoint = std::exchange(m_nextPlacementPoint, std::nullopt);
+    const std::optional<Math::Vector3> target =
+        dropPoint.has_value()
+            ? dropPoint
+            : (m_newObjectPlacement == EditorNewObjectPlacement::ViewFocus ? m_viewportCameraFocus : std::nullopt);
+    if (!target.has_value()) {
         return;
     }
     Scene::IEntityManager& entityManager = m_services->GetEntityManager();
@@ -4588,8 +4642,7 @@ void Editor::PlaceNewDocumentObject(const Scene::Entity entity) {
         TryGetComposingParentWorld(entityManager.GetComponent<Scene::HierarchyComponent>(entity).parent);
     Math::Vector3 localPosition{};
     if (!parentWorld.has_value() || parentWorld->dirty ||
-        !ComputeLocalDeltaForWorldDelta(entity, *m_viewportCameraFocus - parentWorld->worldPosition,
-                                           localPosition)) {
+        !ComputeLocalDeltaForWorldDelta(entity, *target - parentWorld->worldPosition, localPosition)) {
         return;
     }
     Scene::TransformComponent transform = entityManager.GetComponent<Scene::TransformComponent>(entity);

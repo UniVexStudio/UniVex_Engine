@@ -138,13 +138,7 @@ LegacyMigrationReport MigrateLegacyContent(const std::filesystem::path& root) {
     return report;
 }
 
-bool RewriteLegacyExtensionsInTextFile(const std::filesystem::path& file) {
-    std::ifstream in(file, std::ios::binary);
-    if (!in) {
-        return false;
-    }
-    std::string text{std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()};
-    in.close();
+bool RewriteLegacyExtensionsInText(std::string& text) {
     std::string out;
     out.reserve(text.size());
     bool changed = false;
@@ -166,11 +160,24 @@ bool RewriteLegacyExtensionsInTextFile(const std::filesystem::path& file) {
             out += text[i++];
         }
     }
-    if (!changed) {
+    if (changed) {
+        text = std::move(out);
+    }
+    return changed;
+}
+
+bool RewriteLegacyExtensionsInTextFile(const std::filesystem::path& file) {
+    std::ifstream in(file, std::ios::binary);
+    if (!in) {
+        return false;
+    }
+    std::string text{std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()};
+    in.close();
+    if (!RewriteLegacyExtensionsInText(text)) {
         return false;
     }
     std::ofstream save(file, std::ios::binary | std::ios::trunc);
-    save << out;
+    save << text;
     return static_cast<bool>(save);
 }
 

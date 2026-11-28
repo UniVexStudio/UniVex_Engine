@@ -844,6 +844,10 @@ public:
             /// Hidden where the scene is in front of it (a collision shape), instead of showing
             /// through faintly like a gizmo or a bone.
             bool occluded = false;
+            /// Opacity of the part behind the scene when it is not `occluded`. Negative means the
+            /// shell's default faint gizmo alpha. Ragdoll capsules live inside the character mesh, so
+            /// they use a strong value: at the default they were all but invisible.
+            float hiddenAlpha = -1.0F;
         };
         struct GizmoTriangle final {
             std::array<float, 3> a{};
@@ -2946,6 +2950,9 @@ private:
     bool m_newObjectsUnderSelection = true;
     EditorNewObjectPlacement m_newObjectPlacement = EditorNewObjectPlacement::ParentOrigin;
     std::optional<Math::Vector3> m_viewportCameraFocus;
+    /// One-shot world position for the next placed object (content dropped into the viewport lands
+    /// where it was dropped). Consumed by PlaceNewDocumentObject whatever the placement setting.
+    std::optional<Math::Vector3> m_nextPlacementPoint;
     // Play mode preferences (editor_settings_uve.cpp).
     bool m_playPauseOnStart = false;
     bool m_playSaveSceneFirst = false;

@@ -4483,6 +4483,45 @@ TEST(EditorTest, PlayModeSandbox_SpawnPointTeleportsThePlayerAndStopGivesEveryth
     engine.Shutdown();
 }
 
+TEST(EditorTest, PlayModeSandbox_AShapelessPlayerGetsASessionCapsuleThatStopRemoves) {
+    // A Player3D straight from the object menu has no Collider3D. Without a shape the character
+    // step drops it through the level, and the play view that follows it fell with it.
+    Core::EngineCore engine(MakeEditorTestConfig());
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+
+    {
+        Editor editor(engine.GetServices(), "uve_editor_tests_play_capsule.uvscene", 100U, &engine);
+        editor.Init();
+        Scene::IEntityManager& entityManager = engine.GetServices().GetEntityManager();
+
+        const Scene::Entity player = entityManager.CreateEntity();
+        AttachRoot(engine, player, Scene::TransformComponent{});
+        Scene::ApplyPlayer3DObjectDefinition(entityManager, player, Scene::Player3DObjectDefinition{});
+        ASSERT_FALSE(entityManager.HasComponent<Scene::ColliderComponent>(player));
+
+        ASSERT_TRUE(editor.EnterPlayMode());
+        Scene::Entity played = Scene::kInvalidEntity;
+        entityManager.ForEach<Scene::PlayerComponent>(
+            [&played](const Scene::Entity entity, Scene::PlayerComponent&) { played = entity; });
+        ASSERT_NE(played, Scene::kInvalidEntity);
+        ASSERT_TRUE(entityManager.HasComponent<Scene::ColliderComponent>(played));
+        EXPECT_TRUE(Scene::IsLegacyCharacterCapsule(entityManager.GetComponent<Scene::ColliderComponent>(played)));
+
+        ASSERT_TRUE(editor.StopPlayMode());
+        Scene::Entity restored = Scene::kInvalidEntity;
+        entityManager.ForEach<Scene::PlayerComponent>(
+            [&restored](const Scene::Entity entity, Scene::PlayerComponent&) { restored = entity; });
+        ASSERT_NE(restored, Scene::kInvalidEntity);
+        EXPECT_FALSE(entityManager.HasComponent<Scene::ColliderComponent>(restored))
+            << "the capsule belongs to the play session, never to the authored scene";
+
+        editor.Shutdown();
+    }
+
+    engine.Shutdown();
+}
+
 TEST(EditorTest, PlayModeSandbox_SpawnPointWithOffsetAndParentPlacesRespectingBothKinds) {
     Core::EngineCore engine(MakeEditorTestConfig());
     engine.Init();

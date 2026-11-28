@@ -22,6 +22,8 @@
 
 #include "asset_guid.h"
 #include "uve_file_envelope.h"
+#include "scene_content_upgrade.h"
+#include "unresolved_components_component.h"
 #include "log_sink.h"
 #include "logger.h"
 #include "event_system.h"
@@ -1119,11 +1121,13 @@ TEST_F(SceneSerializerTest, Restore_OutOfRangeHierarchyParentId_RollsBackCreated
     }
 }
 
-TEST_F(SceneSerializerTest, Restore_UnknownComponent_RollsBackCreatedEntities) {
-    const Entity existing = entityManager.CreateEntity();
-    const std::size_t entityCountBefore = entityManager.GetEntityCount();
+TEST_F(SceneSerializerTest, Restore_UnknownComponent_KeepsTheEntityAndWritesTheComponentBack) {
+    // A file from another engine version: one component type this build does not have. The
+    // entity must still load (an old asset has to be placeable), and the unknown component must
+    // survive a save untouched so no author data is lost.
     const std::string payloadText =
-        R"({"entities":[{"localId":0,"components":{"UnknownComponent":{}}}]})";
+        R"({"entities":[{"localId":0,"components":{"NameComponent":{"name":"Old"},)"
+        R"("FutureThingComponent":{"power":9001,"tags":["a","b"]}}}]})";
     const auto* const payloadBytes = reinterpret_cast<const std::byte*>(payloadText.data());
     const SceneSnapshot snapshot{
         Asset::EncodeUveFileEnvelope(SceneAssetType::Scene,
@@ -1131,10 +1135,23 @@ TEST_F(SceneSerializerTest, Restore_UnknownComponent_RollsBackCreatedEntities) {
         SceneAssetType::Scene};
 
     const std::vector<Entity> roots = serializer.Restore(entityManager, snapshot);
+    ASSERT_EQ(roots.size(), 1U);
+    EXPECT_EQ(entityManager.GetComponent<NameComponent>(roots[0]).name, "Old");
+    ASSERT_TRUE(entityManager.HasComponent<UnresolvedComponentsComponent>(roots[0]));
+    const auto& unresolved = entityManager.GetComponent<UnresolvedComponentsComponent>(roots[0]);
+    ASSERT_EQ(unresolved.entries.size(), 1U);
+    EXPECT_EQ(unresolved.entries[0].first, "FutureThingComponent");
 
-    EXPECT_TRUE(roots.empty());
-    EXPECT_TRUE(entityManager.IsAlive(existing));
-    EXPECT_EQ(entityManager.GetEntityCount(), entityCountBefore);
+    const std::optional<SceneSnapshot> saved = serializer.Capture(entityManager, roots, SceneAssetType::Scene);
+    ASSERT_TRUE(saved.has_value());
+    const auto decoded = Asset::DecodeUveFileEnvelope(saved->bytes);
+    ASSERT_TRUE(decoded.has_value());
+    const nlohmann::json json = nlohmann::json::parse(
+        std::string(reinterpret_cast<const char*>(decoded->second.data()), decoded->second.size()));
+    const nlohmann::json& components = json.at("entities").at(0).at("components");
+    ASSERT_TRUE(components.contains("FutureThingComponent"));
+    EXPECT_EQ(components.at("FutureThingComponent").at("power").get<int>(), 9001);
+    EXPECT_FALSE(components.contains("UnresolvedComponentsComponent"));
 }
 
 TEST_F(SceneSerializerTest, Restore_MalformedComponentData_RollsBackCreatedEntities) {
@@ -2270,7 +2287,8 @@ TEST_F(SceneSerializerTest, Restore_MalformedMetadataValueRollsBackCreatedEntiti
     const Entity existing = entityManager.CreateEntity();
     const std::size_t entityCountBefore = entityManager.GetEntityCount();
     // An unknown type name, a vector with the wrong arity, and a float written as null (what a NaN
-    // would have become): each must fail the load cleanly rather than half-restore a scene.
+    // would have become): the component is never half-read into the entity. It is kept verbatim
+    // instead, and the rest of the entity loads.
     for (const std::string& value : {std::string{R"({"type":"Matrix7","value":0})"},
                                     std::string{R"({"type":"Vector3","value":[1,2]})"},
                                     std::string{R"({"type":"float","value":null})"}}) {
@@ -2282,8 +2300,14 @@ TEST_F(SceneSerializerTest, Restore_MalformedMetadataValueRollsBackCreatedEntiti
             Asset::EncodeUveFileEnvelope(SceneAssetType::Scene,
                                             std::vector<std::byte>{payloadBytes, payloadBytes + payloadText.size()}),
             SceneAssetType::Scene};
-        EXPECT_TRUE(serializer.Restore(entityManager, snapshot).empty()) << value;
+        const std::vector<Entity> roots = serializer.Restore(entityManager, snapshot);
+        ASSERT_EQ(roots.size(), 1U) << value;
+        EXPECT_FALSE(entityManager.HasComponent<ObjectMetadataComponent>(roots[0])) << value;
+        ASSERT_TRUE(entityManager.HasComponent<UnresolvedComponentsComponent>(roots[0])) << value;
+        EXPECT_EQ(entityManager.GetComponent<UnresolvedComponentsComponent>(roots[0]).entries.at(0).first,
+                  "ObjectMetadataComponent");
         EXPECT_TRUE(entityManager.IsAlive(existing));
+        entityManager.DestroyEntity(roots[0]);
         EXPECT_EQ(entityManager.GetEntityCount(), entityCountBefore) << value;
     }
 }
@@ -3765,6 +3789,72 @@ TEST_F(SceneSerializerTest, LegacyUveSuffixComponents_LoadCleanlyForOldEntitiesA
     ASSERT_TRUE(entityManager.HasComponent<NameComponent>(restoredChild));
     EXPECT_EQ(entityManager.GetComponent<NameComponent>(restoredChild).name, "ChildPart");
     EXPECT_TRUE(entityManager.HasComponent<DisabledComponent>(restoredChild));
+}
+
+TEST_F(SceneSerializerTest, UpgradeSceneContent_RenamesRetiredKeysAndLegacyPathsAndBacksUp) {
+    const std::filesystem::path root = std::filesystem::temp_directory_path() / "uve_scene_content_upgrade_test";
+    std::filesystem::remove_all(root);
+    const std::filesystem::path content = root / "Content";
+    const std::filesystem::path backup = root / "Saved" / "UpgradeBackup";
+    std::filesystem::create_directories(content / "Props");
+
+    const std::string suffix = "UVE";
+    const std::string payload =
+        std::string(R"({"entities":[{"localId":0,"components":{")") + "NameComponent" + suffix +
+        R"(":{"name":"Crate"},"AudioSourceComponent":{"audioAssetPath":"Sounds/hit.uveaudio"},)"
+        R"("FutureThingComponent":{"keep":true}}}]})";
+    const auto* raw = reinterpret_cast<const std::byte*>(payload.data());
+    const std::filesystem::path file = content / "Props" / "Crate.uventity";
+    ASSERT_TRUE(Asset::WriteUveFile(file, SceneAssetType::Prefab, std::vector<std::byte>{raw, raw + payload.size()}));
+    const std::filesystem::path current = content / "Props" / "Fresh.uventity";
+    const std::string currentPayload = R"({"entities":[{"localId":0,"components":{"NameComponent":{"name":"Fresh"}}}]})";
+    const auto* currentRaw = reinterpret_cast<const std::byte*>(currentPayload.data());
+    ASSERT_TRUE(Asset::WriteUveFile(current, SceneAssetType::Prefab,
+                                    std::vector<std::byte>{currentRaw, currentRaw + currentPayload.size()}));
+
+    const SceneContentUpgradeReport report = UpgradeSceneContent(content, backup);
+    EXPECT_EQ(report.scanned, 2U);
+    EXPECT_EQ(report.upgraded, 1U);
+    EXPECT_EQ(report.failed, 0U);
+    EXPECT_TRUE(std::filesystem::is_regular_file(backup / "Props" / "Crate.uventity"));
+    EXPECT_FALSE(std::filesystem::exists(backup / "Props" / "Fresh.uventity")) << "unchanged files are not touched";
+
+    const auto decoded = Asset::ReadUveFile(file);
+    ASSERT_TRUE(decoded.has_value());
+    EXPECT_EQ(decoded->first.assetType, SceneAssetType::Prefab);
+    const nlohmann::json json = nlohmann::json::parse(
+        std::string(reinterpret_cast<const char*>(decoded->second.data()), decoded->second.size()));
+    const nlohmann::json& components = json.at("entities").at(0).at("components");
+    EXPECT_TRUE(components.contains("NameComponent"));
+    EXPECT_FALSE(components.contains("NameComponent" + suffix));
+    EXPECT_EQ(components.at("AudioSourceComponent").at("audioAssetPath").get<std::string>(), "Sounds/hit.uvaudio");
+    EXPECT_TRUE(components.contains("FutureThingComponent")) << "unknown data is never dropped";
+
+    const SceneContentUpgradeReport again = UpgradeSceneContent(content, backup);
+    EXPECT_EQ(again.upgraded, 0U) << "the pass is idempotent";
+    std::filesystem::remove_all(root);
+}
+
+TEST_F(SceneSerializerTest, Load_RagdollWithAnOversizedBoneList_TrimsInsteadOfRefusing) {
+    nlohmann::json bones = nlohmann::json::array();
+    for (int index = 0; index < 40; ++index) {
+        bones.push_back({{"boneName", "bone_" + std::to_string(index)}, {"mass", index < 10 ? 5.0 : 1.0}});
+    }
+    const nlohmann::json payload = {
+        {"entities",
+         nlohmann::json::array({{{"localId", 0},
+                                 {"components", {{"Ragdoll3DComponent", {{"bones", bones}}}}}}})}};
+    const std::string text = payload.dump();
+    const auto* raw = reinterpret_cast<const std::byte*>(text.data());
+    const SceneSnapshot snapshot{
+        Asset::EncodeUveFileEnvelope(SceneAssetType::Scene, std::vector<std::byte>{raw, raw + text.size()}),
+        SceneAssetType::Scene};
+    const std::vector<Entity> roots = serializer.Restore(entityManager, snapshot);
+    ASSERT_EQ(roots.size(), 1U);
+    ASSERT_TRUE(entityManager.HasComponent<Ragdoll3DComponent>(roots[0]));
+    const Ragdoll3DComponent& ragdoll = entityManager.GetComponent<Ragdoll3DComponent>(roots[0]);
+    EXPECT_EQ(ragdoll.bones.size(), static_cast<std::size_t>(kMaximumRagdollBones));
+    EXPECT_EQ(ragdoll.bones.front().boneName, "bone_0") << "heaviest bodies kept, in their authored order";
 }
 
 } // namespace UVE::Scene::Tests
