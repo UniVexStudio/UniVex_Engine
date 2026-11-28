@@ -31,7 +31,7 @@ namespace UVE::Editor {
 namespace {
 
 constexpr std::string_view kScriptFolder = "scripts";
-constexpr std::string_view kUVScriptExtension = Scene::Script::kUVScriptExtension;
+constexpr std::string_view kUVScriptExtension = ".uvs";
 
 /// A file stem from an object name: letters, digits, '-' and '_' kept, anything else an underscore,
 /// runs of underscores collapsed. "Main Menu (old)" becomes "Main_Menu_old".

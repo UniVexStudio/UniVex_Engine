@@ -599,11 +599,10 @@ private:
     /// Reconciles script components with instances in m_uvScripts so event receivers are ready
     /// before any physics or animation step evaluates.
     void ReconcileUVScriptInstances();
-    /// What a script slot runs: a Blueprint graph (.uvbp, or a widget's .uvwbp) compiled straight from its graph, or a
-    /// .uvs file's text. `hash` identifies the file's bytes, so a changed or reappearing file is noticed.
+    /// What a script slot runs: a Blueprint graph (.uvbp, or a widget's .uvwbp), compiled straight from the graph.
+    /// `hash` identifies the file's bytes, so a changed or reappearing file is noticed.
     struct ScriptFile final {
         std::uint64_t hash = 0U;
-        std::string text;
         std::optional<Asset::BlueprintAsset> graph;
         std::string objectName;
         std::string objectKind;

@@ -2060,8 +2060,8 @@ void EngineCore::SyncUIView3DStages(const float deltaSeconds) {
 
 namespace {
 
-[[nodiscard]] bool IsUVScriptPath(const std::string_view path) noexcept {
-    return Scene::Script::IsUVScriptPath(path);
+[[nodiscard]] bool IsBlueprintPath(const std::string_view path) noexcept {
+    return Scene::Script::IsBlueprintPath(path);
 }
 
 } // namespace
@@ -2107,8 +2107,7 @@ std::optional<EngineCore::ScriptFile> EngineCore::LoadScriptFile(const std::stri
         file.graph = std::move(graph);
         return file;
     }
-    file.text.assign(reinterpret_cast<const char*>(bytes->data()), bytes->size());
-    return file;
+    return std::nullopt; // only Blueprints run
 }
 
 void EngineCore::ReconcileUVScriptInstances() {
@@ -2151,14 +2150,13 @@ void EngineCore::ReconcileUVScriptInstances() {
 
     m_entityManager->ForEach<Scene::ScriptComponent>(
         [this](const Scene::Entity entity, const Scene::ScriptComponent& component) {
-            if (!IsUVScriptPath(component.scriptAssetPath)) {
-                // Object-graph scripts were removed; say so once per object rather than run nothing
-                // silently.
+            if (!IsBlueprintPath(component.scriptAssetPath)) {
+                // Only Blueprints run; say so once per object rather than run nothing silently.
                 const auto reported = m_scriptReconcileFailedEntities.find(entity);
                 if (!component.scriptAssetPath.empty() && (reported == m_scriptReconcileFailedEntities.end() ||
                                                            reported->second != component.scriptAssetPath)) {
                     m_scriptReconcileFailedEntities.insert_or_assign(entity, component.scriptAssetPath);
-                    UVE_WARNING("EngineCore: script \"{}\" is not a UVScript (.uvs) file and will not run",
+                    UVE_WARNING("EngineCore: script \"{}\" is not a Blueprint (.uvbp) and will not run",
                              component.scriptAssetPath);
                 }
                 return;
@@ -2197,27 +2195,16 @@ void EngineCore::ReconcileUVScriptInstances() {
                     m_windowManager->SetCursorVisible(show);
                 }
             });
-            Blueprint::CompileResult compiled;
-            if (file.graph.has_value()) {
-                // A graph's diagnostics name nodes: the position's `line` is the node's id.
-                Asset::BlueprintCompilation direct =
-                    Asset::CompileBlueprintGraph(*file.graph, file.objectName, file.objectKind, *host);
-                for (const auto& [node, problem] : direct.problems) {
-                    UVE_WARNING("{}: node {}: {}", component.scriptAssetPath, node, problem);
-                }
-                compiled = std::move(direct.result);
-                if (!compiled.IsSuccess()) {
-                    for (const Blueprint::Diagnostic& diagnostic : compiled.diagnostics) {
-                        UVE_ERROR("{}: node {}: {}", component.scriptAssetPath, diagnostic.at.line, diagnostic.message);
-                    }
-                }
-            } else {
-                compiled = Blueprint::CompileUVScriptSource(file.text, *host);
-                if (!compiled.IsSuccess()) {
-                    for (const Blueprint::Diagnostic& diagnostic : compiled.diagnostics) {
-                        UVE_ERROR("{}:{}:{}: {}", component.scriptAssetPath, diagnostic.at.line, diagnostic.at.column,
-                                  diagnostic.message);
-                    }
+            // A graph's diagnostics name nodes: the position's `line` is the node's id.
+            Asset::BlueprintCompilation direct =
+                Asset::CompileBlueprintGraph(*file.graph, file.objectName, file.objectKind, *host);
+            for (const auto& [node, problem] : direct.problems) {
+                UVE_WARNING("{}: node {}: {}", component.scriptAssetPath, node, problem);
+            }
+            Blueprint::CompileResult compiled = std::move(direct.result);
+            if (!compiled.IsSuccess()) {
+                for (const Blueprint::Diagnostic& diagnostic : compiled.diagnostics) {
+                    UVE_ERROR("{}: node {}: {}", component.scriptAssetPath, diagnostic.at.line, diagnostic.message);
                 }
             }
             if (!compiled.IsSuccess()) {

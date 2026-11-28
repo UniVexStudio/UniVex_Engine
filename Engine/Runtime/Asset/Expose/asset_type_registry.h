@@ -32,7 +32,7 @@ namespace UVE::Asset {
 [[nodiscard]] bool IsCookableNativeEnvelopeExtension(std::string_view extension);
 
 /// True when `extension` names a text/script/shader source file that ships in cooked project content
-/// (`.uvs`, `.glsl`, `.vert`, `.frag`, `.comp`, `.glslinc`).
+/// (`.glsl`, `.vert`, `.frag`, `.comp`, `.glslinc`).
 [[nodiscard]] bool IsCookableRuntimeTextExtension(std::string_view extension);
 
 /// True when `extension` names any cooked runtime content asset (native envelope or runtime text/shader).

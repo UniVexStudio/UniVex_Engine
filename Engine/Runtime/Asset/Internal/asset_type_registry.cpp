@@ -61,8 +61,7 @@ constexpr std::array<std::string_view, 19> kBuiltInGenericEnvelopeExtensions{{
     "uvfx",
 }};
 
-constexpr std::array<std::string_view, 6> kCookableRuntimeTextExtensions{{
-    "uvs",
+constexpr std::array<std::string_view, 5> kCookableRuntimeTextExtensions{{
     "glsl",
     "vert",
     "frag",
