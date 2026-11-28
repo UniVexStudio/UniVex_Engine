@@ -304,6 +304,10 @@ bool Editor::SavePrismScreenshot(const std::filesystem::path& path) {
     return m_levelShell != nullptr && m_levelShell->SaveScreenshot(path);
 }
 
+bool Editor::SaveEntityEditorScreenshot(const std::filesystem::path& path) {
+    return m_levelShell != nullptr && m_levelShell->SaveEntityEditorScreenshot(path);
+}
+
 void Editor::Init() {
     if (m_state != EditorState::Uninitialized) {
         return;

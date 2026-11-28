@@ -574,6 +574,8 @@ public:
     [[nodiscard]] bool IsPrismUiActive() const noexcept { return m_levelShell != nullptr; }
     /// Saves the current PRISM editor frame as PNG (false when the PRISM shell is not active).
     bool SavePrismScreenshot(const std::filesystem::path& path);
+    /// Saves the open Entity Editor window as PNG (false when no entity is open in its window).
+    bool SaveEntityEditorScreenshot(const std::filesystem::path& path);
 
     /// Validates a possibly deleted selection, cancels an invalid gizmo drag, and performs
     /// non-rendering per-frame maintenance.

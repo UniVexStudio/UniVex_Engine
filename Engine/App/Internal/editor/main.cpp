@@ -112,6 +112,12 @@ struct EditorLaunchOptions final {
     bool prismUi = true;
     /// After the last frame (--frames), save the PRISM editor frame as PNG here.
     std::filesystem::path prismScreenshot;
+    /// Automation aids for checking the Entity Editor (used with --frames): open this `.uventity`
+    /// once the editor is up, start its Simulate preview, and after the last frame save the Entity
+    /// Editor window as PNG.
+    std::filesystem::path openEntity;
+    bool entitySimulate = false;
+    std::filesystem::path entityScreenshot;
     /// Screenshot aid: put a folder, a sun, a camera and a box in the level and select the box, so the
     /// panels and the viewport gizmos have content.
     bool prismDemoObject = false;
@@ -177,6 +183,18 @@ struct EditorLaunchOptions final {
         }
         if (argument == "--prism-screenshot" && index + 1 < argc) {
             options.prismScreenshot = argv[++index];
+            continue;
+        }
+        if (argument == "--open-entity" && index + 1 < argc) {
+            options.openEntity = argv[++index];
+            continue;
+        }
+        if (argument == "--entity-simulate") {
+            options.entitySimulate = true;
+            continue;
+        }
+        if (argument == "--entity-screenshot" && index + 1 < argc) {
+            options.entityScreenshot = argv[++index];
             continue;
         }
         if (argument == "--decorated") {
@@ -323,6 +341,9 @@ void ShowProjectUpgradeDialog(const UVE::Pack::ProjectEditorSetup& project, bool
 /// `--headless` keeps the editor's non-visual lifecycle usable in CI and defaults to a single frame.
 /// `--bridge-stdio` always implies headless mode and runs a framed JSON-RPC bridge server instead
 /// of constructing native GLFW presentation for this process.
+/// `--open-entity <file.uventity>` opens that entity in the Entity Editor a short while after start-up,
+/// `--entity-simulate` then starts its Simulate preview, and `--entity-screenshot <png>` saves the
+/// Entity Editor window after the last frame; all three are meant for a bounded `--frames` run.
 ///
 /// The editor drives EngineCore's lifecycle by hand (Init()/Load()/TickFrame()) rather than
 /// through Run() — the one desktop entry point that does not automatically get Run()'s
@@ -680,11 +701,23 @@ int UVE::App::RunEditor(const int argc, char** argv, const EditorPlatform& platf
         }
         engine.SetPostRenderCallback([&editor] { editor.RenderOverlay(); });
 
+        // The Entity Editor is opened, and its simulation started, a fixed number of frames in so the
+        // window and the first layout exist before either happens.
+        constexpr int kOpenEntityFrame = 30;
+        constexpr int kSimulateEntityFrame = kOpenEntityFrame + 30;
         int framesRun = 0;
         while (!closeRequested && !engine.GetServices().GetWindowManager().IsCloseRequested() &&
                (!options.frameLimit.has_value() || framesRun < *options.frameLimit)) {
             if (platform.beforeFrame && !platform.beforeFrame(engine)) {
                 break;
+            }
+            if (framesRun == kOpenEntityFrame && !options.openEntity.empty() &&
+                !editor.OpenEntityEditor(options.openEntity)) {
+                std::fprintf(stderr, "uve_editor: could not open the entity \"%s\"\n",
+                             options.openEntity.string().c_str());
+            }
+            if (framesRun == kSimulateEntityFrame && options.entitySimulate && !editor.PlayEntitySimulation()) {
+                std::fprintf(stderr, "uve_editor: could not start the entity simulation\n");
             }
             editor.Tick();
             engine.TickFrame();
@@ -693,6 +726,9 @@ int UVE::App::RunEditor(const int argc, char** argv, const EditorPlatform& platf
 
         if (!options.prismScreenshot.empty() && !editor.SavePrismScreenshot(options.prismScreenshot)) {
             std::fprintf(stderr, "uve_editor: could not save the PRISM screenshot\n");
+        }
+        if (!options.entityScreenshot.empty() && !editor.SaveEntityEditorScreenshot(options.entityScreenshot)) {
+            std::fprintf(stderr, "uve_editor: could not save the Entity Editor screenshot\n");
         }
         engine.SetPostRenderCallback({});
         if (viewportHost != nullptr) {
