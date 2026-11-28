@@ -17,6 +17,7 @@
 #include "collider_component.h"
 #include "disabled_component.h"
 #include "hierarchy_component.h"
+#include "mesh_component.h"
 #include "rigid_3d_component.h"
 #include "transform_component.h"
 #include "world_transform_component.h"
@@ -663,6 +664,56 @@ void UpdatePartialAndMotorTargets(Ragdoll3DComponent& ragdoll, const Skeleton3DC
     }
 }
 
+/// The entity `driveEntityTransform` moves: the skeleton or its nearest ancestor that has a transform and holds a
+/// mesh in its subtree - the entity the skinned mesh follows. None when no mesh shares a parent with the skeleton.
+[[nodiscard]] Entity FindRagdollDriveTarget(IEntityManager& entityManager, const Entity skeleton) {
+    std::vector<Entity> meshes;
+    entityManager.ForEach<MeshComponent>([&meshes](const Entity mesh, const MeshComponent&) { meshes.push_back(mesh); });
+    if (meshes.empty()) return kInvalidEntity;
+    Entity candidate = skeleton;
+    for (std::uint32_t hops = 0U; hops < 16U && candidate != kInvalidEntity && entityManager.IsAlive(candidate); ++hops) {
+        if (entityManager.HasComponent<TransformComponent>(candidate)) {
+            for (const Entity mesh : meshes) {
+                Entity cursor = mesh;
+                for (std::uint32_t up = 0U; up < 64U && cursor != kInvalidEntity; ++up) {
+                    if (cursor == candidate) return candidate;
+                    cursor = entityManager.HasComponent<HierarchyComponent>(cursor)
+                                 ? entityManager.GetComponent<HierarchyComponent>(cursor).parent
+                                 : kInvalidEntity;
+                }
+            }
+        }
+        if (!entityManager.HasComponent<HierarchyComponent>(candidate)) break;
+        const Entity parent = entityManager.GetComponent<HierarchyComponent>(candidate).parent;
+        if (parent == candidate) break;
+        candidate = parent;
+    }
+    return kInvalidEntity;
+}
+
+/// Moves `target` by a world-space offset, through its own parent's frame.
+void ShiftEntityByWorldOffset(IEntityManager& entityManager, const Entity target, const Math::Vector3& worldOffset) {
+    Math::Vector3 local = worldOffset;
+    if (entityManager.HasComponent<HierarchyComponent>(target)) {
+        const Entity parent = entityManager.GetComponent<HierarchyComponent>(target).parent;
+        if (parent != kInvalidEntity && entityManager.IsAlive(parent) &&
+            entityManager.HasComponent<WorldTransformComponent>(parent)) {
+            const WorldTransformComponent& frame = entityManager.GetComponent<WorldTransformComponent>(parent);
+            Math::Quaternion inverse;
+            if (Math::TryInverse(frame.worldRotation, inverse)) local = Math::RotateVector(inverse, worldOffset);
+            if (std::fabs(frame.worldScale.x) > kDirectionEpsilon) local.x /= frame.worldScale.x;
+            if (std::fabs(frame.worldScale.y) > kDirectionEpsilon) local.y /= frame.worldScale.y;
+            if (std::fabs(frame.worldScale.z) > kDirectionEpsilon) local.z /= frame.worldScale.z;
+        }
+    }
+    if (!Math::IsFinite(local)) return;
+    entityManager.GetComponent<TransformComponent>(target).localPosition =
+        entityManager.GetComponent<TransformComponent>(target).localPosition + local;
+    if (entityManager.HasComponent<WorldTransformComponent>(target)) {
+        entityManager.GetComponent<WorldTransformComponent>(target).dirty = true;
+    }
+}
+
 void WriteRagdollPoseToSkeleton(IEntityManager& entityManager, Ragdoll3DComponent& ragdoll,
                                    Skeleton3DComponent& skeleton, const ObjectWorldFrame& skeletonFrame) {
     EnsureSkeletonPose(skeleton);
@@ -718,28 +769,34 @@ void WriteRagdollPoseToSkeleton(IEntityManager& entityManager, Ragdoll3DComponen
             const Math::Vector3 boneWorldPosition =
                 body.position + Math::RotateVector(body.rotation, binding.rootAnchorLocal);
             if (Math::IsFinite(boneWorldPosition)) {
-                if (ragdoll.driveEntityTransform &&
-                    entityManager.HasComponent<TransformComponent>(ragdoll.skeleton)) {
-                    TransformComponent& transform =
-                        entityManager.GetComponent<TransformComponent>(ragdoll.skeleton);
-                    const Math::Vector3 targetEntityPos =
-                        LerpVector(transform.localPosition, boneWorldPosition - skeleton.bones[binding.boneIndex].localPosition, weight);
-                    if (Math::IsFinite(targetEntityPos)) {
-                        transform.localPosition = targetEntityPos;
-                        if (entityManager.HasComponent<WorldTransformComponent>(ragdoll.skeleton)) {
-                            entityManager.GetComponent<WorldTransformComponent>(ragdoll.skeleton).dirty = true;
+                // The pose always carries the pelvis (the mesh, the bones and the capsules stay in one frame). With
+                // the entity drive on, the pelvis's horizontal travel is moved onto the entity that holds the
+                // skeleton and its meshes, and the frames used below are shifted by the same amount.
+                Math::Vector3 frameShift{};
+                if (ragdoll.driveEntityTransform) {
+                    const Entity target = FindRagdollDriveTarget(entityManager, ragdoll.skeleton);
+                    if (target != kInvalidEntity) {
+                        if (ragdoll.hasDrivePrev) {
+                            const Math::Vector3 travel{
+                                (boneWorldPosition.x - ragdoll.drivePrevPelvis.x) * weight, 0.0F,
+                                (boneWorldPosition.z - ragdoll.drivePrevPelvis.z) * weight};
+                            if (Math::IsFinite(travel) && Math::LengthSquared(travel) > 0.0F) {
+                                ShiftEntityByWorldOffset(entityManager, target, travel);
+                                frameShift = travel;
+                            }
                         }
+                        ragdoll.drivePrevPelvis = boneWorldPosition;
+                        ragdoll.hasDrivePrev = true;
                     }
-                } else {
-                    const Math::Vector3 relWorld = boneWorldPosition - parentFrame.position;
-                    Math::Vector3 localPos = Math::RotateVector(inverseParent, relWorld);
-                    if (std::fabs(parentFrame.scale.x) > kDirectionEpsilon) localPos.x /= parentFrame.scale.x;
-                    if (std::fabs(parentFrame.scale.y) > kDirectionEpsilon) localPos.y /= parentFrame.scale.y;
-                    if (std::fabs(parentFrame.scale.z) > kDirectionEpsilon) localPos.z /= parentFrame.scale.z;
-                    if (Math::IsFinite(localPos)) {
-                        skeleton.pose[binding.boneIndex].position =
-                            LerpVector(skeleton.pose[binding.boneIndex].position, localPos, weight);
-                    }
+                }
+                const Math::Vector3 relWorld = boneWorldPosition - (parentFrame.position + frameShift);
+                Math::Vector3 localPos = Math::RotateVector(inverseParent, relWorld);
+                if (std::fabs(parentFrame.scale.x) > kDirectionEpsilon) localPos.x /= parentFrame.scale.x;
+                if (std::fabs(parentFrame.scale.y) > kDirectionEpsilon) localPos.y /= parentFrame.scale.y;
+                if (std::fabs(parentFrame.scale.z) > kDirectionEpsilon) localPos.z /= parentFrame.scale.z;
+                if (Math::IsFinite(localPos)) {
+                    skeleton.pose[binding.boneIndex].position =
+                        LerpVector(skeleton.pose[binding.boneIndex].position, localPos, weight);
                 }
             }
         }
@@ -1368,6 +1425,7 @@ bool InitializeRagdoll3D(IEntityManager& entityManager, const Entity entity) {
         return false;
     }
     Ragdoll3DComponent& component = entityManager.GetComponent<Ragdoll3DComponent>(entity);
+    component.hasDrivePrev = false;
     const auto fail = [&component](std::string reason) {
         component.lastSetupError = std::move(reason);
         component.initialized = false;
@@ -1657,6 +1715,7 @@ bool ActivateRagdoll(IEntityManager& entityManager, const Entity entity, const R
     }
     ragdoll.restSeconds = 0.0F;
     ragdoll.staggering = false;
+    ragdoll.hasDrivePrev = false;
 
     const std::size_t bodyCount = ragdoll.solver.GetBodyCount();
     for (std::size_t i = 0U; i < bodyCount; ++i) {
@@ -1801,6 +1860,10 @@ bool DeactivateRagdoll(IEntityManager& entityManager, const Entity entity) {
     ragdoll.restSeconds = 0.0F;
     ragdoll.staggering = false;
     return true;
+}
+
+Entity ResolveRagdollDriveTarget(IEntityManager& entityManager, const Entity skeleton) {
+    return FindRagdollDriveTarget(entityManager, skeleton);
 }
 
 bool StaggerRagdoll(IEntityManager& entityManager, const Entity entity, const float strength) {

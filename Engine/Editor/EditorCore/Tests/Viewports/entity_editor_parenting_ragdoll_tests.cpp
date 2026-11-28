@@ -383,5 +383,65 @@ TEST(EntityEditorParentingRagdollTest, EditingModeOrPreset_LeavesTheCapsulesOnTh
     engine.Shutdown();
 }
 
+TEST(EntityEditorParentingRagdollTest, SimulateWithEntityDrive_KeepsTheSkeletonStillAndRestoresEverythingOnStop) {
+    const std::filesystem::path scratch = ::UVE::Tests::MakeTestCaseDirectory("entity_editor_ragdoll_drive");
+    const std::filesystem::path content = scratch / "Content";
+    std::filesystem::create_directories(content);
+
+    Core::EngineCore engine(MakeEntityEditorRagdollTestConfig(scratch, content));
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    {
+        Editor editor(engine.GetServices(), scratch / "main.uvscene", 100U, &engine);
+        editor.SetDocumentSceneFactory([&engine] { return engine.CreateDocumentScene(); });
+        editor.Init();
+        const auto created = editor.CreateContentCatalogueItem("character", content);
+        ASSERT_TRUE(created.has_value());
+        ASSERT_TRUE(editor.OpenEntityEditor(*created));
+        const Scene::Entity entityRoot = editor.GetEntityEditorRoot();
+
+        Math::Vector3 skeletonBefore{};
+        Math::Vector3 rootBefore{};
+        {
+            const Editor::EntityDocumentScope scope(editor);
+            Scene::IEntityManager& entities = editor.GetActiveServices().GetEntityManager();
+            editor.SelectEntity(entityRoot);
+            const Scene::Entity mesh = editor.CreateDocumentSceneObject(Scene::Objects::SceneObjectKind::MeshInstance3D);
+            ASSERT_NE(mesh, Scene::kInvalidEntity);
+            editor.SelectEntity(entityRoot);
+            const Scene::Entity skeletonEntity =
+                editor.CreateDocumentSceneObject(Scene::Objects::SceneObjectKind::Skeleton3D);
+            PopulateTestHumanoidSkeleton(entities.GetComponent<Scene::Skeleton3DComponent>(skeletonEntity));
+            editor.SelectEntity(skeletonEntity);
+            const Scene::Entity ragdollEntity =
+                editor.CreateDocumentSceneObject(Scene::Objects::SceneObjectKind::Ragdoll3D);
+            ASSERT_NE(ragdollEntity, Scene::kInvalidEntity);
+            entities.GetComponent<Scene::Ragdoll3DComponent>(ragdollEntity).driveEntityTransform = true;
+            skeletonBefore = entities.GetComponent<Scene::TransformComponent>(skeletonEntity).localPosition;
+            rootBefore = entities.GetComponent<Scene::TransformComponent>(entityRoot).localPosition;
+            EXPECT_EQ(Scene::ResolveRagdollDriveTarget(entities, skeletonEntity), entityRoot)
+                << "the entity that holds the skeleton and the mesh is the one that follows";
+        }
+        ASSERT_TRUE(editor.PlayEntitySimulation());
+        for (int frame = 0; frame < 120; ++frame) editor.TickEntitySimulation(1.0 / 60.0);
+        ASSERT_TRUE(editor.StopEntitySimulation());
+        {
+            const Editor::EntityDocumentScope scope(editor);
+            Scene::IEntityManager& entities = editor.GetActiveServices().GetEntityManager();
+            Scene::Entity skeletonEntity = Scene::kInvalidEntity;
+            entities.ForEach<Scene::Skeleton3DComponent>(
+                [&](const Scene::Entity found, const Scene::Skeleton3DComponent&) { skeletonEntity = found; });
+            ASSERT_NE(skeletonEntity, Scene::kInvalidEntity);
+            EXPECT_EQ(entities.GetComponent<Scene::TransformComponent>(skeletonEntity).localPosition, skeletonBefore);
+            EXPECT_EQ(entities.GetComponent<Scene::TransformComponent>(editor.GetEntityEditorRoot()).localPosition,
+                      rootBefore)
+                << "Stop restores the transforms the simulation moved";
+        }
+        ASSERT_TRUE(editor.CloseEntityEditor(false));
+        editor.Shutdown();
+    }
+    engine.Shutdown();
+}
+
 } // namespace
 } // namespace UVE::Editor::Tests

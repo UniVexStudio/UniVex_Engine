@@ -19,6 +19,8 @@
 #include "character_controller_component.h"
 #include "collider_component.h"
 #include "hierarchy_component.h"
+#include "mesh_component.h"
+#include "scene_graph.h"
 #include "rigid_3d_component.h"
 #include "transform_component.h"
 #include "world_transform_component.h"
@@ -1546,6 +1548,91 @@ TEST_F(Ragdoll3DTest, GetUp_AnEmptyTriggerNameFiresNothing) {
     const AnimationGraphComponent& after = entityManager.GetComponent<AnimationGraphComponent>(character);
     EXPECT_EQ(after.parameters[0].value, 0.0F);
     EXPECT_EQ(after.parameters[1].value, 0.0F);
+}
+
+// ---- An imported character: centimetre bones under a scaled, rotated import root ----------------
+
+TEST_F(Ragdoll3DTest, ImportedHierarchy_MeshBonesAndCapsulesStayTogetherWithOrWithoutEntityDrive) {
+    for (const bool drive : {false, true}) {
+        SceneGraph graph;
+        const auto addEntity = [&](const Entity parent, const Math::Vector3 position, const Math::Quaternion rotation,
+                                   const Math::Vector3 scale) {
+            const Entity entity = entityManager.CreateEntity();
+            TransformComponent transform;
+            transform.localPosition = position;
+            transform.localRotation = rotation;
+            transform.localScale = scale;
+            graph.AttachTransform(entityManager, entity, transform);
+            if (parent != kInvalidEntity) graph.SetParent(entityManager, entity, parent);
+            return entity;
+        };
+        Math::Quaternion yaw90;
+        ASSERT_TRUE(Math::TryMakeAxisAngle(Math::Vector3{0.0F, 1.0F, 0.0F}, 1.5707964F, yaw90));
+        const Entity character = addEntity(kInvalidEntity, {2.0F, 0.0F, -1.0F}, Math::Quaternion{}, {1.0F, 1.0F, 1.0F});
+        const Entity importRoot = addEntity(character, {}, yaw90, {0.01F, 0.01F, 0.01F}); // centimetres to metres
+        const Entity geo = addEntity(importRoot, {}, Math::Quaternion{}, {1.0F, 1.0F, 1.0F});
+        const Entity mesh = addEntity(geo, {}, Math::Quaternion{}, {1.0F, 1.0F, 1.0F});
+        entityManager.AddComponent<MeshComponent>(mesh, MeshComponent{});
+        const Entity skeletonEntity = addEntity(importRoot, {}, Math::Quaternion{}, {1.0F, 1.0F, 1.0F});
+        Skeleton3DComponent rig = MakeFullMixamoSkeleton();
+        for (SkeletonBone& bone : rig.bones) bone.localPosition = bone.localPosition * 100.0F;
+        entityManager.AddComponent<Skeleton3DComponent>(skeletonEntity, rig);
+        Ragdoll3DComponent setup = SimulatingSetup();
+        setup.skeleton = skeletonEntity;
+        setup.driveEntityTransform = drive;
+        const Entity ragdollEntity = entityManager.CreateEntity();
+        entityManager.AddComponent<Ragdoll3DComponent>(ragdollEntity, setup);
+        HierarchyComponent link;
+        link.parent = skeletonEntity;
+        entityManager.AddComponent<HierarchyComponent>(ragdollEntity, link);
+
+        graph.Update(entityManager);
+        ASSERT_TRUE(InitializeRagdoll3D(entityManager, ragdollEntity)) << "drive " << drive;
+        const Math::Vector3 skeletonBefore = entityManager.GetComponent<TransformComponent>(skeletonEntity).localPosition;
+        const Math::Vector3 rootBefore = entityManager.GetComponent<TransformComponent>(importRoot).localPosition;
+        const Ragdoll3DComponent& ragdoll = entityManager.GetComponent<Ragdoll3DComponent>(ragdollEntity);
+        const float radius = ragdoll.solver.GetBody(0U).radius;
+        EXPECT_GT(radius, 0.03F) << "capsules are sized in world metres";
+        EXPECT_LT(radius, 0.2F);
+
+        // A shove along the world X axis, so the body travels sideways as well as down.
+        ASSERT_TRUE(ApplyRagdollImpact(entityManager, ragdollEntity, ragdoll.solver.GetBody(0U).position,
+                                       {260.0F, 0.0F, 0.0F}, 0.5F));
+        for (int frame = 0; frame < 240; ++frame) {
+            graph.Update(entityManager);
+            UpdateRagdoll3DObjects(entityManager, 1.0F / 60.0F, false, 0.0F);
+            graph.Update(entityManager);
+        }
+
+        // The skeleton entity itself never jumps: the mesh does not follow it.
+        EXPECT_EQ(entityManager.GetComponent<TransformComponent>(skeletonEntity).localPosition, skeletonBefore)
+            << "drive " << drive;
+        const Math::Vector3 rootAfter = entityManager.GetComponent<TransformComponent>(importRoot).localPosition;
+        if (!drive) {
+            EXPECT_EQ(rootAfter, rootBefore);
+        } else {
+            EXPECT_NEAR(rootAfter.y, rootBefore.y, 1.0e-5F) << "only the horizontal travel is carried";
+            EXPECT_GT(rootAfter.x - rootBefore.x, 0.05F) << "the import root followed the shoved body";
+        }
+
+        // Bodies sit on the bones the mesh is skinned to...
+        std::vector<Math::Vector3> bodies;
+        for (std::size_t i = 0U; i < ragdoll.solver.GetBodyCount(); ++i) bodies.push_back(ragdoll.solver.GetBody(i).position);
+        const Ragdoll3DComponent copy = ragdoll;
+        ASSERT_TRUE(SyncRagdollBodiesToSkeletonPose(entityManager, ragdollEntity));
+        float worst = 0.0F;
+        Ragdoll3DComponent& synced = entityManager.GetComponent<Ragdoll3DComponent>(ragdollEntity);
+        for (std::size_t i = 0U; i < bodies.size(); ++i) {
+            worst = std::max(worst, std::sqrt(Math::LengthSquared(synced.solver.GetBody(i).position - bodies[i])));
+        }
+        EXPECT_LT(worst, 0.03F) << "drive " << drive << ": bodies and the mesh's bones agree";
+        static_cast<void>(copy);
+        // ...and the fallen body lies on the floor, near where it stood, instead of hanging in the air.
+        float lowest = 1.0e9F;
+        for (const Math::Vector3& position : bodies) lowest = std::min(lowest, position.y);
+        EXPECT_LT(lowest, 0.25F) << "drive " << drive << ": the body has come down to the floor";
+        EXPECT_GT(lowest, -0.1F);
+    }
 }
 
 } // namespace

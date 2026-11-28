@@ -7,6 +7,7 @@
 
 #include "bone_attachment_3d.h"
 #include "camera_component.h"
+#include "name_component.h"
 #include "ragdoll_3d.h"
 #include "skeleton_3d.h"
 
@@ -279,6 +280,18 @@ void EditorDetails::AddRagdollBuilder(const Scene::Entity entity) {
                 entities.HasComponent<Scene::Skeleton3DComponent>(ragdoll.skeleton)) {
                 rigBones = entities.GetComponent<Scene::Skeleton3DComponent>(ragdoll.skeleton).bones.size();
             }
+            // Where the entity drive goes, so a mesh that is not under the driven entity is easy to spot.
+            std::string driveText;
+            if (ragdoll.driveEntityTransform) {
+                const Scene::Entity target = Scene::ResolveRagdollDriveTarget(entities, ragdoll.skeleton);
+                if (target == Scene::kInvalidEntity) {
+                    driveText = "  |  drive: no mesh shares a parent with the skeleton";
+                } else {
+                    driveText = "  |  drive: " + (entities.HasComponent<Scene::NameComponent>(target)
+                                                      ? entities.GetComponent<Scene::NameComponent>(target).name
+                                                      : std::string{"entity"});
+                }
+            }
             const char* stateText =
                 ragdoll.editorPreviewSimulating
                     ? "Previewing"
@@ -289,7 +302,7 @@ void EditorDetails::AddRagdollBuilder(const Scene::Entity entity) {
                 std::snprintf(buf, sizeof(buf), "%zu bodies  |  %zu joints  |  %.1f kg  |  rig %zu bones  |  %s",
                               ragdoll.solver.GetBodyCount(), ragdoll.solver.GetJointCount(),
                               static_cast<double>(ragdoll.solver.GetTotalMass()), rigBones, stateText);
-                lbl->setText(buf);
+                lbl->setText(std::string{buf} + driveText);
             }
         }
     };

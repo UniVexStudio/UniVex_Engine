@@ -159,7 +159,9 @@ struct Ragdoll3DComponent final {
     bool enableSelfCollision = true;
     /// Applies equal-and-opposite contact impulses back onto dynamic `Rigid3DComponent` entities.
     bool enableDynamicPushback = true;
-    /// When true, also moves the skeleton entity's own `TransformComponent` to follow the fallen pelvis.
+    /// When true, the pelvis's horizontal travel is also carried by the entity that holds both the skeleton and the
+    /// meshes skinned to it (the skeleton's nearest ancestor-or-self with a mesh in its subtree), so a character's
+    /// root follows the fallen body. The mesh, the bones and the capsules always stay in one frame.
     bool driveEntityTransform = false;
     /// Samples per-bone linear & angular velocity from animated pose before transitioning to ragdoll.
     bool inheritAnimatedVelocity = true;
@@ -245,6 +247,9 @@ struct Ragdoll3DComponent final {
     /// Landing detection: largest downward speed while airborne.
     float airborneMaxDownSpeed = 0.0F;
     bool wasAirborne = false;
+    /// `driveEntityTransform`: where the pelvis was last frame, to carry its horizontal travel to the driven entity.
+    Math::Vector3 drivePrevPelvis{};
+    bool hasDrivePrev = false;
 
     /// Compares authored fields only: a running ragdoll is not a different ragdoll.
     [[nodiscard]] bool operator==(const Ragdoll3DComponent& other) const noexcept {
@@ -405,6 +410,10 @@ bool TrimRagdollBonesToCap(std::vector<RagdollBoneSetup>& bones);
 /// Hands the skeleton back to the animation at once (no blend): the ragdoll returns to `Kinematic`. False
 /// when it was not simulating.
 [[nodiscard]] bool DeactivateRagdoll(IEntityManager& entityManager, Entity entity);
+
+/// The entity `driveEntityTransform` moves for the skeleton: its nearest ancestor-or-self that has a transform and
+/// holds a mesh in its subtree. `kInvalidEntity` when no mesh shares a parent with the skeleton.
+[[nodiscard]] Entity ResolveRagdollDriveTarget(IEntityManager& entityManager, Entity skeleton);
 
 /// A light hit: the physics takes over for a moment (`Active` mode, an envelope that rises then fades by
 /// `staggerBlendPeak` / `staggerRiseSeconds` / `staggerDecaySeconds`) and the body returns to the animation on

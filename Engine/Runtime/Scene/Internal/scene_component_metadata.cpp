@@ -3744,7 +3744,7 @@ void DeclareRagdoll3D(std::vector<TypeMetadataEntry>& entries) {
                            "Simulation"),
                 InGroup(WithTooltip(Declare<&R::driveEntityTransform>("driveEntityTransform", "Drive Entity Transform",
                                                                                kPropertyTypeBool),
-                                          "Move the skeleton entity transform to follow the fallen pelvis."),
+                                          "The entity that holds the skeleton and its meshes follows the fallen pelvis sideways. The mesh, bones and capsules always stay together."),
                            "Simulation"),
                 InGroup(WithTooltip(Declare<&R::inheritAnimatedVelocity>("inheritAnimatedVelocity", "Inherit Velocity",
                                                                                   kPropertyTypeBool),
