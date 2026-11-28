@@ -106,6 +106,36 @@ TEST(AssetDatabaseTest, Relocate_KeepsTheGuidAtTheNewPath) {
     EXPECT_FALSE(db.Relocate(AssetGuid{12345U}, "anims/X.uvanim")) << "unknown guid";
 }
 
+TEST(AssetDatabaseTest, RelocateMovedContent_RepointsEntriesToTheCurrentContentFolder) {
+    const std::filesystem::path root = std::filesystem::temp_directory_path() / "uve_asset_db_relocate_test";
+    std::filesystem::remove_all(root);
+    const std::filesystem::path content = root / "NewHome" / "Content";
+    std::filesystem::create_directories(content / "Props");
+    { std::ofstream(content / "Props" / "crate.uventity") << "x"; }
+    { std::ofstream(content / "Props" / "taken.uventity") << "x"; }
+
+    AssetDatabase database;
+    // An absolute path that does not exist, as the project's old home would not any more.
+    const std::filesystem::path oldContent = root / "OldHome" / "MyGame" / "Content";
+    // Registered while the project lived somewhere else: gone from there, present under today's Content.
+    const AssetGuid moved = database.Register(oldContent / "Props" / "crate.uventity");
+    // A relative entry belongs to its own package root, never to the process directory.
+    const AssetGuid relative = database.Register("Content/Props/crate.uventity");
+    // The file at its current place already belongs to another GUID: this one is left alone.
+    const AssetGuid owner = database.Register(content / "Props" / "taken.uventity");
+    const AssetGuid duplicate = database.Register(oldContent / "Props" / "taken.uventity");
+
+    EXPECT_EQ(database.RelocateMovedContent(content), 1U);
+    EXPECT_EQ(database.Resolve(moved), (content / "Props" / "crate.uventity").lexically_normal());
+    EXPECT_EQ(database.Resolve(relative), std::filesystem::path{"Content/Props/crate.uventity"});
+    EXPECT_EQ(database.Resolve(owner), (content / "Props" / "taken.uventity").lexically_normal());
+    EXPECT_EQ(database.Resolve(duplicate), (oldContent / "Props" / "taken.uventity").lexically_normal());
+    EXPECT_EQ(database.Register(content / "Props" / "crate.uventity"), moved)
+        << "the new path now maps back to the same GUID";
+    EXPECT_EQ(database.RelocateMovedContent(content), 0U) << "nothing left to move";
+    std::filesystem::remove_all(root);
+}
+
 TEST(AssetDatabaseTest, Register_DifferentPaths_ReturnDifferentGuids) {
     AssetDatabase database;
     const AssetGuid first = database.Register("meshes/cube.uvmodel");

@@ -862,13 +862,23 @@ std::vector<RagdollBoneSetup> BuildHumanoidRagdollBones(const std::vector<Skelet
     // Digits are detail, not structure. Without this every finger joint matched the "hand" row and a
     // fingered rig produced ~60 bodies - more than the solver accepts, so the whole ragdoll refused
     // to build. The generic builder has always skipped these; the humanoid one now agrees with it.
+    // "index", "middle", "ring" and "little" are ordinary words inside other bone names ("spine_middle",
+    // "spring_arm"), so they only count as a finger when the name also says it belongs to a hand.
     const auto isDigitBone = [](const std::string_view name) {
         const std::string lowered = ToLowerAscii(name);
-        static constexpr std::array<std::string_view, 11U> kDigitPatterns{{
-            "finger", "thumb", "index", "middle", "ring", "pinky", "little", "palm", "carpal", "toe",
-            "digit",
+        static constexpr std::array<std::string_view, 7U> kAlwaysDigit{{
+            "finger", "thumb", "pinky", "palm", "carpal", "toe", "digit",
         }};
-        for (const std::string_view pat : kDigitPatterns) {
+        for (const std::string_view pat : kAlwaysDigit) {
+            if (lowered.find(pat) != std::string::npos) {
+                return true;
+            }
+        }
+        if (lowered.find("hand") == std::string::npos) {
+            return false;
+        }
+        static constexpr std::array<std::string_view, 4U> kHandDigit{{"index", "middle", "ring", "little"}};
+        for (const std::string_view pat : kHandDigit) {
             if (lowered.find(pat) != std::string::npos) {
                 return true;
             }
@@ -947,12 +957,19 @@ bool TrimRagdollBonesToCap(std::vector<RagdollBoneSetup>& bones) {
     if (bones.size() <= kMaximumRagdollBones) return false;
     const auto isDetailBone = [](const std::string_view name) {
         const std::string lowered = ToLowerAscii(name);
-        static constexpr std::array<std::string_view, 16U> kDetailPatterns{{
-            "finger", "thumb", "index", "middle", "ring", "pinky", "little", "palm", "carpal", "toe",
-            "digit", "twist", "_end", "nub", "corrective", "helper",
+        static constexpr std::array<std::string_view, 12U> kDetailPatterns{{
+            "finger", "thumb", "pinky", "palm", "carpal", "toe", "digit", "twist", "_end", "nub", "corrective",
+            "helper",
         }};
         for (const std::string_view pat : kDetailPatterns) {
             if (lowered.find(pat) != std::string::npos) return true;
+        }
+        // Plain words inside other bone names ("spine_middle"): a finger only when it is on a hand.
+        if (lowered.find("hand") != std::string::npos) {
+            for (const std::string_view pat : {std::string_view{"index"}, std::string_view{"middle"},
+                                               std::string_view{"ring"}, std::string_view{"little"}}) {
+                if (lowered.find(pat) != std::string::npos) return true;
+            }
         }
         return false;
     };

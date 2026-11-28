@@ -760,6 +760,29 @@ TEST_F(Ragdoll3DTest, FullMixamoRig_GeneratesAStructuralBodyWithinTheSolverLimit
     EXPECT_EQ(BuildAutoRagdollBones(mixamo.bones).size(), built.size());
 }
 
+TEST_F(Ragdoll3DTest, OrdinaryWordsInStructuralBoneNamesAreNotMistakenForFingers) {
+    // "middle" and "ring" sit inside ordinary names ("spine_middle", "spring_...") - those are body bones.
+    Skeleton3DComponent rig;
+    const auto add = [&rig](const char* name, const std::int32_t parent, const Math::Vector3 position) {
+        SkeletonBone bone;
+        bone.name = name;
+        bone.parentIndex = parent;
+        bone.localPosition = position;
+        rig.bones.push_back(bone);
+    };
+    add("pelvis", -1, {0.0F, 1.0F, 0.0F});
+    add("spine_middle", 0, {0.0F, 0.2F, 0.0F});
+    add("spine_upper", 1, {0.0F, 0.2F, 0.0F});
+    add("head", 2, {0.0F, 0.2F, 0.0F});
+    add("LeftHandIndex1", 2, {0.2F, 0.0F, 0.0F});
+    add("LeftHand", 2, {0.2F, 0.0F, 0.0F});
+
+    const std::vector<RagdollBoneSetup> built = BuildHumanoidRagdollBones(rig.bones);
+    EXPECT_TRUE(ContainsBone(built, "spine_middle")) << "a structural bone must not be skipped as a finger";
+    EXPECT_FALSE(ContainsBone(built, "LeftHandIndex1")) << "a real finger still is";
+    EXPECT_TRUE(ContainsBone(built, "LeftHand"));
+}
+
 TEST_F(Ragdoll3DTest, FullMixamoRig_PreviewStartsAndFallsOntoTheStudioFloor) {
     const Entity skeleton = MakeSkeletonEntity(MakeFullMixamoSkeleton());
     const Entity ragdollEntity = MakeRagdoll(skeleton);

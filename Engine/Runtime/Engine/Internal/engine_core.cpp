@@ -3580,6 +3580,9 @@ void EngineCore::UpgradeProjectContentIfNeeded() {
     // The engine version alone is not enough - fix builds of one version can add rewrites.
     constexpr int kContentUpgradeRevision = 1;
     const std::filesystem::path& projectRoot = m_config.projectRootDirectory;
+    if (m_config.cookedAssetPaths) {
+        return; // a shipped install is read-only content; only an authoring project is upgraded
+    }
     if (projectRoot.empty() || projectRoot == std::filesystem::path{"."}) {
         return; // no project (tests, tools): nothing to upgrade and nowhere to keep a backup
     }
@@ -3628,9 +3631,15 @@ void EngineCore::SyncRagdoll3DObjects() {
         if (!hasPreview) {
             return;
         }
+        // A character's own capsule is not ground: a level holding a Character3D would otherwise
+        // never get the preview floor.
         bool hasWorldCollider = false;
         m_entityManager->ForEach<Scene::ColliderComponent>(
-            [&hasWorldCollider](const Scene::Entity, const Scene::ColliderComponent&) { hasWorldCollider = true; });
+            [this, &hasWorldCollider](const Scene::Entity entity, const Scene::ColliderComponent&) {
+                if (!m_entityManager->HasComponent<Scene::CharacterControllerComponent>(entity)) {
+                    hasWorldCollider = true;
+                }
+            });
         const std::optional<float> previewFloor =
             hasWorldCollider ? std::nullopt : std::optional<float>{0.0F};
         static_cast<void>(Scene::UpdateRagdoll3DObjects(

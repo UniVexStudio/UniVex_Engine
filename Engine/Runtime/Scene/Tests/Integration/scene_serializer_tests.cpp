@@ -3781,10 +3781,21 @@ namespace {
 
 } // namespace
 
+[[nodiscard]] nlohmann::json ReadSavedComponents(const std::filesystem::path& path, const std::size_t entityIndex) {
+    const auto decoded = Asset::ReadUveFile(path);
+    EXPECT_TRUE(decoded.has_value());
+    if (!decoded.has_value()) {
+        return nlohmann::json::object();
+    }
+    const nlohmann::json json = nlohmann::json::parse(
+        std::string(reinterpret_cast<const char*>(decoded->second.data()), decoded->second.size()));
+    return json.at("entities").at(entityIndex).at("components");
+}
+
 TEST_F(SceneSerializerTest, Load_UnknownComponent_KeepsTheEntityAndWritesTheComponentBack) {
     // A file from another engine version: one component type this build does not have. The entity
     // must still load (an old asset has to be placeable), and the unknown component must survive a
-    // save untouched so no author data is lost.
+    // save to disk untouched so no author data is lost.
     const std::filesystem::path path = WriteTestPrefabFile(
         "uve_scene_serializer_tests_unknown_component_kept.uvprefab",
         R"({"entities":[{"localId":0,"components":{"NameComponent":{"name":"Old"},)"
@@ -3798,17 +3809,116 @@ TEST_F(SceneSerializerTest, Load_UnknownComponent_KeepsTheEntityAndWritesTheComp
     ASSERT_EQ(unresolved.entries.size(), 1U);
     EXPECT_EQ(unresolved.entries[0].first, "FutureThingComponent");
 
-    const std::optional<SceneSnapshot> saved = serializer.Capture(entityManager, roots, SceneAssetType::Prefab);
-    ASSERT_TRUE(saved.has_value());
-    const auto decoded = Asset::DecodeUveFileEnvelope(saved->bytes);
-    ASSERT_TRUE(decoded.has_value());
-    const nlohmann::json json = nlohmann::json::parse(
-        std::string(reinterpret_cast<const char*>(decoded->second.data()), decoded->second.size()));
-    const nlohmann::json& components = json.at("entities").at(0).at("components");
+    const std::filesystem::path saved = std::filesystem::temp_directory_path() / "uve_scene_serializer_tests_unknown_saved.uvprefab";
+    ASSERT_TRUE(serializer.Save(entityManager, roots, saved, SceneAssetType::Prefab));
+    const nlohmann::json components = ReadSavedComponents(saved, 0U);
     ASSERT_TRUE(components.contains("FutureThingComponent"));
     EXPECT_EQ(components.at("FutureThingComponent").at("power").get<int>(), 9001);
     EXPECT_FALSE(components.contains("UnresolvedComponentsComponent"));
+    EXPECT_FALSE(components.contains("UnresolvedComponents")) << "the snapshot wrapper never reaches a file";
     std::filesystem::remove(path);
+    std::filesystem::remove(saved);
+}
+
+TEST_F(SceneSerializerTest, LoadThenCaptureThenRestore_KeepsParkedComponentsSoUndoAndStopPlayStillWork) {
+    // Stop Play, undo and the Entity Editor's Stop restore a snapshot of the scene. A loaded file with a
+    // parked component must survive that round trip: the strict restore used to refuse its unknown type.
+    const std::filesystem::path path = WriteTestPrefabFile(
+        "uve_scene_serializer_tests_parked_roundtrip.uvprefab",
+        R"({"entities":[{"localId":0,"components":{"NameComponent":{"name":"Hero"},)"
+        R"("FutureThingComponent":{"power":9001}}}]})");
+    const std::vector<Entity> roots = serializer.Load(entityManager, path);
+    ASSERT_EQ(roots.size(), 1U);
+
+    const std::optional<SceneSnapshot> snapshot = serializer.Capture(entityManager, roots, SceneAssetType::Prefab);
+    ASSERT_TRUE(snapshot.has_value());
+    entityManager.DestroyEntity(roots[0]);
+
+    const std::vector<Entity> restored = serializer.Restore(entityManager, *snapshot);
+    ASSERT_EQ(restored.size(), 1U) << "a strict restore of a snapshot with parked components must succeed";
+    EXPECT_EQ(entityManager.GetComponent<NameComponent>(restored[0]).name, "Hero");
+    ASSERT_TRUE(entityManager.HasComponent<UnresolvedComponentsComponent>(restored[0]));
+    EXPECT_EQ(entityManager.GetComponent<UnresolvedComponentsComponent>(restored[0]).entries.at(0).first,
+              "FutureThingComponent");
+
+    // And the parked component still reaches a file afterwards.
+    const std::filesystem::path saved = std::filesystem::temp_directory_path() / "uve_scene_serializer_tests_parked_roundtrip_saved.uvprefab";
+    ASSERT_TRUE(serializer.Save(entityManager, restored, saved, SceneAssetType::Prefab));
+    EXPECT_EQ(ReadSavedComponents(saved, 0U).at("FutureThingComponent").at("power").get<int>(), 9001);
+    std::filesystem::remove(path);
+    std::filesystem::remove(saved);
+}
+
+TEST_F(SceneSerializerTest, ParkedComponents_FollowTheirTargetWhenEntitiesAreRenumbered) {
+    // The parked component names entity 5 by its local id in the FILE. After loading, deleting a
+    // sibling and saving, that entity has another local id: the parked reference must follow it.
+    const std::filesystem::path path = WriteTestPrefabFile(
+        "uve_scene_serializer_tests_parked_refs.uvprefab",
+        R"({"entities":[)"
+        R"({"localId":5,"components":{"NameComponent":{"name":"Root"},"HierarchyComponent":{"parentLocalId":-1}}},)"
+        R"({"localId":2,"components":{"NameComponent":{"name":"Gone"},"HierarchyComponent":{"parentLocalId":5}}},)"
+        R"({"localId":7,"components":{"NameComponent":{"name":"Child"},"HierarchyComponent":{"parentLocalId":5},)"
+        R"("FutureLinkComponent":{"targetLocalId":5,"others":{"ignoreLocalIds":[2,5]}}}}]})");
+    const std::vector<Entity> roots = serializer.Load(entityManager, path);
+    ASSERT_EQ(roots.size(), 1U);
+
+    Entity gone = kInvalidEntity;
+    entityManager.ForEach<NameComponent>([&gone](const Entity entity, NameComponent& name) {
+        if (name.name == "Gone") {
+            gone = entity;
+        }
+    });
+    ASSERT_NE(gone, kInvalidEntity);
+    entityManager.DestroyEntity(gone);
+
+    const std::filesystem::path saved = std::filesystem::temp_directory_path() / "uve_scene_serializer_tests_parked_refs_saved.uvprefab";
+    ASSERT_TRUE(serializer.Save(entityManager, roots, saved, SceneAssetType::Prefab));
+    const auto decoded = Asset::ReadUveFile(saved);
+    ASSERT_TRUE(decoded.has_value());
+    const nlohmann::json json = nlohmann::json::parse(
+        std::string(reinterpret_cast<const char*>(decoded->second.data()), decoded->second.size()));
+    std::int64_t rootId = -2;
+    nlohmann::json link;
+    for (const nlohmann::json& entity : json.at("entities")) {
+        if (entity.at("components").at("NameComponent").at("name") == "Root") {
+            rootId = entity.at("localId").get<std::int64_t>();
+        }
+        if (entity.at("components").contains("FutureLinkComponent")) {
+            link = entity.at("components").at("FutureLinkComponent");
+        }
+    }
+    ASSERT_GE(rootId, 0);
+    ASSERT_FALSE(link.is_null());
+    EXPECT_EQ(link.at("targetLocalId").get<std::int64_t>(), rootId) << "follows the entity, not the old number";
+    EXPECT_EQ(link.at("others").at("ignoreLocalIds").at(0).get<std::int64_t>(), -1)
+        << "an entity that no longer exists becomes -1";
+    EXPECT_EQ(link.at("others").at("ignoreLocalIds").at(1).get<std::int64_t>(), rootId);
+    std::filesystem::remove(path);
+    std::filesystem::remove(saved);
+}
+
+TEST_F(SceneSerializerTest, ParkedTransform_IsWrittenBackUntilTheAuthorMovesTheEntity) {
+    // A transform this build refuses leaves a default stand-in so the entity can be placed. Saving without
+    // touching it must not replace the authored pose with identity; moving it must win.
+    const std::filesystem::path path = WriteTestPrefabFile(
+        "uve_scene_serializer_tests_parked_transform.uvprefab",
+        R"({"entities":[{"localId":0,"components":{"NameComponent":{"name":"Old"},)"
+        R"("TransformComponent":{"localPosition":[4.0,5.0,6.0],"localRotation":[0.0,0.0,0.0,0.5],"localScale":[1.0,1.0,1.0]}}}]})");
+    const std::vector<Entity> roots = serializer.Load(entityManager, path);
+    ASSERT_EQ(roots.size(), 1U);
+    ASSERT_TRUE(entityManager.HasComponent<TransformComponent>(roots[0]));
+
+    const std::filesystem::path saved = std::filesystem::temp_directory_path() / "uve_scene_serializer_tests_parked_transform_saved.uvprefab";
+    ASSERT_TRUE(serializer.Save(entityManager, roots, saved, SceneAssetType::Prefab));
+    EXPECT_EQ(ReadSavedComponents(saved, 0U).at("TransformComponent").at("localPosition").at(0).get<float>(), 4.0F)
+        << "the untouched stand-in must not overwrite the parked original";
+
+    entityManager.GetComponent<TransformComponent>(roots[0]).localPosition = Math::Vector3{1.0F, 2.0F, 3.0F};
+    ASSERT_TRUE(serializer.Save(entityManager, roots, saved, SceneAssetType::Prefab));
+    EXPECT_EQ(ReadSavedComponents(saved, 0U).at("TransformComponent").at("localPosition").at(0).get<float>(), 1.0F)
+        << "once the author moves it, their edit is what is saved";
+    std::filesystem::remove(path);
+    std::filesystem::remove(saved);
 }
 
 TEST_F(SceneSerializerTest, Load_UnreadableComponentData_IsKeptNotHalfRestoredAndTheRestLoads) {

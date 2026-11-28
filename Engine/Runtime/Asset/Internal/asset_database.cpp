@@ -161,7 +161,14 @@ std::size_t AssetDatabase::RelocateMovedContent(const std::filesystem::path& con
     }
     std::size_t moved = 0U;
     for (auto& [guid, storedPath] : m_impl->guidToPath) {
-        if (storedPath.empty() || std::filesystem::exists(storedPath, error)) {
+        // A relative entry is relative to its own package or project root, not to wherever this
+        // process was started, so it is never judged (or rewritten) here.
+        if (storedPath.empty() || !storedPath.is_absolute()) {
+            continue;
+        }
+        const bool present = std::filesystem::exists(storedPath, error);
+        if (present || error) {
+            error.clear(); // present, or unknowable (permission): not "moved"
             continue;
         }
         // The tail after the LAST folder named like the content root: "D:/Old/MyGame/Content/Props/a.uventity"
@@ -183,15 +190,19 @@ std::size_t AssetDatabase::RelocateMovedContent(const std::filesystem::path& con
         if (!std::filesystem::is_regular_file(candidate, error)) {
             continue;
         }
+        const std::string newKey = AssetPathIdentityKey(candidate.lexically_normal());
+        // Another GUID already owns the file at its current place: leave this one alone rather than
+        // make two GUIDs name one file.
+        if (const auto taken = m_impl->pathToGuid.find(newKey);
+            taken != m_impl->pathToGuid.end() && taken->second != guid) {
+            continue;
+        }
         const std::string oldKey = AssetPathIdentityKey(storedPath);
         if (const auto it = m_impl->pathToGuid.find(oldKey); it != m_impl->pathToGuid.end() && it->second == guid) {
             m_impl->pathToGuid.erase(it);
         }
         storedPath = candidate.lexically_normal();
-        const std::string newKey = AssetPathIdentityKey(storedPath);
-        if (const auto it = m_impl->pathToGuid.find(newKey); it == m_impl->pathToGuid.end() || guid.value < it->second.value) {
-            m_impl->pathToGuid.insert_or_assign(newKey, guid);
-        }
+        m_impl->pathToGuid.insert_or_assign(newKey, guid);
         ++moved;
     }
     if (moved > 0U) {

@@ -31,7 +31,9 @@ public:
     /// drive, a renamed folder, a copy on another machine). An entry is moved only when the part of
     /// its stored path after a folder named like `contentRoot` exists under `contentRoot` today -
     /// so GUIDs stay attached to their files and old entity references keep resolving. Returns the
-    /// number of entries moved; the caller saves the registry when it is not zero.
+    /// number of entries moved; the caller saves the registry when it is not zero. Relative entries
+    /// are left alone (they belong to a package or project root, not to the process directory), and
+    /// so is an entry whose target file already belongs to another GUID.
     std::size_t RelocateMovedContent(const std::filesystem::path& contentRoot);
     bool Load(const std::filesystem::path& path) override;
     bool Save() override;
