@@ -1,6 +1,9 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 #pragma once
 
+#include <optional>
+#include <string_view>
+
 #include "editor_chrome.h"
 #include "editor_asset_table.h"
 #include "editor_details.h"
@@ -115,8 +118,18 @@ public:
                                       std::vector<EditorHost::ViewImage>& views);
     /// Places content dropped on the Outliner (entity assets, models) under the row at `at`.
     bool DropContentOnOutliner(const std::string& relativePath, prism::Vec2 at);
+    /// Places content dropped on the level viewport at the scene point under `at` (the surface
+    /// there, else the ground plane), through the same calls as the Outliner drop.
+    bool DropContentOnViewport(const std::string& relativePath, prism::Vec2 at);
+    /// While content is dragged over the viewport: shows where it would land, or clears the marker.
+    void PreviewViewportDrop(std::optional<prism::Vec2> at);
+    /// True when `relativePath` is something a drop can place (entity asset, prefab, model, clip).
+    [[nodiscard]] bool CanPlaceDroppedContent(const std::string& relativePath) const;
 
 private:
+    /// The shared half of both drops: places `relativePath` under `parent`, reporting why when it
+    /// could not. `surface` names the panel for the "cannot place this kind of file" message.
+    bool PlaceDroppedContent(const std::string& relativePath, Scene::Entity parent, std::string_view surface);
 
     void ShowAddMenu(Scene::Entity explicitParent = Scene::kInvalidEntity);
     /// The command palette (Ctrl+Shift+P): every command, searchable, the recent ones first.

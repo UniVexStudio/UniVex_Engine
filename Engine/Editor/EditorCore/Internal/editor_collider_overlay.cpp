@@ -129,20 +129,22 @@ void Editor::BuildColliderOverlay(std::vector<ViewportColliderLine>& outLines) c
         Scene::Ragdoll3DComponent& ragdoll = entities.GetComponent<Scene::Ragdoll3DComponent>(ragdollEntity);
         const bool directSelected = (ragdollEntity == selected);
 
-        if (!ragdoll.initialized && ragdoll.skeleton != Scene::kInvalidEntity && entities.IsAlive(ragdoll.skeleton) &&
-            entities.HasComponent<Scene::Skeleton3DComponent>(ragdoll.skeleton)) {
-            if (!graphUpdatedForRagdoll) {
-                sceneGraph.Update(entities);
-                graphUpdatedForRagdoll = true;
-            }
-            if (ragdoll.bones.empty()) {
-                const auto& skel = entities.GetComponent<Scene::Skeleton3DComponent>(ragdoll.skeleton);
-                ragdoll.bones = Scene::BuildHumanoidRagdollBones(skel.bones);
-                if (ragdoll.bones.size() < 2U && !skel.bones.empty()) {
-                    ragdoll.bones = Scene::BuildGenericRagdollBones(skel.bones);
+        // Build an unbuilt ragdoll so its capsules can be drawn. A selected ragdoll with no skeleton
+        // is linked to the nearest one, the same way its Details buttons would. A build that already
+        // failed is not retried every frame: its reason stays on the component (and in Details)
+        // until the author changes something, which clears it.
+        if (!ragdoll.initialized && ragdoll.lastSetupError.empty()) {
+            const bool linked = ragdoll.skeleton != Scene::kInvalidEntity && entities.IsAlive(ragdoll.skeleton) &&
+                                entities.HasComponent<Scene::Skeleton3DComponent>(ragdoll.skeleton);
+            if (linked || directSelected) {
+                if (!graphUpdatedForRagdoll) {
+                    sceneGraph.Update(entities);
+                    graphUpdatedForRagdoll = true;
+                }
+                if (Scene::PrepareRagdoll3D(entities, ragdollEntity)) {
+                    static_cast<void>(Scene::InitializeRagdoll3D(entities, ragdollEntity));
                 }
             }
-            static_cast<void>(Scene::InitializeRagdoll3D(entities, ragdollEntity));
         }
 
         if (!ragdoll.initialized || ragdoll.solver.GetBodyCount() == 0U) {

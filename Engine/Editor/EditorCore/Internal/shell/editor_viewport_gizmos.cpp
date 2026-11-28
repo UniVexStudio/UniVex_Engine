@@ -23,6 +23,7 @@
 #include <functional>
 #include <array>
 #include <cstddef>
+#include <optional>
 #include <utility>
 #include <vector>
 
@@ -752,6 +753,41 @@ void EditorViewportGizmos::onMouseLeave() {
     }
 }
 
+std::optional<std::array<float, 3>> EditorViewportGizmos::WorldPointUnder(const prism::Vec2 p) const {
+    if (!m_cameraValid) {
+        return std::nullopt;
+    }
+    const prism::Vec3 origin = m_camera.rayOrigin(p);
+    const prism::Vec3 dir = m_camera.rayDir(p);
+    const float along = dir.dot(m_camera.fwd);
+    if (m_depth.valid() && along > 1.0e-4F) {
+        // The depth buffer holds distance along the view's forward axis from the host's eye; the
+        // drawing camera's eye sits `zOffset` behind it.
+        const float depth = m_depth.sample(p);
+        if (std::isfinite(depth) && depth < m_depth.farDepth * 0.5F) {
+            const float fromEye = depth + m_depth.zOffset - (origin - m_camera.eye).dot(m_camera.fwd);
+            const float t = fromEye / along;
+            if (std::isfinite(t) && t > 0.0F) {
+                const prism::Vec3 hit = origin + dir * t;
+                return std::array<float, 3>{hit.x, hit.y, hit.z};
+            }
+        }
+    }
+    prism::Vec3 ground;
+    if (m_camera.rayPlane(p, prism::Vec3{0.0F, 0.0F, 0.0F}, prism::Vec3{0.0F, 1.0F, 0.0F}, ground) &&
+        std::isfinite(ground.x) && std::isfinite(ground.y) && std::isfinite(ground.z)) {
+        return std::array<float, 3>{ground.x, ground.y, ground.z};
+    }
+    return std::nullopt;
+}
+
+void EditorViewportGizmos::SetDropPreview(std::optional<std::array<float, 3>> worldPoint) {
+    if (worldPoint != m_dropPreview) {
+        m_dropPreview = worldPoint;
+        invalidate();
+    }
+}
+
 void EditorViewportGizmos::paint(prism::Canvas& c) {
     if (!m_cameraValid) {
         return;
@@ -764,6 +800,15 @@ void EditorViewportGizmos::paint(prism::Canvas& c) {
     if (m_gridVisible) {
         prism::drawWorldGrid(c, m_camera, m_grid, depth);
     }
+    // Where dragged content will land: a ground cross and a short post, always on top.
+    if (m_dropPreview.has_value() && m_cameraValid) {
+        const prism::Vec3 at{(*m_dropPreview)[0], (*m_dropPreview)[1], (*m_dropPreview)[2]};
+        const prism::Color mark = prism::theme().highlight;
+        constexpr float kArm = 0.35F;
+        prism::drawWorldLine(c, m_camera, at - prism::Vec3{kArm, 0.0F, 0.0F}, at + prism::Vec3{kArm, 0.0F, 0.0F}, mark, 2.0F);
+        prism::drawWorldLine(c, m_camera, at - prism::Vec3{0.0F, 0.0F, kArm}, at + prism::Vec3{0.0F, 0.0F, kArm}, mark, 2.0F);
+        prism::drawWorldLine(c, m_camera, at, at + prism::Vec3{0.0F, kArm * 2.0F, 0.0F}, mark, 2.0F);
+    }
     // The selection outline, over the scene and the grid.
     if (!m_outlinePixels.empty()) {
         c.blitBlend(m_outlinePixels.data(), m_outlineSize[0], m_outlineSize[1], m_outlineSize[0], m_outlineRect);
@@ -775,7 +820,8 @@ void EditorViewportGizmos::paint(prism::Canvas& c) {
     }
     for (const auto& line : m_lines) {
         prism::drawWorldLine(c, m_camera, V3(line.a), V3(line.b), Color(line.color),
-                             std::max(1.0F, line.widthPx), depth, line.occluded ? 0.0F : kHiddenGizmoAlpha);
+                             std::max(1.0F, line.widthPx), depth,
+                             line.occluded ? 0.0F : (line.hiddenAlpha >= 0.0F ? line.hiddenAlpha : kHiddenGizmoAlpha));
     }
     // Camera and light glyphs (PRISM's own), then the billboards, selected one ringed.
     for (Billboard& b : m_billboards) {

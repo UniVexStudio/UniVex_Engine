@@ -12,6 +12,8 @@
 #include "pawn.h"
 
 #include <algorithm>
+#include <cctype>
+#include <cstring>
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
@@ -36,7 +38,10 @@
 
 #include "asset_guid.h"
 #include "uve_file_envelope.h"
+#include "legacy_extension_migration.h"
+#include "scene_content_upgrade.h"
 #include "logging_macros.h"
+#include "unresolved_components_component.h"
 #include "quaternion.h"
 #include "vector2.h"
 #include "vector3.h"
@@ -1526,9 +1531,8 @@ template <typename VectorT>
     };
     const auto bonesIt = json.find("bones");
     if (bonesIt != json.end() && bonesIt->is_array()) {
-        if (bonesIt->size() > kMaximumRagdollBones) {
-            throw std::runtime_error("Ragdoll3DComponent bones exceed bounded cap");
-        }
+        // A bone list longer than the solver holds was written by an older generator that did not
+        // cap itself. It is trimmed below (structural bodies kept) rather than refusing the file.
         for (const nlohmann::json& entry : *bonesIt) {
             RagdollBoneSetup bone;
             bone.boneName = entry.value("boneName", std::string{});
@@ -1555,6 +1559,11 @@ template <typename VectorT>
             bone.blendWeight = entry.value("blendWeight", bone.blendWeight);
             bone.simulate = entry.value("simulate", bone.simulate);
             value.bones.push_back(std::move(bone));
+        }
+        const std::size_t authoredCount = value.bones.size();
+        if (TrimRagdollBonesToCap(value.bones)) {
+            UVE_WARNING("SceneSerializer: Ragdoll3D bone list trimmed from {} to {} bodies (solver limit)",
+                        authoredCount, value.bones.size());
         }
     }
     if (json.contains("gravity")) value.gravity = Vector3FromJson(json.at("gravity"));
@@ -3311,9 +3320,95 @@ MakeMetadataRegistration(const std::string& componentName,
     return assetType == SceneAssetType::Scene || assetType == SceneAssetType::Prefab;
 }
 
+/// The reserved component key an in-memory snapshot (undo, Stop Play) stores parked components
+/// under. A file on disk gets the parked components under their own names instead, so a later
+/// engine that knows them can read them; a snapshot never leaves this process, and the strict
+/// restore of it must not have to know about types this build lacks.
+constexpr std::string_view kUnresolvedWrapperKey = "UnresolvedComponents";
+
+/// A reference to an entity inside parked JSON while the entity exists: `{"$ref":[index,generation]}`.
+[[nodiscard]] nlohmann::json MakeEntityRefMarker(const std::int64_t localId,
+                                                 const std::unordered_map<std::uint32_t, Entity>& localIdToEntity) {
+    if (localId >= 0 && static_cast<std::uint64_t>(localId) <= std::numeric_limits<std::uint32_t>::max()) {
+        const auto found = localIdToEntity.find(static_cast<std::uint32_t>(localId));
+        if (found != localIdToEntity.end()) {
+            return nlohmann::json{{"$ref", nlohmann::json::array({found->second.index, found->second.generation})}};
+        }
+    }
+    return nlohmann::json(static_cast<std::int64_t>(-1));
+}
+
+/// Turns the file-local ids in parked JSON (keys ending in LocalId / LocalIds) into entity markers,
+/// so they survive the entities being renumbered by a later save.
+void LocalIdsToEntityRefs(nlohmann::json& value,
+                          const std::unordered_map<std::uint32_t, Entity>& localIdToEntity) {
+    if (value.is_object()) {
+        for (auto it = value.begin(); it != value.end(); ++it) {
+            const std::string& key = it.key();
+            if (key.ends_with("LocalId") && it.value().is_number_integer()) {
+                it.value() = MakeEntityRefMarker(it.value().get<std::int64_t>(), localIdToEntity);
+            } else if (key.ends_with("LocalIds") && it.value().is_array()) {
+                for (nlohmann::json& element : it.value()) {
+                    if (element.is_number_integer()) {
+                        element = MakeEntityRefMarker(element.get<std::int64_t>(), localIdToEntity);
+                    }
+                }
+            } else {
+                LocalIdsToEntityRefs(it.value(), localIdToEntity);
+            }
+        }
+    } else if (value.is_array()) {
+        for (nlohmann::json& child : value) {
+            LocalIdsToEntityRefs(child, localIdToEntity);
+        }
+    }
+}
+
+[[nodiscard]] bool IsEntityRefMarker(const nlohmann::json& value) {
+    return value.is_object() && value.size() == 1U && value.contains("$ref") && value.at("$ref").is_array() &&
+           value.at("$ref").size() == 2U && value.at("$ref").at(0).is_number_unsigned() &&
+           value.at("$ref").at(1).is_number_unsigned();
+}
+
+/// The inverse: markers become the local ids of the file or snapshot being written, or -1 for an
+/// entity outside it.
+void EntityRefsToLocalIds(nlohmann::json& value, const std::unordered_map<Entity, std::uint32_t>& entityToLocalId) {
+    const auto resolve = [&entityToLocalId](const nlohmann::json& marker) {
+        const Entity entity{marker.at("$ref").at(0).get<std::uint32_t>(), marker.at("$ref").at(1).get<std::uint32_t>()};
+        const auto found = entityToLocalId.find(entity);
+        return nlohmann::json(found != entityToLocalId.end() ? static_cast<std::int64_t>(found->second)
+                                                             : static_cast<std::int64_t>(-1));
+    };
+    if (value.is_object()) {
+        for (auto it = value.begin(); it != value.end(); ++it) {
+            if (IsEntityRefMarker(it.value())) {
+                it.value() = resolve(it.value());
+            } else {
+                EntityRefsToLocalIds(it.value(), entityToLocalId);
+            }
+        }
+    } else if (value.is_array()) {
+        for (nlohmann::json& child : value) {
+            if (IsEntityRefMarker(child)) {
+                child = resolve(child);
+            } else {
+                EntityRefsToLocalIds(child, entityToLocalId);
+            }
+        }
+    }
+}
+
+/// True when the entity's transform is still the untouched stand-in a failed transform load left.
+[[nodiscard]] bool IsUntouchedTransformPlaceholder(const TransformComponent& transform) {
+    const TransformComponent fresh{};
+    return transform.localPosition == fresh.localPosition && transform.localRotation == fresh.localRotation &&
+           transform.localScale == fresh.localScale && transform.localEulerRadians == fresh.localEulerRadians &&
+           transform.rotationEditMode == fresh.rotationEditMode;
+}
+
 [[nodiscard]] std::optional<std::vector<std::byte>> EncodeScenePayload(
     IEntityManager& entityManager, const std::vector<Entity>& rootEntities,
-    const std::string_view sourceDescription) {
+    const std::string_view sourceDescription, const bool forSnapshot = false) {
     std::vector<Entity> allEntities;
     std::unordered_set<Entity> visited;
     for (const Entity root : rootEntities) {
@@ -3339,6 +3434,9 @@ MakeMetadataRegistration(const std::string& componentName,
         for (const std::type_index type : entityManager.GetComponentTypes(entity)) {
             if (type == std::type_index(typeid(WorldTransformComponent))) {
                 continue; // Derived/cached state is rebuilt after restore.
+            }
+            if (type == std::type_index(typeid(UnresolvedComponentsComponent))) {
+                continue; // written after the loop, so a restored component always wins its name
             }
             if (type == std::type_index(typeid(DisabledComponent))) {
                 // Presence is the data: an empty object marks the entity disabled on load.
@@ -3621,6 +3719,52 @@ MakeMetadataRegistration(const std::string& componentName,
                 componentsJson[*name]["ignoreLocalId"] = ignoreLocalId;
             }
         }
+        if (entityManager.HasComponent<UnresolvedComponentsComponent>(entity)) {
+            const UnresolvedComponentsComponent& unresolved = entityManager.GetComponent<UnresolvedComponentsComponent>(entity);
+            const auto parkedJson = [&entityToLocalId](const std::string& text) {
+                nlohmann::json raw = nlohmann::json::parse(text, nullptr, /*allow_exceptions=*/false);
+                if (!raw.is_discarded()) {
+                    EntityRefsToLocalIds(raw, entityToLocalId);
+                }
+                return raw;
+            };
+            if (forSnapshot) {
+                // In-memory snapshot: keep the parked components together under one reserved key.
+                nlohmann::json wrapper = {{"entries", nlohmann::json::array()},
+                                          {"placeholders", unresolved.placeholders}};
+                for (const auto& [name, text] : unresolved.entries) {
+                    nlohmann::json raw = parkedJson(text);
+                    if (!raw.is_discarded()) {
+                        wrapper["entries"].push_back({{"name", name}, {"json", std::move(raw)}});
+                    }
+                }
+                if (!wrapper["entries"].empty()) {
+                    componentsJson[std::string{kUnresolvedWrapperKey}] = std::move(wrapper);
+                }
+            } else {
+                // A file: parked components go back out under their own names, as they came in.
+                for (const auto& [name, text] : unresolved.entries) {
+                    nlohmann::json raw = parkedJson(text);
+                    if (raw.is_discarded()) {
+                        continue;
+                    }
+                    if (!componentsJson.contains(name)) {
+                        componentsJson[name] = std::move(raw);
+                        continue;
+                    }
+                    // The entity also has a live component of this name. It wins, unless it is only
+                    // the untouched stand-in a failed transform load left in the parked one's place.
+                    const bool placeholder =
+                        std::find(unresolved.placeholders.begin(), unresolved.placeholders.end(), name) !=
+                        unresolved.placeholders.end();
+                    if (placeholder && name == "TransformComponent" &&
+                        entityManager.HasComponent<TransformComponent>(entity) &&
+                        IsUntouchedTransformPlaceholder(entityManager.GetComponent<TransformComponent>(entity))) {
+                        componentsJson[name] = std::move(raw);
+                    }
+                }
+            }
+        }
         entitiesJson.push_back({{"localId", entityToLocalId.at(entity)}, {"components", std::move(componentsJson)}});
     }
 
@@ -3641,7 +3785,12 @@ void RollbackRestoredEntities(IEntityManager& entityManager, std::vector<Entity>
 
 [[nodiscard]] std::optional<std::vector<Entity>> DecodeScenePayload(
     IEntityManager& entityManager, const std::vector<std::byte>& payloadBuffer,
-    const std::string_view sourceDescription, const std::optional<std::size_t> expectedRootCount = std::nullopt) {
+    const std::string_view sourceDescription, const std::optional<std::size_t> expectedRootCount = std::nullopt,
+    const bool keepUnrestorable = false) {
+    // `keepUnrestorable` is for files read from disk, which may come from another engine version: a
+    // component this build cannot restore is parked on the entity (and written back on save) instead
+    // of refusing the file. In-memory snapshots (undo, Stop Play) were written by this build moments
+    // ago, so anything that fails to restore there is a real fault and stays all-or-nothing.
     const std::string payloadText(reinterpret_cast<const char*>(payloadBuffer.data()), payloadBuffer.size());
     nlohmann::json payload;
     try {
@@ -3746,11 +3895,26 @@ void RollbackRestoredEntities(IEntityManager& entityManager, std::vector<Entity>
                     }
                     continue;
                 }
+                if (componentName == kUnresolvedWrapperKey) {
+                    if (!componentJson.is_object() || !componentJson.contains("entries") ||
+                        !componentJson.at("entries").is_array()) {
+                        UVE_ERROR("SceneSerializer: malformed parked-component data in \"{}\"", sourceDescription);
+                        return std::nullopt;
+                    }
+                    continue;
+                }
                 if (GetRegistrationsByName().find(std::string{CanonicalComponentName(componentName)}) ==
                     GetRegistrationsByName().end()) {
-                    UVE_ERROR("SceneSerializer: \"{}\" references unknown component type \"{}\"",
-                              sourceDescription, componentName);
-                    return std::nullopt;
+                    if (!keepUnrestorable) {
+                        UVE_ERROR("SceneSerializer: \"{}\" references unknown component type \"{}\"",
+                                  sourceDescription, componentName);
+                        return std::nullopt;
+                    }
+                    // A type this engine no longer has (or does not have yet). The rest of the
+                    // entity still loads; the component itself is kept verbatim for re-saving.
+                    UVE_WARNING("SceneSerializer: \"{}\" references unknown component type \"{}\"; "
+                                "it is kept unchanged but not restored",
+                                sourceDescription, componentName);
                 }
             }
             orderedEntities.emplace_back(localId, entityJson);
@@ -3858,8 +4022,24 @@ void RollbackRestoredEntities(IEntityManager& entityManager, std::vector<Entity>
                     break;
                 }
             }
+            UnresolvedComponentsComponent unresolved;
             for (const auto& [componentName, componentJson] : componentsJson.items()) {
+              try {
                 const std::string_view canonicalKey = CanonicalComponentName(componentName);
+                if (componentName == kUnresolvedWrapperKey) {
+                    // A snapshot's parked components: restored as parked, ids turned back into handles.
+                    for (const nlohmann::json& parked : componentJson.at("entries")) {
+                        nlohmann::json raw = parked.at("json");
+                        LocalIdsToEntityRefs(raw, localIdToEntity);
+                        unresolved.entries.emplace_back(parked.at("name").get<std::string>(), raw.dump());
+                    }
+                    if (componentJson.contains("placeholders") && componentJson.at("placeholders").is_array()) {
+                        for (const nlohmann::json& name : componentJson.at("placeholders")) {
+                            unresolved.placeholders.push_back(name.get<std::string>());
+                        }
+                    }
+                    continue;
+                }
                 if (canonicalKey == "DisabledComponent") {
                     entityManager.AddComponent<DisabledComponent>(entity);
                     continue;
@@ -4010,6 +4190,33 @@ void RollbackRestoredEntities(IEntityManager& entityManager, std::vector<Entity>
                         entityManager.GetComponent<AnimationDriverComponent>(entity).target = target;
                     }
                 }
+              } catch (const std::exception& componentError) {
+                if (!keepUnrestorable) {
+                    throw;
+                }
+                // One component that cannot be restored - an unknown type, a field an older
+                // version wrote differently, a value today's validator refuses - no longer costs
+                // the whole file. It is kept verbatim and written back on save.
+                const std::string canonicalName{CanonicalComponentName(componentName)};
+                UVE_WARNING("SceneSerializer: \"{}\": component \"{}\" on local id {} was not restored ({}); "
+                            "it is kept unchanged",
+                            sourceDescription, componentName, localId, componentError.what());
+                nlohmann::json parkedRaw = componentJson;
+                LocalIdsToEntityRefs(parkedRaw, localIdToEntity);
+                unresolved.entries.emplace_back(canonicalName, parkedRaw.dump());
+                if (canonicalName == "TransformComponent" &&
+                    !entityManager.HasComponent<TransformComponent>(entity)) {
+                    // An entity without a transform cannot be placed or parented, so it gets a
+                    // default one as a stand-in. Saving writes the parked original back instead of
+                    // it until the author moves the entity.
+                    entityManager.AddComponent<TransformComponent>(entity, TransformComponent{});
+                    hasTransform = true;
+                    unresolved.placeholders.push_back(canonicalName);
+                }
+              }
+            }
+            if (!unresolved.entries.empty()) {
+                entityManager.AddComponent<UnresolvedComponentsComponent>(entity, std::move(unresolved));
             }
 
             // AttachTransform creates Transform+WorldTransform+Hierarchy together. Recreate the
@@ -4059,7 +4266,7 @@ std::optional<SceneSnapshot> SceneSerializer::Capture(
         return std::nullopt;
     }
     const std::optional<std::vector<std::byte>> payload =
-        EncodeScenePayload(entityManager, rootEntities, "scene snapshot");
+        EncodeScenePayload(entityManager, rootEntities, "scene snapshot", /*forSnapshot=*/true);
     if (!payload.has_value()) {
         return std::nullopt;
     }
@@ -4129,8 +4336,169 @@ std::vector<Entity> SceneSerializer::Load(IEntityManager& entityManager,
     }
     const std::optional<std::vector<Entity>> restored = DecodeScenePayload(
         entityManager, payload, path.string(),
-        header.assetType == SceneAssetType::Prefab ? std::optional<std::size_t>{1U} : std::nullopt);
+        header.assetType == SceneAssetType::Prefab ? std::optional<std::size_t>{1U} : std::nullopt,
+        /*keepUnrestorable=*/true);
     return restored.value_or(std::vector<Entity>{});
+}
+
+std::string_view CanonicalSceneComponentName(const std::string_view name) noexcept {
+    return CanonicalComponentName(name);
+}
+
+namespace {
+
+/// Rewrites legacy asset extensions in every string of `value`, recursively. True when any changed.
+bool RewriteLegacyPathsInJson(nlohmann::json& value) {
+    bool changed = false;
+    if (value.is_string()) {
+        std::string text = value.get<std::string>();
+        if (Asset::RewriteLegacyExtensionsInText(text)) {
+            value = std::move(text);
+            changed = true;
+        }
+    } else if (value.is_array() || value.is_object()) {
+        for (nlohmann::json& child : value) {
+            changed = RewriteLegacyPathsInJson(child) || changed;
+        }
+    }
+    return changed;
+}
+
+/// Renames retired component keys in one entity's component object. A retired key whose current
+/// name is already present is left alone: the current one is the truth and nothing is dropped.
+bool CanonicalizeComponentKeys(nlohmann::json& components) {
+    if (!components.is_object()) {
+        return false;
+    }
+    bool changed = false;
+    nlohmann::json renamed = nlohmann::json::object();
+    for (auto it = components.begin(); it != components.end(); ++it) {
+        const std::string canonical{CanonicalComponentName(it.key())};
+        if (canonical != it.key() && !components.contains(canonical) && !renamed.contains(canonical)) {
+            renamed[canonical] = it.value();
+            changed = true;
+        } else {
+            renamed[it.key()] = it.value();
+        }
+    }
+    if (changed) {
+        components = std::move(renamed);
+    }
+    return changed;
+}
+
+[[nodiscard]] bool IsUpgradableSceneDocument(const std::filesystem::path& path) {
+    std::string extension = path.extension().string();
+    std::ranges::transform(extension, extension.begin(),
+                           [](const unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    return extension == ".uvscene" || extension == ".uvprefab" || extension == ".uventity";
+}
+
+} // namespace
+
+SceneContentUpgradeReport UpgradeSceneContent(const std::filesystem::path& contentRoot,
+                                              const std::filesystem::path& backupRoot) {
+    SceneContentUpgradeReport report;
+    std::error_code error;
+    if (contentRoot.empty() || !std::filesystem::is_directory(contentRoot, error)) {
+        return report;
+    }
+    std::vector<std::filesystem::path> documents;
+    for (auto it = std::filesystem::recursive_directory_iterator(
+             contentRoot, std::filesystem::directory_options::skip_permission_denied, error);
+         !error && it != std::filesystem::recursive_directory_iterator(); it.increment(error)) {
+        if (it->is_regular_file(error) && IsUpgradableSceneDocument(it->path())) {
+            documents.push_back(it->path());
+        }
+    }
+    std::ranges::sort(documents);
+
+    const auto fail = [&report](const std::filesystem::path& file, const std::string_view why) {
+        ++report.failed;
+        report.failures.push_back(file.string() + ": " + std::string{why});
+    };
+    for (const std::filesystem::path& file : documents) {
+        ++report.scanned;
+        // A link is never written through: its target may sit outside the project.
+        if (std::filesystem::is_symlink(file, error)) {
+            ++report.skipped;
+            error.clear();
+            continue;
+        }
+        const auto decoded = Asset::ReadUveFile(file);
+        if (!decoded.has_value()) {
+            // Not this pass's to repair, and not worth retrying on every start: the file is left as is.
+            ++report.skipped;
+            UVE_WARNING("SceneContentUpgrade: \"{}\" is not a readable scene document and was left unchanged",
+                        file.string());
+            continue;
+        }
+        const auto& [header, payloadBytes] = *decoded;
+        nlohmann::json payload = nlohmann::json::parse(
+            std::string_view{reinterpret_cast<const char*>(payloadBytes.data()), payloadBytes.size()}, nullptr,
+            /*allow_exceptions=*/false);
+        if (payload.is_discarded() || !payload.is_object()) {
+            ++report.skipped;
+            UVE_WARNING("SceneContentUpgrade: \"{}\" has no valid JSON payload and was left unchanged", file.string());
+            continue;
+        }
+        bool changed = false;
+        if (auto entities = payload.find("entities"); entities != payload.end() && entities->is_array()) {
+            for (nlohmann::json& entity : *entities) {
+                if (auto components = entity.find("components"); components != entity.end()) {
+                    changed = CanonicalizeComponentKeys(*components) || changed;
+                }
+            }
+        }
+        changed = RewriteLegacyPathsInJson(payload) || changed;
+        if (!changed) {
+            continue;
+        }
+
+        std::filesystem::path relative = file.lexically_relative(contentRoot);
+        if (relative.empty() || *relative.begin() == "..") {
+            relative = file.filename();
+        }
+        const std::filesystem::path backup = backupRoot / relative;
+        std::filesystem::create_directories(backup.parent_path(), error);
+        error.clear();
+        std::filesystem::copy_file(file, backup, std::filesystem::copy_options::overwrite_existing, error);
+        if (error) {
+            fail(file, "backup failed (" + error.message() + "); left unchanged");
+            continue;
+        }
+        const std::string text = payload.dump();
+        std::vector<std::byte> bytes(text.size());
+        std::memcpy(bytes.data(), text.data(), text.size());
+        // Written beside the file and renamed over it, like SceneSerializer::Save: a crash or a full
+        // disk mid-write leaves the original in place, never a truncated document.
+        const std::filesystem::path temporary = file.string() + ".uve_upgrade_tmp";
+        std::filesystem::remove(temporary, error);
+        error.clear();
+        if (!Asset::WriteUveFile(temporary, header.assetType, bytes)) {
+            std::filesystem::remove(temporary, error);
+            fail(file, "could not be written; left unchanged");
+            continue;
+        }
+        std::filesystem::rename(temporary, file, error);
+        if (error) {
+            const std::string reason = error.message();
+            error.clear();
+            std::filesystem::remove(temporary, error);
+            fail(file, "could not be replaced (" + reason + "); left unchanged");
+            continue;
+        }
+        ++report.upgraded;
+        report.backupDirectory = backupRoot;
+    }
+    if (report.upgraded > 0U || report.failed > 0U) {
+        UVE_INFO("SceneContentUpgrade: {} of {} document(s) under \"{}\" upgraded ({} failed); originals in \"{}\"",
+                 report.upgraded, report.scanned, contentRoot.string(), report.failed, backupRoot.string());
+    }
+    for (const std::string& failure : report.failures) {
+        UVE_WARNING("SceneContentUpgrade: {}", failure);
+    }
+    return report;
 }
 
 } // namespace UVE::Scene

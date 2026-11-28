@@ -9,6 +9,7 @@
 #include <limits>
 #include <span>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include "collider_component.h"
@@ -844,11 +845,12 @@ void ApplyRagdollQualityPreset(Ragdoll3DComponent& ragdoll, const RagdollQuality
 }
 
 std::vector<RagdollBoneSetup> BuildHumanoidRagdollBones(const std::vector<SkeletonBone>& skeletonBones) {
-    std::vector<RagdollBoneSetup> setups;
+    // Control rigs, twist/roll correctives and leaf markers never carry a body of their own.
     const auto isControlOrHelperBone = [](const std::string_view name) {
         const std::string lowered = ToLowerAscii(name);
-        static constexpr std::array<std::string_view, 10U> kHelperPatterns{{
+        static constexpr std::array<std::string_view, 16U> kHelperPatterns{{
             "ik_", "_ik", "pole", "twist", "_end", "nub", "ctrl_", "_ctrl", "target_", "_target",
+            "corrective", "helper", "socket", "attach", "weapon", "prop_",
         }};
         for (const std::string_view pat : kHelperPatterns) {
             if (lowered.find(pat) != std::string::npos) {
@@ -857,12 +859,71 @@ std::vector<RagdollBoneSetup> BuildHumanoidRagdollBones(const std::vector<Skelet
         }
         return false;
     };
+    // Digits are detail, not structure. Without this every finger joint matched the "hand" row and a
+    // fingered rig produced ~60 bodies - more than the solver accepts, so the whole ragdoll refused
+    // to build. The generic builder has always skipped these; the humanoid one now agrees with it.
+    // "index", "middle", "ring" and "little" are ordinary words inside other bone names ("spine_middle",
+    // "spring_arm"), so they only count as a finger when the name also says it belongs to a hand.
+    const auto isDigitBone = [](const std::string_view name) {
+        const std::string lowered = ToLowerAscii(name);
+        static constexpr std::array<std::string_view, 7U> kAlwaysDigit{{
+            "finger", "thumb", "pinky", "palm", "carpal", "toe", "digit",
+        }};
+        for (const std::string_view pat : kAlwaysDigit) {
+            if (lowered.find(pat) != std::string::npos) {
+                return true;
+            }
+        }
+        if (lowered.find("hand") == std::string::npos) {
+            return false;
+        }
+        static constexpr std::array<std::string_view, 4U> kHandDigit{{"index", "middle", "ring", "little"}};
+        for (const std::string_view pat : kHandDigit) {
+            if (lowered.find(pat) != std::string::npos) {
+                return true;
+            }
+        }
+        return false;
+    };
+
+    struct Candidate final {
+        std::size_t boneIndex = 0U;
+        std::uint32_t depth = 0U;
+        const HumanoidRagdollProfileEntry* entry = nullptr;
+    };
+    std::vector<Candidate> candidates;
+    candidates.reserve(skeletonBones.size());
     for (std::size_t boneIndex = 0U; boneIndex < skeletonBones.size(); ++boneIndex) {
-        if (isControlOrHelperBone(skeletonBones[boneIndex].name)) continue;
-        const HumanoidRagdollProfileEntry* entry = FindProfileEntry(skeletonBones[boneIndex].name);
+        const std::string_view name = skeletonBones[boneIndex].name;
+        if (name.empty() || isControlOrHelperBone(name) || isDigitBone(name)) continue;
+        const HumanoidRagdollProfileEntry* entry = FindProfileEntry(name);
         if (entry == nullptr) continue;
+        candidates.push_back(Candidate{boneIndex, BoneDepth(skeletonBones, static_cast<std::uint32_t>(boneIndex)),
+                                       entry});
+    }
+
+    // A rig with more matched bones than the solver holds (long spine chains, double necks, extra
+    // shoulder helpers) keeps the heaviest - most structural - bodies: pelvis, thighs, torso and head
+    // first, hands last. Ties go to the shallower bone, then to rig order, so the choice is stable.
+    if (candidates.size() > kMaximumRagdollBones) {
+        std::vector<Candidate> ranked = candidates;
+        std::stable_sort(ranked.begin(), ranked.end(), [](const Candidate& lhs, const Candidate& rhs) {
+            if (lhs.entry->mass != rhs.entry->mass) return lhs.entry->mass > rhs.entry->mass;
+            if (lhs.depth != rhs.depth) return lhs.depth < rhs.depth;
+            return lhs.boneIndex < rhs.boneIndex;
+        });
+        ranked.resize(kMaximumRagdollBones);
+        std::sort(ranked.begin(), ranked.end(),
+                  [](const Candidate& lhs, const Candidate& rhs) { return lhs.boneIndex < rhs.boneIndex; });
+        candidates = std::move(ranked);
+    }
+
+    std::vector<RagdollBoneSetup> setups;
+    setups.reserve(candidates.size());
+    for (const Candidate& candidate : candidates) {
+        const HumanoidRagdollProfileEntry* entry = candidate.entry;
         RagdollBoneSetup setup;
-        setup.boneName = skeletonBones[boneIndex].name;
+        setup.boneName = skeletonBones[candidate.boneIndex].name;
         setup.mass = entry->mass;
         setup.radius = entry->radius;
         setup.halfHeight = entry->halfHeight;
@@ -882,6 +943,52 @@ std::vector<RagdollBoneSetup> BuildHumanoidRagdollBones(const std::vector<Skelet
         setups.push_back(std::move(setup));
     }
     return setups;
+}
+
+std::vector<RagdollBoneSetup> BuildAutoRagdollBones(const std::vector<SkeletonBone>& skeletonBones) {
+    std::vector<RagdollBoneSetup> setups = BuildHumanoidRagdollBones(skeletonBones);
+    if (setups.size() < 2U) {
+        setups = BuildGenericRagdollBones(skeletonBones);
+    }
+    return setups;
+}
+
+bool TrimRagdollBonesToCap(std::vector<RagdollBoneSetup>& bones) {
+    if (bones.size() <= kMaximumRagdollBones) return false;
+    const auto isDetailBone = [](const std::string_view name) {
+        const std::string lowered = ToLowerAscii(name);
+        static constexpr std::array<std::string_view, 12U> kDetailPatterns{{
+            "finger", "thumb", "pinky", "palm", "carpal", "toe", "digit", "twist", "_end", "nub", "corrective",
+            "helper",
+        }};
+        for (const std::string_view pat : kDetailPatterns) {
+            if (lowered.find(pat) != std::string::npos) return true;
+        }
+        // Plain words inside other bone names ("spine_middle"): a finger only when it is on a hand.
+        if (lowered.find("hand") != std::string::npos) {
+            for (const std::string_view pat : {std::string_view{"index"}, std::string_view{"middle"},
+                                               std::string_view{"ring"}, std::string_view{"little"}}) {
+                if (lowered.find(pat) != std::string::npos) return true;
+            }
+        }
+        return false;
+    };
+    std::vector<std::size_t> ranked(bones.size());
+    for (std::size_t index = 0U; index < ranked.size(); ++index) ranked[index] = index;
+    std::stable_sort(ranked.begin(), ranked.end(), [&bones, &isDetailBone](const std::size_t lhs, const std::size_t rhs) {
+        const bool lhsDetail = isDetailBone(bones[lhs].boneName);
+        const bool rhsDetail = isDetailBone(bones[rhs].boneName);
+        if (lhsDetail != rhsDetail) return !lhsDetail;
+        if (bones[lhs].mass != bones[rhs].mass) return bones[lhs].mass > bones[rhs].mass;
+        return lhs < rhs;
+    });
+    ranked.resize(kMaximumRagdollBones);
+    std::sort(ranked.begin(), ranked.end());
+    std::vector<RagdollBoneSetup> kept;
+    kept.reserve(ranked.size());
+    for (const std::size_t index : ranked) kept.push_back(std::move(bones[index]));
+    bones = std::move(kept);
+    return true;
 }
 
 std::vector<RagdollBoneSetup> BuildGenericRagdollBones(const std::vector<SkeletonBone>& skeletonBones) {
@@ -967,38 +1074,177 @@ bool SyncRagdollBodiesToSkeletonPose(IEntityManager& entityManager, const Entity
     return true;
 }
 
+Entity FindNearestSkeleton3D(IEntityManager& entityManager, const Entity from) {
+    if (!entityManager.IsAlive(from)) return kInvalidEntity;
+    if (entityManager.HasComponent<Skeleton3DComponent>(from)) return from;
+
+    std::unordered_map<Entity, std::vector<Entity>> children;
+    std::size_t skeletonCount = 0U;
+    Entity onlySkeleton = kInvalidEntity;
+    entityManager.ForEach<HierarchyComponent>([&children](const Entity entity, const HierarchyComponent& hierarchy) {
+        if (hierarchy.parent != kInvalidEntity) children[hierarchy.parent].push_back(entity);
+    });
+    entityManager.ForEach<Skeleton3DComponent>(
+        [&skeletonCount, &onlySkeleton](const Entity entity, const Skeleton3DComponent&) {
+            ++skeletonCount;
+            onlySkeleton = entity;
+        });
+    if (skeletonCount == 0U) return kInvalidEntity;
+
+    const auto parentOf = [&entityManager](const Entity entity) {
+        return entityManager.HasComponent<HierarchyComponent>(entity)
+                   ? entityManager.GetComponent<HierarchyComponent>(entity).parent
+                   : kInvalidEntity;
+    };
+    // Breadth-first so the closest skeleton in a subtree wins; a rigged one beats an empty one.
+    const auto searchSubtree = [&](const Entity root, const Entity skip) {
+        Entity firstEmpty = kInvalidEntity;
+        std::vector<Entity> queue{root};
+        for (std::size_t index = 0U; index < queue.size() && index < 4096U; ++index) {
+            const Entity current = queue[index];
+            if (current != skip && entityManager.HasComponent<Skeleton3DComponent>(current)) {
+                if (!entityManager.GetComponent<Skeleton3DComponent>(current).bones.empty()) return current;
+                if (firstEmpty == kInvalidEntity) firstEmpty = current;
+            }
+            const auto found = children.find(current);
+            if (found == children.end()) continue;
+            for (const Entity child : found->second) {
+                if (child != skip) queue.push_back(child);
+            }
+        }
+        return firstEmpty;
+    };
+
+    Entity result = searchSubtree(from, kInvalidEntity);
+    if (result != kInvalidEntity) return result;
+    Entity searched = from;
+    for (Entity ancestor = parentOf(from); ancestor != kInvalidEntity; ancestor = parentOf(ancestor)) {
+        if (parentOf(ancestor) == kInvalidEntity) {
+            // The scene (or document) root holds every character, so its subtree only answers when
+            // it is unambiguous.
+            std::size_t underRoot = 0U;
+            Entity onlyUnderRoot = kInvalidEntity;
+            std::vector<Entity> queue{ancestor};
+            for (std::size_t index = 0U; index < queue.size() && index < 4096U && underRoot < 2U; ++index) {
+                if (entityManager.HasComponent<Skeleton3DComponent>(queue[index])) {
+                    ++underRoot;
+                    onlyUnderRoot = queue[index];
+                }
+                const auto found = children.find(queue[index]);
+                if (found != children.end()) queue.insert(queue.end(), found->second.begin(), found->second.end());
+            }
+            if (underRoot == 1U) return onlyUnderRoot;
+            break;
+        }
+        result = searchSubtree(ancestor, searched);
+        if (result != kInvalidEntity) return result;
+        searched = ancestor;
+    }
+    return skeletonCount == 1U ? onlySkeleton : kInvalidEntity;
+}
+
+bool PrepareRagdoll3D(IEntityManager& entityManager, const Entity entity, const bool regenerateBones) {
+    if (!entityManager.IsAlive(entity) || !entityManager.HasComponent<Ragdoll3DComponent>(entity)) {
+        return false;
+    }
+    Ragdoll3DComponent& ragdoll = entityManager.GetComponent<Ragdoll3DComponent>(entity);
+    const bool linked = ragdoll.skeleton != kInvalidEntity && entityManager.IsAlive(ragdoll.skeleton) &&
+                        entityManager.HasComponent<Skeleton3DComponent>(ragdoll.skeleton);
+    if (!linked) {
+        const Entity found = FindNearestSkeleton3D(entityManager, entity);
+        if (found == kInvalidEntity) {
+            ragdoll.lastSetupError =
+                "No Skeleton3D found for this ragdoll. Place the Ragdoll3D under the character, or link a Skeleton3D.";
+            return false;
+        }
+        ragdoll.skeleton = found;
+        ragdoll.initialized = false;
+    }
+    const Skeleton3DComponent& skeleton = entityManager.GetComponent<Skeleton3DComponent>(ragdoll.skeleton);
+    if (skeleton.bones.empty()) {
+        ragdoll.lastSetupError = "The linked Skeleton3D has no bones yet. Assign a rigged source model first.";
+        return false;
+    }
+    if (regenerateBones || ragdoll.bones.empty()) {
+        ragdoll.bones = BuildAutoRagdollBones(skeleton.bones);
+        ragdoll.initialized = false;
+        if (ragdoll.bones.size() < 2U) {
+            ragdoll.bones.clear();
+            ragdoll.lastSetupError = "Fewer than two bones on this skeleton could be matched to ragdoll bodies. "
+                                     "Add the bones to simulate by hand.";
+            return false;
+        }
+    }
+    ragdoll.lastSetupError.clear();
+    return true;
+}
+
 bool InitializeRagdoll3D(IEntityManager& entityManager, const Entity entity) {
     if (!entityManager.IsAlive(entity) || !entityManager.HasComponent<Ragdoll3DComponent>(entity)) {
         return false;
     }
     Ragdoll3DComponent& component = entityManager.GetComponent<Ragdoll3DComponent>(entity);
+    const auto fail = [&component](std::string reason) {
+        component.lastSetupError = std::move(reason);
+        component.initialized = false;
+        return false;
+    };
     if (component.skeleton == kInvalidEntity || !entityManager.IsAlive(component.skeleton) ||
         !entityManager.HasComponent<Skeleton3DComponent>(component.skeleton)) {
-        return false;
+        return fail("No Skeleton3D is linked to this ragdoll.");
     }
     Skeleton3DComponent& skeleton = entityManager.GetComponent<Skeleton3DComponent>(component.skeleton);
-    if (skeleton.bones.empty()) return false;
+    if (skeleton.bones.empty()) return fail("The linked Skeleton3D has no bones yet.");
 
     ObjectWorldFrame skeletonFrame;
-    if (!ResolveSkeletonWorldFrame(entityManager, component.skeleton, skeletonFrame)) return false;
+    if (!ResolveSkeletonWorldFrame(entityManager, component.skeleton, skeletonFrame)) {
+        return fail("The linked Skeleton3D has no valid world transform.");
+    }
+
+    const auto resolveSetups = [&component, &skeleton](std::vector<std::size_t>& setupIndices,
+                                                       std::vector<std::uint32_t>& boneIndices) {
+        setupIndices.clear();
+        boneIndices.clear();
+        setupIndices.reserve(component.bones.size());
+        boneIndices.reserve(component.bones.size());
+        for (std::size_t setupIndex = 0U; setupIndex < component.bones.size(); ++setupIndex) {
+            std::uint32_t boneIndex = kInvalidSkeletonBoneIndex;
+            if (!TryFindSkeletonBoneIndex(skeleton, component.bones[setupIndex].boneName, boneIndex)) continue;
+            if (boneIndex >= skeleton.bones.size()) continue;
+            setupIndices.push_back(setupIndex);
+            boneIndices.push_back(boneIndex);
+        }
+    };
 
     if (component.bones.empty()) {
-        component.bones = BuildHumanoidRagdollBones(skeleton.bones);
-        if (component.bones.empty()) return false;
+        component.bones = BuildAutoRagdollBones(skeleton.bones);
+        if (component.bones.size() < 2U) {
+            // One body is not an articulated ragdoll, and keeping it would stop the next attempt
+            // from generating a list (an empty one is what asks for generation).
+            component.bones.clear();
+            return fail("Fewer than two bones on this skeleton could be matched to ragdoll bodies. "
+                        "Add the bones to simulate by hand.");
+        }
     }
+    // An oversized list (authored by hand, or by an older generator) is trimmed to the structural
+    // bodies instead of refusing the whole ragdoll.
+    static_cast<void>(TrimRagdollBonesToCap(component.bones));
 
     std::vector<std::size_t> resolvedSetupIndices;
     std::vector<std::uint32_t> resolvedBoneIndices;
-    resolvedSetupIndices.reserve(component.bones.size());
-    resolvedBoneIndices.reserve(component.bones.size());
-    for (std::size_t setupIndex = 0U; setupIndex < component.bones.size(); ++setupIndex) {
-        std::uint32_t boneIndex = kInvalidSkeletonBoneIndex;
-        if (!TryFindSkeletonBoneIndex(skeleton, component.bones[setupIndex].boneName, boneIndex)) continue;
-        if (boneIndex >= skeleton.bones.size()) continue;
-        resolvedSetupIndices.push_back(setupIndex);
-        resolvedBoneIndices.push_back(boneIndex);
+    resolveSetups(resolvedSetupIndices, resolvedBoneIndices);
+    // A bone list that names none of this rig's bones was generated for a different rig (a mesh was
+    // swapped, or the ragdoll was copied between characters). Rebuild it for the rig it is on now.
+    if (resolvedSetupIndices.empty()) {
+        std::vector<RagdollBoneSetup> regenerated = BuildAutoRagdollBones(skeleton.bones);
+        if (regenerated.size() >= 2U) {
+            component.bones = std::move(regenerated);
+            resolveSetups(resolvedSetupIndices, resolvedBoneIndices);
+        }
     }
-    if (resolvedSetupIndices.empty()) return false;
+    if (resolvedSetupIndices.empty()) {
+        return fail("None of the ragdoll's bone names exist on the linked Skeleton3D. Press Auto-Generate.");
+    }
 
     std::vector<bool> simulated(skeleton.bones.size(), false);
     for (const std::uint32_t boneIndex : resolvedBoneIndices) simulated[boneIndex] = true;
@@ -1086,7 +1332,7 @@ bool InitializeRagdoll3D(IEntityManager& entityManager, const Entity entity) {
         bodies.push_back(body);
         bindings.push_back(binding);
     }
-    if (bodies.empty()) return false;
+    if (bodies.empty()) return fail("The skeleton pose could not be resolved for any ragdoll bone.");
 
     for (RagdollBoneBinding& binding : bindings) {
         const RagdollBoneSetup& setup = component.bones[binding.setupIndex];
@@ -1170,9 +1416,12 @@ bool InitializeRagdoll3D(IEntityManager& entityManager, const Entity entity) {
         joints.push_back(joint);
     }
 
-    if (!component.solver.Reset(bodies)) return false;
+    if (!component.solver.Reset(bodies)) {
+        return fail("Too many ragdoll bodies (" + std::to_string(bodies.size()) + "); the limit is " +
+                    std::to_string(Physics::kMaximumRagdollBodies) + ".");
+    }
     for (const Physics::RagdollJoint& joint : joints) {
-        if (!component.solver.AddJoint(joint)) return false;
+        if (!component.solver.AddJoint(joint)) return fail("A ragdoll joint could not be created.");
     }
 
     // Jolt-style non-adjacent self-collision filter table: disable parent-child + bind-pose overlaps.
@@ -1183,6 +1432,7 @@ bool InitializeRagdoll3D(IEntityManager& entityManager, const Entity entity) {
     component.pendingSeconds = 0.0F;
     component.hadFloorSupport = false;
     component.lastReport = Physics::RagdollStepReport{};
+    component.lastSetupError.clear();
     component.initialized = true;
     return true;
 }
@@ -1333,8 +1583,17 @@ bool StartRagdollEditorPreview(IEntityManager& entityManager, const Entity entit
     }
     Ragdoll3DComponent& ragdoll = entityManager.GetComponent<Ragdoll3DComponent>(entity);
     if (ragdoll.editorPreviewSimulating) return true;
+    if (!ragdoll.enabled || entityManager.HasComponent<DisabledComponent>(entity)) {
+        ragdoll.lastSetupError = "This ragdoll is disabled. Enable it to preview.";
+        return false;
+    }
+    if (ragdoll.physicsBlendWeight <= 0.0F) {
+        ragdoll.lastSetupError = "Physics Blend Weight is 0, so the simulated pose would not show. Raise it above 0.";
+        return false;
+    }
     if (!entityManager.IsAlive(ragdoll.skeleton) ||
         !entityManager.HasComponent<Skeleton3DComponent>(ragdoll.skeleton)) {
+        ragdoll.lastSetupError = "No Skeleton3D is linked to this ragdoll.";
         return false;
     }
     const Skeleton3DComponent& skeleton = entityManager.GetComponent<Skeleton3DComponent>(ragdoll.skeleton);

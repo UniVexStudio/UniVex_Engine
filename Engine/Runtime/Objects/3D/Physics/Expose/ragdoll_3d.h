@@ -192,6 +192,9 @@ struct Ragdoll3DComponent final {
     bool editorPreviewSimulating = false;
     std::vector<SkeletonBonePose> editorPreviewBackupPose;
     RagdollMode editorPreviewBackupMode = RagdollMode::Simulating;
+    /// Why the last `InitializeRagdoll3D` did not build, in words an author can act on. Empty after
+    /// a successful build. Shown by the editor instead of a generic "could not start".
+    std::string lastSetupError;
 
     /// Compares authored fields only: a running ragdoll is not a different ragdoll.
     [[nodiscard]] bool operator==(const Ragdoll3DComponent& other) const noexcept {
@@ -289,6 +292,26 @@ struct HumanoidRagdollProfileEntry final {
 /// result at `kMaximumRagdollBones`.
 [[nodiscard]] std::vector<RagdollBoneSetup> BuildGenericRagdollBones(
     const std::vector<SkeletonBone>& skeletonBones);
+
+/// The generator the editor runs when a ragdoll has no bone list yet: the humanoid profile, falling
+/// back to the generic structural builder when fewer than two humanoid bones match. Never returns
+/// more than `kMaximumRagdollBones` setups.
+[[nodiscard]] std::vector<RagdollBoneSetup> BuildAutoRagdollBones(const std::vector<SkeletonBone>& skeletonBones);
+
+/// Shrinks `bones` to at most `kMaximumRagdollBones`, keeping the heaviest (most structural) bodies
+/// and dropping digit and helper bones first. Order of the survivors is preserved. Returns true when
+/// anything was removed.
+bool TrimRagdollBonesToCap(std::vector<RagdollBoneSetup>& bones);
+
+/// The Skeleton3D a ragdoll on `from` most plausibly belongs to: `from` itself, then its own subtree,
+/// then each ancestor's subtree outward (so a sibling skeleton under the same character wins over
+/// one on another character). The scene root's subtree is only searched when the whole scene holds
+/// exactly one Skeleton3D, so a ragdoll is never silently bound to an unrelated character.
+[[nodiscard]] Entity FindNearestSkeleton3D(IEntityManager& entityManager, Entity from);
+
+/// Gets a ragdoll ready to build: links the nearest skeleton when none is linked, and generates the
+/// bone list when it is empty or `regenerateBones` is set. On failure `lastSetupError` says why.
+[[nodiscard]] bool PrepareRagdoll3D(IEntityManager& entityManager, Entity entity, bool regenerateBones = false);
 
 /// Builds the solver from the skeleton's current pose, applies inertia stabilization
 /// and non-adjacent self-collision pair filtering, and computes exact T/A-pose hinge axes.

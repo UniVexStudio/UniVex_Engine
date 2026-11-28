@@ -487,10 +487,14 @@ void ViewportSceneInteraction::ExportViewForHost(const Editor::Editor::ViewportO
         overlayState.gizmoLines[overlayState.gizmoLines.size() - m_hostOverlayMesh.lines.size() + i].occluded = true;
     }
     append(m_hostBonesMesh);
+    // X-ray collider lines (ragdoll capsules and joints) sit inside the character mesh almost
+    // everywhere, so the part behind the mesh is drawn strongly rather than at the faint gizmo alpha.
+    constexpr float kXrayColliderHiddenAlpha = 0.72F;
     for (std::size_t i = 0U; i < m_hostColliderLines.size(); ++i) {
         const univex::gizmo::GizmoLine& line = m_hostColliderLines[i];
         const bool occluded = i < m_hostColliderOccluded.size() ? m_hostColliderOccluded[i] : true;
-        overlayState.gizmoLines.push_back({a3(line.a), a3(line.b), a3(line.color), line.widthPx, occluded});
+        overlayState.gizmoLines.push_back({a3(line.a), a3(line.b), a3(line.color), line.widthPx, occluded,
+                                           occluded ? -1.0F : kXrayColliderHiddenAlpha});
     }
 }
 

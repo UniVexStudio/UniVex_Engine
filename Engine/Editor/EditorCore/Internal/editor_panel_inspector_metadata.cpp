@@ -732,12 +732,12 @@ bool Editor::SetSelectedComponentProperty(const TypeMetadataEntry& entry,
                 if (ragdoll->skeleton != Scene::kInvalidEntity && entityManager.IsAlive(ragdoll->skeleton) &&
                     entityManager.HasComponent<Scene::Skeleton3DComponent>(ragdoll->skeleton)) {
                     const auto& skeleton = entityManager.GetComponent<Scene::Skeleton3DComponent>(ragdoll->skeleton);
-                    ragdoll->bones = Scene::BuildHumanoidRagdollBones(skeleton.bones);
-                    if (ragdoll->bones.size() < 2U) {
-                        ragdoll->bones = Scene::BuildGenericRagdollBones(skeleton.bones);
-                    }
+                    ragdoll->bones = Scene::BuildAutoRagdollBones(skeleton.bones);
                 }
             }
+            // Any authored change is a new chance to build: a stale failure reason must not keep the
+            // viewport from retrying.
+            ragdoll->lastSetupError.clear();
         }
     }
     if (entry.isInstanceValid != nullptr && !entry.isInstanceValid(instance)) {
@@ -776,9 +776,7 @@ bool Editor::SetSelectedComponentProperty(const TypeMetadataEntry& entry,
         if (ragdoll != nullptr && !ragdoll->editorPreviewSimulating &&
             (property.name == "skeleton" || property.name == "qualityPreset" ||
              property.name == "partialRootBoneName" || property.name == "mode" ||
-             property.name == "capsuleRadiusScale" || property.name == "capsuleLengthScale" ||
-             property.name == "boneMassScale" || property.name == "jointStiffness" ||
-             property.name == "jointDamping")) {
+             property.name == "enabled" || property.name == "enableSelfCollision")) {
             m_services->GetSceneGraph().Update(entityManager);
             ragdoll->initialized = false;
             static_cast<void>(Scene::InitializeRagdoll3D(entityManager, m_selectedEntity));
@@ -823,13 +821,9 @@ bool Editor::PreviewSelectedComponentProperty(const TypeMetadataEntry& entry,
         return false;
     }
     if (entry.typeIndex == std::type_index(typeid(Scene::Ragdoll3DComponent))) {
-        auto* const ragdoll = static_cast<Scene::Ragdoll3DComponent*>(instance);
-        if (ragdoll != nullptr && !ragdoll->editorPreviewSimulating &&
-            (property.name == "capsuleRadiusScale" || property.name == "capsuleLengthScale" ||
-             property.name == "boneMassScale")) {
-            m_services->GetSceneGraph().Update(entityManager);
-            ragdoll->initialized = false;
-            static_cast<void>(Scene::InitializeRagdoll3D(entityManager, m_selectedEntity));
+        // A live drag may fix whatever made the last build fail; let the viewport try again.
+        if (auto* const ragdoll = static_cast<Scene::Ragdoll3DComponent*>(instance); ragdoll != nullptr) {
+            ragdoll->lastSetupError.clear();
         }
     }
     m_sceneDirty = true;

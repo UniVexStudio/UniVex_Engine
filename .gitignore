@@ -44,3 +44,6 @@ obj/
 __pycache__/
 refactor_strip_uve_suffixes.bundle
 Engine/Editor/EditorCore/Blueprint/Testing/Compiler/native/generated/
+
+# Screenshots the VFX tests write into the repository root; the folder itself was removed on purpose
+Docs/

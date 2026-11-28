@@ -148,6 +148,22 @@ TEST_F(Player3DTest, ResolvePlayCharacterFallsBackToTheFirstController) {
     EXPECT_EQ(ResolvePlayCharacter(entityManager), body);
 }
 
+TEST_F(Player3DTest, ResolvePlayCharacterPrefersABodyMeantForAPlayerOverAnAICrowd) {
+    // Earlier in entity order, so it would have won before: an NPC must not steal the play view.
+    const Entity npc = entityManager.CreateEntity();
+    sceneGraph.AttachTransform(entityManager, npc, TransformComponent{});
+    ApplyCharacter3DObjectDefinition(entityManager, npc, Character3DObjectDefinition{});
+    ASSERT_EQ(entityManager.GetComponent<ControllerComponent>(npc).kind, ControllerKind::AI);
+
+    const Entity hero = entityManager.CreateEntity();
+    sceneGraph.AttachTransform(entityManager, hero, TransformComponent{});
+    Character3DObjectDefinition heroDefinition{};
+    heroDefinition.controllerKind = ControllerKind::Player;
+    ApplyCharacter3DObjectDefinition(entityManager, hero, heroDefinition);
+
+    EXPECT_EQ(ResolvePlayCharacter(entityManager), hero);
+}
+
 TEST_F(Player3DTest, FindPlayerCameraWalksPastTheSpringArm) {
     const Entity player = entityManager.CreateEntity();
     sceneGraph.AttachTransform(entityManager, player, TransformComponent{});

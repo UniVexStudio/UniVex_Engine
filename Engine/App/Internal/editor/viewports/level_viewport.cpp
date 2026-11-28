@@ -226,12 +226,16 @@ void LevelViewport::UpdatePlayCapturedCamera(const Editor::EditorViewportInput& 
         m_editor.NotifyViewportOrbited();
     }
 
+    // The play view follows the possessed player. It stops following - and holds where it was -
+    // once the player has fallen out of the world, so a body that drops through the level never
+    // drags the view down with it forever.
+    constexpr float kPlayFollowLowestY = -200.0F;
     Scene::IEntityManager& entityManager = m_surface.EntityManager();
     const Scene::Entity player = Scene::ResolvePossessedPlayer(entityManager);
     if (player != Scene::kInvalidEntity &&
         entityManager.HasComponent<Scene::WorldTransformComponent>(player)) {
         const auto& wt = entityManager.GetComponent<Scene::WorldTransformComponent>(player);
-        if (Math::IsFinite(wt.worldPosition)) {
+        if (Math::IsFinite(wt.worldPosition) && wt.worldPosition.y > kPlayFollowLowestY) {
             camera.SetTarget(univex::math::Vec3{wt.worldPosition.x, wt.worldPosition.y + 1.2F, wt.worldPosition.z});
         }
         return;
