@@ -15,13 +15,17 @@ namespace UVE::Physics {
 
 /// Bounded sizes for one articulated ragdoll.
 ///
-/// A humanoid physics asset is 19 bodies; 24 leaves room for a tail, a cape chain or a four-legged
-/// character without turning this into a general rigid-body world. Joints are at most bodies - 1
-/// for a tree, and contacts are capped separately because the cap is a cost bound, not a shape.
-inline constexpr std::size_t kMaximumRagdollBodies = 24U;
-inline constexpr std::size_t kMaximumRagdollJoints = 24U;
-inline constexpr std::size_t kMaximumRagdollContacts = 128U;
-inline constexpr std::size_t kMaximumRagdollSelfContacts = 64U;
+/// A whole human body with every finger and toe is about 52 bodies; 64 leaves room for a tail, a
+/// cape chain or a four-legged character without turning this into a general rigid-body world.
+/// Self-collision masks are one 64-bit word per body, which is why the body cap stops at 64. Joints
+/// are at most bodies - 1 for a tree, and contacts are capped separately because the cap is a cost
+/// bound, not a shape.
+inline constexpr std::size_t kMaximumRagdollBodies = 64U;
+inline constexpr std::size_t kMaximumRagdollJoints = 64U;
+inline constexpr std::size_t kMaximumRagdollContacts = 384U;
+inline constexpr std::size_t kMaximumRagdollSelfContacts = 192U;
+/// Contacts with a dynamic collider whose impulses are reported back to it (pushback).
+inline constexpr std::size_t kMaximumRagdollContactFeedback = 128U;
 inline constexpr std::uint32_t kInvalidRagdollBody = 0xFFFFFFFFU;
 inline constexpr std::uint32_t kInvalidRagdollColliderIndex = 0xFFFFFFFFU;
 
@@ -423,11 +427,11 @@ private:
 
     std::array<RagdollBody, kMaximumRagdollBodies> m_bodies{};
     std::array<Math::Vector3, kMaximumRagdollBodies> m_effectiveInverseInertiaLocal{};
-    std::array<std::uint32_t, kMaximumRagdollBodies> m_selfCollisionMask{};
+    std::array<std::uint64_t, kMaximumRagdollBodies> m_selfCollisionMask{};
     std::size_t m_bodyCount = 0U;
     std::array<RagdollJoint, kMaximumRagdollJoints> m_joints{};
     std::size_t m_jointCount = 0U;
-    std::array<RagdollContactFeedback, kMaximumRagdollContacts> m_lastContactFeedback{};
+    std::array<RagdollContactFeedback, kMaximumRagdollContactFeedback> m_lastContactFeedback{};
     std::size_t m_lastContactFeedbackCount = 0U;
     /// The clamped step the current solve is using. The limit bias is `angle / dt`, so the solver
     /// needs the step size; passing it down every call site would be four more parameters for one

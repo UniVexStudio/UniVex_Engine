@@ -4002,7 +4002,7 @@ TEST_F(SceneSerializerTest, UpgradeSceneContent_RenamesRetiredKeysAndLegacyPaths
 
 TEST_F(SceneSerializerTest, Load_RagdollWithAnOversizedBoneList_TrimsInsteadOfRefusing) {
     nlohmann::json bones = nlohmann::json::array();
-    for (int index = 0; index < 40; ++index) {
+    for (int index = 0; index < 100; ++index) {
         bones.push_back({{"boneName", "bone_" + std::to_string(index)}, {"mass", index < 10 ? 5.0 : 1.0}});
     }
     const nlohmann::json payload = {

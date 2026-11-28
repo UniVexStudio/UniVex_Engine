@@ -22,6 +22,8 @@
 #include "object_3d.h"
 #include "skeleton_3d.h"
 #include "collider_world_aabb_cache.h"
+#include "retarget_humanoid.h"
+#include "retarget_match.h"
 
 namespace UVE::Scene {
 namespace {
@@ -33,76 +35,95 @@ constexpr float kMaxInheritedLinearSpeed = 25.0F;
 constexpr float kMaxInheritedAngularSpeed = 30.0F;
 constexpr float kMaxDynamicPushbackImpulse = 120.0F;
 
+/// Hinge ranges follow the solver's twist sign about the axis `forward x limb`. With that axis a positive
+/// twist folds an elbow forward and a knee backward, so both hinge rows read [-5, 150] (a hinge never bends
+/// the other way). Measured by kicking forearms and shins in zero gravity; see ragdoll_3d_tests.cpp.
 /// Expanded humanoid profile table covering standard DCC & character rig naming conventions.
 /// Ordered most-specific-first; all patterns strictly lowercase.
 constexpr std::array<HumanoidRagdollProfileEntry, 50U> kHumanoidProfile{{
-    {"lowerarm", 1.5F, 0.045F, 0.10F, 0.05F, 1.0F, 5.0F, 5.0F, 150.0F, true, -5.0F, 150.0F},
-    {"lower_arm", 1.5F, 0.045F, 0.10F, 0.05F, 1.0F, 5.0F, 5.0F, 150.0F, true, -5.0F, 150.0F},
-    {"forearm", 1.5F, 0.045F, 0.10F, 0.05F, 1.0F, 5.0F, 5.0F, 150.0F, true, -5.0F, 150.0F},
-    {"fore_arm", 1.5F, 0.045F, 0.10F, 0.05F, 1.0F, 5.0F, 5.0F, 150.0F, true, -5.0F, 150.0F},
-    {"arm_lower", 1.5F, 0.045F, 0.10F, 0.05F, 1.0F, 5.0F, 5.0F, 150.0F, true, -5.0F, 150.0F},
-    {"elbow", 1.5F, 0.045F, 0.10F, 0.05F, 1.0F, 5.0F, 5.0F, 150.0F, true, -5.0F, 150.0F},
-    {"upperarm", 2.5F, 0.055F, 0.12F, 0.05F, 0.8F, 90.0F, 90.0F, 60.0F, false, -60.0F, 60.0F},
-    {"upper_arm", 2.5F, 0.055F, 0.12F, 0.05F, 0.8F, 90.0F, 90.0F, 60.0F, false, -60.0F, 60.0F},
-    {"arm_upper", 2.5F, 0.055F, 0.12F, 0.05F, 0.8F, 90.0F, 90.0F, 60.0F, false, -60.0F, 60.0F},
-    {"bicep", 2.5F, 0.055F, 0.12F, 0.05F, 0.8F, 90.0F, 90.0F, 60.0F, false, -60.0F, 60.0F},
-    {"leftarm", 2.5F, 0.055F, 0.12F, 0.05F, 0.8F, 90.0F, 90.0F, 60.0F, false, -60.0F, 60.0F},
-    {"rightarm", 2.5F, 0.055F, 0.12F, 0.05F, 0.8F, 90.0F, 90.0F, 60.0F, false, -60.0F, 60.0F},
-    {"l_arm", 2.5F, 0.055F, 0.12F, 0.05F, 0.8F, 90.0F, 90.0F, 60.0F, false, -60.0F, 60.0F},
-    {"r_arm", 2.5F, 0.055F, 0.12F, 0.05F, 0.8F, 90.0F, 90.0F, 60.0F, false, -60.0F, 60.0F},
-    {"arm_l", 2.5F, 0.055F, 0.12F, 0.05F, 0.8F, 90.0F, 90.0F, 60.0F, false, -60.0F, 60.0F},
-    {"arm_r", 2.5F, 0.055F, 0.12F, 0.05F, 0.8F, 90.0F, 90.0F, 60.0F, false, -60.0F, 60.0F},
-    {"arm.l", 2.5F, 0.055F, 0.12F, 0.05F, 0.8F, 90.0F, 90.0F, 60.0F, false, -60.0F, 60.0F},
-    {"arm.r", 2.5F, 0.055F, 0.12F, 0.05F, 0.8F, 90.0F, 90.0F, 60.0F, false, -60.0F, 60.0F},
-    {"clavicle", 1.5F, 0.05F, 0.08F, 0.05F, 0.6F, 20.0F, 20.0F, 30.0F, false, -30.0F, 30.0F},
-    {"collar", 1.5F, 0.05F, 0.08F, 0.05F, 0.6F, 20.0F, 20.0F, 30.0F, false, -30.0F, 30.0F},
-    {"shoulder", 1.5F, 0.05F, 0.08F, 0.05F, 0.6F, 20.0F, 20.0F, 30.0F, false, -30.0F, 30.0F},
-    {"hand", 0.5F, 0.035F, 0.04F, 0.10F, 1.5F, 60.0F, 60.0F, 40.0F, false, -40.0F, 40.0F},
-    {"wrist", 0.5F, 0.035F, 0.04F, 0.10F, 1.5F, 60.0F, 60.0F, 40.0F, false, -40.0F, 40.0F},
-    {"thigh", 9.0F, 0.08F, 0.16F, 0.05F, 0.5F, 70.0F, 70.0F, 40.0F, false, -40.0F, 40.0F},
-    {"femur", 9.0F, 0.08F, 0.16F, 0.05F, 0.5F, 70.0F, 70.0F, 40.0F, false, -40.0F, 40.0F},
-    {"upperleg", 9.0F, 0.08F, 0.16F, 0.05F, 0.5F, 70.0F, 70.0F, 40.0F, false, -40.0F, 40.0F},
-    {"upper_leg", 9.0F, 0.08F, 0.16F, 0.05F, 0.5F, 70.0F, 70.0F, 40.0F, false, -40.0F, 40.0F},
-    {"upleg", 9.0F, 0.08F, 0.16F, 0.05F, 0.5F, 70.0F, 70.0F, 40.0F, false, -40.0F, 40.0F},
-    {"up_leg", 9.0F, 0.08F, 0.16F, 0.05F, 0.5F, 70.0F, 70.0F, 40.0F, false, -40.0F, 40.0F},
-    {"leg_upper", 9.0F, 0.08F, 0.16F, 0.05F, 0.5F, 70.0F, 70.0F, 40.0F, false, -40.0F, 40.0F},
-    {"calf", 3.5F, 0.06F, 0.16F, 0.05F, 0.7F, 5.0F, 5.0F, 150.0F, true, -150.0F, 5.0F},
-    {"shin", 3.5F, 0.06F, 0.16F, 0.05F, 0.7F, 5.0F, 5.0F, 150.0F, true, -150.0F, 5.0F},
-    {"tibia", 3.5F, 0.06F, 0.16F, 0.05F, 0.7F, 5.0F, 5.0F, 150.0F, true, -150.0F, 5.0F},
-    {"lowerleg", 3.5F, 0.06F, 0.16F, 0.05F, 0.7F, 5.0F, 5.0F, 150.0F, true, -150.0F, 5.0F},
-    {"lower_leg", 3.5F, 0.06F, 0.16F, 0.05F, 0.7F, 5.0F, 5.0F, 150.0F, true, -150.0F, 5.0F},
-    {"leg_lower", 3.5F, 0.06F, 0.16F, 0.05F, 0.7F, 5.0F, 5.0F, 150.0F, true, -150.0F, 5.0F},
-    {"leftleg", 3.5F, 0.06F, 0.16F, 0.05F, 0.7F, 5.0F, 5.0F, 150.0F, true, -150.0F, 5.0F},
-    {"rightleg", 3.5F, 0.06F, 0.16F, 0.05F, 0.7F, 5.0F, 5.0F, 150.0F, true, -150.0F, 5.0F},
-    {"l_leg", 3.5F, 0.06F, 0.16F, 0.05F, 0.7F, 5.0F, 5.0F, 150.0F, true, -150.0F, 5.0F},
-    {"r_leg", 3.5F, 0.06F, 0.16F, 0.05F, 0.7F, 5.0F, 5.0F, 150.0F, true, -150.0F, 5.0F},
-    {"leg_l", 3.5F, 0.06F, 0.16F, 0.05F, 0.7F, 5.0F, 5.0F, 150.0F, true, -150.0F, 5.0F},
-    {"leg_r", 3.5F, 0.06F, 0.16F, 0.05F, 0.7F, 5.0F, 5.0F, 150.0F, true, -150.0F, 5.0F},
-    {"leg.l", 3.5F, 0.06F, 0.16F, 0.05F, 0.7F, 5.0F, 5.0F, 150.0F, true, -150.0F, 5.0F},
-    {"leg.r", 3.5F, 0.06F, 0.16F, 0.05F, 0.7F, 5.0F, 5.0F, 150.0F, true, -150.0F, 5.0F},
-    {"foot", 1.0F, 0.04F, 0.06F, 0.10F, 1.5F, 5.0F, 5.0F, 40.0F, true, -40.0F, 40.0F},
-    {"ankle", 1.0F, 0.04F, 0.06F, 0.10F, 1.5F, 5.0F, 5.0F, 40.0F, true, -40.0F, 40.0F},
-    {"neck", 1.5F, 0.05F, 0.04F, 0.05F, 0.8F, 30.0F, 30.0F, 40.0F, false, -40.0F, 40.0F},
-    {"head", 5.0F, 0.09F, 0.05F, 0.05F, 0.8F, 30.0F, 30.0F, 30.0F, false, -30.0F, 30.0F},
-    {"spine", 6.0F, 0.10F, 0.08F, 0.05F, 0.4F, 25.0F, 25.0F, 20.0F, false, -20.0F, 20.0F},
-    {"abdomen", 6.0F, 0.10F, 0.08F, 0.05F, 0.4F, 25.0F, 25.0F, 20.0F, false, -20.0F, 20.0F},
+    {"lowerarm", 1.5F, 0.045F, 0.10F, 0.05F, 3.5F, 5.0F, 5.0F, 150.0F, true, -5.0F, 150.0F},
+    {"lower_arm", 1.5F, 0.045F, 0.10F, 0.05F, 3.5F, 5.0F, 5.0F, 150.0F, true, -5.0F, 150.0F},
+    {"forearm", 1.5F, 0.045F, 0.10F, 0.05F, 3.5F, 5.0F, 5.0F, 150.0F, true, -5.0F, 150.0F},
+    {"fore_arm", 1.5F, 0.045F, 0.10F, 0.05F, 3.5F, 5.0F, 5.0F, 150.0F, true, -5.0F, 150.0F},
+    {"arm_lower", 1.5F, 0.045F, 0.10F, 0.05F, 3.5F, 5.0F, 5.0F, 150.0F, true, -5.0F, 150.0F},
+    {"elbow", 1.5F, 0.045F, 0.10F, 0.05F, 3.5F, 5.0F, 5.0F, 150.0F, true, -5.0F, 150.0F},
+    {"upperarm", 2.5F, 0.055F, 0.12F, 0.05F, 3.0F, 90.0F, 90.0F, 60.0F, false, -60.0F, 60.0F},
+    {"upper_arm", 2.5F, 0.055F, 0.12F, 0.05F, 3.0F, 90.0F, 90.0F, 60.0F, false, -60.0F, 60.0F},
+    {"arm_upper", 2.5F, 0.055F, 0.12F, 0.05F, 3.0F, 90.0F, 90.0F, 60.0F, false, -60.0F, 60.0F},
+    {"bicep", 2.5F, 0.055F, 0.12F, 0.05F, 3.0F, 90.0F, 90.0F, 60.0F, false, -60.0F, 60.0F},
+    {"leftarm", 2.5F, 0.055F, 0.12F, 0.05F, 3.0F, 90.0F, 90.0F, 60.0F, false, -60.0F, 60.0F},
+    {"rightarm", 2.5F, 0.055F, 0.12F, 0.05F, 3.0F, 90.0F, 90.0F, 60.0F, false, -60.0F, 60.0F},
+    {"l_arm", 2.5F, 0.055F, 0.12F, 0.05F, 3.0F, 90.0F, 90.0F, 60.0F, false, -60.0F, 60.0F},
+    {"r_arm", 2.5F, 0.055F, 0.12F, 0.05F, 3.0F, 90.0F, 90.0F, 60.0F, false, -60.0F, 60.0F},
+    {"arm_l", 2.5F, 0.055F, 0.12F, 0.05F, 3.0F, 90.0F, 90.0F, 60.0F, false, -60.0F, 60.0F},
+    {"arm_r", 2.5F, 0.055F, 0.12F, 0.05F, 3.0F, 90.0F, 90.0F, 60.0F, false, -60.0F, 60.0F},
+    {"arm.l", 2.5F, 0.055F, 0.12F, 0.05F, 3.0F, 90.0F, 90.0F, 60.0F, false, -60.0F, 60.0F},
+    {"arm.r", 2.5F, 0.055F, 0.12F, 0.05F, 3.0F, 90.0F, 90.0F, 60.0F, false, -60.0F, 60.0F},
+    {"clavicle", 1.5F, 0.05F, 0.08F, 0.05F, 2.5F, 20.0F, 20.0F, 30.0F, false, -30.0F, 30.0F},
+    {"collar", 1.5F, 0.05F, 0.08F, 0.05F, 2.5F, 20.0F, 20.0F, 30.0F, false, -30.0F, 30.0F},
+    {"shoulder", 1.5F, 0.05F, 0.08F, 0.05F, 2.5F, 20.0F, 20.0F, 30.0F, false, -30.0F, 30.0F},
+    {"hand", 0.5F, 0.035F, 0.04F, 0.10F, 4.0F, 60.0F, 60.0F, 40.0F, false, -40.0F, 40.0F},
+    {"wrist", 0.5F, 0.035F, 0.04F, 0.10F, 4.0F, 60.0F, 60.0F, 40.0F, false, -40.0F, 40.0F},
+    {"thigh", 9.0F, 0.08F, 0.16F, 0.05F, 3.0F, 70.0F, 70.0F, 40.0F, false, -40.0F, 40.0F},
+    {"femur", 9.0F, 0.08F, 0.16F, 0.05F, 3.0F, 70.0F, 70.0F, 40.0F, false, -40.0F, 40.0F},
+    {"upperleg", 9.0F, 0.08F, 0.16F, 0.05F, 3.0F, 70.0F, 70.0F, 40.0F, false, -40.0F, 40.0F},
+    {"upper_leg", 9.0F, 0.08F, 0.16F, 0.05F, 3.0F, 70.0F, 70.0F, 40.0F, false, -40.0F, 40.0F},
+    {"upleg", 9.0F, 0.08F, 0.16F, 0.05F, 3.0F, 70.0F, 70.0F, 40.0F, false, -40.0F, 40.0F},
+    {"up_leg", 9.0F, 0.08F, 0.16F, 0.05F, 3.0F, 70.0F, 70.0F, 40.0F, false, -40.0F, 40.0F},
+    {"leg_upper", 9.0F, 0.08F, 0.16F, 0.05F, 3.0F, 70.0F, 70.0F, 40.0F, false, -40.0F, 40.0F},
+    {"calf", 3.5F, 0.06F, 0.16F, 0.05F, 3.5F, 5.0F, 5.0F, 150.0F, true, -5.0F, 150.0F},
+    {"shin", 3.5F, 0.06F, 0.16F, 0.05F, 3.5F, 5.0F, 5.0F, 150.0F, true, -5.0F, 150.0F},
+    {"tibia", 3.5F, 0.06F, 0.16F, 0.05F, 3.5F, 5.0F, 5.0F, 150.0F, true, -5.0F, 150.0F},
+    {"lowerleg", 3.5F, 0.06F, 0.16F, 0.05F, 3.5F, 5.0F, 5.0F, 150.0F, true, -5.0F, 150.0F},
+    {"lower_leg", 3.5F, 0.06F, 0.16F, 0.05F, 3.5F, 5.0F, 5.0F, 150.0F, true, -5.0F, 150.0F},
+    {"leg_lower", 3.5F, 0.06F, 0.16F, 0.05F, 3.5F, 5.0F, 5.0F, 150.0F, true, -5.0F, 150.0F},
+    {"leftleg", 3.5F, 0.06F, 0.16F, 0.05F, 3.5F, 5.0F, 5.0F, 150.0F, true, -5.0F, 150.0F},
+    {"rightleg", 3.5F, 0.06F, 0.16F, 0.05F, 3.5F, 5.0F, 5.0F, 150.0F, true, -5.0F, 150.0F},
+    {"l_leg", 3.5F, 0.06F, 0.16F, 0.05F, 3.5F, 5.0F, 5.0F, 150.0F, true, -5.0F, 150.0F},
+    {"r_leg", 3.5F, 0.06F, 0.16F, 0.05F, 3.5F, 5.0F, 5.0F, 150.0F, true, -5.0F, 150.0F},
+    {"leg_l", 3.5F, 0.06F, 0.16F, 0.05F, 3.5F, 5.0F, 5.0F, 150.0F, true, -5.0F, 150.0F},
+    {"leg_r", 3.5F, 0.06F, 0.16F, 0.05F, 3.5F, 5.0F, 5.0F, 150.0F, true, -5.0F, 150.0F},
+    {"leg.l", 3.5F, 0.06F, 0.16F, 0.05F, 3.5F, 5.0F, 5.0F, 150.0F, true, -5.0F, 150.0F},
+    {"leg.r", 3.5F, 0.06F, 0.16F, 0.05F, 3.5F, 5.0F, 5.0F, 150.0F, true, -5.0F, 150.0F},
+    {"foot", 1.0F, 0.04F, 0.06F, 0.10F, 4.0F, 5.0F, 5.0F, 40.0F, true, -40.0F, 40.0F},
+    {"ankle", 1.0F, 0.04F, 0.06F, 0.10F, 4.0F, 5.0F, 5.0F, 40.0F, true, -40.0F, 40.0F},
+    {"neck", 1.5F, 0.05F, 0.04F, 0.05F, 2.5F, 30.0F, 30.0F, 40.0F, false, -40.0F, 40.0F},
+    {"head", 5.0F, 0.09F, 0.05F, 0.05F, 2.5F, 30.0F, 30.0F, 30.0F, false, -30.0F, 30.0F},
+    {"spine", 6.0F, 0.10F, 0.08F, 0.05F, 2.0F, 25.0F, 25.0F, 20.0F, false, -20.0F, 20.0F},
+    {"abdomen", 6.0F, 0.10F, 0.08F, 0.05F, 2.0F, 25.0F, 25.0F, 20.0F, false, -20.0F, 20.0F},
 }};
 
 /// Separate torso aliases checked after `kHumanoidProfile` so chest/torso rigs auto-build cleanly.
 constexpr std::array<HumanoidRagdollProfileEntry, 5U> kHumanoidTorsoFallbackProfile{{
-    {"upperchest", 6.0F, 0.11F, 0.09F, 0.05F, 0.4F, 25.0F, 25.0F, 20.0F, false, -20.0F, 20.0F},
-    {"upper_chest", 6.0F, 0.11F, 0.09F, 0.05F, 0.4F, 25.0F, 25.0F, 20.0F, false, -20.0F, 20.0F},
-    {"chest", 6.0F, 0.11F, 0.09F, 0.05F, 0.4F, 25.0F, 25.0F, 20.0F, false, -20.0F, 20.0F},
-    {"torso", 6.0F, 0.11F, 0.09F, 0.05F, 0.4F, 25.0F, 25.0F, 20.0F, false, -20.0F, 20.0F},
-    {"waist", 6.0F, 0.10F, 0.08F, 0.05F, 0.4F, 25.0F, 25.0F, 20.0F, false, -20.0F, 20.0F},
+    {"upperchest", 6.0F, 0.11F, 0.09F, 0.05F, 2.0F, 25.0F, 25.0F, 20.0F, false, -20.0F, 20.0F},
+    {"upper_chest", 6.0F, 0.11F, 0.09F, 0.05F, 2.0F, 25.0F, 25.0F, 20.0F, false, -20.0F, 20.0F},
+    {"chest", 6.0F, 0.11F, 0.09F, 0.05F, 2.0F, 25.0F, 25.0F, 20.0F, false, -20.0F, 20.0F},
+    {"torso", 6.0F, 0.11F, 0.09F, 0.05F, 2.0F, 25.0F, 25.0F, 20.0F, false, -20.0F, 20.0F},
+    {"waist", 6.0F, 0.10F, 0.08F, 0.05F, 2.0F, 25.0F, 25.0F, 20.0F, false, -20.0F, 20.0F},
 }};
 
 /// The root row is separate because `pelvis` and `hips`/`hip` win over `spine`.
 constexpr std::array<HumanoidRagdollProfileEntry, 3U> kHumanoidRootProfile{{
-    {"pelvis", 12.0F, 0.12F, 0.08F, 0.05F, 0.4F, 45.0F, 45.0F, 35.0F, false, -35.0F, 35.0F},
-    {"hips", 12.0F, 0.12F, 0.08F, 0.05F, 0.4F, 45.0F, 45.0F, 35.0F, false, -35.0F, 35.0F},
-    {"hip", 12.0F, 0.12F, 0.08F, 0.05F, 0.4F, 45.0F, 45.0F, 35.0F, false, -35.0F, 35.0F},
+    {"pelvis", 12.0F, 0.12F, 0.08F, 0.05F, 2.0F, 45.0F, 45.0F, 35.0F, false, -35.0F, 35.0F},
+    {"hips", 12.0F, 0.12F, 0.08F, 0.05F, 2.0F, 45.0F, 45.0F, 35.0F, false, -35.0F, 35.0F},
+    {"hip", 12.0F, 0.12F, 0.08F, 0.05F, 2.0F, 45.0F, 45.0F, 35.0F, false, -35.0F, 35.0F},
 }};
+
+/// Fingers and toes, matched only against the engine's canonical bone names (never against a rig's own
+/// names, where "index" or "ring" are ordinary words). They are light, so they get strong damping and
+/// ball joints with short cones; the joint filter keeps bodies this light from colliding with the body.
+constexpr std::array<HumanoidRagdollProfileEntry, 6U> kHumanoidDetailProfile{{
+    {"thumb", 0.040F, 0.010F, 0.014F, 0.20F, 3.0F, 50.0F, 50.0F, 15.0F, false, -15.0F, 15.0F},
+    {"index", 0.030F, 0.008F, 0.012F, 0.20F, 3.0F, 45.0F, 45.0F, 10.0F, false, -10.0F, 10.0F},
+    {"middle", 0.035F, 0.009F, 0.012F, 0.20F, 3.0F, 45.0F, 45.0F, 10.0F, false, -10.0F, 10.0F},
+    {"ring", 0.030F, 0.008F, 0.012F, 0.20F, 3.0F, 45.0F, 45.0F, 10.0F, false, -10.0F, 10.0F},
+    {"pinky", 0.020F, 0.007F, 0.010F, 0.20F, 3.0F, 45.0F, 45.0F, 10.0F, false, -10.0F, 10.0F},
+    {"toe", 0.150F, 0.016F, 0.020F, 0.10F, 3.0F, 30.0F, 30.0F, 10.0F, false, -10.0F, 10.0F},
+}};
+
+/// Bodies at or below this mass are detail (fingers, toes): they never collide with other bodies of the
+/// same ragdoll, only with the world, so a clenched hand does not fight the wrist it hangs from.
+constexpr float kDetailBodyMassKilograms = 0.2F;
 
 [[nodiscard]] std::string ToLowerAscii(std::string_view value) {
     std::string lowered;
@@ -123,6 +144,23 @@ constexpr std::array<HumanoidRagdollProfileEntry, 3U> kHumanoidRootProfile{{
     }
     for (const HumanoidRagdollProfileEntry& entry : kHumanoidTorsoFallbackProfile) {
         if (lowered.find(entry.pattern) != std::string::npos) return &entry;
+    }
+    return nullptr;
+}
+
+[[nodiscard]] const HumanoidRagdollProfileEntry* FindCanonicalProfileEntry(
+    const std::string_view loweredCanonicalName) noexcept {
+    for (const HumanoidRagdollProfileEntry& entry : kHumanoidDetailProfile) {
+        if (loweredCanonicalName.find(entry.pattern) != std::string_view::npos) return &entry;
+    }
+    for (const HumanoidRagdollProfileEntry& entry : kHumanoidRootProfile) {
+        if (loweredCanonicalName.find(entry.pattern) != std::string_view::npos) return &entry;
+    }
+    for (const HumanoidRagdollProfileEntry& entry : kHumanoidProfile) {
+        if (loweredCanonicalName.find(entry.pattern) != std::string_view::npos) return &entry;
+    }
+    for (const HumanoidRagdollProfileEntry& entry : kHumanoidTorsoFallbackProfile) {
+        if (loweredCanonicalName.find(entry.pattern) != std::string_view::npos) return &entry;
     }
     return nullptr;
 }
@@ -381,8 +419,9 @@ void EnsureSkeletonPose(Skeleton3DComponent& skeleton) {
         const Math::Vector3 rightAvg = rightSum * (1.0F / static_cast<float>(rightCount));
         const Math::Vector3 rightToLeft = leftAvg - rightAvg;
         // Forward is where the character faces: with up and the left side known, `left = up x forward`,
-        // so `forward = left x up`. A character facing +Z has its left at +X (X x Y = Z). The reverse
-        // product pointed the other way, which folded every elbow backward and every knee forward.
+        // so `forward = left x up`. A character facing +Z has its left at +X (X x Y = Z). The product used
+        // to be reversed, which made this branch disagree with the single-sided one below; the hinge axis
+        // (Cross(forward, limb)) is chosen for the true facing direction.
         const Math::Vector3 forwardCand = Math::Cross(rightToLeft, skelUp);
         if (Math::LengthSquared(forwardCand) > kDirectionEpsilon) {
             return SafeNormalize(forwardCand, defaultForward);
@@ -847,7 +886,108 @@ void ApplyRagdollQualityPreset(Ragdoll3DComponent& ragdoll, const RagdollQuality
     }
 }
 
+namespace {
+
+[[nodiscard]] RagdollBoneSetup MakeSetupFromProfile(const HumanoidRagdollProfileEntry& entry,
+                                                    const std::string& boneName, const float sizeScale) {
+    RagdollBoneSetup setup;
+    setup.boneName = boneName;
+    setup.mass = entry.mass;
+    // Capsule thickness follows the rig: the profile is written for a 1.8 m person, so a rig twice as
+    // tall gets bodies twice as thick instead of thin sticks.
+    setup.radius = entry.radius * sizeScale;
+    setup.halfHeight = entry.halfHeight * sizeScale;
+    setup.linearDamping = entry.linearDamping;
+    setup.angularDamping = entry.angularDamping;
+    setup.swing1LimitDegrees = entry.swing1LimitDegrees;
+    setup.swing2LimitDegrees = entry.swing2LimitDegrees;
+    setup.twistLimitDegrees = entry.twistLimitDegrees;
+    if (entry.hinge) {
+        setup.swing1Motion = Physics::RagdollMotion::Locked;
+        setup.swing2Motion = Physics::RagdollMotion::Locked;
+        setup.twistMotion = Physics::RagdollMotion::Limited;
+        setup.twistAsymmetric = true;
+        setup.twistLowerLimitDegrees = entry.twistLowerLimitDegrees;
+        setup.twistUpperLimitDegrees = entry.twistUpperLimitDegrees;
+    }
+    return setup;
+}
+
+/// Keeps at most `kMaximumRagdollBones` of `candidates`, the heaviest first (pelvis, thighs, torso, head;
+/// fingers last), shallower bones winning ties, and returns them in rig order.
+template <typename Candidate>
+void KeepStructuralBodies(std::vector<Candidate>& candidates) {
+    if (candidates.size() <= kMaximumRagdollBones) return;
+    std::vector<Candidate> ranked = candidates;
+    std::stable_sort(ranked.begin(), ranked.end(), [](const Candidate& lhs, const Candidate& rhs) {
+        if (lhs.entry->mass != rhs.entry->mass) return lhs.entry->mass > rhs.entry->mass;
+        if (lhs.depth != rhs.depth) return lhs.depth < rhs.depth;
+        return lhs.boneIndex < rhs.boneIndex;
+    });
+    ranked.resize(kMaximumRagdollBones);
+    std::sort(ranked.begin(), ranked.end(),
+              [](const Candidate& lhs, const Candidate& rhs) { return lhs.boneIndex < rhs.boneIndex; });
+    candidates = std::move(ranked);
+}
+
+/// The whole body from the engine's own humanoid: every body bone and every finger and toe, whatever the
+/// rig calls them (Mixamo, Blender, UE and VRM names all map to the same set). Empty when the rig is not
+/// recognisably a humanoid, so the caller can fall back to name patterns.
+[[nodiscard]] std::vector<RagdollBoneSetup> BuildCanonicalHumanoidRagdollBones(
+    const std::vector<SkeletonBone>& skeletonBones) {
+    std::vector<std::string> names;
+    names.reserve(skeletonBones.size());
+    for (const SkeletonBone& bone : skeletonBones) names.push_back(bone.name);
+    const Retarget::HumanoidReference& reference = Retarget::GetHumanoidReference();
+    const Retarget::HumanoidMatch match = Retarget::MatchHumanoidNames(names, reference);
+
+    struct Candidate final {
+        std::size_t boneIndex = 0U;
+        std::uint32_t depth = 0U;
+        const HumanoidRagdollProfileEntry* entry = nullptr;
+        std::string canonicalName;
+    };
+    std::vector<Candidate> candidates;
+    std::size_t bodyBones = 0U;
+    for (std::size_t boneIndex = 0U; boneIndex < skeletonBones.size(); ++boneIndex) {
+        if (boneIndex >= match.referenceOfBone.size()) break;
+        const std::int32_t reference_index = match.referenceOfBone[boneIndex];
+        if (reference_index < 0 || static_cast<std::size_t>(reference_index) >= reference.info.size()) continue;
+        const Retarget::HumanoidBoneKind kind = reference.info[static_cast<std::size_t>(reference_index)].kind;
+        if (kind != Retarget::HumanoidBoneKind::Body && kind != Retarget::HumanoidBoneKind::Finger) continue;
+        const std::string canonicalName =
+            reference.skeleton.bones[static_cast<std::size_t>(reference_index)].name;
+        const std::string lowered = ToLowerAscii(canonicalName);
+        // A metacarpal is the palm's own rigid frame: it rides on the hand body.
+        if (lowered.find("metacarpal") != std::string::npos) continue;
+        const HumanoidRagdollProfileEntry* const entry = FindCanonicalProfileEntry(lowered);
+        if (entry == nullptr) continue;
+        if (kind == Retarget::HumanoidBoneKind::Body) ++bodyBones;
+        candidates.push_back(Candidate{boneIndex, BoneDepth(skeletonBones, static_cast<std::uint32_t>(boneIndex)),
+                                       entry, canonicalName});
+    }
+    // Hips, a spine, a head and at least one limb pair: below that it is not a humanoid worth building.
+    if (bodyBones < 8U) return {};
+    KeepStructuralBodies(candidates);
+
+    const float sizeScale = std::clamp(std::isfinite(match.heightScale) ? match.heightScale : 1.0F, 0.25F, 4.0F);
+    std::vector<RagdollBoneSetup> setups;
+    setups.reserve(candidates.size());
+    for (const Candidate& candidate : candidates) {
+        setups.push_back(MakeSetupFromProfile(*candidate.entry, skeletonBones[candidate.boneIndex].name, sizeScale));
+    }
+    return setups;
+}
+
+} // namespace
+
 std::vector<RagdollBoneSetup> BuildHumanoidRagdollBones(const std::vector<SkeletonBone>& skeletonBones) {
+    // The engine's own humanoid first: it recognises far more rigs than name patterns do and it knows
+    // the fingers. Name patterns below remain for rigs it cannot place.
+    if (std::vector<RagdollBoneSetup> canonical = BuildCanonicalHumanoidRagdollBones(skeletonBones);
+        !canonical.empty()) {
+        return canonical;
+    }
     // Control rigs, twist/roll correctives and leaf markers never carry a body of their own.
     const auto isControlOrHelperBone = [](const std::string_view name) {
         const std::string lowered = ToLowerAscii(name);
@@ -1388,10 +1528,9 @@ bool InitializeRagdoll3D(IEntityManager& entityManager, const Entity entity) {
         joint.twistLowerLimitDegrees = setup.twistLowerLimitDegrees;
         joint.twistUpperLimitDegrees = setup.twistUpperLimitDegrees;
 
-        // BUG #5 FIX: Universal T-pose / A-pose hinge axis derivation!
-        // `Cross(limbDir, characterForward)` yields an axis strictly orthogonal to both the limb
-        // and the forward plane: positive twist folds T/A-pose elbows inward toward the chest,
-        // while negative twist folds knees anatomically backward!
+        // Universal T-pose / A-pose hinge axis derivation: `Cross(characterForward, limbDir)` is an axis
+        // strictly orthogonal to both the limb and the facing direction, so the hinge folds in the plane
+        // the limb swings in front of and behind the body.
         Math::Vector3 jointAxisLocal = setup.jointAxisLocal;
         if (!(Math::LengthSquared(jointAxisLocal) > kDirectionEpsilon)) {
             const bool isHinge = setup.twistMotion == Physics::RagdollMotion::Limited &&
@@ -1401,7 +1540,11 @@ bool InitializeRagdoll3D(IEntityManager& entityManager, const Entity entity) {
                 const Math::Vector3 limbDir =
                     SafeNormalize(Math::RotateVector(childBody.rotation, Math::Vector3{0.0F, 1.0F, 0.0F}),
                                      Math::Vector3{0.0F, -1.0F, 0.0F});
-                const Math::Vector3 crossAxis = Math::Cross(limbDir, characterForward);
+                // `forward x limb`: with the solver's twist sign, a positive twist about this axis carries the
+                // distal bone toward the front (elbows, range [-5, 150]) and a negative one toward the back
+                // (knees, range [-150, 5]). Measured by kicking shins and forearms in zero gravity; the
+                // opposite order folded elbows backward and knees forward.
+                const Math::Vector3 crossAxis = Math::Cross(characterForward, limbDir);
                 if (Math::LengthSquared(crossAxis) > kDirectionEpsilon) {
                     worldAxis = SafeNormalize(crossAxis, characterRight);
                 } else {
@@ -1429,6 +1572,18 @@ bool InitializeRagdoll3D(IEntityManager& entityManager, const Entity entity) {
 
     // Pairwise non-adjacent self-collision filter table: disable parent-child + bind-pose overlaps.
     component.solver.RebuildSelfCollisionFilter(/*disableCurrentPoseOverlaps=*/true, /*minimumJointHops=*/2U);
+    // Fingers and toes only touch the world: a body this light fighting its neighbours is jitter, not detail.
+    for (const RagdollBoneBinding& detail : bindings) {
+        if (detail.setupIndex >= component.bones.size() ||
+            component.bones[detail.setupIndex].mass > kDetailBodyMassKilograms) {
+            continue;
+        }
+        for (std::uint32_t other = 0U; other < static_cast<std::uint32_t>(bodies.size()); ++other) {
+            if (other != detail.bodyIndex) {
+                component.solver.SetSelfCollisionPairEnabled(detail.bodyIndex, other, false);
+            }
+        }
+    }
 
     EnsureSkeletonPose(skeleton);
     component.bindings = std::move(bindings);

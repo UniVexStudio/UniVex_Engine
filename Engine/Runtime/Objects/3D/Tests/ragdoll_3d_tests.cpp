@@ -5,6 +5,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
 #include <limits>
 #include <string>
 #include <vector>
@@ -155,7 +156,10 @@ TEST_F(Ragdoll3DTest, BuildHumanoidRagdollBones_UsesTheRigsOwnBoneNames) {
     EXPECT_EQ(shin->twistMotion, Physics::RagdollMotion::Limited);
     EXPECT_TRUE(shin->twistAsymmetric);
     EXPECT_LT(shin->twistLowerLimitDegrees, shin->twistUpperLimitDegrees);
-    EXPECT_LT(shin->twistUpperLimitDegrees, 10.0F) << "a knee does not hyperextend";
+    // In the solver's twist sign the knee folds toward the upper limit; the lower limit is the
+    // hyperextension side, which stays within a few degrees (see KneesAndElbowsBendTheAnatomicalWay...).
+    EXPECT_GT(shin->twistLowerLimitDegrees, -10.0F) << "a knee does not hyperextend";
+    EXPECT_GT(shin->twistUpperLimitDegrees, 90.0F) << "and it folds a long way the other way";
 }
 
 TEST_F(Ragdoll3DTest, BuildHumanoidRagdollBones_LeavesAnUnknownRigAlone) {
@@ -739,25 +743,54 @@ TEST_F(Ragdoll3DTest, UpdateRagdoll3DObjects_IgnoresOwningAncestorCharacterColli
                        [&name](const RagdollBoneSetup& bone) { return bone.boneName == name; });
 }
 
-TEST_F(Ragdoll3DTest, FullMixamoRig_GeneratesAStructuralBodyWithinTheSolverLimit) {
+TEST_F(Ragdoll3DTest, FullMixamoRig_GetsTheWholeBodyIncludingEveryFingerAndToe) {
     const Skeleton3DComponent mixamo = MakeFullMixamoSkeleton();
     ASSERT_EQ(mixamo.bones.size(), 65U);
 
     const std::vector<RagdollBoneSetup> built = BuildHumanoidRagdollBones(mixamo.bones);
-    EXPECT_LE(built.size(), static_cast<std::size_t>(kMaximumRagdollBones))
-        << "a fingered rig used to generate ~60 bodies, which the solver refuses outright";
-    EXPECT_EQ(built.size(), 20U) << "hips, 3 spine, neck, head, and 2x(shoulder, arm, forearm, hand, thigh, leg, foot)";
-    EXPECT_TRUE(ContainsBone(built, "mixamorig:Hips"));
-    EXPECT_TRUE(ContainsBone(built, "mixamorig:Head"));
-    EXPECT_TRUE(ContainsBone(built, "mixamorig:LeftHand"));
-    EXPECT_TRUE(ContainsBone(built, "mixamorig:RightFoot"));
+    EXPECT_LE(built.size(), static_cast<std::size_t>(kMaximumRagdollBones));
+    // hips + 3 spine + neck + head + 2 clavicles + 2x(arm, forearm, hand) + 2x(thigh, shin, foot, toe)
+    // + 2 hands x 5 fingers x 3 phalanges.
+    EXPECT_EQ(built.size(), 52U);
+    for (const char* body : {"mixamorig:Hips", "mixamorig:Head", "mixamorig:LeftHand", "mixamorig:RightFoot",
+                             "mixamorig:LeftToeBase", "mixamorig:RightToeBase"}) {
+        EXPECT_TRUE(ContainsBone(built, body)) << body;
+    }
+    // Every finger of both hands: the three phalanges (the "4" tip is not a body of its own).
+    for (const char* side : {"Left", "Right"}) {
+        for (const char* finger : {"Thumb", "Index", "Middle", "Ring", "Pinky"}) {
+            for (int joint = 1; joint <= 3; ++joint) {
+                EXPECT_TRUE(ContainsBone(built, std::string{"mixamorig:"} + side + "Hand" + finger + std::to_string(joint)))
+                    << side << finger << joint;
+            }
+            EXPECT_FALSE(ContainsBone(built, std::string{"mixamorig:"} + side + "Hand" + finger + "4"));
+        }
+    }
     for (const RagdollBoneSetup& bone : built) {
-        EXPECT_EQ(bone.boneName.find("Thumb"), std::string::npos) << bone.boneName;
-        EXPECT_EQ(bone.boneName.find("Index"), std::string::npos) << bone.boneName;
-        EXPECT_EQ(bone.boneName.find("Pinky"), std::string::npos) << bone.boneName;
         EXPECT_EQ(bone.boneName.find("_End"), std::string::npos) << bone.boneName;
     }
     EXPECT_EQ(BuildAutoRagdollBones(mixamo.bones).size(), built.size());
+}
+
+TEST_F(Ragdoll3DTest, FingersAreLightDetailBodiesThatNeverCollideWithTheBody) {
+    const Skeleton3DComponent mixamo = MakeFullMixamoSkeleton();
+    const Entity ragdollEntity = MakeRagdoll(MakeSkeletonEntity(mixamo));
+    ASSERT_TRUE(InitializeRagdoll3D(entityManager, ragdollEntity))
+        << entityManager.GetComponent<Ragdoll3DComponent>(ragdollEntity).lastSetupError;
+    const Ragdoll3DComponent& ragdoll = entityManager.GetComponent<Ragdoll3DComponent>(ragdollEntity);
+    ASSERT_EQ(ragdoll.solver.GetBodyCount(), 52U);
+
+    std::uint32_t finger = Physics::kInvalidRagdollBody;
+    std::uint32_t hips = Physics::kInvalidRagdollBody;
+    for (const RagdollBoneBinding& binding : ragdoll.bindings) {
+        const std::string& name = mixamo.bones[binding.boneIndex].name;
+        if (name == "mixamorig:LeftHandIndex2") finger = binding.bodyIndex;
+        if (name == "mixamorig:Hips") hips = binding.bodyIndex;
+    }
+    ASSERT_NE(finger, Physics::kInvalidRagdollBody);
+    ASSERT_NE(hips, Physics::kInvalidRagdollBody);
+    EXPECT_LT(ragdoll.solver.GetBody(finger).radius, 0.02F) << "a fingertip-sized capsule";
+    EXPECT_FALSE(ragdoll.solver.CanSelfCollide(finger, hips));
 }
 
 TEST_F(Ragdoll3DTest, OrdinaryWordsInStructuralBoneNamesAreNotMistakenForFingers) {
@@ -799,7 +832,7 @@ TEST_F(Ragdoll3DTest, OrdinaryWordsInStructuralBoneNamesAreNotMistakenForFingers
     return {};
 }
 
-TEST_F(Ragdoll3DTest, HingesFoldTheAnatomicalWay_ElbowsForwardAndKneesBackward) {
+TEST_F(Ragdoll3DTest, HingeAxesAreOrthogonalToTheLimbAndTheFacingDirection) {
     // A rig facing +Z has its left side at +X. Positive twist about the elbow axis must carry the forearm
     // toward the front; the knee range is negative, so its axis must make that fold carry the shin backward.
     // The sign was reversed once (forward computed as `up x left`), which folded every limb the wrong way.
@@ -809,12 +842,86 @@ TEST_F(Ragdoll3DTest, HingesFoldTheAnatomicalWay_ElbowsForwardAndKneesBackward) 
     ASSERT_TRUE(InitializeRagdoll3D(entityManager, ragdollEntity));
     const Ragdoll3DComponent& ragdoll = entityManager.GetComponent<Ragdoll3DComponent>(ragdollEntity);
 
-    // Left forearm points along +X, so axis = (+X) x forward(+Z) = -Y; the right forearm mirrors it.
-    EXPECT_LT(HingeWorldAxisOf(ragdoll, mixamo, "mixamorig:LeftForeArm").y, -0.8F);
-    EXPECT_GT(HingeWorldAxisOf(ragdoll, mixamo, "mixamorig:RightForeArm").y, 0.8F);
-    // Shins point along -Y, so axis = (-Y) x forward(+Z) = -X on both sides.
-    EXPECT_LT(HingeWorldAxisOf(ragdoll, mixamo, "mixamorig:LeftLeg").x, -0.8F);
-    EXPECT_LT(HingeWorldAxisOf(ragdoll, mixamo, "mixamorig:RightLeg").x, -0.8F);
+    // Left forearm points along +X, so axis = forward(+Z) x (+X) = +Y; the right forearm mirrors it.
+    EXPECT_GT(HingeWorldAxisOf(ragdoll, mixamo, "mixamorig:LeftForeArm").y, 0.8F);
+    EXPECT_LT(HingeWorldAxisOf(ragdoll, mixamo, "mixamorig:RightForeArm").y, -0.8F);
+    // Shins point along -Y, so axis = forward(+Z) x (-Y) = +X on both sides.
+    EXPECT_GT(HingeWorldAxisOf(ragdoll, mixamo, "mixamorig:LeftLeg").x, 0.8F);
+    EXPECT_GT(HingeWorldAxisOf(ragdoll, mixamo, "mixamorig:RightLeg").x, 0.8F);
+}
+
+/// The angle, in degrees, between the long axes of the bodies of two bones: 0 for a straight limb.
+[[nodiscard]] float BendDegrees(const Ragdoll3DComponent& ragdoll, const Skeleton3DComponent& skeleton,
+                                const std::string& upperBone, const std::string& lowerBone) {
+    std::uint32_t upper = Physics::kInvalidRagdollBody;
+    std::uint32_t lower = Physics::kInvalidRagdollBody;
+    for (const RagdollBoneBinding& binding : ragdoll.bindings) {
+        if (skeleton.bones[binding.boneIndex].name == upperBone) upper = binding.bodyIndex;
+        if (skeleton.bones[binding.boneIndex].name == lowerBone) lower = binding.bodyIndex;
+    }
+    if (upper == Physics::kInvalidRagdollBody || lower == Physics::kInvalidRagdollBody) return -1.0F;
+    const Math::Vector3 a = Math::RotateVector(ragdoll.solver.GetBody(upper).rotation, {0.0F, 1.0F, 0.0F});
+    const Math::Vector3 b = Math::RotateVector(ragdoll.solver.GetBody(lower).rotation, {0.0F, 1.0F, 0.0F});
+    const float cosine = std::clamp(Math::Dot(a, b), -1.0F, 1.0F);
+    return std::acos(cosine) * 180.0F / 3.14159265F;
+}
+
+/// Kicks the body of `kickedBone` along `kickZ` in zero gravity and returns how far `lowerBone` bent
+/// away from `upperBone` afterwards. Every body at or above `upperBone` is pinned, so only the joint
+/// between the two bones can move.
+[[nodiscard]] float KickAndMeasureBend(const float kickZ, const std::string& kickedBone, const std::string& upperBone,
+                                       const std::string& lowerBone, EntityManager& entityManager,
+                                       const Skeleton3DComponent& rig, Entity skeletonEntity,
+                                       const std::vector<std::string>& pinnedBones) {
+    Ragdoll3DComponent setup;
+    setup.skeleton = skeletonEntity;
+    setup.gravity = {0.0F, 0.0F, 0.0F};
+    const Entity ragdollEntity = entityManager.CreateEntity();
+    entityManager.AddComponent<Ragdoll3DComponent>(ragdollEntity, setup);
+    if (!InitializeRagdoll3D(entityManager, ragdollEntity)) return -1.0F;
+    Ragdoll3DComponent& ragdoll = entityManager.GetComponent<Ragdoll3DComponent>(ragdollEntity);
+    Math::Vector3 point{};
+    for (const RagdollBoneBinding& binding : ragdoll.bindings) {
+        const std::string& name = rig.bones[binding.boneIndex].name;
+        if (name == kickedBone) point = ragdoll.solver.GetBody(binding.bodyIndex).position;
+        if (std::find(pinnedBones.begin(), pinnedBones.end(), name) != pinnedBones.end()) {
+            ragdoll.solver.GetBody(binding.bodyIndex).kinematic = true;
+        }
+    }
+    ragdoll.solver.RebuildInertia();
+    if (!ApplyRagdollImpact(entityManager, ragdollEntity, point, {0.0F, 0.0F, kickZ}, 0.2F)) return -1.0F;
+    float widest = 0.0F;
+    for (int frame = 0; frame < 45; ++frame) {
+        UpdateRagdoll3DObjects(entityManager, 1.0F / 60.0F);
+        widest = std::max(widest, BendDegrees(ragdoll, rig, upperBone, lowerBone));
+    }
+    return widest;
+}
+
+TEST_F(Ragdoll3DTest, KneesAndElbowsBendTheAnatomicalWayAndRefuseTheOther) {
+    // A rig facing +Z: a shin kicked backward must fold at the knee, kicked forward it must be stopped by
+    // the joint; a forearm pushed forward must fold at the elbow, pushed backward it must be stopped.
+    // Measured in zero gravity with everything above the joint pinned, so only the joint decides.
+    const Skeleton3DComponent mixamo = MakeFullMixamoSkeleton();
+    const std::vector<std::string> legPins{"mixamorig:Hips", "mixamorig:LeftUpLeg"};
+    const std::vector<std::string> armPins{"mixamorig:Hips", "mixamorig:Spine", "mixamorig:Spine1", "mixamorig:Spine2",
+                                           "mixamorig:LeftShoulder", "mixamorig:LeftArm"};
+    // A fresh skeleton for every measurement: a ragdoll writes its pose back, so a reused one would start the
+    // next kick from the previous kick's bent limb.
+    const auto bend = [&](const float kick, const std::string& kicked, const std::string& upper,
+                          const std::string& lower, const std::vector<std::string>& pins) {
+        return KickAndMeasureBend(kick, kicked, upper, lower, entityManager, mixamo, MakeSkeletonEntity(mixamo), pins);
+    };
+    const float kneeBack = bend(-30.0F, "mixamorig:LeftLeg", "mixamorig:LeftUpLeg", "mixamorig:LeftLeg", legPins);
+    const float kneeFront = bend(30.0F, "mixamorig:LeftLeg", "mixamorig:LeftUpLeg", "mixamorig:LeftLeg", legPins);
+    const float elbowFront = bend(4.0F, "mixamorig:LeftForeArm", "mixamorig:LeftArm", "mixamorig:LeftForeArm", armPins);
+    const float elbowBack = bend(-4.0F, "mixamorig:LeftForeArm", "mixamorig:LeftArm", "mixamorig:LeftForeArm", armPins);
+    std::printf("BEND knee back=%.1f front=%.1f | elbow front=%.1f back=%.1f\n", static_cast<double>(kneeBack),
+                static_cast<double>(kneeFront), static_cast<double>(elbowFront), static_cast<double>(elbowBack));
+    EXPECT_GT(kneeBack, 30.0F) << "the knee folds backward";
+    EXPECT_LT(kneeFront, 12.0F) << "and is stopped when pushed forward";
+    EXPECT_GT(elbowFront, 30.0F) << "the elbow folds forward";
+    EXPECT_LT(elbowBack, 12.0F) << "and is stopped when pushed backward";
 }
 
 TEST_F(Ragdoll3DTest, FullMixamoRig_PreviewStartsAndFallsOntoTheStudioFloor) {
@@ -824,7 +931,7 @@ TEST_F(Ragdoll3DTest, FullMixamoRig_PreviewStartsAndFallsOntoTheStudioFloor) {
         << entityManager.GetComponent<Ragdoll3DComponent>(ragdollEntity).lastSetupError;
     Ragdoll3DComponent& ragdoll = entityManager.GetComponent<Ragdoll3DComponent>(ragdollEntity);
     EXPECT_TRUE(ragdoll.lastSetupError.empty());
-    EXPECT_EQ(ragdoll.solver.GetBodyCount(), 20U);
+    EXPECT_EQ(ragdoll.solver.GetBodyCount(), 52U);
     EXPECT_GT(ragdoll.solver.GetJointCount(), 0U);
 
     const float startY = ragdoll.solver.GetBody(0U).position.y;
@@ -848,6 +955,12 @@ TEST_F(Ragdoll3DTest, OversizedAuthoredBoneList_IsTrimmedNotRefused) {
         setup.boneName = bone.name;
         setup.mass = bone.name.find("Hand") != std::string::npos && bone.name.size() > 18U ? 0.5F : 3.0F;
         authored.bones.push_back(setup);
+    }
+    for (int ghost = 0; ghost < 16; ++ghost) {
+        RagdollBoneSetup extra;
+        extra.boneName = "ghost_" + std::to_string(ghost);
+        extra.mass = 0.1F;
+        authored.bones.push_back(extra);
     }
     ASSERT_GT(authored.bones.size(), static_cast<std::size_t>(kMaximumRagdollBones));
 

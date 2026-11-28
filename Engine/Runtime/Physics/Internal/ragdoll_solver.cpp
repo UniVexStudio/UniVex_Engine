@@ -401,9 +401,9 @@ bool RagdollSolver::Reset(const std::span<const RagdollBody> bodies) {
     }
     // Enable all non-self pairs by default; AddJoint automatically clears direct parent-child pairs.
     const std::uint32_t allBodiesMask =
-        m_bodyCount >= 32U ? 0xFFFFFFFFU : ((std::uint32_t{1U} << m_bodyCount) - 1U);
+        m_bodyCount >= 64U ? ~std::uint64_t{0U} : ((std::uint64_t{1U} << m_bodyCount) - 1U);
     for (std::size_t index = 0U; index < m_bodyCount; ++index) {
-        m_selfCollisionMask[index] = allBodiesMask & ~(std::uint32_t{1U} << index);
+        m_selfCollisionMask[index] = allBodiesMask & ~(std::uint64_t{1U} << index);
     }
     return true;
 }
@@ -475,8 +475,8 @@ void RagdollSolver::SetSelfCollisionPairEnabled(const std::uint32_t firstBody,
                                                       const std::uint32_t secondBody,
                                                       const bool enabled) noexcept {
     if (firstBody >= m_bodyCount || secondBody >= m_bodyCount || firstBody == secondBody) return;
-    const std::uint32_t bitFirst = std::uint32_t{1U} << firstBody;
-    const std::uint32_t bitSecond = std::uint32_t{1U} << secondBody;
+    const std::uint64_t bitFirst = std::uint64_t{1U} << firstBody;
+    const std::uint64_t bitSecond = std::uint64_t{1U} << secondBody;
     if (enabled) {
         m_selfCollisionMask[firstBody] |= bitSecond;
         m_selfCollisionMask[secondBody] |= bitFirst;
@@ -489,19 +489,19 @@ void RagdollSolver::SetSelfCollisionPairEnabled(const std::uint32_t firstBody,
 bool RagdollSolver::CanSelfCollide(const std::uint32_t firstBody,
                                          const std::uint32_t secondBody) const noexcept {
     if (firstBody >= m_bodyCount || secondBody >= m_bodyCount || firstBody == secondBody) return false;
-    return (m_selfCollisionMask[firstBody] & (std::uint32_t{1U} << secondBody)) != 0U;
+    return (m_selfCollisionMask[firstBody] & (std::uint64_t{1U} << secondBody)) != 0U;
 }
 
 void RagdollSolver::RebuildSelfCollisionFilter(const bool disableCurrentPoseOverlaps,
                                                      const std::uint32_t minimumJointHops) noexcept {
     const std::uint32_t allBodiesMask =
-        m_bodyCount >= 32U ? 0xFFFFFFFFU : ((std::uint32_t{1U} << m_bodyCount) - 1U);
+        m_bodyCount >= 64U ? ~std::uint64_t{0U} : ((std::uint64_t{1U} << m_bodyCount) - 1U);
     for (std::size_t index = 0U; index < m_bodyCount; ++index) {
-        m_selfCollisionMask[index] = allBodiesMask & ~(std::uint32_t{1U} << index);
+        m_selfCollisionMask[index] = allBodiesMask & ~(std::uint64_t{1U} << index);
     }
 
-    // All-pairs shortest hop distance along the joint graph (bounded at <= 24 bodies).
-    constexpr std::uint32_t kInfHops = 64U;
+    // All-pairs shortest hop distance along the joint graph (bounded by kMaximumRagdollBodies).
+    constexpr std::uint32_t kInfHops = static_cast<std::uint32_t>(kMaximumRagdollBodies) + 1U;
     std::array<std::array<std::uint32_t, kMaximumRagdollBodies>, kMaximumRagdollBodies> dist{};
     for (std::size_t i = 0U; i < m_bodyCount; ++i) {
         for (std::size_t j = 0U; j < m_bodyCount; ++j) {
@@ -635,9 +635,9 @@ std::size_t RagdollSolver::GenerateSelfContacts(const std::span<RagdollContact> 
     for (std::size_t i = 0U; i < m_bodyCount; ++i) {
         const float ri = m_bodies[i].radius;
         if (!std::isfinite(ri) || !(ri > 1.0e-4F)) continue;
-        const std::uint32_t mask = m_selfCollisionMask[i];
+        const std::uint64_t mask = m_selfCollisionMask[i];
         for (std::size_t j = i + 1U; j < m_bodyCount; ++j) {
-            if ((mask & (std::uint32_t{1U} << j)) == 0U) continue;
+            if ((mask & (std::uint64_t{1U} << j)) == 0U) continue;
             if (m_bodies[i].kinematic && m_bodies[j].kinematic) continue;
             const float rj = m_bodies[j].radius;
             if (!std::isfinite(rj) || !(rj > 1.0e-4F)) continue;
