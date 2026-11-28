@@ -12,6 +12,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include "character_controller_component.h"
 #include "collider_component.h"
 #include "disabled_component.h"
 #include "hierarchy_component.h"
@@ -562,15 +563,29 @@ void UpdatePartialAndMotorTargets(Ragdoll3DComponent& ragdoll, const Skeleton3DC
         // Configure optional root world-space drive in Active mode.
         if (ragdoll.mode == RagdollMode::Active && binding.isRootBody && !body.kinematic &&
             hasTarget[binding.bodyIndex]) {
-            body.worldDrive.enabled = (ragdoll.rootDriveMaxLinearForce > 0.0F &&
-                                       (ragdoll.rootDriveLinearStiffness > 0.0F || ragdoll.rootDriveLinearDamping > 0.0F)) ||
+            // A stagger keeps the pelvis near where the animation puts it - the body is hit, not dropped - so the
+            // root is pulled toward its animated position at least this firmly while the stagger lasts.
+            constexpr float kStaggerRootLinearStiffness = 900.0F;
+            constexpr float kStaggerRootLinearDamping = 70.0F;
+            constexpr float kStaggerRootMaxLinearForce = 3000.0F;
+            const float rootLinearStiffness =
+                ragdoll.staggering ? std::max(ragdoll.rootDriveLinearStiffness, kStaggerRootLinearStiffness)
+                                   : ragdoll.rootDriveLinearStiffness;
+            const float rootLinearDamping =
+                ragdoll.staggering ? std::max(ragdoll.rootDriveLinearDamping, kStaggerRootLinearDamping)
+                                   : ragdoll.rootDriveLinearDamping;
+            const float rootMaxLinearForce =
+                ragdoll.staggering ? std::max(ragdoll.rootDriveMaxLinearForce, kStaggerRootMaxLinearForce)
+                                   : ragdoll.rootDriveMaxLinearForce;
+            body.worldDrive.enabled = (rootMaxLinearForce > 0.0F &&
+                                       (rootLinearStiffness > 0.0F || rootLinearDamping > 0.0F)) ||
                                       (ragdoll.rootDriveMaxAngularTorque > 0.0F &&
                                        (ragdoll.rootDriveAngularStiffness > 0.0F || ragdoll.rootDriveAngularDamping > 0.0F));
             body.worldDrive.targetPosition = targetBodyPos[binding.bodyIndex];
             body.worldDrive.targetRotation = targetBodyRot[binding.bodyIndex];
-            body.worldDrive.linearStiffness = ragdoll.rootDriveLinearStiffness;
-            body.worldDrive.linearDamping = ragdoll.rootDriveLinearDamping;
-            body.worldDrive.maxLinearForce = ragdoll.rootDriveMaxLinearForce;
+            body.worldDrive.linearStiffness = rootLinearStiffness;
+            body.worldDrive.linearDamping = rootLinearDamping;
+            body.worldDrive.maxLinearForce = rootMaxLinearForce;
             body.worldDrive.angularStiffness = ragdoll.rootDriveAngularStiffness;
             body.worldDrive.angularDamping = ragdoll.rootDriveAngularDamping;
             body.worldDrive.maxAngularTorque = ragdoll.rootDriveMaxAngularTorque;
@@ -650,7 +665,8 @@ void UpdatePartialAndMotorTargets(Ragdoll3DComponent& ragdoll, const Skeleton3DC
 void WriteRagdollPoseToSkeleton(IEntityManager& entityManager, Ragdoll3DComponent& ragdoll,
                                    Skeleton3DComponent& skeleton, const ObjectWorldFrame& skeletonFrame) {
     EnsureSkeletonPose(skeleton);
-    const float globalBlend = std::clamp(ragdoll.physicsBlendWeight, 0.0F, 1.0F);
+    const float globalBlend =
+        std::clamp(ragdoll.staggering ? ragdoll.effectiveBlend : ragdoll.physicsBlendWeight, 0.0F, 1.0F);
     if (!(globalBlend > 0.0F)) return;
 
     std::vector<RagdollBoneBinding> ordered = ragdoll.bindings;
@@ -807,6 +823,17 @@ bool IsRagdoll3DComponentAuthoredValid(const Ragdoll3DComponent& value) noexcept
         !(value.recoverDurationSeconds > 0.0F) || value.recoverDurationSeconds > 60.0F) {
         return false;
     }
+    if (!std::isfinite(value.staggerImpulseThreshold) || value.staggerImpulseThreshold < 0.0F ||
+        !std::isfinite(value.fallImpulseThreshold) || value.fallImpulseThreshold < value.staggerImpulseThreshold ||
+        !std::isfinite(value.fallLandingSpeed) || value.fallLandingSpeed < 0.0F ||
+        !std::isfinite(value.staggerBlendPeak) || value.staggerBlendPeak < 0.0F || value.staggerBlendPeak > 1.0F ||
+        !std::isfinite(value.staggerRiseSeconds) || value.staggerRiseSeconds < 0.0F ||
+        value.staggerRiseSeconds > 10.0F || !std::isfinite(value.staggerDecaySeconds) ||
+        !(value.staggerDecaySeconds > 0.0F) || value.staggerDecaySeconds > 30.0F ||
+        !std::isfinite(value.staggerFallTiltDegrees) || !(value.staggerFallTiltDegrees > 0.0F) ||
+        value.staggerFallTiltDegrees > 180.0F) {
+        return false;
+    }
     for (const RagdollBoneSetup& bone : value.bones) {
         if (bone.boneName.empty()) return false;
         if (!std::isfinite(bone.mass) || bone.mass <= 0.0F) return false;
@@ -870,6 +897,8 @@ void ApplyRagdollQualityPreset(Ragdoll3DComponent& ragdoll, const RagdollQuality
         ragdoll.enableSelfCollision = true;
         ragdoll.enableDynamicPushback = true;
         ragdoll.maxSubstepsPerFrame = Physics::kMaximumRagdollSubsteps;
+        ragdoll.staggerBlendPeak = 0.6F;
+        ragdoll.staggerDecaySeconds = 0.6F;
         break;
     case RagdollQualityPreset::Balanced:
         ragdoll.stepSettings.velocityIterations = 10U;
@@ -878,6 +907,8 @@ void ApplyRagdollQualityPreset(Ragdoll3DComponent& ragdoll, const RagdollQuality
         ragdoll.enableSelfCollision = true;
         ragdoll.enableDynamicPushback = true;
         ragdoll.maxSubstepsPerFrame = 4U;
+        ragdoll.staggerBlendPeak = 0.55F;
+        ragdoll.staggerDecaySeconds = 0.45F;
         break;
     case RagdollQualityPreset::Fast:
         ragdoll.stepSettings.velocityIterations = 6U;
@@ -886,6 +917,8 @@ void ApplyRagdollQualityPreset(Ragdoll3DComponent& ragdoll, const RagdollQuality
         ragdoll.enableSelfCollision = false;
         ragdoll.enableDynamicPushback = false;
         ragdoll.maxSubstepsPerFrame = 2U;
+        ragdoll.staggerBlendPeak = 0.5F;
+        ragdoll.staggerDecaySeconds = 0.3F;
         break;
     case RagdollQualityPreset::Custom:
         break;
@@ -1621,6 +1654,7 @@ bool ActivateRagdoll(IEntityManager& entityManager, const Entity entity, const R
             GetSkeletonCurrentPose(entityManager.GetComponent<Skeleton3DComponent>(ragdoll.skeleton));
     }
     ragdoll.restSeconds = 0.0F;
+    ragdoll.staggering = false;
 
     const std::size_t bodyCount = ragdoll.solver.GetBodyCount();
     for (std::size_t i = 0U; i < bodyCount; ++i) {
@@ -1763,6 +1797,21 @@ bool DeactivateRagdoll(IEntityManager& entityManager, const Entity entity) {
     ragdoll.mode = RagdollMode::Kinematic;
     ragdoll.blendOutSnapshot.valid = false;
     ragdoll.restSeconds = 0.0F;
+    ragdoll.staggering = false;
+    return true;
+}
+
+bool StaggerRagdoll(IEntityManager& entityManager, const Entity entity, const float strength) {
+    if (!std::isfinite(strength)) return false;
+    if (!entityManager.IsAlive(entity) || !entityManager.HasComponent<Ragdoll3DComponent>(entity)) return false;
+    Ragdoll3DComponent& ragdoll = entityManager.GetComponent<Ragdoll3DComponent>(entity);
+    if (!ragdoll.enabled) return false;
+    if (ragdoll.mode == RagdollMode::Simulating || ragdoll.mode == RagdollMode::BlendingOut) return false;
+    if (!ActivateRagdoll(entityManager, entity, RagdollMode::Active)) return false;
+    ragdoll.staggering = true;
+    ragdoll.staggerElapsed = 0.0F;
+    ragdoll.staggerPeakNow = std::clamp(ragdoll.staggerBlendPeak * std::clamp(strength, 0.0F, 1.0F), 0.0F, 1.0F);
+    ragdoll.effectiveBlend = 0.0F;
     return true;
 }
 
@@ -1843,8 +1892,25 @@ bool ApplyRagdollImpact(IEntityManager& entityManager, const Entity entity,
     if (!ragdoll.enabled) return false;
     if (!ragdoll.initialized && !InitializeRagdoll3D(entityManager, entity)) return false;
 
-    const std::size_t bodyCount = ragdoll.solver.GetBodyCount();
+    std::size_t bodyCount = ragdoll.solver.GetBodyCount();
     if (bodyCount == 0U) return false;
+
+    // A hit on a standing body reacts on its own when asked to: a light hit staggers it, a strong one knocks it
+    // down. The bodies follow the pose first, so the animation does not overwrite the impulse that follows.
+    if (ragdoll.automaticReactions && (ragdoll.mode == RagdollMode::Kinematic || ragdoll.staggering)) {
+        const float magnitude = std::sqrt(Math::LengthSquared(impulse));
+        if (magnitude >= ragdoll.fallImpulseThreshold) {
+            static_cast<void>(SyncRagdollBodiesToSkeletonPose(entityManager, entity));
+            static_cast<void>(ActivateRagdoll(entityManager, entity, RagdollMode::Simulating));
+        } else if (magnitude >= ragdoll.staggerImpulseThreshold && !ragdoll.staggering) {
+            const float span = ragdoll.fallImpulseThreshold - ragdoll.staggerImpulseThreshold;
+            const float strength =
+                span > 1.0e-4F ? std::clamp((magnitude - ragdoll.staggerImpulseThreshold) / span, 0.35F, 1.0F) : 1.0F;
+            static_cast<void>(SyncRagdollBodiesToSkeletonPose(entityManager, entity));
+            static_cast<void>(StaggerRagdoll(entityManager, entity, strength));
+        }
+        bodyCount = ragdoll.solver.GetBodyCount();
+    }
 
     std::size_t nearestBody = bodyCount;
     float nearestDistance = searchRadius;
@@ -1865,6 +1931,84 @@ bool ApplyRagdollImpact(IEntityManager& entityManager, const Entity entity,
     ragdoll.solver.ApplyImpulse(static_cast<std::uint32_t>(nearestBody), impulse, nearestPoint);
     return true;
 }
+
+namespace {
+
+/// The character controller that moves the skeleton: on the skeleton itself or on its nearest ancestor.
+[[nodiscard]] const CharacterControllerComponent* FindDrivingCharacterController(const IEntityManager& entities,
+                                                                                    const Entity skeleton) {
+    Entity cursor = skeleton;
+    for (std::uint32_t hops = 0U; hops < 8U && cursor != kInvalidEntity && entities.IsAlive(cursor); ++hops) {
+        if (entities.HasComponent<CharacterControllerComponent>(cursor)) {
+            return &entities.GetComponent<CharacterControllerComponent>(cursor);
+        }
+        if (!entities.HasComponent<HierarchyComponent>(cursor)) break;
+        const Entity parent = entities.GetComponent<HierarchyComponent>(cursor).parent;
+        if (parent == cursor) break;
+        cursor = parent;
+    }
+    return nullptr;
+}
+
+/// Tracks the fall of the character that carries a standing ragdoll; a landing at or above `fallLandingSpeed`
+/// knocks the body down. True when this frame was spent starting the fall.
+[[nodiscard]] bool UpdateLandingReaction(IEntityManager& entities, const Entity entity, Ragdoll3DComponent& ragdoll) {
+    const CharacterControllerComponent* const controller = FindDrivingCharacterController(entities, ragdoll.skeleton);
+    if (controller == nullptr) return false;
+    if (!controller->grounded) {
+        ragdoll.wasAirborne = true;
+        ragdoll.airborneMaxDownSpeed = std::max(ragdoll.airborneMaxDownSpeed, -controller->velocity.y);
+        return false;
+    }
+    const bool hardLanding = ragdoll.wasAirborne && ragdoll.airborneMaxDownSpeed >= ragdoll.fallLandingSpeed;
+    ragdoll.wasAirborne = false;
+    ragdoll.airborneMaxDownSpeed = 0.0F;
+    if (!hardLanding) return false;
+    return ActivateRagdoll(entities, entity, RagdollMode::Simulating, controller->realVelocity);
+}
+
+/// Advances a stagger: the physics blend rises to its peak then fades, the body returns to the animation when it
+/// has faded, and a body pushed too far from its animated pose falls. True when the frame is finished here.
+[[nodiscard]] bool UpdateStagger(IEntityManager& entities, const Entity entity, Ragdoll3DComponent& ragdoll,
+                                   const float deltaTimeSeconds) {
+    ragdoll.staggerElapsed += deltaTimeSeconds;
+    const float rise = std::max(1.0e-4F, ragdoll.staggerRiseSeconds);
+    const float decay = std::max(1.0e-4F, ragdoll.staggerDecaySeconds);
+    float envelope = 0.0F;
+    if (ragdoll.staggerElapsed < rise) {
+        envelope = ragdoll.staggerPeakNow * (ragdoll.staggerElapsed / rise);
+    } else {
+        const float t = (ragdoll.staggerElapsed - rise) / decay;
+        if (t >= 1.0F) {
+            ragdoll.staggering = false;
+            ragdoll.mode = RagdollMode::Kinematic;
+            ragdoll.effectiveBlend = 0.0F;
+            return true; // the animation drives again from the next frame
+        }
+        envelope = ragdoll.staggerPeakNow * (1.0F - t * t * (3.0F - 2.0F * t));
+    }
+    ragdoll.effectiveBlend = envelope;
+
+    // Too far from where the animation wants the pelvis: it is falling, not staggering.
+    const float limitRadians = ragdoll.staggerFallTiltDegrees * 0.017453292F;
+    for (const RagdollBoneBinding& binding : ragdoll.bindings) {
+        if (!binding.isRootBody || binding.bodyIndex >= ragdoll.solver.GetBodyCount() ||
+            !binding.hasPreviousWorldPose) {
+            continue;
+        }
+        const Math::Quaternion& body = ragdoll.solver.GetBody(binding.bodyIndex).rotation;
+        const Math::Quaternion& target = binding.prevWorldRotation;
+        const float dot = std::clamp(std::fabs(body.x * target.x + body.y * target.y + body.z * target.z +
+                                               body.w * target.w), 0.0F, 1.0F);
+        if (2.0F * std::acos(dot) > limitRadians) {
+            static_cast<void>(ActivateRagdoll(entities, entity, RagdollMode::Simulating));
+        }
+        break;
+    }
+    return false;
+}
+
+} // namespace
 
 std::size_t UpdateRagdoll3DObjects(IEntityManager& entityManager, const float deltaTimeSeconds,
                                       const bool editorPreviewOnly,
@@ -1931,6 +2075,9 @@ std::size_t UpdateRagdoll3DObjects(IEntityManager& entityManager, const float de
         if (ragdoll.mode == RagdollMode::Kinematic) {
             SyncBodiesFromAnimatedPose(ragdoll, skeleton, skeletonFrame, deltaTimeSeconds,
                                           /*kinematicOnlyBodies=*/false);
+            if (ragdoll.automaticReactions && !editorPreviewOnly) {
+                static_cast<void>(UpdateLandingReaction(entityManager, entity, ragdoll));
+            }
             continue;
         }
 
@@ -1999,6 +2146,10 @@ std::size_t UpdateRagdoll3DObjects(IEntityManager& entityManager, const float de
                 BeginRagdollRecovery(entityManager, entity)) {
                 continue; // the next frame blends
             }
+        }
+        if (ragdoll.staggering && ragdoll.mode == RagdollMode::Active &&
+            UpdateStagger(entityManager, entity, ragdoll, deltaTimeSeconds)) {
+            continue;
         }
         bool animatedTargetChanged = false;
         UpdatePartialAndMotorTargets(ragdoll, skeleton, skeletonFrame, deltaTimeSeconds, animatedTargetChanged);

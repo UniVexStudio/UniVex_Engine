@@ -181,6 +181,16 @@ using Role = Asset::BlueprintNodeRole;
            !WidgetKindsFor(key).empty();
 }
 
+/// A node whose first value input is one of a fixed set of words, offered as a dropdown.
+[[nodiscard]] std::vector<std::string> FixedChoicesFor(const std::string& key) {
+    if (key == "ragdoll_set_mode") return {"Kinematic", "Active", "Simulating", "BlendingOut"};
+    if (key == "ragdoll_set_reaction" || key == "ragdoll_get_reaction") {
+        return {"StaggerImpulse", "FallImpulse", "FallLandingSpeed", "StaggerPeak",
+                "StaggerRise", "StaggerDecay", "StaggerFallTilt"};
+    }
+    return {};
+}
+
 /// The node's widget input: its first input that is not an exec pin.
 [[nodiscard]] int WidgetPinOf(const prism::BlueprintNode& node) {
     for (int i = 0; i < static_cast<int>(node.inputs.size()); ++i) {
@@ -744,7 +754,10 @@ void EditorBlueprintPanel::AddNodeDetails(prism::PropertyGrid& grid, const prism
             }
         };
         prism::Ref<prism::Widget> editor;
-        const std::vector<std::string> choices = i == widgetPin ? WidgetChoices(key) : std::vector<std::string>{};
+        std::vector<std::string> choices = i == widgetPin ? WidgetChoices(key) : std::vector<std::string>{};
+        if (choices.empty() && i == widgetPin) {
+            choices = FixedChoicesFor(key);
+        }
         if (!choices.empty()) {
             std::vector<std::string> items = choices;
             int current = -1;

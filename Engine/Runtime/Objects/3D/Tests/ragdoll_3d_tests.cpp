@@ -15,6 +15,7 @@
 
 #include "blueprint_object_host.h"
 #include "blueprint_value.h"
+#include "character_controller_component.h"
 #include "collider_component.h"
 #include "hierarchy_component.h"
 #include "rigid_3d_component.h"
@@ -89,7 +90,14 @@ protected:
         return entity;
     }
 
-    [[nodiscard]] Entity MakeRagdoll(const Entity skeleton, Ragdoll3DComponent ragdoll = {}) {
+    /// A ragdoll that is already falling: a new component stands (Kinematic) until something activates it.
+    [[nodiscard]] static Ragdoll3DComponent SimulatingSetup() {
+        Ragdoll3DComponent setup;
+        setup.mode = RagdollMode::Simulating;
+        return setup;
+    }
+
+    [[nodiscard]] Entity MakeRagdoll(const Entity skeleton, Ragdoll3DComponent ragdoll = SimulatingSetup()) {
         const Entity entity = entityManager.CreateEntity();
         ragdoll.skeleton = skeleton;
         entityManager.AddComponent<Ragdoll3DComponent>(entity, ragdoll);
@@ -877,6 +885,7 @@ TEST_F(Ragdoll3DTest, HingeAxesAreOrthogonalToTheLimbAndTheFacingDirection) {
                                        const Skeleton3DComponent& rig, Entity skeletonEntity,
                                        const std::vector<std::string>& pinnedBones) {
     Ragdoll3DComponent setup;
+    setup.mode = RagdollMode::Simulating;
     setup.skeleton = skeletonEntity;
     setup.gravity = {0.0F, 0.0F, 0.0F};
     const Entity ragdollEntity = entityManager.CreateEntity();
@@ -1289,6 +1298,204 @@ TEST_F(Ragdoll3DTest, EditingModeOrPreset_KeepsEveryBodyOnItsBoneAtAnyRigScale) 
             }
         }
     }
+}
+
+// ---- Automatic reactions ------------------------------------------------------------------------
+
+TEST_F(Ragdoll3DTest, NewRagdollStandsUntilSomethingActivatesIt) {
+    EXPECT_EQ(Ragdoll3DComponent{}.mode, RagdollMode::Kinematic);
+    EXPECT_FALSE(Ragdoll3DComponent{}.automaticReactions);
+}
+
+TEST_F(Ragdoll3DTest, Reactions_OffIgnoreHits_OnReactToTheirStrength) {
+    const Skeleton3DComponent mixamo = MakeFullMixamoSkeleton();
+    const Entity skeletonEntity = MakeSkeletonEntity(mixamo);
+    Ragdoll3DComponent setup;
+    setup.mode = RagdollMode::Kinematic;
+    const Entity ragdollEntity = MakeRagdoll(skeletonEntity, setup);
+    ASSERT_TRUE(InitializeRagdoll3D(entityManager, ragdollEntity));
+    Ragdoll3DComponent& ragdoll = entityManager.GetComponent<Ragdoll3DComponent>(ragdollEntity);
+    const Math::Vector3 hips = ragdoll.solver.GetBody(0U).position;
+
+    // Off: a strong hit does not change what the body is doing.
+    EXPECT_TRUE(ApplyRagdollImpact(entityManager, ragdollEntity, hips, {0.0F, 0.0F, 400.0F}, 0.5F));
+    EXPECT_EQ(ragdoll.mode, RagdollMode::Kinematic);
+
+    ragdoll.automaticReactions = true;
+    // Below the stagger threshold: nothing.
+    EXPECT_TRUE(ApplyRagdollImpact(entityManager, ragdollEntity, hips, {0.0F, 0.0F, 10.0F}, 0.5F));
+    EXPECT_EQ(ragdoll.mode, RagdollMode::Kinematic);
+    EXPECT_FALSE(ragdoll.staggering);
+    // A light hit staggers.
+    EXPECT_TRUE(ApplyRagdollImpact(entityManager, ragdollEntity, hips, {0.0F, 0.0F, 80.0F}, 0.5F));
+    EXPECT_EQ(ragdoll.mode, RagdollMode::Active);
+    EXPECT_TRUE(ragdoll.staggering);
+    // A strong hit while staggering knocks the body down.
+    EXPECT_TRUE(ApplyRagdollImpact(entityManager, ragdollEntity, hips, {0.0F, 0.0F, 400.0F}, 0.5F));
+    EXPECT_EQ(ragdoll.mode, RagdollMode::Simulating);
+    EXPECT_FALSE(ragdoll.staggering);
+}
+
+TEST_F(Ragdoll3DTest, Reactions_AStrongHitOnAStandingBodyKnocksItDown) {
+    const Skeleton3DComponent mixamo = MakeFullMixamoSkeleton();
+    const Entity skeletonEntity = MakeSkeletonEntity(mixamo);
+    Ragdoll3DComponent setup;
+    setup.mode = RagdollMode::Kinematic;
+    setup.automaticReactions = true;
+    const Entity ragdollEntity = MakeRagdoll(skeletonEntity, setup);
+    ASSERT_TRUE(InitializeRagdoll3D(entityManager, ragdollEntity));
+    const float startHips = BoneWorldHeight(mixamo, "mixamorig:Hips");
+    const Math::Vector3 hips = entityManager.GetComponent<Ragdoll3DComponent>(ragdollEntity).solver.GetBody(0U).position;
+    ASSERT_TRUE(ApplyRagdollImpact(entityManager, ragdollEntity, hips, {0.0F, 0.0F, 600.0F}, 0.5F));
+    for (int frame = 0; frame < 150; ++frame) {
+        UpdateRagdoll3DObjects(entityManager, 1.0F / 60.0F, false, 0.0F);
+    }
+    EXPECT_LT(BoneWorldHeight(entityManager.GetComponent<Skeleton3DComponent>(skeletonEntity), "mixamorig:Hips"),
+              startHips - 0.5F);
+}
+
+TEST_F(Ragdoll3DTest, Reactions_ALightHitStaggersAndTheBodyReturnsToTheAnimation) {
+    const Skeleton3DComponent mixamo = MakeFullMixamoSkeleton();
+    const Entity skeletonEntity = MakeSkeletonEntity(mixamo);
+    Ragdoll3DComponent setup;
+    setup.mode = RagdollMode::Kinematic;
+    setup.automaticReactions = true;
+    const Entity ragdollEntity = MakeRagdoll(skeletonEntity, setup);
+    ASSERT_TRUE(InitializeRagdoll3D(entityManager, ragdollEntity));
+    Ragdoll3DComponent& ragdoll = entityManager.GetComponent<Ragdoll3DComponent>(ragdollEntity);
+    const float startHips = BoneWorldHeight(mixamo, "mixamorig:Hips");
+    ASSERT_TRUE(ApplyRagdollImpact(entityManager, ragdollEntity, ragdoll.solver.GetBody(0U).position,
+                                   {0.0F, 0.0F, 60.0F}, 0.5F));
+    ASSERT_TRUE(ragdoll.staggering);
+
+    float peak = 0.0F;
+    float lowestHips = startHips;
+    bool returned = false;
+    for (int frame = 0; frame < 60 * 4 && !returned; ++frame) {
+        UpdateRagdoll3DObjects(entityManager, 1.0F / 60.0F, false, 0.0F);
+        if (ragdoll.staggering) peak = std::max(peak, ragdoll.effectiveBlend);
+        lowestHips = std::min(lowestHips,
+                              BoneWorldHeight(entityManager.GetComponent<Skeleton3DComponent>(skeletonEntity),
+                                              "mixamorig:Hips"));
+        returned = ragdoll.mode == RagdollMode::Kinematic && !ragdoll.staggering;
+    }
+    EXPECT_TRUE(returned) << "a stagger ends by itself";
+    EXPECT_GT(peak, 0.1F) << "the physics took over for a moment";
+    EXPECT_LE(peak, ragdoll.staggerBlendPeak + 1.0e-4F);
+    EXPECT_GT(lowestHips, startHips - 0.3F) << "a stagger is not a fall";
+}
+
+TEST_F(Ragdoll3DTest, Reactions_AHardLandingKnocksTheBodyDownASoftOneDoesNot) {
+    for (const float landingSpeed : {3.0F, 14.0F}) {
+        const Entity character = entityManager.CreateEntity();
+        entityManager.AddComponent<TransformComponent>(character, TransformComponent{});
+        entityManager.AddComponent<CharacterControllerComponent>(character, CharacterControllerComponent{});
+        const Entity skeletonEntity = MakeSkeletonEntity(MakeFullMixamoSkeleton());
+        HierarchyComponent link;
+        link.parent = character;
+        entityManager.AddComponent<HierarchyComponent>(skeletonEntity, link);
+        Ragdoll3DComponent setup;
+        setup.mode = RagdollMode::Kinematic;
+        setup.automaticReactions = true;
+        const Entity ragdollEntity = MakeRagdoll(skeletonEntity, setup);
+        ASSERT_TRUE(InitializeRagdoll3D(entityManager, ragdollEntity));
+        CharacterControllerComponent& controller = entityManager.GetComponent<CharacterControllerComponent>(character);
+
+        controller.grounded = false;
+        controller.velocity = {0.0F, -landingSpeed, 0.0F};
+        for (int frame = 0; frame < 5; ++frame) UpdateRagdoll3DObjects(entityManager, 1.0F / 60.0F, false, 0.0F);
+        EXPECT_EQ(entityManager.GetComponent<Ragdoll3DComponent>(ragdollEntity).mode, RagdollMode::Kinematic)
+            << "still in the air";
+        controller.grounded = true;
+        controller.velocity = {};
+        UpdateRagdoll3DObjects(entityManager, 1.0F / 60.0F, false, 0.0F);
+        EXPECT_EQ(entityManager.GetComponent<Ragdoll3DComponent>(ragdollEntity).mode,
+                  landingSpeed > 9.0F ? RagdollMode::Simulating : RagdollMode::Kinematic)
+            << "landing at " << landingSpeed;
+    }
+}
+
+TEST_F(Ragdoll3DTest, Reactions_SettingsAreValidatedAndPresetsTuneTheStagger) {
+    Ragdoll3DComponent bad;
+    bad.fallImpulseThreshold = 10.0F; // below the stagger threshold
+    EXPECT_FALSE(IsRagdoll3DComponentAuthoredValid(bad));
+    bad = Ragdoll3DComponent{};
+    bad.staggerBlendPeak = 1.5F;
+    EXPECT_FALSE(IsRagdoll3DComponentAuthoredValid(bad));
+    bad = Ragdoll3DComponent{};
+    bad.staggerDecaySeconds = 0.0F;
+    EXPECT_FALSE(IsRagdoll3DComponentAuthoredValid(bad));
+    bad = Ragdoll3DComponent{};
+    bad.fallLandingSpeed = std::numeric_limits<float>::quiet_NaN();
+    EXPECT_FALSE(IsRagdoll3DComponentAuthoredValid(bad));
+
+    Ragdoll3DComponent preset;
+    ApplyRagdollQualityPreset(preset, RagdollQualityPreset::High);
+    const float highDecay = preset.staggerDecaySeconds;
+    ApplyRagdollQualityPreset(preset, RagdollQualityPreset::Fast);
+    EXPECT_LT(preset.staggerDecaySeconds, highDecay);
+    EXPECT_TRUE(IsRagdoll3DComponentAuthoredValid(preset));
+}
+
+TEST_F(Ragdoll3DTest, Stagger_RefusesABodyThatIsAlreadyFalling) {
+    const Entity skeletonEntity = MakeSkeletonEntity(MakeFullMixamoSkeleton());
+    Ragdoll3DComponent setup;
+    setup.mode = RagdollMode::Kinematic;
+    const Entity ragdollEntity = MakeRagdoll(skeletonEntity, setup);
+    EXPECT_TRUE(StaggerRagdoll(entityManager, ragdollEntity, 1.0F));
+    ASSERT_TRUE(ActivateRagdoll(entityManager, ragdollEntity, RagdollMode::Simulating));
+    EXPECT_FALSE(StaggerRagdoll(entityManager, ragdollEntity, 1.0F));
+    EXPECT_FALSE(StaggerRagdoll(entityManager, ragdollEntity, std::numeric_limits<float>::quiet_NaN()));
+}
+
+TEST_F(Ragdoll3DTest, BlueprintHost_ModeReactionsAndStaggerNodes) {
+    const Entity skeletonEntity = MakeSkeletonEntity(MakeFullMixamoSkeleton());
+    Ragdoll3DComponent setup;
+    setup.mode = RagdollMode::Kinematic;
+    const Entity ragdollEntity = MakeRagdoll(skeletonEntity, setup);
+    Core::BlueprintObjectHost host{entityManager, nullptr, ragdollEntity};
+    const Ragdoll3DComponent& ragdoll = entityManager.GetComponent<Ragdoll3DComponent>(ragdollEntity);
+    const auto text = [](const char* value) { return Blueprint::Value{std::string{value}}; };
+
+    EXPECT_EQ(std::get<std::string>(host.CallFunction("ragdoll.get_mode", {})), "Kinematic");
+    const std::array<Blueprint::Value, 1U> simulating{text("Simulating")};
+    EXPECT_TRUE(std::get<bool>(host.CallFunction("ragdoll.set_mode", simulating)));
+    EXPECT_EQ(std::get<std::string>(host.CallFunction("ragdoll.get_mode", {})), "Simulating");
+    const std::array<Blueprint::Value, 1U> kinematic{text("Kinematic")};
+    EXPECT_TRUE(std::get<bool>(host.CallFunction("ragdoll.set_mode", kinematic)));
+    EXPECT_EQ(ragdoll.mode, RagdollMode::Kinematic);
+    const std::array<Blueprint::Value, 1U> active{text("Active")};
+    EXPECT_TRUE(std::get<bool>(host.CallFunction("ragdoll.set_mode", active)));
+    EXPECT_EQ(std::get<std::string>(host.CallFunction("ragdoll.get_mode", {})), "Active");
+    const std::array<Blueprint::Value, 1U> nonsense{text("Floating")};
+    EXPECT_FALSE(std::get<bool>(host.CallFunction("ragdoll.set_mode", nonsense))) << "an unknown mode is refused";
+    EXPECT_EQ(ragdoll.mode, RagdollMode::Active);
+    ASSERT_TRUE(std::get<bool>(host.CallFunction("ragdoll.deactivate", {})));
+
+    // Reactions on and off, and the named settings.
+    EXPECT_FALSE(std::get<bool>(host.CallFunction("ragdoll.get_automatic_reactions", {})));
+    const std::array<Blueprint::Value, 1U> yes{Blueprint::Value{true}};
+    EXPECT_TRUE(std::get<bool>(host.CallFunction("ragdoll.set_automatic_reactions", yes)));
+    EXPECT_TRUE(ragdoll.automaticReactions);
+    const std::array<Blueprint::Value, 2U> peak{text("StaggerPeak"), Blueprint::Value{0.4}};
+    EXPECT_TRUE(std::get<bool>(host.CallFunction("ragdoll.set_reaction", peak)));
+    EXPECT_FLOAT_EQ(ragdoll.staggerBlendPeak, 0.4F);
+    const std::array<Blueprint::Value, 1U> peakName{text("StaggerPeak")};
+    EXPECT_DOUBLE_EQ(std::get<double>(host.CallFunction("ragdoll.get_reaction", peakName)), static_cast<double>(0.4F));
+    const std::array<Blueprint::Value, 2U> tooMuch{text("StaggerPeak"), Blueprint::Value{4.0}};
+    EXPECT_FALSE(std::get<bool>(host.CallFunction("ragdoll.set_reaction", tooMuch))) << "refused by the component rule";
+    EXPECT_FLOAT_EQ(ragdoll.staggerBlendPeak, 0.4F) << "and left as it was";
+    const std::array<Blueprint::Value, 2U> unknown{text("Nothing"), Blueprint::Value{1.0}};
+    EXPECT_FALSE(std::get<bool>(host.CallFunction("ragdoll.set_reaction", unknown)));
+    const std::array<Blueprint::Value, 2U> belowStagger{text("FallImpulse"), Blueprint::Value{1.0}};
+    EXPECT_FALSE(std::get<bool>(host.CallFunction("ragdoll.set_reaction", belowStagger)))
+        << "a fall threshold under the stagger threshold is refused";
+
+    // Stagger by hand.
+    const std::array<Blueprint::Value, 1U> full{Blueprint::Value{1.0}};
+    EXPECT_TRUE(std::get<bool>(host.CallFunction("ragdoll.stagger", full)));
+    EXPECT_TRUE(ragdoll.staggering);
+    EXPECT_EQ(ragdoll.mode, RagdollMode::Active);
 }
 
 } // namespace

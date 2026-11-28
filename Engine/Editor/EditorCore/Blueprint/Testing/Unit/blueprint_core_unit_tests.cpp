@@ -289,7 +289,7 @@ TEST(BlueprintNodesUnitTest, PerCategoryNodeModulesRegisterUniqueCompleteCatalog
         {"Utilities", &Nodes::RegisterUtilitiesBlueprintNodes, 63U},
         {"Transform", &Nodes::RegisterTransformBlueprintNodes, 19U},
         {"Physics", &Nodes::RegisterPhysicsBlueprintNodes, 6U},
-        {"Ragdoll", &Nodes::RegisterRagdollBlueprintNodes, 13U},
+        {"Ragdoll", &Nodes::RegisterRagdollBlueprintNodes, 21U},
         {"Input", &Nodes::RegisterInputBlueprintNodes, 6U},
         {"Character", &Nodes::RegisterCharacterBlueprintNodes, 8U},
         {"Rendering", &Nodes::RegisterRenderingBlueprintNodes, 13U},
@@ -311,7 +311,7 @@ TEST(BlueprintNodesUnitTest, PerCategoryNodeModulesRegisterUniqueCompleteCatalog
         EXPECT_EQ(local.size(), mod.expectedCount) << mod.label;
         categorySum += local.size();
     }
-    EXPECT_EQ(categorySum, 347U);
+    EXPECT_EQ(categorySum, 355U);
 
     const auto& all = Asset::GetBlueprintNodeTypes();
     EXPECT_GT(all.size(), categorySum);

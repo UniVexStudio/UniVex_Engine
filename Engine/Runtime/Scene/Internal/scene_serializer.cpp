@@ -1521,6 +1521,14 @@ template <typename VectorT>
             {"autoRecover", value.autoRecover},
             {"recoverDelaySeconds", value.recoverDelaySeconds},
             {"recoverDurationSeconds", value.recoverDurationSeconds},
+            {"automaticReactions", value.automaticReactions},
+            {"staggerImpulseThreshold", value.staggerImpulseThreshold},
+            {"fallImpulseThreshold", value.fallImpulseThreshold},
+            {"fallLandingSpeed", value.fallLandingSpeed},
+            {"staggerBlendPeak", value.staggerBlendPeak},
+            {"staggerRiseSeconds", value.staggerRiseSeconds},
+            {"staggerDecaySeconds", value.staggerDecaySeconds},
+            {"staggerFallTiltDegrees", value.staggerFallTiltDegrees},
             {"layerMask", value.filter.layerMask},
             {"enabled", value.enabled}};
 }
@@ -1598,6 +1606,14 @@ template <typename VectorT>
     value.autoRecover = json.value("autoRecover", value.autoRecover);
     value.recoverDelaySeconds = json.value("recoverDelaySeconds", value.recoverDelaySeconds);
     value.recoverDurationSeconds = json.value("recoverDurationSeconds", value.recoverDurationSeconds);
+    value.automaticReactions = json.value("automaticReactions", value.automaticReactions);
+    value.staggerImpulseThreshold = json.value("staggerImpulseThreshold", value.staggerImpulseThreshold);
+    value.fallImpulseThreshold = json.value("fallImpulseThreshold", value.fallImpulseThreshold);
+    value.fallLandingSpeed = json.value("fallLandingSpeed", value.fallLandingSpeed);
+    value.staggerBlendPeak = json.value("staggerBlendPeak", value.staggerBlendPeak);
+    value.staggerRiseSeconds = json.value("staggerRiseSeconds", value.staggerRiseSeconds);
+    value.staggerDecaySeconds = json.value("staggerDecaySeconds", value.staggerDecaySeconds);
+    value.staggerFallTiltDegrees = json.value("staggerFallTiltDegrees", value.staggerFallTiltDegrees);
     value.filter.layerMask = json.value("layerMask", value.filter.layerMask);
     value.enabled = json.value("enabled", true);
     return value;

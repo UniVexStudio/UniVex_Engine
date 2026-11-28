@@ -150,7 +150,8 @@ struct Ragdoll3DComponent final {
     Math::Vector3 initialVelocity{};
 
     // ---- Simulation & Authoring Settings ----
-    RagdollMode mode = RagdollMode::Simulating;
+    /// A new ragdoll stands normally (animation drives it) until something activates it.
+    RagdollMode mode = RagdollMode::Kinematic;
     RagdollQualityPreset qualityPreset = RagdollQualityPreset::High;
     /// Overall blend between live animated pose (0) and simulated ragdoll pose (1).
     float physicsBlendWeight = 1.0F;
@@ -188,6 +189,26 @@ struct Ragdoll3DComponent final {
     /// Seconds the stand-up blend takes.
     float recoverDurationSeconds = 1.6F;
 
+    // ---- Automatic reactions (stagger on a light hit, fall on a strong one) ----
+    /// When true, hits applied through `ApplyRagdollImpact` and hard landings of a character controller start a
+    /// reaction on their own: a stagger for a light hit, a full fall for a strong one. Off: nothing reacts until
+    /// the ragdoll is activated.
+    bool automaticReactions = false;
+    /// Impulse (N.s) from which a hit staggers the body.
+    float staggerImpulseThreshold = 40.0F;
+    /// Impulse (N.s) from which a hit knocks the body down.
+    float fallImpulseThreshold = 180.0F;
+    /// Downward speed (m/s) at landing from which the body falls instead of landing on its feet.
+    float fallLandingSpeed = 9.0F;
+    /// Most the physics takes over during a stagger, in [0, 1].
+    float staggerBlendPeak = 0.6F;
+    /// Seconds the stagger takes to reach its peak.
+    float staggerRiseSeconds = 0.08F;
+    /// Seconds the stagger takes to fade back to the animation.
+    float staggerDecaySeconds = 0.6F;
+    /// A staggering body that tilts further than this (degrees from upright) falls.
+    float staggerFallTiltDegrees = 50.0F;
+
     // ---- Runtime, never persisted ----
     bool initialized = false;
     std::vector<RagdollBoneBinding> bindings;
@@ -212,6 +233,14 @@ struct Ragdoll3DComponent final {
     bool recoverToCapturedPose = false;
     /// How long the body has been at rest, for `autoRecover`.
     float restSeconds = 0.0F;
+    /// A stagger is running: `effectiveBlend` replaces `physicsBlendWeight` for the pose write-back.
+    bool staggering = false;
+    float staggerElapsed = 0.0F;
+    float staggerPeakNow = 0.0F;
+    float effectiveBlend = 0.0F;
+    /// Landing detection: largest downward speed while airborne.
+    float airborneMaxDownSpeed = 0.0F;
+    bool wasAirborne = false;
 
     /// Compares authored fields only: a running ragdoll is not a different ragdoll.
     [[nodiscard]] bool operator==(const Ragdoll3DComponent& other) const noexcept {
@@ -234,6 +263,12 @@ struct Ragdoll3DComponent final {
             partialRootBoneName != other.partialRootBoneName || autoRecover != other.autoRecover ||
             recoverDelaySeconds != other.recoverDelaySeconds ||
             recoverDurationSeconds != other.recoverDurationSeconds ||
+            automaticReactions != other.automaticReactions ||
+            staggerImpulseThreshold != other.staggerImpulseThreshold ||
+            fallImpulseThreshold != other.fallImpulseThreshold || fallLandingSpeed != other.fallLandingSpeed ||
+            staggerBlendPeak != other.staggerBlendPeak || staggerRiseSeconds != other.staggerRiseSeconds ||
+            staggerDecaySeconds != other.staggerDecaySeconds ||
+            staggerFallTiltDegrees != other.staggerFallTiltDegrees ||
             bones.size() != other.bones.size()) {
             return false;
         }
@@ -365,6 +400,12 @@ bool TrimRagdollBonesToCap(std::vector<RagdollBoneSetup>& bones);
 /// Hands the skeleton back to the animation at once (no blend): the ragdoll returns to `Kinematic`. False
 /// when it was not simulating.
 [[nodiscard]] bool DeactivateRagdoll(IEntityManager& entityManager, Entity entity);
+
+/// A light hit: the physics takes over for a moment (`Active` mode, an envelope that rises then fades by
+/// `staggerBlendPeak` / `staggerRiseSeconds` / `staggerDecaySeconds`) and the body returns to the animation on
+/// its own; if it tilts past `staggerFallTiltDegrees` it falls instead. `strength` in [0, 1] scales the peak.
+/// False when the ragdoll is already simulating or blending out.
+[[nodiscard]] bool StaggerRagdoll(IEntityManager& entityManager, Entity entity, float strength = 1.0F);
 
 /// True while the ragdoll is simulating or blending out, i.e. there is a fall to recover from or a recovery
 /// in progress.

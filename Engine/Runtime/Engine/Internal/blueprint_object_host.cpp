@@ -458,6 +458,28 @@ namespace {
     return found;
 }
 
+/// The authored reaction setting a script names ("StaggerImpulse", "FallImpulse", ...), or null.
+[[nodiscard]] float* ReactionSetting(Scene::Ragdoll3DComponent& ragdoll, const std::string& name) noexcept {
+    if (name == "StaggerImpulse") return &ragdoll.staggerImpulseThreshold;
+    if (name == "FallImpulse") return &ragdoll.fallImpulseThreshold;
+    if (name == "FallLandingSpeed") return &ragdoll.fallLandingSpeed;
+    if (name == "StaggerPeak") return &ragdoll.staggerBlendPeak;
+    if (name == "StaggerRise") return &ragdoll.staggerRiseSeconds;
+    if (name == "StaggerDecay") return &ragdoll.staggerDecaySeconds;
+    if (name == "StaggerFallTilt") return &ragdoll.staggerFallTiltDegrees;
+    return nullptr;
+}
+
+[[nodiscard]] const char* RagdollModeName(const Scene::RagdollMode mode) noexcept {
+    switch (mode) {
+    case Scene::RagdollMode::Kinematic: return "Kinematic";
+    case Scene::RagdollMode::Active: return "Active";
+    case Scene::RagdollMode::Simulating: return "Simulating";
+    case Scene::RagdollMode::BlendingOut: return "BlendingOut";
+    }
+    return "Kinematic";
+}
+
 } // namespace
 
 std::optional<HostFunction> BlueprintObjectHost::DescribeFunction(const std::string_view name) const {
@@ -474,6 +496,13 @@ std::optional<HostFunction> BlueprintObjectHost::DescribeFunction(const std::str
         }
         if (name == "ragdoll.set_auto_recover") return HostFunction{{Type::Bool()}, Type::Bool()};
         if (name == "ragdoll.get_blend") return HostFunction{{}, Type::Float()};
+        if (name == "ragdoll.set_mode") return HostFunction{{Type::Str()}, Type::Bool()};
+        if (name == "ragdoll.get_mode" || name == "ragdoll.lying_orientation") return HostFunction{{}, Type::Str()};
+        if (name == "ragdoll.stagger") return HostFunction{{Type::Float()}, Type::Bool()};
+        if (name == "ragdoll.set_automatic_reactions") return HostFunction{{Type::Bool()}, Type::Bool()};
+        if (name == "ragdoll.get_automatic_reactions") return HostFunction{{}, Type::Bool()};
+        if (name == "ragdoll.set_reaction") return HostFunction{{Type::Str(), Type::Float()}, Type::Bool()};
+        if (name == "ragdoll.get_reaction") return HostFunction{{Type::Str()}, Type::Float()};
     }
     if (m_entityManager.HasComponent<Scene::Rigid3DComponent>(m_entity) &&
         (name == "physics.apply_force" || name == "physics.apply_impulse" || name == "physics.apply_torque")) {
@@ -1062,6 +1091,65 @@ Value BlueprintObjectHost::CallFunction(const std::string_view name, const std::
         if (name == "ragdoll.set_auto_recover") {
             ragdoll.autoRecover = std::get<bool>(args[0]);
             return Value{true};
+        }
+        if (name == "ragdoll.set_mode") {
+            const std::string& wanted = std::get<std::string>(args[0]);
+            if (wanted == "Kinematic") {
+                return Value{ragdoll.mode == Scene::RagdollMode::Kinematic ||
+                             Scene::DeactivateRagdoll(m_entityManager, ragdollEntity)};
+            }
+            if (wanted == "Active") {
+                return Value{Scene::ActivateRagdoll(m_entityManager, ragdollEntity, Scene::RagdollMode::Active)};
+            }
+            if (wanted == "Simulating") {
+                return Value{Scene::ActivateRagdoll(m_entityManager, ragdollEntity, Scene::RagdollMode::Simulating)};
+            }
+            if (wanted == "BlendingOut") {
+                return Value{Scene::BeginRagdollRecovery(m_entityManager, ragdollEntity)};
+            }
+            return Value{false};
+        }
+        if (name == "ragdoll.get_mode") {
+            return Value{std::string{RagdollModeName(ragdoll.mode)}};
+        }
+        if (name == "ragdoll.lying_orientation") {
+            Scene::RagdollGetUpState state;
+            if (!Scene::EvaluateRagdollGetUpState(m_entityManager, ragdollEntity, state)) {
+                return Value{std::string{"Unknown"}};
+            }
+            switch (state.orientation) {
+            case Scene::RagdollLyingOrientation::FaceUp: return Value{std::string{"FaceUp"}};
+            case Scene::RagdollLyingOrientation::FaceDown: return Value{std::string{"FaceDown"}};
+            case Scene::RagdollLyingOrientation::Upright: return Value{std::string{"Upright"}};
+            default: return Value{std::string{"Unknown"}};
+            }
+        }
+        if (name == "ragdoll.stagger") {
+            return Value{Scene::StaggerRagdoll(m_entityManager, ragdollEntity,
+                                               static_cast<float>(std::get<double>(args[0])))};
+        }
+        if (name == "ragdoll.set_automatic_reactions") {
+            ragdoll.automaticReactions = std::get<bool>(args[0]);
+            return Value{true};
+        }
+        if (name == "ragdoll.get_automatic_reactions") {
+            return Value{ragdoll.automaticReactions};
+        }
+        if (name == "ragdoll.set_reaction") {
+            float* const setting = ReactionSetting(ragdoll, std::get<std::string>(args[0]));
+            const double wanted = std::get<double>(args[1]);
+            if (setting == nullptr || !std::isfinite(wanted)) return Value{false};
+            const float before = *setting;
+            *setting = static_cast<float>(wanted);
+            if (!Scene::IsRagdoll3DComponentAuthoredValid(ragdoll)) {
+                *setting = before; // the component's own rule refuses it
+                return Value{false};
+            }
+            return Value{true};
+        }
+        if (name == "ragdoll.get_reaction") {
+            const float* const setting = ReactionSetting(ragdoll, std::get<std::string>(args[0]));
+            return Value{setting != nullptr ? static_cast<double>(*setting) : 0.0};
         }
         if (name == "ragdoll.set_motor_stiffness") {
             const double stiffness = std::get<double>(args[0]);
